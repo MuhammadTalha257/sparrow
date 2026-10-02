@@ -56,6 +56,9 @@ final class AIService {
     private var pendingImage: (mime: String, base64: String)?
     /// The provider that answered the last message in this conversation.
     private(set) var lastProvider: AIProvider?
+    /// Text of the attached file, if any. Sent with every message of this conversation.
+    private var document: String?
+    private var lastContextKey: String?
 
     static let systemPrompt = """
     You are Sparrow, a friendly, smart AI assistant that lives at the top of the user's computer screen. \
@@ -64,10 +67,29 @@ final class AIService {
     Use plain text with line breaks, no markdown symbols like ** or ##.
     """
 
+    /// System prompt plus the attached document (if any).
+    var fullSystemPrompt: String {
+        guard let document else { return Self.systemPrompt }
+        return Self.systemPrompt + """
+
+
+        The user attached a file. Its content is below, between <file> and </file>. \
+        Answer the user's questions using this file. When they say "the file", "the document", "this PDF" \
+        or ask about a person, project or detail in it, they mean this file. Quote facts from it; \
+        if something isn't in the file, say so.
+
+        <file>
+        \(document)
+        </file>
+        """
+    }
+
     func clearConversation() {
         history = []
         pendingImage = nil
         lastProvider = nil
+        document = nil
+        lastContextKey = nil
         ClaudeService.shared.clearConversation()
     }
 
@@ -97,12 +119,21 @@ final class AIService {
             return
         }
 
-        // 3) Build the turn (first turn carries the attached file / window).
+        // 3) Attachments. A file's text lives in the system prompt for the whole
+        //    conversation, so follow-up questions still "see" it. A newly attached
+        //    file starts a fresh conversation about that file.
         var turn = query
-        if history.isEmpty, let context {
-            let (prefix, image) = Self.describe(context)
-            if !prefix.isEmpty { turn = prefix + "\n\n" + query }
-            pendingImage = image
+        if let context, context.key != lastContextKey {
+            lastContextKey = context.key
+            let limit = provider == .ollama || provider == .apple ? 12_000 : 80_000
+            let (text, image) = Self.describe(context, limit: limit)
+            if context.isFile {
+                history = []
+                document = image == nil ? text : nil
+                if let image { pendingImage = image; turn = text + "\n\n" + query }
+            } else if history.isEmpty, document == nil, !text.isEmpty {
+                turn = text + "\n\n" + query
+            }
         }
         history.append((role: "user", text: turn))
 
@@ -148,7 +179,7 @@ final class AIService {
 
     // MARK: Context → text / image
 
-    static func describe(_ context: PromptContext) -> (String, (mime: String, base64: String)?) {
+    static func describe(_ context: PromptContext, limit: Int = 80_000) -> (String, (mime: String, base64: String)?) {
         switch context {
         case .window(let app, let title, let url):
             var t = "Context: the user is looking at \(app), window \"\(title)\""
@@ -161,15 +192,28 @@ final class AIService {
                let data = imageAsJPEG(fileURL) {
                 return ("Attached image: \(name)", ("image/jpeg", data.base64EncodedString()))
             }
-            if ext == "pdf", let doc = PDFDocument(url: fileURL), let text = doc.string {
-                return ("Attached PDF \"\(name)\":\n" + String(text.prefix(60_000)), nil)
+            if ext == "pdf", let doc = PDFDocument(url: fileURL) {
+                let text = doc.string ?? ""
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return ("File name: \(name) (PDF). It has no selectable text (it looks like a scanned image), so its words can't be read. Tell the user this.", nil)
+                }
+                return ("File name: \(name) (PDF)\n\n" + Self.tidy(text, limit: limit), nil)
             }
             if let data = try? Data(contentsOf: fileURL), data.count <= 300_000,
                let text = String(data: data, encoding: .utf8) {
-                return ("Attached file \"\(name)\":\n" + text, nil)
+                return ("File name: \(name)\n\n" + Self.tidy(text, limit: limit), nil)
             }
             return ("Attached file: \(name) (its content can't be read as text)", nil)
         }
+    }
+
+    /// Collapses runs of blank space (PDF text is full of it) and trims to `limit` characters.
+    static func tidy(_ text: String, limit: Int) -> String {
+        var t = text.replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+        t = t.replacingOccurrences(of: "\\n\\s*\\n+", with: "\n", options: .regularExpression)
+        t = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.count > limit { t = String(t.prefix(limit)) + "\n[…the rest of the file was cut to fit]" }
+        return t
     }
 
     /// Re-encodes any image as a JPEG no wider than 1600 px (keeps uploads small).
@@ -226,7 +270,7 @@ final class AIService {
 
     private func callOpenAI(state: AppState) async throws -> String {
         let k = try key(.openai)
-        var messages: [[String: Any]] = [["role": "system", "content": Self.systemPrompt]]
+        var messages: [[String: Any]] = [["role": "system", "content": fullSystemPrompt]]
         for (i, m) in history.enumerated() {
             if i == history.count - 1, m.role == "user", let img = pendingImage {
                 let parts: [[String: Any]] = [
@@ -263,7 +307,7 @@ final class AIService {
         let model = state.geminiModel.isEmpty ? AppState.defaultGeminiModel : state.geminiModel
         let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
         let json = try await postJSON(url, body: [
-            "system_instruction": ["parts": [["text": Self.systemPrompt]]],
+            "system_instruction": ["parts": [["text": fullSystemPrompt]]],
             "contents": contents,
         ], headers: ["x-goog-api-key": k])
         guard let cands = json["candidates"] as? [[String: Any]],
@@ -305,14 +349,16 @@ final class AIService {
             }
             model = first
         }
-        var messages: [[String: Any]] = [["role": "system", "content": Self.systemPrompt]]
+        var messages: [[String: Any]] = [["role": "system", "content": fullSystemPrompt]]
         for (i, m) in history.enumerated() {
             var msg: [String: Any] = ["role": m.role, "content": m.text]
             if i == history.count - 1, m.role == "user", let img = pendingImage { msg["images"] = [img.base64] }
             messages.append(msg)
         }
         let json = try await postJSON(URL(string: "http://127.0.0.1:11434/api/chat")!,
-                                      body: ["model": model, "messages": messages, "stream": false],
+                                      body: ["model": model, "messages": messages, "stream": false,
+                                             // Default window (2k tokens) is too small for a document.
+                                             "options": ["num_ctx": document == nil ? 4096 : 8192]],
                                       headers: [:], timeout: 180)
         guard let msg = json["message"] as? [String: Any], let text = msg["content"] as? String else { throw Self.badResponse }
         return text
@@ -332,7 +378,7 @@ final class AIService {
     private func callApple() async throws -> String {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *), Self.appleModelAvailable {
-            let session = LanguageModelSession(instructions: Self.systemPrompt)
+            let session = LanguageModelSession(instructions: fullSystemPrompt)
             let transcript = history.suffix(12).map { ($0.role == "user" ? "User: " : "Sparrow: ") + $0.text }
                 .joined(separator: "\n\n")
             let response = try await session.respond(to: transcript + "\n\nSparrow:")

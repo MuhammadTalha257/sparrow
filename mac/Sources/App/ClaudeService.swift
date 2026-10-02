@@ -138,9 +138,11 @@ final class ClaudeService {
 
     // Multi-turn conversation messages (for API)
     private var conversationMessages: [[String: Any]] = []
+    private var lastContextKey: String?
 
     func clearConversation() {
         conversationMessages = []
+        lastContextKey = nil
     }
 
     private let systemPrompt = """
@@ -165,8 +167,9 @@ final class ClaudeService {
         // Build user content for this turn
         var userContent: [[String: Any]] = []
 
-        // Add file/window context on first message only
-        if conversationMessages.isEmpty, let context = context {
+        // Add file/window context on the first message, and whenever a new file is attached
+        if let context = context, conversationMessages.isEmpty || context.key != lastContextKey {
+            lastContextKey = context.key
             switch context {
             case .window(let app, let title, let url):
                 var text = "Context — App: \(app), Window: \(title)"

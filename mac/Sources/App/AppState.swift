@@ -349,6 +349,15 @@ final class AppState: ObservableObject {
 enum PromptContext {
     case window(appName: String, title: String, url: String?)
     case file(name: String, fileURL: URL?)
+
+    /// Identifies what is attached, so a newly attached file is always sent to the AI.
+    var key: String {
+        switch self {
+        case .window(let app, let title, let url): return "w|\(app)|\(title)|\(url ?? "")"
+        case .file(let name, let url): return "f|\(name)|\(url?.path ?? "")"
+        }
+    }
+    var isFile: Bool { if case .file = self { return true }; return false }
 }
 
 struct DroppedFile {
