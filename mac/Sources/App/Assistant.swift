@@ -622,12 +622,16 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { LocationProvider.shared.resolve(nil) }
         }
         guard let loc else { return nil }
-        var city = "your area"
-        if let pm = try? await CLGeocoder().reverseGeocodeLocation(loc).first {
-            city = pm.locality ?? pm.subAdministrativeArea ?? pm.administrativeArea ?? city
-        }
-        cached = (loc.coordinate.latitude, loc.coordinate.longitude, city, Date())
-        return (loc.coordinate.latitude, loc.coordinate.longitude, city)
+        let lat = loc.coordinate.latitude, lon = loc.coordinate.longitude
+        let city = await Self.cityName(lat: lat, lon: lon) ?? "your area"
+        cached = (lat, lon, city, Date())
+        return (lat, lon, city)
+    }
+
+    nonisolated static func cityName(lat: Double, lon: Double) async -> String? {
+        let l = CLLocation(latitude: lat, longitude: lon)
+        guard let pm = try? await CLGeocoder().reverseGeocodeLocation(l).first else { return nil }
+        return pm.locality ?? pm.subAdministrativeArea ?? pm.administrativeArea
     }
 
     fileprivate func resolve(_ loc: CLLocation?) {
@@ -636,18 +640,21 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
-        let last = locs.last
-        MainActor.assumeIsolated { LocationProvider.shared.resolve(last) }
+        guard let c = locs.last?.coordinate else { return }
+        let lat = c.latitude, lon = c.longitude
+        MainActor.assumeIsolated { LocationProvider.shared.resolve(CLLocation(latitude: lat, longitude: lon)) }
     }
     nonisolated func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
         MainActor.assumeIsolated { LocationProvider.shared.resolve(nil) }
     }
     nonisolated func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
-        MainActor.assumeIsolated {
-            let s = m.authorizationStatus
-            if s == .denied || s == .restricted { LocationProvider.shared.resolve(nil) }
-            else if s == .authorizedAlways || s == .authorized { m.requestLocation() }
-        }
+        MainActor.assumeIsolated { LocationProvider.shared.authChanged() }
+    }
+
+    fileprivate func authChanged() {
+        let s = manager.authorizationStatus
+        if s == .denied || s == .restricted { resolve(nil) }
+        else if s == .authorizedAlways || s == .authorized { manager.requestLocation() }
     }
 }
 

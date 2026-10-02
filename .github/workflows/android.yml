@@ -3,7 +3,7 @@ name: Build Android app
 on:
   push:
     branches: [main]
-    paths-ignore: ["mac/**", ".github/workflows/mac.yml", "README.md"]
+    paths-ignore: ["mac/**", "windows/**", ".github/workflows/mac.yml", ".github/workflows/windows.yml", "README.md"]
   workflow_dispatch: {}
 
 permissions:

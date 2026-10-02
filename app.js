@@ -133,7 +133,10 @@ function addQuick() {
   store.save(); renderQuick(); toast(`Added ${name} — you can also say "open ${name}"`);
 }
 function renderAll() { renderHeader(); renderToday(); renderPlan(); }
-store.onChange(() => { renderToday(); renderPlan(); syncAlarms(); });
+store.onChange(() => {
+  renderToday(); renderPlan(); syncAlarms();
+  $('#brief').textContent = `${greetingWord()}${store.settings.name ? ', ' + store.settings.name : ''}! ${daySummary(new Date(), true)}`;
+});
 // Android: real alarms for reminders & meetings (ring even when Sparrow is closed)
 function syncAlarms() {
   if (!N) return;
@@ -290,8 +293,8 @@ function speak(text) {
   const u = new SpeechSynthesisUtterance(text.replace(/[•✅⏰🗓️📝🐦✨☔🎉🌤️⚠️✔️🗑️]/gu, ''));
   const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; }
   u.rate = 1.0; u.pitch = store.settings.gender === 'male' ? 0.95 : 1.05;
-  u.onstart = () => setBird('talking', true);
-  u.onend = u.onerror = () => setBird('talking', false);
+  u.onstart = () => { setBird('talking', true); window.SparrowDesktop?.state({ speaking: true }); };
+  u.onend = u.onerror = () => { setBird('talking', false); window.SparrowDesktop?.state({ speaking: false }); };
   speechSynthesis.speak(u);
 }
 
@@ -300,6 +303,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false;
 function listen() {
   if (N) { N.listen(); return; }
+  if (window.SparrowVoice) { window.SparrowVoice.toggle(); return; }
   if (!SR) { toast('Voice input isn\'t supported in this browser — type instead.'); return; }
   if (listening) { rec?.stop(); return; }
   speechSynthesis?.cancel();
@@ -411,6 +415,10 @@ function openCheckIn(spoken) {
   const list = tasksForDay(new Date());
   const doneToday = store.items.filter(i => i.type === 'task' && i.done && i.doneAt && new Date(i.doneAt).toDateString() === dayKey()).length;
   const s = store.settings, hi = `Hi${s.name ? ' ' + s.name : ''}`;
+  if (spoken && !list.length) {   // nothing open: just a kind word, no sheet
+    const msg = `${hi}, it's check-in time.${doneToday ? ` You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today. Well done!` : ' Nothing left for today.'} Want to add anything for tomorrow? Just tell me.`;
+    chime(); toast('🌙 ' + msg, 7000); speakSoon(msg); return;
+  }
   $('#ciSub').textContent = doneToday ? `You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today ✨` : 'How did today go?';
   const render = () => {
     const rows = tasksForDay(new Date()).concat(list.filter(i => i.done || i._moved));
@@ -451,6 +459,7 @@ function openCheckIn(spoken) {
 }
 function closeCheckIn() { $('#checkin').hidden = true; $('#sheetBg').hidden = $('#sheet').hidden; }
 $('#checkinBtn').onclick = () => openCheckIn(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('#checkin').hidden) closeCheckIn(); else if (!$('#sheet').hidden) closeSettings(); } });
 
 setInterval(checkDue, 20000);
 
@@ -518,7 +527,7 @@ function toast(text, ms = 2600) {
 
 // ---------------- install hint ----------------
 function installHint() {
-  if (N) return;
+  if (N || window.SparrowDesktop) return;
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   if (standalone) return;
   const el = $('#installHint'); el.hidden = false;
@@ -563,6 +572,9 @@ if (N) {
   $('#aNotif').onchange = e => { N.setReadNotifications(e.target.checked); setTimeout(refreshAndroid, 600); };
   refreshAndroid(); syncAlarms();
 }
+
+// ---------------- Windows app extras ----------------
+if (window.SparrowDesktop) import('./desktop.js').catch(e => console.error('desktop', e));
 
 // ---------------- start ----------------
 renderAll(); renderQuick(); renderChat(); installHint();

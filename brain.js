@@ -229,7 +229,8 @@ export function moveRestToTomorrow() {
  * Returns { reply, item?, url?, list? } or null when the AI should answer instead.
  */
 export async function handle(input) {
-  const o = input.trim().replace(/^(hey |hi |ok )?sparrow[,!\s]*/i, '').replace(/\s*please[.!]?$/i, '');
+  const o = input.trim().replace(/^(hey |hi |ok )?sparrow[,!\s]*/i, '').replace(/\s*please[.!]?$/i, '')
+    .replace(/^(um+|uh+|erm|so|okay|ok|well|please|can you|could you)[,\s]+/i, '');
   const t = o.toLowerCase().replace(/[?!.]+$/, '');
   if (!t) return { reply: 'Yes? 🐦' };
 
@@ -266,7 +267,7 @@ export async function handle(input) {
   }
 
   // Reminders
-  let m = o.match(/^(?:please\s+)?(?:remind me|set (?:a )?reminder|reminder|don'?t let me forget)\b[\s,:]*(.*)$/i);
+  let m = o.match(/^(?:please\s+)?(?:remind(?:s|ed)? me|set (?:a )?reminder|reminder|don'?t let me forget)\b[\s,:]*(.*)$/i);
   if (m) {
     let { date, rest } = parseWhen(m[1]);
     let title = cap(tidy(rest.replace(/^(to|that|about)\s+/i, '')));
@@ -326,8 +327,9 @@ export async function handle(input) {
   m = t.match(/^(?:open|launch|start|go to|show me)\s+(.+)$/);
   if (m) {
     const tg = openTarget(m[1]);
-    // Android app: open any installed app by name
-    if (window.SparrowNative && window.SparrowNative.openApp(m[1])) return { reply: `Opening ${cap(m[1])}…` };
+    // Android / Windows app: open any installed app or folder by name
+    const host = window.SparrowNative || window.SparrowDesktop;
+    if (host && host.openApp(m[1])) return { reply: `Opening ${cap(m[1])}…` };
     if (tg) return { reply: `Opening ${tg.label}…`, url: tg.url };
     return { reply: `I couldn't find "${m[1]}". Say "search ${m[1]}" to look it up.` };
   }
@@ -342,6 +344,23 @@ export async function handle(input) {
   if (m) return { reply: `Searching for ${m[1]}…`, url: 'https://www.google.com/search?q=' + encodeURIComponent(m[1]) };
   m = t.match(/^(?:youtube|play)\s+(.+?)(?:\s+on youtube)?$/);
   if (m && (/youtube/.test(t) || t.startsWith('youtube'))) return { reply: `Searching YouTube for ${m[1]}…`, url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(m[1]) };
+
+  // Media & volume (Windows app)
+  const D = window.SparrowDesktop;
+  if (D) {
+    const media = [
+      [/^(play|pause|resume|stop)( (the )?(music|song|video))?$/, 'playpause', 'OK'],
+      [/^(next|skip)( (song|track))?$/, 'next', 'Next'],
+      [/^(previous|last|back)( (song|track))?$/, 'prev', 'Previous'],
+      [/^(volume up|louder|turn (it )?up)$/, 'volup', 'Volume up'],
+      [/^(volume down|quieter|softer|turn (it )?down)$/, 'voldown', 'Volume down'],
+      [/^(mute|unmute)$/, 'mute', 'OK'],
+      [/^lock( (the )?(screen|computer|pc))?$/, 'lock', 'Locking'],
+    ];
+    for (const [re, cmd, say] of media) if (re.test(t)) { D.media(cmd); return { reply: say + ' 🎵' }; }
+    const vm = t.match(/^(?:set )?volume (?:to )?(\d{1,3})%?$/);
+    if (vm) { D.media('vol:' + Math.min(100, +vm[1])); return { reply: `Volume ${Math.min(100, +vm[1])}` }; }
+  }
 
   // Info
   if (/\bweather\b|\btemperature\b|\brain(ing)? today\b/.test(t)) {
