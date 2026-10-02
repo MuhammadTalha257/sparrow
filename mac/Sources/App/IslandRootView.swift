@@ -483,19 +483,33 @@ struct IslandHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Left: tab capsules
-            HStack(spacing: 5) {
-                TabButton(icon: "house.fill", view: .overview, state: state)
-                TabButton(icon: "bubble.left.fill", view: .prompt, state: state, preAction: {
+            // Left: friendly greeting
+            VStack(alignment: .leading, spacing: 0) {
+                Text(SparrowHeaderText.greeting)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(Color(hex: "#FBF3E9"))
+                    .lineLimit(1)
+                Text(Date().formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(Color(hex: "#A39486"))
+            }
+            .padding(.leading, 16)
+
+            Spacer()
+
+            // Middle: labelled tabs
+            HStack(spacing: 4) {
+                TabButton(icon: "house.fill", label: "Home", view: .overview, state: state)
+                TabButton(icon: "sparkles", label: "Ask", view: .prompt, state: state, preAction: {
                     #if !APPSTORE
                     if state.promptContext == nil {
                         state.promptContext = WindowContextCapture.captureActive(from: state.lastExternalApp)
                     }
                     #endif
                 })
-                TabButton(icon: "plus", view: .upload, state: state)
+                HeaderChip(icon: "sun.max.fill", label: "Today") { TodayWindow.shared.show() }
+                HeaderChip(icon: "bird.fill", label: "Pet") { PetController.shared.toggle() }
             }
-            .padding(.leading, 14)
 
             Spacer()
 
@@ -525,8 +539,40 @@ struct IslandHeader: View {
     }
 }
 
+enum SparrowHeaderText {
+    @MainActor static var greeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        let hello = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
+        let name = AssistantPrefs.displayName
+        return name.isEmpty ? hello : "\(hello), \(name)"
+    }
+}
+
+/// Small labelled chip in the header that runs an action (Today window, Pet…).
+struct HeaderChip: View {
+    let icon: String
+    let label: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .bold))
+                Text(label).font(.system(size: 11, weight: .semibold, design: .rounded))
+            }
+            .foregroundColor(hovered ? Color(hex: "#FBF3E9") : Color(hex: "#C9BBAB"))
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(Capsule().fill(Color(hex: "#F9A830").opacity(hovered ? 0.18 : 0.07)))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+    }
+}
+
 struct TabButton: View {
     let icon: String
+    var label: String = ""
     let view: IslandView
     @ObservedObject var state: AppState
     var preAction: (() -> Void)? = nil
@@ -544,15 +590,17 @@ struct TabButton: View {
                 state.view = view
             }
         }) {
-            Image(systemName: icon)
-                .font(.system(size: 13))
-                .foregroundColor(isOn ? Color(hex: "#FBF3E9") : (isHovered ? Color(hex: "#C9BBAB") : Color(hex: "#A39486")))
-                .frame(width: 30, height: 22)
-                .background(
-                    isOn ? Color(hex: "#1D1F23") :
-                    isHovered ? Color.white.opacity(0.07) : Color.clear
-                )
-                .clipShape(Capsule())
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .bold))
+                if !label.isEmpty { Text(label).font(.system(size: 11, weight: .semibold, design: .rounded)) }
+            }
+            .foregroundColor(isOn ? Color(hex: "#1A1008") : (isHovered ? Color(hex: "#FBF3E9") : Color(hex: "#C9BBAB")))
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(
+                Capsule().fill(isOn
+                    ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "#FBC56A"), Color(hex: "#F28A3C")], startPoint: .top, endPoint: .bottom))
+                    : AnyShapeStyle(Color(hex: "#F9A830").opacity(isHovered ? 0.18 : 0.07)))
+            )
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

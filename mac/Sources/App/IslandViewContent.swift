@@ -2304,31 +2304,41 @@ struct AgentPill: View {
     var body: some View {
         Button(action: { onTap() }) {
             ZStack(alignment: .topTrailing) {
-                ZStack {
-                    Capsule()
-                        .fill(isHovered
-                              ? Color(hex: task.color).opacity(0.18)
-                              : Color(hex: "#120D0A"))
-                    Capsule()
-                        .stroke(Color(hex: task.color).opacity(isHovered ? 0.55 : 0.14), lineWidth: 1)
-                    HStack(spacing: 0) {
+                // Sparrow tile: real app icon (shortcuts) or a little bird (integrations)
+                HStack(spacing: 7) {
+                    if let icon = QuickItems.icon(for: task.id) {
+                        Image(nsImage: icon)
+                            .resizable().interpolation(.high)
+                            .frame(width: 20, height: 20)
+                    } else if task.id.hasPrefix("shortcut_") {
+                        Image(systemName: "globe")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(Color(hex: task.color))
+                            .frame(width: 20, height: 20)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(Color(hex: task.color).opacity(0.18)))
+                    } else {
                         MiniBotCanvasView(task: task)
                             .frame(width: 22 / 0.6, height: 22 / 0.6)
-                            .frame(width: 22, height: 22, alignment: .center)
-                            .padding(.leading, 8)
-                        Spacer()
+                            .frame(width: 20, height: 20, alignment: .center)
                     }
                     Text(displayName)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(isHovered
-                                         ? Color(hex: task.color).lighter(by: 0.3)
-                                         : Color(hex: "#7D7066"))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(isHovered ? Color(hex: "#FBF3E9") : Color(hex: "#C9BBAB"))
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity)
-                .frame(height: 28)
+                .frame(height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isHovered ? Color(hex: task.color).opacity(0.16) : Color(hex: "#2A1A10").opacity(0.55))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color(hex: task.color).opacity(isHovered ? 0.5 : 0.18), lineWidth: 1)
+                )
                 .shadow(color: Color(hex: task.color).opacity(isHovered ? 0.35 : 0), radius: 10, x: 0, y: 2)
 
                 // Alert badge (approval / finished / error)

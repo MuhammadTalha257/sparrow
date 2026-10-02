@@ -63,15 +63,93 @@ struct SettingsView: View {
         )
     }
 
+    @State private var tab: SettingsTab = .general
+
     var body: some View {
+        VStack(spacing: 0) {
+            SettingsHeader(tab: $tab)
+            Divider().opacity(0.5)
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
 
+                if tab == .general {
+                // MARK: Look & position
+                AppearanceSettings(state: state)
+
+                // MARK: Son
+                GroupBox("Sound") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Enable sounds", isOn: $state.soundEnabled)
+                        HStack(spacing: 8) {
+                            Text("Volume")
+                                .frame(width: 56, alignment: .leading)
+                            Slider(value: $state.soundVolume, in: 0...0.2)
+                                .disabled(!state.soundEnabled)
+                            Text("\(Int(state.soundVolume / 0.2 * 100)) %")
+                                .frame(width: 36, alignment: .trailing)
+                                .monospacedDigit()
+                        }
+                    }
+                    .padding(6)
+                }
+
+                // MARK: Timings
+                GroupBox("Behavior") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Text("Close after")
+                            TextField("60", value: $state.autoCloseInterval, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 64)
+                            Text("s inactive")
+                        }
+                        HStack(spacing: 8) {
+                            Text("Hide after")
+                            TextField("3", value: absenceMinutes, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 48)
+                            Text("min without movement")
+                        }
+                    }
+                    .padding(6)
+                }
+
+                // MARK: Hotkey
+                GroupBox("Hotkey") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Ask Sparrow with a keyboard shortcut (opens the chat)", isOn: $state.hotkeyEnabled)
+                        if state.hotkeyEnabled {
+                            HStack(spacing: 8) {
+                                Text("Shortcut")
+                                    .frame(width: 70, alignment: .leading)
+                                ShortcutRecorderButton(flags: $hotkeyFlags, code: $hotkeyCode)
+                                    .onChange(of: hotkeyFlags) { _, v in state.hotkeyFlags = v }
+                                    .onChange(of: hotkeyCode)  { _, v in state.hotkeyCode  = v }
+                                Text("presses this → island opens")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .padding(6)
+                }
+
+                // MARK: Startup
+                GroupBox("Startup") {
+                    Toggle("Launch at Mac startup", isOn: $launchAtStartup)
+                        .onChange(of: launchAtStartup) { _, on in toggleStartup(on) }
+                        .padding(6)
+                }
+                }
+
+                if tab == .voice {
+                // MARK: Voice, greeting, notifications, apps
+                AssistantSettings(parts: [.voice, .greeting, .notifications])
+                }
+
+                if tab == .ai {
                 // MARK: AI models (ChatGPT, Gemini, Ollama, Apple)
                 AIModelsSettings(state: state)
-
-                // MARK: Voice, greeting, notifications, apps
-                AssistantSettings()
 
                 // MARK: API
                 GroupBox("Claude (Anthropic)") {
@@ -112,7 +190,16 @@ struct SettingsView: View {
                     }
                     .padding(6)
                 }
+                }
 
+                if tab == .apps {
+                // MARK: Shortcuts (everyday apps & sites)
+                ShortcutsSettings(state: state)
+
+                AssistantSettings(parts: [.apps])
+                }
+
+                if tab == .developer {
                 // MARK: Hooks
                 GroupBox("Claude Code Hooks") {
                     VStack(alignment: .leading, spacing: 10) {
@@ -273,50 +360,6 @@ struct SettingsView: View {
                     .padding(6)
                 }
 
-                // MARK: Son
-                GroupBox("Sound") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Toggle("Enable sounds", isOn: $state.soundEnabled)
-                        HStack(spacing: 8) {
-                            Text("Volume")
-                                .frame(width: 56, alignment: .leading)
-                            Slider(value: $state.soundVolume, in: 0...0.2)
-                                .disabled(!state.soundEnabled)
-                            Text("\(Int(state.soundVolume / 0.2 * 100)) %")
-                                .frame(width: 36, alignment: .trailing)
-                                .monospacedDigit()
-                        }
-                    }
-                    .padding(6)
-                }
-
-                // MARK: Timings
-                GroupBox("Behavior") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 8) {
-                            Text("Close after")
-                            TextField("60", value: $state.autoCloseInterval, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 64)
-                            Text("s inactive")
-                        }
-                        HStack(spacing: 8) {
-                            Text("Hide after")
-                            TextField("3", value: absenceMinutes, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 48)
-                            Text("min without movement")
-                        }
-                    }
-                    .padding(6)
-                }
-
-                // MARK: Look & position
-                AppearanceSettings(state: state)
-
-                // MARK: Shortcuts (everyday apps & sites)
-                ShortcutsSettings(state: state)
-
                 // MARK: Active pills
                 GroupBox("Integrations (for developers)") {
                     VStack(alignment: .leading, spacing: 10) {
@@ -358,32 +401,6 @@ struct SettingsView: View {
                     }
                     .padding(6)
                 }
-
-                // MARK: Hotkey
-                GroupBox("Hotkey") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Toggle("Ask Sparrow with a keyboard shortcut (opens the chat)", isOn: $state.hotkeyEnabled)
-                        if state.hotkeyEnabled {
-                            HStack(spacing: 8) {
-                                Text("Shortcut")
-                                    .frame(width: 70, alignment: .leading)
-                                ShortcutRecorderButton(flags: $hotkeyFlags, code: $hotkeyCode)
-                                    .onChange(of: hotkeyFlags) { _, v in state.hotkeyFlags = v }
-                                    .onChange(of: hotkeyCode)  { _, v in state.hotkeyCode  = v }
-                                Text("presses this → island opens")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    .padding(6)
-                }
-
-                // MARK: Startup
-                GroupBox("Startup") {
-                    Toggle("Launch at Mac startup", isOn: $launchAtStartup)
-                        .onChange(of: launchAtStartup) { _, on in toggleStartup(on) }
-                        .padding(6)
                 }
 
                 if !statusMessage.isEmpty {
@@ -396,6 +413,7 @@ struct SettingsView: View {
                 Spacer(minLength: 0)
             }
             .padding(20)
+        }
         }
         .onAppear {
             guard fetchedModels.isEmpty,
@@ -727,5 +745,71 @@ struct ShortcutRecorderButton: View {
             34:"I", 37:"L", 38:"J", 40:"K", 45:"N", 46:"M", 49:"Space", 50:"`", 27:"-"
         ]
         return map[c] ?? "·"
+    }
+}
+
+// MARK: - Settings tabs (friendlier than one long page)
+
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case general, voice, ai, apps, developer
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .general:   return "General"
+        case .voice:     return "Voice"
+        case .ai:        return "AI"
+        case .apps:      return "Apps"
+        case .developer: return "Developer"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .general:   return "slider.horizontal.3"
+        case .voice:     return "waveform"
+        case .ai:        return "sparkles"
+        case .apps:      return "square.grid.2x2"
+        case .developer: return "chevron.left.forwardslash.chevron.right"
+        }
+    }
+}
+
+struct SettingsHeader: View {
+    @Binding var tab: SettingsTab
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable().frame(width: 34, height: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Sparrow").font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text("Your little helper — set it up your way")
+                        .font(.system(size: 11)).foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            HStack(spacing: 6) {
+                ForEach(SettingsTab.allCases) { t in
+                    Button { withAnimation(.easeOut(duration: 0.15)) { tab = t } } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: t.icon).font(.system(size: 14, weight: .semibold))
+                            Text(t.title).font(.system(size: 11, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(tab == t ? Color(hex: "#F9A830").opacity(0.22) : Color.clear)
+                        )
+                        .foregroundColor(tab == t ? Color(hex: "#F28A3C") : .secondary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
     }
 }

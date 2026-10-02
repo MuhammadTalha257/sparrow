@@ -379,6 +379,7 @@ enum Assistant {
         if spoken, let reply = await CommandEngine.shared.handle(text) {
             let actionWords = ["Opening", "Closing", "Playing", "Paused", "Next", "Previous", "Volume", "Muted",
                                "Sound back", "Searching", "Locking", "Dark mode", "Light mode", "Select an area"]
+            NotificationCenter.default.post(name: .petSay, object: reply)
             if actionWords.contains(where: { reply.hasPrefix($0) }) {
                 SoundEngine.shared.play("approve")          // quick chirp = done
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
@@ -398,6 +399,9 @@ enum Assistant {
         if spoken && UserDefaults.standard.bool(forKey: AssistantPrefs.speakReplies),
            state.chatHistory.count > before, let last = state.chatHistory.last, last.role == .assistant {
             VoiceEngine.shared.speak(last.content)
+        }
+        if let last = state.chatHistory.last, last.role == .assistant {
+            NotificationCenter.default.post(name: .petSay, object: last.content)
         }
     }
 
@@ -626,6 +630,9 @@ final class NotificationReader {
 // MARK: - Settings: voice, greeting, notifications, apps
 
 struct AssistantSettings: View {
+    enum Part: CaseIterable { case voice, greeting, notifications, apps }
+    var parts: Set<Part> = Set(Part.allCases)
+
     @AppStorage(AssistantPrefs.voiceGender) private var gender = "female"
     @AppStorage(AssistantPrefs.voiceId) private var voiceId = ""
     @AppStorage(AssistantPrefs.voiceRate) private var rate = 0.5
@@ -641,6 +648,7 @@ struct AssistantSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            if parts.contains(.voice) {
             GroupBox("Voice") {
                 VStack(alignment: .leading, spacing: 10) {
                     Picker("Voice", selection: $gender) {
@@ -693,7 +701,9 @@ struct AssistantSettings: View {
                 }
                 .padding(6)
             }
+            }
 
+            if parts.contains(.greeting) {
             GroupBox("Greeting") {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle("Say hello when I open my Mac (good morning, time and weather)", isOn: $greet)
@@ -706,7 +716,9 @@ struct AssistantSettings: View {
                 }
                 .padding(6)
             }
+            }
 
+            if parts.contains(.notifications) {
             GroupBox("Notifications") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Read new notifications out loud", isOn: $readNotes)
@@ -727,7 +739,9 @@ struct AssistantSettings: View {
                 }
                 .padding(6)
             }
+            }
 
+            if parts.contains(.apps) {
             GroupBox("Apps Sparrow can open") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Every app on your Mac works. Type or say \"open\" plus the app name.")
@@ -758,6 +772,7 @@ struct AssistantSettings: View {
                     .frame(height: 180)
                 }
                 .padding(6)
+            }
             }
         }
     }
@@ -829,6 +844,12 @@ struct AppearanceSettings: View {
         GroupBox("Look & position") {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Glass look (see-through background)", isOn: $state.glassStyle)
+                HStack {
+                    Toggle("Show Sparrow on screen (a little pet you can drag anywhere)", isOn: Binding(
+                        get: { PetController.shared.isShown },
+                        set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
+                }
+                Button("Open Today — meetings & tasks") { TodayWindow.shared.show() }
                 Picker("Where Sparrow sits", selection: $position) {
                     ForEach(SparrowPosition.allCases) { Text($0.label).tag($0.rawValue) }
                 }

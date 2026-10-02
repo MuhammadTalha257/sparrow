@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(withTitle: "Open Sparrow", action: #selector(openIsland), keyEquivalent: "")
+        menu.addItem(withTitle: "Today — meetings & tasks…", action: #selector(openToday), keyEquivalent: "t")
+        let pet = NSMenuItem(title: "Show Sparrow on screen", action: #selector(togglePet), keyEquivalent: "p")
+        pet.tag = 42
+        menu.addItem(pet)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
@@ -40,6 +44,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openIsland() {
         islandController?.expand(to: .overview)
+    }
+
+    @objc private func openToday() { TodayWindow.shared.show() }
+
+    @objc private func togglePet() {
+        PetController.shared.toggle()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.updatePetMenuTitle() }
+    }
+
+    func updatePetMenuTitle() {
+        statusItem?.menu?.item(withTag: 42)?.title = PetController.shared.isShown ? "Hide Sparrow from screen" : "Show Sparrow on screen"
     }
 
     private var settingsWindow: NSWindow?
@@ -100,5 +115,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                name: .openFullSettings, object: nil)
         // Voice, greeting, weather and notification reading
         Assistant.start()
+        // Pet mode: bring the sparrow back if it was on screen last time
+        if UserDefaults.standard.bool(forKey: "petVisible") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                PetController.shared.show(); self?.updatePetMenuTitle()
+            }
+        }
     }
 }

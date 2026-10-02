@@ -374,6 +374,15 @@ final class CommandEngine {
             }
             return "I need permission: System Settings → Privacy & Security → Automation → Sparrow → System Events."
         }
+        if ["show pet", "show sparrow", "come here", "fly out", "pet mode", "show yourself", "come out"].contains(t) {
+            PetController.shared.show(); return "Here I am! 🐦"
+        }
+        if ["hide pet", "hide sparrow", "go away", "go back", "hide yourself", "fly away"].contains(t) {
+            PetController.shared.hide(); return "See you soon!"
+        }
+        if ["open today", "show today", "open planner", "my planner", "show my tasks", "show my day", "show planner", "today window"].contains(t) {
+            TodayWindow.shared.show(); return "Opening your day."
+        }
         if ["empty trash", "empty the trash"].contains(t) {
             return "To keep your files safe, I won't empty the Trash. You can do it from Finder."
         }

@@ -43,6 +43,28 @@ enum QuickItems {
         all.map { AgentTask(id: $0.id, name: $0.name, color: $0.color, state: .idle, steps: [], source: .n8n, isIntegration: true) }
     }
 
+    /// The real app icon for an app shortcut (nil for websites / integrations).
+    private static var iconCache: [String: NSImage] = [:]
+
+    static func icon(for id: String) -> NSImage? {
+        guard id.hasPrefix("shortcut_"), let item = all.first(where: { $0.id == id }) else { return nil }
+        if let hit = iconCache[item.target] { return hit }
+        let img = lookupIcon(item)
+        if let img { iconCache[item.target] = img }
+        return img
+    }
+
+    private static func lookupIcon(_ item: QuickItem) -> NSImage? {
+        if item.isApp { return NSWorkspace.shared.icon(forFile: item.target) }
+        if item.target.hasPrefix("http") { return nil }
+        let q = item.target.lowercased()
+        if let app = CommandEngine.shared.allApps().first(where: { $0.name.lowercased() == q })
+            ?? CommandEngine.shared.allApps().first(where: { $0.name.lowercased().hasPrefix(q) }) {
+            return NSWorkspace.shared.icon(forFile: app.url.path)
+        }
+        return nil
+    }
+
     static func open(id: String) {
         guard let item = all.first(where: { $0.id == id }) else { return }
         open(item)
