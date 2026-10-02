@@ -1,5 +1,5 @@
 // Sparrow offline cache. Bump VERSION when the app changes.
-const VERSION = 'sparrow-v3';
+const VERSION = 'sparrow-v4';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'brain.js', 'store.js', 'ai.js', 'lib/chrono.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
