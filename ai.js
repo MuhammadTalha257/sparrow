@@ -80,7 +80,8 @@ window.addEventListener('sparrow-http', e => { const p = pending.get(e.detail.id
 async function post(url, body, headers) {
   const D = window.SparrowDesktop, N = window.SparrowNative;
   let status, text;
-  if (D?.http) ({ status, text } = await D.http(url, headers, JSON.stringify(body)));
+  if (window.SparrowHost === 'mac') ({ status, text } = await window.SparrowMac.call('http', { url, headers: headers || {}, body: JSON.stringify(body) }));
+  else if (D?.http) ({ status, text } = await D.http(url, headers, JSON.stringify(body)));
   else if (N?.httpPost) {
     const id = ++reqId;
     const res = await new Promise(r => { pending.set(id, r); N.httpPost(id, url, JSON.stringify({ 'Content-Type': 'application/json', ...headers }), JSON.stringify(body)); });

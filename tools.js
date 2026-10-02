@@ -9,6 +9,7 @@ const b64 = bytes => { let s = ''; const c = 0x8000; for (let i = 0; i < bytes.l
 /** Save or share a file the person made (PDF, CSV…). */
 export async function deliver(name, bytes, mime) {
   const D = window.SparrowDesktop, N = window.SparrowNative;
+  if (window.SparrowHost === 'mac') return window.SparrowMac.call('save', { name, base64: b64(bytes) });
   if (D) return D.saveFile(name, b64(bytes));
   if (N?.saveFile) return N.saveFile(name, b64(bytes), mime) ? name : null;
   const file = new File([bytes], name, { type: mime });

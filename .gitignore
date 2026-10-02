@@ -7,3 +7,4 @@ android/local.properties
 .idea/
 mac/build/
 mac/build.log
+mac/Resources/web/

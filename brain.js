@@ -215,7 +215,9 @@ export async function location(force = false) {
     } catch {}
   }
   const D = window.SparrowDesktop;
-  if (D) {
+  if (window.SparrowHost === 'mac') {
+    try { const p = await window.SparrowMac.call('location'); if (p?.lat) return save({ lat: p.lat, lon: p.lon, city: p.city || await cityName(p.lat, p.lon) }); } catch {}
+  } else if (D) {
     try { const p = await D.location(); if (p) return save({ ...p, city: await cityName(p.lat, p.lon) }); } catch {}
   } else {
     try {

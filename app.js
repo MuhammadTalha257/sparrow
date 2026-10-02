@@ -17,11 +17,13 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const ICON = { task: '✅', meeting: '🗓️', reminder: '⏰', note: '📝', habit: '💧', customer: '👤', expense: '💸', quote: '🧾', invoice: '🧾', timer: '⏱️',
   file: '📄', chat: '💬', done: '✔️', opened: '↗️', 'meeting-notes': '🎤', email: '📧', report: '📊' };
 const N = window.SparrowNative || null;     // Android app
-const D = window.SparrowDesktop || null;    // Mac / Windows app
+const D = window.SparrowDesktop || null;    // Windows app
+const M = window.SparrowHost === 'mac' ? window.SparrowMac : null;   // inside the native Mac island app
 const S = () => store.settings;
 const dayKey = () => new Date().toDateString();
 if (N) document.documentElement.classList.add('android-app');
 if (D) document.documentElement.classList.add('desktop');
+if (M) document.documentElement.classList.add('mac-host');
 
 // ---------------- look: theme, language, simple mode ----------------
 function applyLook() {
@@ -355,6 +357,7 @@ document.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer?
 
 function openUrl(url) {
   if (!url) return;
+  if (M) { M.post('open', { url: url.startsWith('app:') ? 'app:' + url.slice(4) : url }); return; }
   if (url.startsWith('app:')) { if (!((N || D) && (N || D).openApp(url.slice(4)))) toast(`Couldn't find ${url.slice(4)}`); return; }
   if (/^https?:/.test(url)) window.open(url, '_blank', 'noopener');
   else location.href = url;
@@ -399,6 +402,7 @@ function speak(text) {
   if (!text) return;
   const clean = text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}•]/gu, '').replace(/\n+/g, '. ');
   if (N) { N.speak(clean, S().gender); return; }
+  if (M) { M.post('speak', { text: clean }); return; }   // the Mac island speaks with Apple's natural voices
   if (window.SparrowVoice?.nativeSay && window.SparrowVoice.nativeSay(clean)) return;   // Mac: Apple's natural voices
   if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
@@ -422,6 +426,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false, wakeRec = null;
 function listen(quiet = false) {
   if (N) { N.listen(); return; }
+  if (M) { M.post('listen'); return; }
   if (window.SparrowVoice) { window.SparrowVoice.toggle(); return; }
   if (!SR) { if (!quiet) toast('Voice input isn\'t supported in this browser — type instead.'); return; }
   if (listening) { rec?.stop(); return; }
@@ -448,7 +453,7 @@ $('#birdWrap').onclick = () => listen();
 
 // Hands-free on phones/browsers: listen for "Sparrow …" while the app is open.
 function startWake() {
-  if (N || D || !SR || !S().wake || wakeRec || listening || document.hidden) return;
+  if (N || D || M || !SR || !S().wake || wakeRec || listening || document.hidden) return;
   try {
     wakeRec = new SR(); wakeRec.continuous = true; wakeRec.interimResults = false; wakeRec.lang = SPEECH_LANG[S().lang] || 'en-GB';
     wakeRec.onresult = e => {
@@ -478,6 +483,7 @@ $('#hearBriefBtn').onclick = () => showBriefing(true);
 
 // ---------------- alerts: reminders, snooze, prayer, habits ----------------
 async function notify(msg, tag) {
+  if (M) return;    // the island shows it
   try {
     if (Notification?.permission === 'granted') {
       const reg = await navigator.serviceWorker?.getRegistration();
@@ -486,6 +492,7 @@ async function notify(msg, tag) {
   } catch {}
 }
 function showAlert(title, sub, itemId) {
+  if (M) M.post('note', { title, sub: sub || '' });
   window.SparrowIsland?.peek(title, sub || '', 9000);
   $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
   $('#alert').hidden = false;
@@ -551,6 +558,7 @@ function checkHabits() {
 }
 const minsOf = hm => { const [h, m] = (hm || '0:0').split(':').map(Number); return h * 60 + m; };
 async function checkDaily() {
+  if (M) return;    // the Mac island gives the morning briefing and evening check-in itself
   const d = new Date(), mins = d.getHours() * 60 + d.getMinutes();
   if (S().morningOn && S().lastMorning !== dayKey()) {
     const m = minsOf(S().morningTime);
@@ -565,7 +573,7 @@ setInterval(checkDue, 20000);
 // Browsers only allow speech after one tap on the page; queue it until then.
 let activated = false, queuedSpeech = null;
 document.addEventListener('pointerdown', () => { activated = true; if (queuedSpeech) { const tx = queuedSpeech; queuedSpeech = null; speak(tx); } startWake(); }, { capture: true });
-function speakSoon(text) { if (activated || N || D) speak(text); else queuedSpeech = text; }
+function speakSoon(text) { if (activated || N || D || M) speak(text); else queuedSpeech = text; }
 
 // ---------------- evening check-in ----------------
 function openCheckIn(spoken) {
@@ -1016,10 +1024,32 @@ if (S().lastBriefDay !== todayK) {
   };
   document.addEventListener('pointerdown', once);
 }
-if ('Notification' in window && Notification.permission === 'default' && !D) document.addEventListener('pointerdown', () => Notification.requestPermission?.().catch(() => {}), { once: true });
+if ('Notification' in window && Notification.permission === 'default' && !D && !M) document.addEventListener('pointerdown', () => Notification.requestPermission?.().catch(() => {}), { once: true });
 if ('serviceWorker' in navigator && !D && !N) navigator.serviceWorker.register('sw.js').catch(() => {});
 setInterval(() => { renderHeader(); renderNext(); }, 60000);
 setInterval(() => { renderWeather(); renderPrayer(); }, 30 * 60000);
 const pre = new URLSearchParams(location.search).get('ask');
 if (pre) { $('#askInput').value = pre; $('#askInput').focus(); }
-window.Sparrow = { submit, speak, toast, openTool, store };   // for the computer app
+// Questions the Mac island passes on (spoken or typed there). Returns the reply to speak, or null if Sparrow's brain can't do it.
+async function voiceAsk(text) {
+  text = String(text || '').trim(); if (!text) return null;
+  const r = await handle(text).catch(() => null);
+  if (!r) return null;
+  addMsg('me', text, { cmd: true });
+  mem.remember('chat', text);
+  replyKind = 'cmd';
+  if (r.action) {
+    const before = store.chat.length;
+    if (await runAction(r)) {
+      M?.post('show', { tab: '' });
+      const said = store.chat.slice(before).filter(m => m.role === 'bot').pop();
+      return said?.text || r.reply || 'Done — have a look.';
+    }
+  }
+  addMsg('bot', r.reply, { cmd: true, ...(r.item ? { itemId: r.item.id } : {}), ...(r.results ? { results: r.results } : {}), ...(r.files ? { files: r.files } : {}) });
+  if (r.url) setTimeout(() => openUrl(r.url), 350);
+  if (r.results?.length || r.files?.length) { go('chat'); M?.post('show', { tab: 'chat' }); }
+  return r.reply;
+}
+window.Sparrow = { submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); } };   // for the computer apps
+if (M) M.post('ready');
