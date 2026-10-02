@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="daylight">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Sparrow</title>
-<meta name="description" content="Sparrow — your little AI helper for meetings, tasks and reminders.">
-<meta name="theme-color" content="#140D09">
+<meta name="description" content="Sparrow — your friendly little helper for meetings, tasks, reminders, files and more.">
+<meta name="theme-color" content="#EEF4FB">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Sparrow">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -16,78 +16,87 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="bg-glow"></div>
+<div class="bg-shape"></div>
 
 <header class="top">
-  <div>
+  <div class="top-text">
     <div class="hello" id="hello">Hello</div>
     <div class="today" id="todayLabel"></div>
   </div>
   <button class="icon-btn" id="settingsBtn" aria-label="Settings">
-    <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Zm7.4-2.5c.04-.33.06-.66.06-1s-.02-.67-.06-1l2.1-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.48 1a7.3 7.3 0 0 0-1.73-1l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42L9.13 5.07a7.6 7.6 0 0 0-1.73 1l-2.48-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64L4.54 11c-.04.33-.06.66-.06 1s.02.67.06 1l-2.1 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.3.6.22l2.48-1c.53.4 1.11.74 1.73 1l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65a7.6 7.6 0 0 0 1.73-1l2.48 1c.22.08.48 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64L19.4 13Z"/></svg>
+    <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
   </button>
 </header>
+
+<!-- Alert banner: reminders, snooze -->
+<div class="alert" id="alert" hidden>
+  <div class="alert-ic">⏰</div>
+  <div class="txt"><div class="t1" id="alertTitle"></div><div class="t2" id="alertSub"></div></div>
+  <button class="pill-btn" id="alertSnooze" data-i18n="snooze">Snooze 10 min</button>
+  <button class="pill-btn solid" id="alertDone" data-i18n="done">Done</button>
+</div>
 
 <main>
   <!-- HOME -->
   <section class="view active" id="view-home">
-    <div class="hero glass">
+    <div class="hero card">
       <div class="bird-wrap" id="birdWrap" title="Tap to talk">
         <svg class="bird" id="bird" viewBox="0 0 200 170" aria-hidden="true">
           <defs>
-            <linearGradient id="gBody" x1="0.8" y1="0" x2="0.2" y2="1">
-              <stop offset="0" stop-color="#D9A06E"/><stop offset="1" stop-color="#98643F"/>
-            </linearGradient>
-            <linearGradient id="gWing" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#8A5A38"/><stop offset="1" stop-color="#5E3A22"/>
-            </linearGradient>
+            <linearGradient id="gBody" x1="0.8" y1="0" x2="0.2" y2="1"><stop offset="0" class="b1"/><stop offset="1" class="b2"/></linearGradient>
             <clipPath id="bodyClip"><ellipse cx="100" cy="92" rx="66" ry="56"/></clipPath>
           </defs>
-          <g class="feet"><path d="M88 146 v10 m-5 0 h10 M112 146 v10 m-5 0 h10" stroke="#E8A040" stroke-width="3.5" stroke-linecap="round"/></g>
-          <g class="tail"><path d="M150 104 Q176 82 190 62 Q196 74 194 86 Q182 104 162 122 Z" fill="#6B4228"/><path d="M156 108 Q178 92 192 80" stroke="#8A5A38" stroke-width="3" fill="none" stroke-linecap="round"/></g>
+          <g class="feet"><path d="M88 146 v10 m-5 0 h10 M112 146 v10 m-5 0 h10" class="feet-s" stroke-width="3.5" stroke-linecap="round" fill="none"/></g>
+          <g class="tail"><path d="M150 104 Q176 82 190 62 Q196 74 194 86 Q182 104 162 122 Z" class="cap-f"/></g>
           <g class="body-g">
             <ellipse cx="100" cy="92" rx="66" ry="56" fill="url(#gBody)"/>
             <g clip-path="url(#bodyClip)">
-              <ellipse cx="100" cy="128" rx="44" ry="40" fill="#F8ECD9"/>
-              <ellipse cx="100" cy="40" rx="64" ry="34" fill="#6B4228"/>
-              <ellipse cx="128" cy="62" rx="26" ry="14" fill="#fff" opacity=".12"/>
+              <ellipse cx="100" cy="128" rx="44" ry="40" class="belly-f"/>
+              <ellipse cx="100" cy="40" rx="64" ry="34" class="cap-f"/>
             </g>
             <g class="eyes">
               <g transform="translate(80 90)"><g class="eye"><rect x="-7.5" y="-10" width="15" height="20" rx="7.5" fill="#1A1412"/><circle cx="2.5" cy="-4.5" r="3.2" fill="#fff"/></g></g>
               <g transform="translate(120 90)"><g class="eye"><rect x="-7.5" y="-10" width="15" height="20" rx="7.5" fill="#1A1412"/><circle cx="2.5" cy="-4.5" r="3.2" fill="#fff"/></g></g>
             </g>
-            <path class="beak" d="M91 104 Q100 98 109 104 L100 118 Z" fill="#F9A830"/>
-            <ellipse cx="62" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".25"/>
-            <ellipse cx="138" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".25"/>
+            <path class="beak beak-f" d="M91 104 Q100 98 109 104 L100 118 Z"/>
+            <ellipse cx="62" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".28"/><ellipse cx="138" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".28"/>
           </g>
-          <g class="wing"><path d="M40 98 Q62 92 76 108 Q70 128 46 132 Q30 124 40 98 Z" fill="url(#gWing)"/><path d="M46 108 Q58 106 66 114 M44 118 Q54 117 62 123" stroke="#4E2F1A" stroke-width="2.2" fill="none" stroke-linecap="round" opacity=".7"/></g>
+          <g class="wing"><path d="M40 98 Q62 92 76 108 Q70 128 46 132 Q30 124 40 98 Z" class="wing-f"/></g>
         </svg>
         <div class="pulse" id="pulse"></div>
       </div>
       <div class="hero-text">
         <div class="brief" id="brief">Tap me and say what you need ✨</div>
         <div class="hero-actions">
-          <button class="chip" id="hearBriefBtn">🔊 My day</button>
-          <button class="chip" id="micHeroBtn">🎙️ Talk</button>
+          <button class="chip" id="hearBriefBtn"><span>🔊</span> <span data-i18n="myDay">My day</span></button>
+          <button class="chip" id="micHeroBtn"><span>🎙️</span> <span data-i18n="talk">Talk</span></button>
         </div>
       </div>
     </div>
 
-    <div class="up-next glass" id="upNext" hidden></div>
+    <div class="up-next card" id="upNext" hidden></div>
 
-    <div class="day-card glass">
-      <div class="ring" id="ring"><span id="ringTxt">✓</span></div>
-      <div class="txt"><div class="t1" id="ringLbl">No tasks today</div><div class="t2">Tick tasks as you go — I'll check in tonight.</div></div>
-      <button class="chip" id="checkinBtn">🌙 Check-in</button>
+    <div class="row2">
+      <div class="day-card card">
+        <div class="ring" id="ring"><span id="ringTxt">✓</span></div>
+        <div class="txt"><div class="t1" id="ringLbl">No tasks today</div><button class="link small" id="checkinBtn">🌙 <span data-i18n="checkIn">Check-in</span></button></div>
+      </div>
+      <div class="weather-card card" id="weatherCard"><div class="w-temp" id="wTemp">–°</div><div class="w-sky" id="wSky">Weather</div></div>
     </div>
 
-    <div class="section-title"><span>Today</span><button class="link" data-goto="plan">See all</button></div>
-    <div class="glass list" id="todayList"></div>
+    <div class="prayer-card card" id="prayerCard" hidden></div>
+    <div class="habits card" id="habitsCard" hidden></div>
 
-    <div class="section-title"><span>Quick</span></div>
-    <div class="quick" id="quick"></div>
+    <div class="section-title"><span data-i18n="today">Today</span><button class="link" data-goto="plan" data-i18n="seeAll">See all</button></div>
+    <div class="card list" id="todayList"></div>
 
-    <div class="install glass" id="installHint" hidden></div>
+    <div class="section-title advanced"><span data-i18n="quick">Quick</span></div>
+    <div class="quick advanced" id="quick"></div>
+
+    <div class="section-title advanced"><span data-i18n="aiApps">AI apps</span></div>
+    <div class="ai-apps advanced" id="aiApps"></div>
+
+    <div class="install card" id="installHint" hidden></div>
   </section>
 
   <!-- CHAT -->
@@ -97,108 +106,203 @@
 
   <!-- PLAN -->
   <section class="view" id="view-plan">
-    <div class="seg" id="seg">
-      <button data-t="task" class="on">Tasks</button>
-      <button data-t="meeting">Meetings</button>
-      <button data-t="reminder">Reminders</button>
-      <button data-t="note">Notes</button>
+    <div class="seg scroll" id="seg">
+      <button data-t="task" class="on" data-i18n="tasks">Tasks</button>
+      <button data-t="meeting" data-i18n="meetings">Meetings</button>
+      <button data-t="reminder" data-i18n="reminders">Reminders</button>
+      <button data-t="note" data-i18n="notes">Notes</button>
+      <button data-t="habit" data-i18n="habits">Habits</button>
+      <button data-t="customer" data-i18n="customers">Customers</button>
+      <button data-t="money" data-i18n="money">Money</button>
     </div>
-    <div class="glass list" id="planList"></div>
+    <div class="card list" id="planList"></div>
     <p class="hint" id="planHint"></p>
+  </section>
+
+  <!-- MEMORY -->
+  <section class="view" id="view-memory">
+    <div class="search card"><span>🔎</span><input id="memSearch" data-i18n-ph="search" placeholder="Search your memory…" enterkeyhint="search"></div>
+    <div class="seg scroll small" id="memSeg">
+      <button data-k="" class="on">All</button><button data-k="file">Files</button><button data-k="chat">Chats</button>
+      <button data-k="done,task,reminder,meeting">Plans</button><button data-k="quote,invoice,expense,timer,customer">Business</button>
+    </div>
+    <div id="memList"></div>
+    <p class="hint">Sparrow remembers only what passes through Sparrow, on this device. Pause or wipe it in Settings → Memory.</p>
+  </section>
+
+  <!-- TOOLS -->
+  <section class="view" id="view-tools">
+    <div class="tool-grid">
+      <button class="tool card" data-tool="quote"><span>🧾</span>Quote / invoice</button>
+      <button class="tool card" data-tool="timer"><span>⏱️</span><b id="timerLbl">Time tracker</b></button>
+      <button class="tool card" data-tool="expenses"><span>💸</span>Expenses</button>
+      <button class="tool card" data-tool="report"><span>📊</span>Daily report</button>
+      <button class="tool card" data-tool="focus"><span>🎯</span>Focus timer</button>
+      <button class="tool card" data-tool="meeting"><span>🎤</span>Meeting notes</button>
+      <button class="tool card" data-tool="merge"><span>📑</span>Merge PDFs</button>
+      <button class="tool card" data-tool="images"><span>🖼️</span>Photos → PDF</button>
+      <button class="tool card" data-tool="pages"><span>✂️</span>Keep pages</button>
+      <button class="tool card" data-tool="rotate"><span>🔄</span>Rotate PDF</button>
+      <button class="tool card" data-tool="snippets"><span>📋</span>Snippets</button>
+      <button class="tool card" data-tool="sync"><span>🔁</span>Sync devices</button>
+      <button class="tool card desktop-only" data-tool="find"><span>📁</span>Find files</button>
+      <button class="tool card desktop-only" data-tool="tidy"><span>🧹</span>Tidy Downloads</button>
+      <button class="tool card desktop-only" data-tool="clipboard"><span>📎</span>Clipboard</button>
+      <button class="tool card desktop-only" data-tool="watch"><span>👀</span>Watch a folder</button>
+    </div>
+    <div class="card tool-panel" id="toolPanel" hidden></div>
   </section>
 </main>
 
 <!-- Ask bar -->
-<form class="ask glass" id="askForm" autocomplete="off">
-  <input id="askInput" placeholder="Ask Sparrow… e.g. remind me to call mum at 6pm" enterkeyhint="send">
+<form class="ask" id="askForm" autocomplete="off">
+  <button type="button" class="attach" id="attachBtn" aria-label="Attach a file">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8L10 18.9a1.7 1.7 0 0 1-2.4-2.4l8-8"/></svg>
+  </button>
+  <input type="file" id="fileInput" multiple hidden>
+  <div class="attached" id="attached" hidden></div>
+  <input id="askInput" data-i18n-ph="ask" placeholder="Ask Sparrow… e.g. remind me to call mum at 6pm" enterkeyhint="send">
   <button type="button" class="mic" id="micBtn" aria-label="Talk">
-    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-2.07A7 7 0 0 0 19 12h-2Z"/></svg>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
   </button>
   <button type="submit" class="send" aria-label="Send">
     <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 12 20 4l-4 16-4-7-8-1Z"/></svg>
   </button>
 </form>
+<div class="listen-hint" id="listenHint" hidden>Say “Sparrow…” any time</div>
 
-<nav class="tabs glass">
-  <button data-v="home" class="on"><span>🏠</span>Home</button>
-  <button data-v="chat"><span>💬</span>Chat</button>
-  <button data-v="plan"><span>🗓️</span>Plan</button>
+<nav class="tabs">
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span data-i18n="home">Home</span></button>
+  <button data-v="chat"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><span data-i18n="chat">Chat</span></button>
+  <button data-v="plan"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span data-i18n="plan">Plan</span></button>
+  <button data-v="memory"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span data-i18n="memory">Memory</span></button>
+  <button data-v="tools"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span data-i18n="tools">Tools</span></button>
 </nav>
 
-<!-- Settings sheet -->
 <div class="sheet-bg" id="sheetBg" hidden></div>
-<div class="sheet glass" id="sheet" hidden>
+
+<!-- Settings -->
+<div class="sheet" id="sheet" hidden>
   <div class="grab"></div>
-  <h2>Settings</h2>
+  <div class="sheet-head"><h2 data-i18n="settings">Settings</h2><button class="pill-btn solid" id="closeSheet" data-i18n="done">Done</button></div>
 
-  <label class="field"><span>Your name</span><input id="sName" placeholder="Talha"></label>
-  <label class="field"><span>City for weather</span><input id="sCity" placeholder="Leave empty = where you are now"></label>
+  <details open><summary>👋 You</summary>
+    <label class="field"><span>Your name</span><input id="sName" placeholder="Talha"></label>
+    <label class="field"><span>Language</span><select id="sLang"></select></label>
+    <div class="field"><span>Look</span><div class="themes" id="sTheme">
+      <button data-th="daylight"><i style="background:#2F6FEB"></i>Daylight</button>
+      <button data-th="midnight"><i style="background:#C6F432;outline:3px solid #0B0F1A"></i>Midnight</button>
+      <button data-th="pop"><i style="background:#FFE14D;outline:2px solid #111"></i>Pop</button>
+      <button data-th="sage"><i style="background:#2E7D5B"></i>Sage</button>
+      <button data-th="sunset"><i style="background:#F28A3C"></i>Sunset</button>
+    </div></div>
+    <label class="row"><input type="checkbox" id="sSimple"> 🔠 Simple mode — big text, fewer buttons, slower voice</label>
+    <label class="field"><span>City for weather &amp; prayer times</span><input id="sCity" placeholder="Leave empty = where you are now"></label>
+  </details>
 
-  <div class="field"><span>Voice</span>
-    <div class="seg small" id="sGender"><button data-g="female">Female</button><button data-g="male">Male</button></div>
-  </div>
-  <label class="row"><input type="checkbox" id="sSpeak"> Speak answers out loud</label>
-  <button class="btn ghost" id="testVoice">🔊 Test voice</button>
+  <details><summary>🗣️ Voice</summary>
+    <div class="field"><span>Sparrow's voice</span><div class="seg small" id="sGender"><button data-g="female">Female</button><button data-g="male">Male</button></div></div>
+    <label class="row"><input type="checkbox" id="sSpeak"> Speak answers out loud</label>
+    <label class="row"><input type="checkbox" id="sWake"> Talk without pressing anything — just say “Sparrow…”</label>
+    <label class="row"><input type="checkbox" id="sConv"> Keep listening after Sparrow answers (conversation)</label>
+    <label class="row"><input type="checkbox" id="sMic"> Show the mic button</label>
+    <p class="small-text" id="wakeNote"></p>
+    <button class="btn ghost" id="testVoice">🔊 Test voice</button>
+  </details>
 
-  <h3>My day</h3>
-  <label class="row"><input type="checkbox" id="rMorningOn"> ☀️ Morning briefing — weather, meetings &amp; today's tasks</label>
-  <label class="field"><span>Every morning at</span><input type="time" id="rMorning" value="08:30"></label>
-  <label class="row"><input type="checkbox" id="rNightOn"> 🌙 Evening check-in — tick what's done, move the rest</label>
-  <label class="field"><span>Every evening at</span><input type="time" id="rNight" value="21:30"></label>
-  <label class="field"><span>Warn me before reminders &amp; meetings</span>
-    <select id="rLead">
-      <option value="0">Only on time</option><option value="1">1 minute before</option><option value="5">5 minutes before</option>
-      <option value="10">10 minutes before</option><option value="15">15 minutes before</option>
-    </select></label>
-  <p class="small-text" id="routineNote">Works offline. Sparrow says it out loud, e.g. “Talha, you have a meeting in 5 minutes”.</p>
+  <details><summary>☀️ My day</summary>
+    <label class="row"><input type="checkbox" id="rMorningOn"> Morning briefing — weather, meetings &amp; today's tasks</label>
+    <label class="field"><span>Every morning at</span><input type="time" id="rMorning" value="08:30"></label>
+    <label class="row"><input type="checkbox" id="rNightOn"> Evening check-in — tick what's done, move the rest</label>
+    <label class="field"><span>Every evening at</span><input type="time" id="rNight" value="21:30"></label>
+    <label class="field"><span>Warn me before reminders &amp; meetings</span>
+      <select id="rLead"><option value="0">Only on time</option><option value="1">1 minute before</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option></select></label>
+  </details>
+
+  <details><summary>🕌 Prayer times</summary>
+    <label class="row"><input type="checkbox" id="pOn"> Show prayer times and remind me</label>
+    <label class="field"><span>Method</span><select id="pMethod"></select></label>
+    <label class="field"><span>Asr</span><select id="pAsr"><option value="Hanafi">Hanafi (later)</option><option value="Shafi">Shafi'i, Maliki, Hanbali</option></select></label>
+    <label class="field"><span>Remind me before</span><select id="pBefore"><option value="0">At the time</option><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></label>
+    <label class="row"><input type="checkbox" id="pSpeak"> Say it out loud</label>
+    <button class="btn ghost" id="pCalendar">📅 Add this month to my phone calendar</button>
+  </details>
+
+  <details><summary>✨ AI</summary>
+    <p class="small-text">Everyday commands work without any AI. For open questions, Sparrow uses the first one that's available.</p>
+    <label class="field"><span>Preferred AI</span><select id="sProvider"></select></label>
+    <div id="ollamaBox" class="desktop-only">
+      <label class="field"><span>Ollama model on this computer (free)</span><select id="sOllama"><option value="">Automatic</option></select></label>
+      <p class="small-text" id="ollamaNote"></p>
+    </div>
+    <div class="phone-only">
+      <p class="small-text" id="aiStatus">Checking your device…</p>
+      <label class="field"><span>Free AI on this device</span>
+        <select id="sModel"><option value="Qwen2.5-0.5B-Instruct">Fast · any newer phone (~400 MB)</option><option value="Llama-3.2-1B-Instruct">Balanced (~900 MB)</option><option value="Qwen2.5-1.5B-Instruct">Best for most phones (~1.1 GB)</option><option value="gemma-2-2b-it">Smartest · high-end phones (~1.5 GB)</option></select></label>
+      <button class="btn" id="aiDownload">⬇️ Download free AI</button>
+      <div class="progress" id="aiProgress" hidden><div></div></div>
+    </div>
+    <p class="small-text">Optional keys (only if you have one — they stay on this device):</p>
+    <div id="keyFields"></div>
+  </details>
+
+  <details><summary>💼 Business</summary>
+    <label class="field"><span>Business name (on quotes &amp; invoices)</span><input id="bName" placeholder="Lisan Systems"></label>
+    <label class="field"><span>Address / contact</span><input id="bAddr" placeholder="1 High St, Manchester, hello@…"></label>
+    <label class="field"><span>Currency</span><select id="bCur"><option>£</option><option>$</option><option>€</option><option>₹</option><option value="Rs ">Rs</option><option value="AED ">AED</option><option value="SAR ">SAR</option></select></label>
+    <label class="field"><span>Music app for “play …”</span><select id="sMusic"><option value="spotify">Spotify</option><option value="youtube">YouTube</option><option value="music">Apple Music</option></select></label>
+  </details>
+
+  <details><summary>🧠 Memory</summary>
+    <label class="row"><input type="checkbox" id="mOn"> Remember what I do with Sparrow (on this device only)</label>
+    <label class="row"><input type="checkbox" id="mCopies"> Keep a copy of files I give Sparrow</label>
+    <label class="row desktop-only"><input type="checkbox" id="mRecent"> Also look at files I worked on recently (this computer)</label>
+    <label class="field"><span>Forget things older than</span><select id="mDays"><option value="0">Keep forever</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></label>
+    <div class="row-btns"><button class="btn ghost" id="mExport">Export memory</button><button class="btn danger" id="mWipe">Forget everything</button></div>
+  </details>
 
   <div id="androidSection" hidden>
-    <h3>Android powers</h3>
-    <label class="row"><input type="checkbox" id="aBubble"> 🐦 Floating sparrow over other apps (tap it to talk)</label>
-    <label class="row"><input type="checkbox" id="aWake"> 🗣️ Listen for “Sparrow…” hands-free (works offline)</label>
-    <label class="row"><input type="checkbox" id="aNotif"> 🔔 Read new notifications out loud</label>
-    <p class="small-text" id="aNote"></p>
+    <details><summary>🤖 Android powers</summary>
+      <label class="row"><input type="checkbox" id="aBubble"> 🐦 Floating sparrow over other apps</label>
+      <label class="row"><input type="checkbox" id="aWake"> 🗣️ Listen for “Sparrow…” hands-free (offline)</label>
+      <label class="row"><input type="checkbox" id="aNotif"> 🔔 Read new notifications out loud</label>
+      <p class="small-text" id="aNote"></p>
+    </details>
   </div>
+  <div id="desktopSection"></div>
 
-  <h3>Free AI on your phone</h3>
-  <p class="small-text" id="aiStatus">Checking your phone…</p>
-  <div class="field"><span>Model</span>
-    <select id="sModel">
-      <option value="Qwen2.5-0.5B-Instruct">Fast · any newer phone (~400 MB)</option>
-      <option value="Llama-3.2-1B-Instruct">Balanced (~900 MB)</option>
-      <option value="Qwen2.5-1.5B-Instruct">Best for most phones (~1.1 GB)</option>
-      <option value="gemma-2-2b-it">Smartest · needs a high-end phone (~1.5 GB)</option>
-    </select>
-  </div>
-  <button class="btn" id="aiDownload">⬇️ Download free AI</button>
-  <div class="progress" id="aiProgress" hidden><div></div></div>
-
-  <h3>Optional AI keys</h3>
-  <p class="small-text">Only if you already have one. Keys stay on this phone.</p>
-  <label class="field"><span>Gemini key</span><input id="kGemini" type="password" placeholder="AIza…"></label>
-  <label class="field"><span>ChatGPT key</span><input id="kOpenAI" type="password" placeholder="sk-…"></label>
-  <label class="field"><span>Claude key</span><input id="kClaude" type="password" placeholder="sk-ant-…"></label>
-
-  <h3>Your data</h3>
-  <p class="small-text">Everything is saved only on this phone.</p>
-  <div class="row-btns">
-    <button class="btn ghost" id="exportBtn">Export backup</button>
-    <button class="btn danger" id="clearBtn">Delete everything</button>
-  </div>
-  <button class="btn" id="closeSheet">Done</button>
-  <p class="small-text center">Sparrow · made with 🧡</p>
+  <details><summary>🗂️ Your data</summary>
+    <p class="small-text">Everything is saved only on this device.</p>
+    <div class="row-btns"><button class="btn ghost" id="exportBtn">Export backup</button><button class="btn danger" id="clearBtn">Delete everything</button></div>
+  </details>
+  <p class="small-text center">Sparrow · made with 🧡 · <a href="https://lisansystems.com" target="_blank" rel="noopener">lisansystems.com</a></p>
 </div>
 
 <!-- Evening check-in -->
-<div class="sheet glass checkin" id="checkin" hidden>
+<div class="sheet checkin" id="checkin" hidden>
   <div class="grab"></div>
   <div class="ci-head"><div class="ci-moon">🌙</div><div><h2>Evening check-in</h2><p class="small-text" id="ciSub">How did today go?</p></div></div>
   <p class="small-text">Tick what you finished. The rest moves to tomorrow.</p>
-  <div class="glass list" id="ciList"></div>
-  <div class="row-btns"><button class="btn ghost" id="ciLater">Later</button><button class="btn" id="ciGo">Move to tomorrow</button></div>
+  <div class="card list" id="ciList"></div>
+  <div class="row-btns"><button class="btn ghost" id="ciLater" data-i18n="later">Later</button><button class="btn" id="ciGo">Move to tomorrow</button></div>
+</div>
+
+<!-- Generic panel sheet (sync, report, meeting notes…) -->
+<div class="sheet" id="panel" hidden>
+  <div class="grab"></div>
+  <div class="sheet-head"><h2 id="panelTitle"></h2><button class="pill-btn" id="panelClose">Close</button></div>
+  <div id="panelBody"></div>
+</div>
+
+<!-- Focus overlay -->
+<div class="focus" id="focus" hidden>
+  <div class="focus-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="54" class="fr-bg"/><circle cx="60" cy="60" r="54" class="fr-fg" id="focusArc"/></svg><div class="focus-time" id="focusTime">25:00</div></div>
+  <div class="focus-lbl">Focus — notifications can wait 🌿</div>
+  <button class="btn ghost" id="focusStop">Stop</button>
 </div>
 
 <div class="toast" id="toast" hidden></div>
+<input type="file" id="toolFile" hidden>
 
 <script type="module" src="app.js"></script>
 </body>

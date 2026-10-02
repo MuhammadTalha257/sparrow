@@ -1,7 +1,16 @@
 package app.sparrowai.sparrow
 
+import android.app.SearchManager
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import android.provider.CalendarContract
 import android.provider.Settings
 import android.webkit.JavascriptInterface
@@ -34,6 +43,66 @@ class Bridge(private val a: MainActivity) {
     }
 
     @JavascriptInterface fun syncAlarms(json: String) { Alarms.sync(a, json) }
+
+    /** "play Tum Hi Ho on Spotify" — Android's own "play from search" command, no API needed. */
+    @JavascriptInterface fun playSong(query: String, where: String) {
+        a.runOnUiThread {
+            val pkgs = when (where) {
+                "youtube" -> listOf("com.google.android.apps.youtube.music")
+                "music" -> listOf("com.apple.android.music")
+                else -> listOf("com.spotify.music")
+            }
+            for (pkg in pkgs) {
+                val i = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                    .putExtra(SearchManager.QUERY, query)
+                    .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                    .setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try { a.startActivity(i); return@runOnUiThread } catch (_: Exception) {}
+            }
+            if (where == "youtube") {
+                try { a.startActivity(Intent(Intent.ACTION_SEARCH).setPackage("com.google.android.youtube").putExtra("query", query).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return@runOnUiThread } catch (_: Exception) {}
+            }
+            try { a.startActivity(Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).putExtra(SearchManager.QUERY, query).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return@runOnUiThread } catch (_: Exception) {}
+            a.openExternal(Uri.parse(if (where == "youtube") "https://www.youtube.com/results?search_query=" + Uri.encode(query) else "https://open.spotify.com/search/" + Uri.encode(query)))
+        }
+    }
+
+    /** AI requests sent from the phone itself (no browser limits). Result comes back as an "http" event. */
+    @JavascriptInterface fun httpPost(id: Int, url: String, headersJson: String, body: String) {
+        Thread {
+            var status = 0; var text: String
+            try {
+                val c = URL(url).openConnection() as HttpURLConnection
+                c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 20000; c.readTimeout = 90000
+                val h = JSONObject(headersJson); h.keys().forEach { k -> c.setRequestProperty(k, h.getString(k)) }
+                c.outputStream.use { it.write(body.toByteArray()) }
+                status = c.responseCode
+                text = (if (status in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.readText().orEmpty()
+            } catch (e: Exception) { text = JSONObject().put("error", JSONObject().put("message", "No internet: " + e.message)).toString() }
+            a.send(JSONObject().put("type", "http").put("id", id).put("status", status).put("body", text))
+        }.start()
+    }
+
+    /** Saves a file Sparrow made (PDF, CSV…) to Downloads and offers to share it. */
+    @JavascriptInterface fun saveFile(name: String, base64: String, mime: String): Boolean {
+        return try {
+            val bytes = Base64.decode(base64, Base64.DEFAULT)
+            val uri: Uri? = if (Build.VERSION.SDK_INT >= 29) {
+                val v = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name); put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Sparrow")
+                }
+                a.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v)?.also { u -> a.contentResolver.openOutputStream(u)?.use { it.write(bytes) } }
+            } else {
+                val f = File(a.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), name); f.writeBytes(bytes); null
+            }
+            a.runOnUiThread {
+                if (uri != null) Commands.startSafely(a, Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), name))
+                a.send(JSONObject().put("type", "toast").put("text", "Saved to Downloads/Sparrow: $name"))
+            }
+            true
+        } catch (e: Exception) { false }
+    }
 
     @JavascriptInterface fun addToCalendar(title: String, start: Double, end: Double) {
         val i = Intent(Intent.ACTION_INSERT)

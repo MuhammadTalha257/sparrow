@@ -4,90 +4,86 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Get Sparrow</title>
-<meta name="description" content="Sparrow — a friendly little AI helper for your Mac, PC, iPhone and Android. Free.">
-<meta name="theme-color" content="#140D09">
+<meta name="description" content="Sparrow — a friendly little helper for your Mac, PC, iPhone and Android. Reminders, meetings, files, voice and more. Free, private, works offline.">
+<meta name="theme-color" content="#EEF4FB">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
-  :root { --bg0:#120C08; --bg1:#24160E; --text:#FBF3E9; --muted:#B9A897; --amber:#F9A830; --sunset:#F28A3C; --line:rgba(249,168,48,.18); color-scheme: dark; }
+  :root { --bg:#EEF4FB; --card:#fff; --line:#E1EAF5; --text:#12213A; --muted:#5A6B85; --accent:#2F6FEB; color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin:0; min-height:100vh; color:var(--text);
-    background: radial-gradient(120% 70% at 50% 0%, #3A2213 0%, var(--bg1) 40%, var(--bg0) 100%) fixed;
-    font: 16px/1.5 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 20px 64px; }
-  header { text-align:center; }
-  header img { width: 112px; height: 112px; border-radius: 26px; box-shadow: 0 18px 40px rgba(0,0,0,.45); animation: bob 3s ease-in-out infinite; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 ui-rounded, "SF Pro Rounded", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  .shape { position: fixed; z-index: 0; width: 520px; height: 520px; border-radius: 50%; background: #D9E7FA; top: -260px; right: -160px; }
+  .wrap { position: relative; max-width: 980px; margin: 0 auto; padding: 48px 20px 64px; }
+  header { text-align: center; }
+  header img { width: 112px; height: 112px; border-radius: 28px; box-shadow: 0 18px 40px rgba(31,79,184,.18); animation: bob 3s ease-in-out infinite; }
   @keyframes bob { 50% { transform: translateY(-6px); } }
-  h1 { font-size: clamp(34px, 6vw, 54px); margin: 18px 0 6px; letter-spacing: -1px; }
-  .tag { color: var(--muted); font-size: 18px; margin: 0 auto; max-width: 560px; }
-  .primary { display:inline-flex; align-items:center; gap:10px; margin-top: 26px; padding: 16px 28px; border-radius: 18px;
-    background: linear-gradient(180deg, #FBC56A, var(--sunset)); color:#1A1008; font-weight: 800; font-size: 18px; text-decoration:none;
-    box-shadow: 0 10px 30px rgba(242,138,60,.45); }
-  .primary:active { transform: scale(.98); }
+  h1 { font-size: clamp(34px, 6vw, 56px); margin: 18px 0 6px; letter-spacing: -1px; }
+  .tag { color: var(--muted); font-size: 18px; margin: 0 auto; max-width: 600px; }
+  .primary { display: inline-flex; align-items: center; gap: 10px; margin-top: 26px; padding: 16px 30px; border-radius: 18px; background: var(--accent); color: #fff;
+    font-weight: 800; font-size: 18px; text-decoration: none; box-shadow: 0 12px 30px rgba(47,111,235,.35); }
   .sub { color: var(--muted); font-size: 14px; margin-top: 10px; }
-  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 48px; }
-  .card { background: rgba(42,28,19,.55); border:1px solid var(--line); border-radius: 22px; padding: 20px;
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-  .card h3 { margin: 6px 0 8px; font-size: 18px; }
-  .card .ic { font-size: 30px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 48px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 20px; box-shadow: 0 8px 24px rgba(31,79,184,.07); }
+  .card h3 { margin: 6px 0 8px; font-size: 18px; } .card .ic { font-size: 30px; }
   .card ol { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
-  .card a.btn { display:inline-block; margin-top: 12px; padding: 9px 14px; border-radius: 12px; background: rgba(249,168,48,.16);
-    border:1px solid rgba(249,168,48,.35); color: var(--text); text-decoration:none; font-weight: 700; font-size: 14px; }
-  .card.you { border-color: rgba(249,168,48,.6); box-shadow: 0 0 0 3px rgba(249,168,48,.15); }
-  .features { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 48px; }
-  .f { padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,.03); border:1px solid rgba(249,168,48,.08); color: var(--muted); font-size: 15px; }
+  .card a.btn { display: inline-block; margin-top: 12px; padding: 10px 14px; border-radius: 12px; background: #E6EFFD; color: var(--accent); text-decoration: none; font-weight: 800; font-size: 14px; }
+  .card.you { border: 2px solid var(--accent); }
+  h2 { margin: 56px 0 6px; font-size: 26px; text-align: center; } .h2sub { text-align: center; color: var(--muted); margin: 0 0 18px; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .f { padding: 14px 16px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); color: var(--muted); font-size: 15px; }
   .f b { color: var(--text); }
-  footer { text-align:center; color:#8C7B6B; font-size: 13px; margin-top: 48px; }
-  footer a { color: var(--muted); }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 48px; } footer a { color: var(--accent); }
 </style>
 </head>
 <body>
+<div class="shape"></div>
 <div class="wrap">
   <header>
     <img src="icons/icon-512.png" alt="Sparrow">
     <h1>Meet Sparrow</h1>
-    <p class="tag">A friendly little AI helper that keeps your meetings, tasks and reminders, tells you your day every morning, and opens your apps when you ask. Free — no account, no key.</p>
-    <a class="primary" id="mainBtn" href="#all">Get Sparrow</a>
-    <div class="sub" id="mainSub">Free · No account · Your data stays on your device</div>
+    <p class="tag">A friendly little helper that remembers your meetings, tasks and files, tells you your day, and does things when you just say “Sparrow…”. Free, private and works offline.</p>
+    <a class="primary" id="mainBtn" href="#all">Get Sparrow — free</a>
+    <div class="sub" id="mainSub">No account · No subscription · Your data stays on your device</div>
   </header>
 
   <div class="grid" id="all">
-    <div class="card" id="c-mac">
-      <div class="ic">💻</div><h3>Mac</h3>
-      <ol><li>Download and open <b>Sparrow.dmg</b></li><li>Drag Sparrow to <b>Applications</b></li>
-        <li>First open: <b>System Settings → Privacy &amp; Security → Open Anyway</b> (once)</li></ol>
-      <a class="btn" href="https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg">Download for Mac</a>
-    </div>
-    <div class="card" id="c-android">
-      <div class="ic">🤖</div><h3>Android</h3>
+    <div class="card" id="c-mac"><div class="ic">💻</div><h3>Mac</h3>
+      <ol><li>Download and open <b>Sparrow.dmg</b></li><li>Drag Sparrow to <b>Applications</b></li><li>First open: <b>System Settings → Privacy &amp; Security → Open Anyway</b> (once)</li></ol>
+      <a class="btn" href="https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg">Download for Mac</a></div>
+    <div class="card" id="c-windows"><div class="ic">🪟</div><h3>Windows</h3>
+      <ol><li>Download and open <b>Sparrow-Setup.exe</b></li><li>If you see “Windows protected your PC”: <b>More info → Run anyway</b></li><li>Sparrow opens at the top of your screen</li></ol>
+      <a class="btn" href="https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe">Download for Windows</a></div>
+    <div class="card" id="c-android"><div class="ic">🤖</div><h3>Android</h3>
       <ol><li>Download <b>Sparrow.apk</b></li><li>Open it — allow “Install unknown apps” if asked</li><li>Open Sparrow 🐦</li></ol>
-      <a class="btn" href="https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk">Download for Android</a>
-    </div>
-    <div class="card" id="c-iphone">
-      <div class="ic">📱</div><h3>iPhone &amp; iPad</h3>
-      <ol><li>Open the app link in <b>Safari</b></li><li>Tap <b>Share</b> → <b>Add to Home Screen</b></li><li>Open Sparrow from your home screen. Tip: tap 📅 on a meeting so your iPhone rings even when Sparrow is closed</li></ol>
-      <a class="btn" href="./">Open the app</a>
-    </div>
-    <div class="card" id="c-windows">
-      <div class="ic">🪟</div><h3>Windows</h3>
-      <ol><li>Download and open <b>Sparrow-Setup.exe</b></li><li>If you see “Windows protected your PC”: <b>More info → Run anyway</b> (once)</li><li>Sparrow sits at the top of your screen — <b>Ctrl + Shift + Space</b></li></ol>
-      <a class="btn" href="https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe">Download for Windows</a>
-    </div>
+      <a class="btn" href="https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk">Download for Android</a></div>
+    <div class="card" id="c-iphone"><div class="ic">📱</div><h3>iPhone &amp; iPad</h3>
+      <ol><li>Open the app link in <b>Safari</b></li><li>Tap <b>Share</b> → <b>Add to Home Screen</b></li><li>Open Sparrow from your home screen</li></ol>
+      <a class="btn" href="./">Open the app</a></div>
   </div>
 
+  <h2>What Sparrow does</h2>
+  <p class="h2sub">Everything below works without any AI key. Add a free AI any time for open questions.</p>
   <div class="features">
-    <div class="f">🗓️ <b>Meetings</b> — “meeting with Ali Friday 3pm”</div>
-    <div class="f">⏰ <b>Reminders</b> — “remind me to call mum at 6pm”</div>
-    <div class="f">✅ <b>Tasks</b> — “add task buy milk”, then tick it off</div>
-    <div class="f">☀️ <b>Morning hello</b> — time, weather and your day, spoken</div>
-    <div class="f">🗣️ <b>Voice</b> — “Sparrow, open Spotify”</div>
-    <div class="f">💬 <b>Ask anything</b> — free AI that runs on your device</div>
-    <div class="f">🔔 <b>Spoken alerts</b> — “Talha, you have a meeting in 5 minutes”</div>
-    <div class="f">🌙 <b>Evening check-in</b> — tick what's done, the rest moves to tomorrow</div>
-    <div class="f">🌦️ <b>Weather where you are</b> — uses your current location</div>
+    <div class="f">🗣️ <b>Hands-free</b> — “Sparrow, open Chrome”, no button needed</div>
+    <div class="f">⏰ <b>Reminders that talk</b> — “Talha, you have a meeting in 5 minutes”</div>
+    <div class="f">🔁 <b>Repeating reminders &amp; snooze</b> — “every day at 8pm take medicine”</div>
+    <div class="f">☀️ <b>Morning briefing</b> — weather, meetings and today's tasks</div>
+    <div class="f">🌙 <b>Evening check-in</b> — tick what's done, move the rest</div>
+    <div class="f">🕌 <b>Prayer times</b> — worked out offline, with a reminder</div>
+    <div class="f">💧 <b>Habits</b> — water, medicine, anything you track</div>
+    <div class="f">🧠 <b>Private memory</b> — “which file did I send on 12 Sept?”</div>
+    <div class="f">📄 <b>Ask your documents</b> — drop a PDF, Word or Excel file and ask</div>
+    <div class="f">🧾 <b>Quotes &amp; invoices</b> — “quote for Ali, 3 hours at £40” → PDF</div>
+    <div class="f">⏱️ <b>Time tracking &amp; expenses</b> — straight into invoices</div>
+    <div class="f">🎤 <b>Meeting notes</b> — written offline, action items become tasks</div>
+    <div class="f">📑 <b>PDF tools</b> — merge, photos to PDF, keep pages, rotate</div>
+    <div class="f">📁 <b>Files</b> — find by voice, tidy Downloads, folder alerts (computer)</div>
+    <div class="f">📋 <b>Clipboard history &amp; snippets</b></div>
+    <div class="f">🎵 <b>Music</b> — “play Tum Hi Ho on Spotify”</div>
+    <div class="f">🌍 <b>English, اردو, हिन्दी, العربية</b></div>
+    <div class="f">🤖 <b>Any AI you like</b> — Ollama (free), Groq, Gemini, ChatGPT, Claude, Grok, DeepSeek, Mistral, Perplexity</div>
   </div>
-
-  <footer>Made with 🧡 · <a href="https://github.com/MuhammadTalha257/sparrow">Open source on GitHub</a></footer>
+  <footer>Made with 🧡 by <a href="https://lisansystems.com">Lisan Systems</a> · <a href="https://github.com/MuhammadTalha257/sparrow">Open source on GitHub</a></footer>
 </div>
 <script>
   const ua = navigator.userAgent;
@@ -95,15 +91,12 @@
   const os = isIOS ? 'iphone' : /Android/i.test(ua) ? 'android' : /Mac/i.test(navigator.platform) ? 'mac' : /Win/i.test(navigator.platform) ? 'windows' : null;
   const btn = document.getElementById('mainBtn'), sub = document.getElementById('mainSub');
   const map = {
-    mac: ['Download for Mac', 'https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg', 'For macOS 15 or newer · Apple silicon & Intel'],
-    android: ['Download for Android', 'https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk', 'Android 8 or newer · 42 MB'],
-    iphone: ['Open Sparrow', './', 'Then tap Share → Add to Home Screen'],
+    mac: ['Download for Mac', 'https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg', 'macOS 11 or newer · Apple silicon & Intel · free'],
     windows: ['Download for Windows', 'https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe', 'Windows 10 & 11 · free · works offline'],
+    android: ['Download for Android', 'https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk', 'Android 8 or newer · free'],
+    iphone: ['Open Sparrow', './', 'Then tap Share → Add to Home Screen'],
   };
-  if (os && map[os]) {
-    btn.textContent = map[os][0]; btn.href = map[os][1]; sub.textContent = map[os][2];
-    document.getElementById('c-' + os)?.classList.add('you');
-  }
+  if (os && map[os]) { btn.textContent = map[os][0]; btn.href = map[os][1]; sub.textContent = map[os][2]; document.getElementById('c-' + os)?.classList.add('you'); }
 </script>
 </body>
 </html>

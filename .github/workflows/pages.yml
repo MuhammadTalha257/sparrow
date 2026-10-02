@@ -3,7 +3,7 @@ name: Publish website (GitHub Pages)
 on:
   push:
     branches: [main]
-    paths-ignore: ["mac/**", "android/**", "windows/**"]
+    paths-ignore: ["android/**", "desktop/**", "website/**", ".github/workflows/android.yml", ".github/workflows/desktop.yml"]
   workflow_dispatch: {}
 
 permissions:

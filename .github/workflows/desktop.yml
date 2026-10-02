@@ -1,0 +1,99 @@
+name: Build desktop apps (Mac + Windows)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["android/**", ".github/workflows/android.yml", ".github/workflows/pages.yml", "README.md", "website/**"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Install
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Offline voice model (Vosk small English, ~40 MB)
+        working-directory: desktop
+        shell: bash
+        run: mkdir -p model && curl -fsSL -o model/model.tar.gz https://raw.githubusercontent.com/ccoreilly/vosk-browser/gh-pages/models/vosk-model-small-en-us-0.15.tar.gz
+      - name: Build installer
+        working-directory: desktop
+        shell: bash
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" }
+        run: npm run dist:win 2>&1 | tee build.log; test -f dist/Sparrow-Setup.exe
+      - name: Rename
+        shell: bash
+        run: cp desktop/dist/Sparrow-Setup.exe Sparrow-Setup.exe && ls -la Sparrow-Setup.exe
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-latest
+          name: Sparrow for Windows
+          make_latest: false
+          files: Sparrow-Setup.exe
+          body: |
+            **Install Sparrow on Windows 10 / 11**
+            1. Download `Sparrow-Setup.exe` below.
+            2. Open it. If Windows shows "Windows protected your PC", click **More info → Run anyway** (Sparrow is free and not yet signed).
+            3. Sparrow opens at the top of your screen 🐦 — press **Ctrl + Shift + Space** any time, or just say "Sparrow…".
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          { echo "Windows build failed at ${GITHUB_SHA::7}"; echo; echo '```'; tail -60 desktop/build.log 2>/dev/null || echo "see Actions log"; echo '```'; } > body.md
+          gh label create build-errors --color B60205 -f >/dev/null 2>&1 || true
+          N=$(gh issue list --label build-errors --state open --json number -q '.[0].number')
+          if [ -z "$N" ]; then gh issue create --title "Build errors" --label build-errors --body-file body.md; else gh issue comment "$N" --body-file body.md; fi
+
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Install
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Offline voice model
+        working-directory: desktop
+        run: mkdir -p model && curl -fsSL -o model/model.tar.gz https://raw.githubusercontent.com/ccoreilly/vosk-browser/gh-pages/models/vosk-model-small-en-us-0.15.tar.gz
+      - name: Build Sparrow.app (Apple silicon + Intel)
+        working-directory: desktop
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" }
+        run: npm run dist:mac 2>&1 | tee build.log; ls dist
+      - name: Sign (ad-hoc) and make Sparrow.dmg
+        run: |
+          APP=$(ls -d desktop/dist/mac*/Sparrow.app | head -1)
+          echo "app: $APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --verbose=1 "$APP"
+          mkdir -p dmg && cp -R "$APP" dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname "Sparrow" -srcfolder dmg -ov -format UDZO Sparrow.dmg
+          ls -lh Sparrow.dmg
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mac-latest
+          name: Sparrow for Mac
+          make_latest: false
+          files: Sparrow.dmg
+          body: |
+            **Install Sparrow on Mac (Intel and Apple silicon)**
+            1. Download `Sparrow.dmg`, open it and drag Sparrow to Applications.
+            2. First open: System Settings → Privacy & Security → **Open Anyway** (once).
+            3. Sparrow lives in the menu bar and at the top of your screen 🐦 — press **⌘ + Shift + Space**, or just say "Sparrow…".
+      - name: Report build errors
+        if: failure()
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          { echo "Mac build failed at ${GITHUB_SHA::7}"; echo; echo '```'; tail -60 desktop/build.log 2>/dev/null || echo "see Actions log"; echo '```'; } > body.md
+          gh label create build-errors --color B60205 -f >/dev/null 2>&1 || true
+          N=$(gh issue list --label build-errors --state open --json number -q '.[0].number')
+          if [ -z "$N" ]; then gh issue create --title "Build errors" --label build-errors --body-file body.md; else gh issue comment "$N" --body-file body.md; fi

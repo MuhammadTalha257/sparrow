@@ -11,6 +11,9 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -26,6 +29,21 @@ class MainActivity : Activity() {
     private var recognizer: SpeechRecognizer? = null
     private var listenAfterPermission = false
     var afterMicPermission: (() -> Unit)? = null
+    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingWebPermission: PermissionRequest? = null
+    private var pendingGeo: ((Boolean) -> Unit)? = null
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 7) return
+        val cb = fileCallback; fileCallback = null
+        if (resultCode != RESULT_OK || data == null) { cb?.onReceiveValue(null); return }
+        val uris = mutableListOf<Uri>()
+        data.clipData?.let { c -> for (i in 0 until c.itemCount) uris += c.getItemAt(i).uri }
+        if (uris.isEmpty()) data.data?.let { uris += it }
+        cb?.onReceiveValue(uris.toTypedArray())
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,7 +52,7 @@ class MainActivity : Activity() {
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
         web = WebView(this)
-        web.setBackgroundColor(0xFF140D09.toInt())
+        web.setBackgroundColor(0xFFEEF4FB.toInt())
         setContentView(web)
         web.settings.apply {
             javaScriptEnabled = true
@@ -42,6 +60,8 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = false
             setSupportMultipleWindows(false)
             javaScriptCanOpenWindowsAutomatically = true
+            setGeolocationEnabled(true)
+            allowFileAccess = false
         }
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
@@ -60,7 +80,31 @@ class MainActivity : Activity() {
                 queued.clear()
             }
         }
-        web.webChromeClient = WebChromeClient()
+        web.webChromeClient = object : WebChromeClient() {
+            // 📎 attach files
+            override fun onShowFileChooser(view: WebView, cb: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = cb
+                return try { startActivityForResult(params.createIntent().apply { putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE) }, 7); true }
+                catch (e: Exception) { fileCallback = null; false }
+            }
+            // camera for QR sync, microphone for meeting notes
+            override fun onPermissionRequest(request: PermissionRequest) {
+                val wantCam = request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+                val wantMic = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                val need = mutableListOf<String>()
+                if (wantCam && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) need += Manifest.permission.CAMERA
+                if (wantMic && !hasMic()) need += Manifest.permission.RECORD_AUDIO
+                if (need.isEmpty()) { runOnUiThread { request.grant(request.resources) }; return }
+                pendingWebPermission = request
+                requestPermissions(need.toTypedArray(), 3)
+            }
+            // location for weather and prayer times
+            override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
+                if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) callback.invoke(origin, true, false)
+                else { pendingGeo = { callback.invoke(origin, it, false) }; requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION), 4) }
+            }
+        }
         web.addJavascriptInterface(Bridge(this), "SparrowNative")
         Speaker.onSpeaking = { on -> send(JSONObject().put("type", "speaking").put("on", on)) }
         web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
@@ -152,6 +196,15 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 3) {
+            val req = pendingWebPermission; pendingWebPermission = null
+            val ok = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (req != null) runOnUiThread { if (ok) req.grant(req.resources) else req.deny() }
+        }
+        if (requestCode == 4) {
+            val ok = grantResults.isNotEmpty() && grantResults.any { it == PackageManager.PERMISSION_GRANTED }
+            pendingGeo?.invoke(ok); pendingGeo = null
+        }
         if (requestCode == 1) {
             val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             val then = afterMicPermission

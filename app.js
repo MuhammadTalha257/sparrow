@@ -1,15 +1,38 @@
-import { store } from './store.js';
-import { handle, briefing, daySummary, whenText, fmtTime, greetingWord, getQuick, DEFAULT_QUICK, icsFor, googleCalUrl, isIOS,
-  spokenPlan, spokenList, tasksForDay, moveToTomorrow } from './brain.js';
-import { ask, loadLocal, deviceSupport, aiReady } from './ai.js';
+import { store, DEFAULT_SETTINGS } from './store.js';
+import { t, applyI18n, LANGS, SPEECH_LANG } from './i18n.js';
+import { METHODS, NAMES as PRAYERS, prayerTimes } from './prayer.js';
+import * as mem from './memory.js';
+import * as tools from './tools.js';
+import * as sync from './sync.js';
+import {
+  handle, briefing, daySummary, whenText, fmtTime, fmtDay, greetingWord, getQuick, AI_APPS, icsFor, googleCalUrl, prayerICS, isIOS, isAndroid,
+  spokenPlan, spokenList, tasksForDay, moveToTomorrow, nextOccurrence, repeatText, weather, location as getLocation, prayerToday, habitCount, bumpHabit,
+  setLastAlert, lastAlert, findCustomer,
+} from './brain.js';
+import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const ICON = { task: '✅', meeting: '🗓️', reminder: '⏰', note: '📝' };
-// Present when running inside the Sparrow Android app
-const N = window.SparrowNative || null;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ICON = { task: '✅', meeting: '🗓️', reminder: '⏰', note: '📝', habit: '💧', customer: '👤', expense: '💸', quote: '🧾', invoice: '🧾', timer: '⏱️',
+  file: '📄', chat: '💬', done: '✔️', opened: '↗️', 'meeting-notes': '🎤', email: '📧', report: '📊' };
+const N = window.SparrowNative || null;     // Android app
+const D = window.SparrowDesktop || null;    // Mac / Windows app
+const S = () => store.settings;
+const dayKey = () => new Date().toDateString();
 if (N) document.documentElement.classList.add('android-app');
+if (D) document.documentElement.classList.add('desktop');
+
+// ---------------- look: theme, language, simple mode ----------------
+function applyLook() {
+  const html = document.documentElement;
+  html.dataset.theme = S().theme || 'daylight';
+  html.classList.toggle('simple', !!S().simple);
+  html.classList.toggle('no-mic', S().micButton === false);
+  applyI18n();
+  const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
+  $('meta[name=theme-color]')?.setAttribute('content', bg || '#EEF4FB');
+}
 
 // ---------------- navigation ----------------
 let planType = 'task';
@@ -18,6 +41,7 @@ function go(v) {
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'chat') setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
   else window.scrollTo({ top: 0 });
+  if (v === 'memory') renderMemory();
 }
 $$('.tabs button').forEach(b => b.onclick = () => go(b.dataset.v));
 $$('[data-goto]').forEach(b => b.onclick = () => go(b.dataset.goto));
@@ -25,168 +49,158 @@ $$('#seg button').forEach(b => b.onclick = () => { planType = b.dataset.t; $$('#
 
 // ---------------- header ----------------
 function renderHeader() {
-  $('#hello').textContent = `${greetingWord()}${store.settings.name ? ', ' + store.settings.name : ''}`;
+  $('#hello').textContent = `${greetingWord()}${S().name ? ', ' + S().name : ''}`;
   $('#todayLabel').textContent = new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 // ---------------- lists ----------------
-function itemRow(i, opts = {}) {
-  const sub = i.type === 'note'
-    ? new Date(i.created).toLocaleDateString([], { day: 'numeric', month: 'short' })
-    : (i.when ? whenText(i.when) : 'No date');
-  const lead = i.type === 'task'
-    ? `<button class="check" data-act="toggle" aria-label="Done">${i.done ? '✓' : ''}</button>`
-    : `<div class="ic ${i.type}">${ICON[i.type]}</div>`;
-  const cal = i.when && i.type !== 'note' ? `<button data-act="cal" title="Add to phone calendar">📅</button>` : '';
+function itemSub(i) {
+  if (i.type === 'note') return new Date(i.created).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  if (i.type === 'customer') return [i.phone, i.email].filter(Boolean).join(' · ') || 'Customer';
+  if (i.type === 'expense') return `${S().business.currency}${(+i.amount).toFixed(2)} · ${new Date(i.created).toLocaleDateString([], { day: 'numeric', month: 'short' })}`;
+  if (i.type === 'quote' || i.type === 'invoice') return `${S().business.currency}${(+i.total || 0).toFixed(2)} · ${new Date(i.created).toLocaleDateString([], { day: 'numeric', month: 'short' })}`;
+  if (i.type === 'habit') return `${habitCount(i)}/${i.target} today${i.every ? ` · every ${i.every} h` : ''}`;
+  return (i.when ? whenText(i.when) : 'No date') + (i.repeat ? ` · 🔁 ${repeatText(i.repeat)}` : '');
+}
+function itemRow(i) {
+  const lead = i.type === 'task' ? `<button class="check" data-act="toggle" aria-label="Done">${i.done ? '✓' : ''}</button>`
+    : i.type === 'habit' ? `<button class="check" data-act="bump" aria-label="Add one">＋</button>`
+    : `<div class="ic">${ICON[i.type] || '•'}</div>`;
+  const cal = i.when && ['meeting', 'reminder', 'task'].includes(i.type) ? `<button data-act="cal" title="Add to calendar" aria-label="Add to calendar">📅</button>` : '';
+  const callBtn = i.type === 'customer' && i.phone ? `<button data-act="call" title="Call" aria-label="Call">📞</button>` : '';
   return `<div class="item ${i.done ? 'done' : ''}" data-id="${i.id}">
-    ${lead}
-    <div class="txt"><div class="t1">${esc(i.title)}</div><div class="t2">${esc(sub)}</div></div>
-    <div class="acts">${cal}${opts.noDelete ? '' : '<button data-act="del" title="Delete">🗑️</button>'}</div>
-  </div>`;
+    ${lead}<div class="txt"><div class="t1">${esc(i.title)}</div><div class="t2">${esc(itemSub(i))}</div></div>
+    <div class="acts">${callBtn}${cal}<button data-act="del" title="Delete" aria-label="Delete">🗑️</button></div></div>`;
 }
 function bindList(root) {
-  root.onclick = e => {
-    const b = e.target.closest('[data-act]'); if (!b) return;
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) {
+      const row = e.target.closest('.item'); const it = row && store.items.find(x => x.id === row.dataset.id);
+      if (it?.type === 'customer') { go('memory'); $('#memSearch').value = it.title; renderMemory(); }
+      return;
+    }
     const id = b.closest('.item').dataset.id; const it = store.items.find(x => x.id === id); if (!it) return;
-    if (b.dataset.act === 'toggle') { const nd = !it.done; store.update(id, { done: nd, doneAt: nd ? new Date().toISOString() : null }); if (nd) { birdMood('happy'); chirp(); } }
+    if (b.dataset.act === 'toggle') {
+      const nd = !it.done;
+      if (nd && it.repeat && it.when) { store.update(id, { when: nextOccurrence(it.repeat, it.when).toISOString(), notified: false, soonDone: false }); mem.remember('done', it.title); }
+      else store.update(id, { done: nd, doneAt: nd ? new Date().toISOString() : null });
+      if (nd) { birdMood('happy'); chirp(); mem.remember('done', it.title); }
+    }
+    if (b.dataset.act === 'bump') { const c = bumpHabit(it); chirp(); if (c === it.target) toast(`🎉 ${it.title}: goal reached!`); }
     if (b.dataset.act === 'del') { store.remove(id); toast('Removed'); }
     if (b.dataset.act === 'cal') addToCalendar(it);
+    if (b.dataset.act === 'call') openUrl('tel:' + it.phone.replace(/[^\d+]/g, ''));
+  });
+}
+bindList($('#todayList')); bindList($('#planList'));
+
+function renderToday() {
+  renderNext(); renderProgress(); renderHabits();
+  const day = store.onDay(new Date()).filter(i => !(i.type === 'reminder' && i.done));
+  const undated = store.openTasks().filter(i => !i.when).slice(0, 4);
+  const items = [...day, ...undated];
+  $('#todayList').innerHTML = items.length ? items.map(itemRow).join('')
+    : `<div class="empty">Nothing planned yet.<br>Try <b>"meeting with Ali Friday 3pm"</b> or <b>"remind me every day at 8pm to take medicine"</b>.</div>`;
+}
+function renderPlan() {
+  let list;
+  if (planType === 'money') {
+    const ex = tools.monthExpenses(), total = ex.reduce((n, i) => n + (+i.amount || 0), 0);
+    list = [...store.items.filter(i => ['invoice', 'quote', 'expense'].includes(i.type))].sort((a, b) => new Date(b.created) - new Date(a.created));
+    $('#planList').innerHTML = `<div class="item"><div class="ic">📈</div><div class="txt"><div class="t1">This month's expenses</div><div class="t2">${S().business.currency}${total.toFixed(2)} · ${ex.length} item${ex.length === 1 ? '' : 's'}</div></div><div class="acts"><button data-tool-go="expenses" title="Export">⬇️</button></div></div>`
+      + (list.map(itemRow).join('') || '');
+    $('#planHint').textContent = 'Say "spent £12 on lunch", "quote for Ali, 3 hours at £40" or "invoice Ahmed, website £300".';
+    $('#planList').querySelector('[data-tool-go]')?.addEventListener('click', () => { go('tools'); openTool('expenses'); });
+    return;
+  }
+  list = store.ofType(planType);
+  if (planType === 'task') list.sort((a, b) => a.done - b.done || (a.when ? new Date(a.when) : 9e15) - (b.when ? new Date(b.when) : 9e15));
+  else if (['note', 'customer', 'habit'].includes(planType)) list.sort((a, b) => new Date(b.created) - new Date(a.created));
+  else list.sort((a, b) => new Date(a.when) - new Date(b.when));
+  const examples = {
+    task: '"add task buy milk" or "I need to pay rent Friday"', meeting: '"meeting with Ali Friday 3pm" or "team meeting every Monday at 9"',
+    reminder: '"remind me every day at 8pm to take medicine"', note: '"note wifi password is sparrow123"',
+    habit: '"add habit drink water 8 times a day"', customer: '"add customer Ahmed Khan 07123 456789 ahmed@mail.com"',
   };
+  $('#planList').innerHTML = list.length ? list.map(itemRow).join('') : `<div class="empty">Nothing here yet.<br>Say ${examples[planType]}</div>`;
+  $('#planHint').textContent = ['reminder', 'meeting'].includes(planType) ? (isIOS ? 'iPhone tip: tap 📅 so your iPhone rings even when Sparrow is closed.' : 'Tap 📅 to add it to your calendar too.')
+    : planType === 'customer' ? 'Tap a customer to see their whole history.' : '';
 }
 function renderNext() {
   const now = Date.now();
-  const next = store.items.filter(i => i.when && !i.done && i.type !== 'note' && new Date(i.when).getTime() > now)
+  const next = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now)
     .sort((a, b) => new Date(a.when) - new Date(b.when))[0];
   const el = $('#upNext');
   if (!next) { el.hidden = true; return; }
   const mins = Math.round((new Date(next.when) - now) / 60000);
-  const rel = mins < 60 ? `in ${mins} min` : mins < 24 * 60 ? `in ${Math.floor(mins / 60)} h ${mins % 60 ? (mins % 60) + ' min' : ''}` : whenText(next.when);
+  const rel = mins < 60 ? `in ${mins} min` : mins < 24 * 60 ? `in ${Math.floor(mins / 60)} h${mins % 60 ? ' ' + (mins % 60) + ' min' : ''}` : fmtDay(next.when);
   el.hidden = false;
-  el.innerHTML = `<div class="un-ic">${ICON[next.type]}</div><div class="txt"><div class="un-k">UP NEXT</div><div class="t1">${esc(next.title)}</div></div><div class="un-t">${esc(rel)}<br><small>${fmtTime(next.when)}</small></div>`;
+  el.innerHTML = `<div class="un-ic">${ICON[next.type]}</div><div class="txt"><div class="un-k">${t('upNext')}</div><div class="t1">${esc(next.title)}</div></div><div class="un-t">${esc(rel)}<br><small>${fmtTime(next.when)}</small></div>`;
 }
 function renderProgress() {
-  const tdy = new Date().toDateString();
-  const open = tasksForDay(new Date());
+  const tdy = dayKey(), open = tasksForDay(new Date());
   const done = store.items.filter(i => i.type === 'task' && i.done && i.doneAt && new Date(i.doneAt).toDateString() === tdy).length;
-  const total = open.length + done, pct = total ? done / total : 0;
-  $('#ring').style.setProperty('--p', pct);
+  const total = open.length + done;
+  $('#ring').style.setProperty('--p', total ? done / total : 0);
   $('#ringTxt').textContent = total ? `${done}/${total}` : '✓';
-  $('#ringLbl').textContent = total ? (done === total ? 'All done today!' : `${open.length} task${open.length > 1 ? 's' : ''} left today`) : 'No tasks today';
+  $('#ringLbl').textContent = total ? (done === total ? t('allDone') : `${open.length} ${open.length === 1 && S().lang === 'en' ? 'task left today' : t('tasksLeft')}`) : t('noTasks');
 }
-function renderToday() {
-  renderNext(); renderProgress();
-  const day = store.onDay(new Date()).filter(i => !(i.type === 'reminder' && i.done));
-  const undatedTasks = store.openTasks().filter(i => !i.when).slice(0, 4);
-  const items = [...day, ...undatedTasks];
-  $('#todayList').innerHTML = items.length ? items.map(i => itemRow(i)).join('')
-    : `<div class="empty">Nothing planned yet.<br>Try <b>"meeting with Ali Friday 3pm"</b> or <b>"add task buy milk"</b>.</div>`;
+function renderHabits() {
+  const hs = store.ofType('habit'), el = $('#habitsCard');
+  el.hidden = !hs.length;
+  el.innerHTML = hs.slice(0, 4).map(h => { const c = habitCount(h); return `<div class="habit" data-id="${h.id}"><div class="hb-t">${esc(h.title)}</div><div class="hb-bar"><i style="width:${Math.min(100, c / h.target * 100)}%"></i></div><div class="hb-n">${c}/${h.target}</div><button aria-label="Add one">＋</button></div>`; }).join('');
 }
-function renderPlan() {
-  let list = store.ofType(planType);
-  if (planType === 'task') list.sort((a, b) => a.done - b.done || (a.when ? new Date(a.when) : 9e15) - (b.when ? new Date(b.when) : 9e15));
-  else if (planType === 'note') list.sort((a, b) => new Date(b.created) - new Date(a.created));
-  else list.sort((a, b) => new Date(a.when) - new Date(b.when));
-  const examples = {
-    task: '"add task buy milk" or "I need to pay rent Friday"',
-    meeting: '"meeting with Ali Friday 3pm"',
-    reminder: '"remind me to call mum at 6pm tomorrow"',
-    note: '"note wifi password is sparrow123"',
-  };
-  $('#planList').innerHTML = list.length ? list.map(i => itemRow(i)).join('') : `<div class="empty">Nothing here yet.<br>Say ${examples[planType]}</div>`;
-  $('#planHint').textContent = planType === 'reminder' || planType === 'meeting'
-    ? 'Tap 📅 to put it in your phone calendar — then it rings even when Sparrow is closed.' : '';
+$('#habitsCard').onclick = e => { const b = e.target.closest('button'); if (!b) return; const h = store.items.find(i => i.id === b.closest('.habit').dataset.id); if (h) { const c = bumpHabit(h); chirp(); if (c === h.target) toast(`🎉 ${h.title}: goal reached!`); } };
+async function renderWeather() {
+  const w = await weather().catch(() => null);
+  if (!w) { $('#wTemp').textContent = '–°'; $('#wSky').textContent = 'Weather'; return; }
+  $('#wTemp').textContent = `${w.temp}°`; $('#wSky').textContent = `${w.sky}${w.city ? ' · ' + w.city : ''}`;
+}
+async function renderPrayer() {
+  const el = $('#prayerCard');
+  if (!S().prayer.on) { el.hidden = true; return; }
+  const p = await prayerToday().catch(() => null);
+  if (!p) { el.hidden = false; el.innerHTML = `<div class="pr-head"><b>🕌 ${t('prayer')}</b><span>Allow location or set your city in Settings</span></div>`; return; }
+  el.hidden = false;
+  el.innerHTML = `<div class="pr-head"><b>🕌 ${t('nextPrayer')}: ${p.next ? p.next.name + ' · ' + fmtTime(p.next.at) : '—'}</b><span>${esc(p.loc.city || '')}</span></div>
+    <div class="pr-row">${PRAYERS.map(n => `<div class="${p.next?.name === n && p.next.at.toDateString() === dayKey() ? 'next' : ''}">${n}<b>${fmtTime(p.times[n]).replace(/\s?[AP]M/i, '')}</b></div>`).join('')}</div>`;
 }
 function renderQuick() {
   const list = getQuick();
-  $('#quick').innerHTML = list.map((q, i) => `<button class="q" data-i="${i}"><span>${q.e}</span>${esc(q.n)}</button>`).join('')
-    + `<button class="q" data-add="1"><span>＋</span>Add</button>`;
-  $('#quick').onclick = e => {
-    const b = e.target.closest('.q'); if (!b) return;
-    if (b.dataset.add) return addQuick();
-    openUrl(list[+b.dataset.i].url);
-  };
-  // Long-press a button to remove it
+  $('#quick').innerHTML = list.map((q, i) => `<button class="q" data-i="${i}"><span>${q.e}</span>${esc(q.n)}</button>`).join('') + `<button class="q" data-add="1"><span>＋</span>Add</button>`;
+  $('#quick').onclick = e => { const b = e.target.closest('.q'); if (!b) return; if (b.dataset.add) return addQuick(); openUrl(list[+b.dataset.i].url); };
   let pressT;
   $('#quick').onpointerdown = e => {
     const b = e.target.closest('.q[data-i]'); if (!b) return;
-    pressT = setTimeout(() => {
-      const q = list[+b.dataset.i];
-      if (confirm(`Remove "${q.n}" from your quick buttons?`)) {
-        store.settings.quick = list.filter((_, i) => i !== +b.dataset.i); store.save(); renderQuick();
-      }
-    }, 650);
+    pressT = setTimeout(() => { const q = list[+b.dataset.i]; if (confirm(`Remove "${q.n}" from your quick buttons?`)) { S().quick = list.filter((_, i) => i !== +b.dataset.i); store.save(); renderQuick(); } }, 650);
   };
   $('#quick').onpointerup = $('#quick').onpointerleave = () => clearTimeout(pressT);
+  $('#aiApps').innerHTML = AI_APPS.map((a, i) => `<button data-i="${i}">${esc(a.n)}</button>`).join('');
+  $('#aiApps').onclick = e => { const b = e.target.closest('button'); if (!b) return; const a = AI_APPS[+b.dataset.i]; if (a.app && (D || N)?.openApp(a.app)) return; openUrl(a.url); };
 }
 function addQuick() {
-  const name = prompt(N ? 'Which app? Type its name (e.g. Netflix, Uber, Snapchat):' : 'Name of the app or website (e.g. Netflix, Uber, BBC News):'); if (!name) return;
-  if (N) {
-    const emojiA = (prompt('Pick an emoji for the button:', '⭐') || '⭐').slice(0, 2);
-    store.settings.quick = [...getQuick(), { k: name.toLowerCase(), n: name, e: emojiA, url: 'app:' + name }];
-    store.save(); renderQuick(); toast(`Added ${name}`); return;
-  }
-  let url = prompt(`Link for ${name} (e.g. netflix.com). Most apps open automatically from their website link:`, name.toLowerCase().replace(/\s+/g, '') + '.com');
-  if (!url) return;
+  const name = prompt(N || D ? 'Which app? Type its name (e.g. Netflix, Uber, Excel):' : 'Name of the app or website (e.g. Netflix, BBC News):'); if (!name) return;
+  if (N || D) { const e = (prompt('Pick an emoji for the button:', '⭐') || '⭐').slice(0, 2); S().quick = [...getQuick(), { k: name.toLowerCase(), n: name, e, url: 'app:' + name }]; store.save(); renderQuick(); return; }
+  let url = prompt(`Link for ${name} (e.g. netflix.com):`, name.toLowerCase().replace(/\s+/g, '') + '.com'); if (!url) return;
   if (!/^[a-z]+:/i.test(url)) url = 'https://' + url;
-  const emoji = (prompt('Pick an emoji for the button:', '⭐') || '⭐').slice(0, 2);
-  store.settings.quick = [...getQuick(), { k: name.toLowerCase(), n: name, e: emoji, url }];
-  store.save(); renderQuick(); toast(`Added ${name} — you can also say "open ${name}"`);
+  const e = (prompt('Pick an emoji for the button:', '⭐') || '⭐').slice(0, 2);
+  S().quick = [...getQuick(), { k: name.toLowerCase(), n: name, e, url }]; store.save(); renderQuick(); toast(`Added ${name}`);
 }
-function renderAll() { renderHeader(); renderToday(); renderPlan(); }
+function renderAll() { applyLook(); renderHeader(); renderToday(); renderPlan(); renderQuick(); renderChat(); renderWeather(); renderPrayer(); }
 store.onChange(() => {
   renderToday(); renderPlan(); syncAlarms();
-  $('#brief').textContent = `${greetingWord()}${store.settings.name ? ', ' + store.settings.name : ''}! ${daySummary(new Date(), true)}`;
+  $('#brief').textContent = `${greetingWord()}${S().name ? ', ' + S().name : ''}! ${daySummary(new Date(), true)}`;
 });
-// Android: real alarms for reminders & meetings (ring even when Sparrow is closed)
-function syncAlarms() {
-  if (!N) return;
-  const s = store.settings, who = s.name ? s.name + ', ' : '';
-  const lead = (+s.lead || 0) * 60000, list = [];
-  for (const i of store.items.filter(i => i.when && !i.done && (i.type === 'reminder' || i.type === 'meeting'))) {
-    const at = new Date(i.when).getTime(), meet = i.type === 'meeting';
-    list.push({ id: i.id, title: i.title, type: i.type, at,
-      head: meet ? 'Meeting now' : 'Reminder', say: meet ? `${who}you have a meeting now: ${i.title}.` : `${who}it's time: ${i.title}.` });
-    if (lead) list.push({ id: i.id + '|soon', title: i.title, type: i.type, at: at - lead,
-      head: `In ${s.lead} minutes`, say: meet ? `${who}you have a meeting in ${s.lead} minutes: ${i.title}.` : `${who}reminder in ${s.lead} minutes: ${i.title}.` });
-  }
-  // Morning briefing + evening check-in (spoken even when Sparrow is closed)
-  const next = hm => { const [h, m] = (hm || '08:30').split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d; };
-  if (s.morningOn) {
-    const d = next(s.morningTime);
-    list.push({ id: 'morning', title: 'Good morning', type: 'briefing', at: d.getTime(), head: '☀️ Your day', open: 'briefing', again: `Good morning${s.name ? ', ' + s.name : ''}! Tap to hear your day.`,
-      say: `Good morning${s.name ? ', ' + s.name : ''}! ` + spokenPlan(d) + ' Have a lovely day!' });
-  }
-  if (s.nightOn) {
-    const d = next(s.nightTime), open = tasksForDay(d);
-    list.push({ id: 'night', title: 'Evening check-in', type: 'checkin', at: d.getTime(), head: '🌙 Check-in time', open: 'checkin', again: `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. Tap to tick off today's tasks.`,
-      say: open.length ? `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. ${open.length === 1 ? 'One task is' : open.length + ' tasks are'} still open: ${spokenList(open.map(i => i.title))}. Tap to tick what you finished, and I'll move the rest to tomorrow.`
-        : `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. Nothing left for today. Well done!` });
-  }
-  try { N.syncAlarms(JSON.stringify(list)); } catch {}
-}
 
 // ---------------- calendar ----------------
 function addToCalendar(it) {
-  if (N) {
-    const start = new Date(it.when).getTime();
-    N.addToCalendar(it.title, start, start + (it.type === 'meeting' ? 60 : 15) * 60000);
-    return;
-  }
-  if (!isIOS && /Android/i.test(navigator.userAgent)) {
-    openUrl(googleCalUrl(it));   // Android: Google Calendar handles this best
-    return;
-  }
-  const ics = icsFor(it);
-  const file = new File([ics], (it.title.replace(/[^\w ]/g, '').slice(0, 30) || 'event') + '.ics', { type: 'text/calendar' });
-  if (isIOS) {
-    // iOS opens a data: calendar file straight into "Add to Calendar"
-    location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
-    return;
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(file); a.download = file.name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  toast('Calendar file downloaded — open it to add the event');
+  if (N) { const start = new Date(it.when).getTime(); N.addToCalendar(it.title, start, start + (it.type === 'meeting' ? 60 : 15) * 60000); return; }
+  if (isAndroid) { openUrl(googleCalUrl(it)); return; }
+  downloadICS(icsFor(it), it.title);
+}
+function downloadICS(ics, title) {
+  if (isIOS) { location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics); return; }
+  tools.deliver((title.replace(/[^\w ]/g, '').slice(0, 30) || 'event') + '.ics', new TextEncoder().encode(ics), 'text/calendar');
 }
 
 // ---------------- chat ----------------
@@ -194,60 +208,149 @@ function addMsg(role, text, extra = {}) {
   const m = { role, text, ts: Date.now(), ...extra };
   store.chat.push(m); store.save(); renderChat(); return m;
 }
+function resultRows(m) {
+  if (m.files?.length) return `<div class="res">${m.files.slice(0, 12).map(f => `<div class="res-row"><span>📄</span><div class="txt"><div class="t1">${esc(f.name)}</div><div class="t2">${new Date(f.mtime).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div></div><button data-open="${esc(f.path)}">Open</button><button data-reveal="${esc(f.path)}">Show</button></div>`).join('')}</div>`;
+  if (m.results?.length) return `<div class="res">${m.results.slice(0, 12).map(r => `<div class="res-row"><span>${ICON[r.kind] || '•'}</span><div class="txt"><div class="t1">${esc(r.title)}</div><div class="t2">${new Date(r.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div></div>${r.meta?.fileId ? `<button data-file="${r.meta.fileId}">Open</button>` : ''}</div>`).join('')}</div>`;
+  if (m.clips?.length) return `<div class="res">${m.clips.slice(0, 15).map((c, i) => `<div class="res-row"><div class="txt"><div class="t1">${esc(c.text.slice(0, 80))}</div><div class="t2">${new Date(c.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div></div><button data-clip="${i}">Copy</button></div>`).join('')}</div>`;
+  return '';
+}
 function renderChat() {
   const box = $('#chat');
-  if (!store.chat.length) {
-    box.innerHTML = `<div class="msg bot">Hi${store.settings.name ? ' ' + esc(store.settings.name) : ''}! I'm Sparrow 🐦\nAsk me anything, or tell me what to remember.</div>`;
-    return;
-  }
-  box.innerHTML = store.chat.map((m, idx) => {
-    let calBtn = '';
-    if (m.itemId) { const it = store.items.find(x => x.id === m.itemId); if (it?.when) calBtn = `<div class="cal"><button class="chip" data-cal="${it.id}">📅 Add to phone calendar</button></div>`; }
-    if (m.action === 'ai' && !aiReady()) calBtn = `<div class="cal"><button class="chip" data-settings="1">✨ Turn on free AI</button></div>`;
-    return `<div class="msg ${m.role}">${esc(m.text)}${m.src ? `<span class="src">${esc(m.src)}</span>` : ''}${calBtn}</div>`;
+  if (!store.chat.length) { box.innerHTML = `<div class="msg bot">Hi${S().name ? ' ' + esc(S().name) : ''}! I'm Sparrow 🐦\nAsk me anything, tell me what to remember, or drop a file with 📎 and ask about it.</div>`; return; }
+  box.innerHTML = store.chat.slice(-60).map(m => {
+    let extra = '';
+    if (m.itemId) { const it = store.items.find(x => x.id === m.itemId); if (it?.when) extra = `<div class="cal"><button class="chip" data-cal="${it.id}">📅 Add to calendar</button></div>`; }
+    if (m.action === 'ai') extra = `<div class="cal"><button class="chip" data-settings="ai">✨ Set up free AI</button></div>`;
+    if (m.draft) extra = `<div class="cal"><button class="chip" data-mailto="${esc(m.draft)}">✉️ Open in email</button><button class="chip" data-copy="${esc(m.draftBody || '')}">📋 Copy</button></div>`;
+    return `<div class="msg ${m.role}">${esc(m.text)}${m.src ? `<span class="src">${esc(m.src)}</span>` : ''}${resultRows(m)}${extra}</div>`;
   }).join('');
-  box.onclick = e => {
-    if (e.target.closest('[data-settings]')) { openSettings(); return; }
-    const b = e.target.closest('[data-cal]'); if (b) { const it = store.items.find(x => x.id === b.dataset.cal); if (it) addToCalendar(it); }
-  };
 }
+$('#chat').onclick = async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.settings) return openSettings(b.dataset.settings);
+  if (b.dataset.cal) { const it = store.items.find(x => x.id === b.dataset.cal); if (it) addToCalendar(it); }
+  if (b.dataset.open) { D?.openPath(b.dataset.open); mem.remember('opened', b.dataset.open.split(/[\\/]/).pop(), '', { path: b.dataset.open }); }
+  if (b.dataset.reveal) D?.openPath(b.dataset.reveal, true);
+  if (b.dataset.file) { const f = await mem.getFile(b.dataset.file); if (f?.blob) tools.deliver(f.name, new Uint8Array(await f.blob.arrayBuffer()), f.type); else toast(f ? 'Sparrow remembered this file but didn’t keep a copy (turn on “Keep a copy” in Settings → Memory).' : 'That file is gone.', 5000); }
+  if (b.dataset.clip !== undefined) { const clips = await D.clips('get'); D.clips('copy', clips[+b.dataset.clip].text); toast('Copied'); }
+  if (b.dataset.mailto) openUrl(b.dataset.mailto);
+  if (b.dataset.copy !== undefined) { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied'); } catch {} }
+};
 
+let attachments = [];       // files attached to the next question
+let activeDocs = [];        // file ids the conversation is about
+let lastWasVoice = false;
 async function submit(text, fromVoice = false) {
-  text = text.trim(); if (!text) return;
-  addMsg('me', text);
-  go('chat');
-  const r = await handle(text);
-  if (r) {
-    if (r.action === 'checkin') { openCheckIn(true); return; }
-    addMsg('bot', r.reply, r.item ? { itemId: r.item.id } : {});
-    birdMood(r.item ? 'happy' : 'talk');
-    if (r.url) setTimeout(() => openUrl(r.url), 350);
-    if (fromVoice || store.settings.speak) speak(r.reply);
-    return;
+  text = text.trim();
+  if (!text && !attachments.length) return;
+  lastWasVoice = fromVoice;
+  const files = attachments; attachments = []; renderAttached();
+  if (files.length) {
+    addMsg('me', (text ? text + '\n' : '') + files.map(f => '📎 ' + f.name).join('\n'));
+    go('chat');
+    const saved = [];
+    for (const f of files) { try { saved.push(await mem.addFile(f)); } catch {} }
+    activeDocs = saved.map(s => s.id);
+    if (!text) {
+      const words = saved.reduce((n, s) => n + (s.text ? s.text.split(/\s+/).length : 0), 0);
+      addMsg('bot', `Got it — I saved ${saved.map(s => s.name).join(', ')} in your memory${words ? ` (${words.toLocaleString()} words)` : ''}. Ask me anything about ${saved.length > 1 ? 'them' : 'it'}.`);
+      return;
+    }
+  } else { addMsg('me', text); go('chat'); }
+  mem.remember('chat', text);
+
+  if (!files.length) {
+    const r = await handle(text);
+    if (r) {
+      if (await runAction(r)) return;
+      addMsg('bot', r.reply, { ...(r.item ? { itemId: r.item.id } : {}), ...(r.results ? { results: r.results } : {}), ...(r.files ? { files: r.files } : {}) });
+      birdMood(r.item ? 'happy' : 'talk');
+      if (r.url) setTimeout(() => openUrl(r.url), 350);
+      if (fromVoice || S().speak) speak(r.reply);
+      return;
+    }
   }
-  // Ask the AI
+  // Ask an AI (with your files if the question is about them)
+  const aboutDocs = activeDocs.length && (files.length || /\b(it|this|that|file|document|pdf|contract|cv|resume|report|invoice|attached|summar|page)\b/i.test(text));
+  let context = '';
+  if (aboutDocs) context = await mem.relevantText(text, activeDocs);
+  else if (/\b(my files?|my documents?|in my (files|docs))\b/i.test(text)) context = await mem.relevantText(text);
   const box = $('#chat');
   const typing = document.createElement('div');
   typing.className = 'msg bot typing'; typing.innerHTML = '<span></span><span></span><span></span>';
   box.appendChild(typing); window.scrollTo({ top: document.body.scrollHeight });
   setBird('talking', true);
   try {
-    const res = await ask(text, partial => { typing.classList.remove('typing'); typing.textContent = partial; window.scrollTo({ top: document.body.scrollHeight }); });
+    const res = await ask(text, partial => { typing.classList.remove('typing'); typing.textContent = partial; window.scrollTo({ top: document.body.scrollHeight }); }, { context });
     typing.remove();
     addMsg('bot', res.text || '…', { src: res.source });
-    if (fromVoice || store.settings.speak) speak(res.text);
+    mem.remember('chat', 'Sparrow: ' + (res.text || '').slice(0, 200));
+    if (fromVoice || S().speak) speak(res.text);
   } catch (e) {
     typing.remove();
-    if (e.message === 'NO_AI') {
-      addMsg('bot', "I can handle meetings, tasks, reminders, notes and quick actions right now. To answer anything else, turn on the free AI that runs on your phone (one-time download).", { action: 'ai' });
-    } else addMsg('bot', '⚠️ ' + e.message);
+    if (e.message === 'NO_AI') addMsg('bot', D ? "I can do reminders, apps, files, music and lots more right now. To answer open questions, install the free Ollama app on this computer (ollama.com) or add a free key (Groq or Gemini) in Settings → AI."
+      : "I can handle reminders, meetings, tasks, notes, habits, prayer times and more right now. To answer anything else, switch on the free AI (Settings → AI) or add a free key.", { action: 'ai' });
+    else addMsg('bot', '⚠️ ' + e.message);
   } finally { setBird('talking', false); }
 }
 $('#askForm').onsubmit = e => { e.preventDefault(); const v = $('#askInput').value; $('#askInput').value = ''; submit(v); };
 
+/** Things the brain asks the app to do. Returns true if fully handled. */
+async function runAction(r) {
+  switch (r.action) {
+    case 'checkin': openCheckIn(true); return true;
+    case 'focus': addMsg('bot', r.reply); startFocus(r.minutes); return true;
+    case 'report': openReport(); addMsg('bot', 'Here is your report for today — copy or share it from the panel.'); return true;
+    case 'memory': go('memory'); $('#memSearch').value = r.query?.q || ''; renderMemory(); return true;
+    case 'clipboard': {
+      if (!D) { addMsg('bot', 'Clipboard history works in the Mac and Windows app. On a phone, save things as snippets: "save snippet bank details: …"'); return true; }
+      addMsg('bot', r.reply, { clips: await D.clips('get') }); return true;
+    }
+    case 'meeting-start': addMsg('bot', 'Opening meeting notes…'); startMeetingNotes(); return true;
+    case 'meeting-stop': stopMeetingNotes(); return true;
+    case 'sync': openSync(); return true;
+    case 'refresh': renderAll(); addMsg('bot', r.reply); return true;
+    case 'email': addMsg('bot', r.reply); lastEmail = r.email; speak(`Email from ${r.email.from.replace(/<.*>/, '')}. ${r.email.subject}`); return true;
+    case 'email-reply': {
+      let body = r.text;
+      if (!body || body.split(' ').length < 4) {
+        try { body = (await ask(`Write a short, polite email reply${body ? ' that says: ' + body : ''}. Only the reply text, no subject line.\n\nThe email:\nFrom: ${lastEmail?.from}\nSubject: ${lastEmail?.subject}\n${lastEmail?.body?.slice(0, 3000)}`, null, { noHistory: true })).text; }
+        catch { body = body || 'Thank you for your email. I will get back to you shortly.'; }
+      }
+      const res = await D.mail('reply', body);
+      addMsg('bot', res?.ok ? `✉️ Your reply is ready in Mail — check it and press Send:\n\n${body}` : 'I couldn’t open Mail. Allow Sparrow under System Settings → Privacy & Security → Automation.');
+      return true;
+    }
+    case 'email-new': {
+      const cust = findCustomer(r.to); const to = cust?.email || (/@/.test(r.to) ? r.to : '');
+      let body = '';
+      try { body = (await ask(`Write a short, friendly email to ${cust?.title || r.to} about: ${r.about}. Sign off with ${S().name || 'my name'}. Only the email body.`, null, { noHistory: true })).text; }
+      catch { body = `Hi ${(cust?.title || r.to).split(' ')[0]},\n\n${r.about.charAt(0).toUpperCase() + r.about.slice(1)}.\n\nBest wishes,\n${S().name || ''}`; }
+      const subject = r.about.charAt(0).toUpperCase() + r.about.slice(0, 60);
+      const url = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      mem.remember('email', `Email to ${cust?.title || r.to}: ${subject}`, body);
+      addMsg('bot', `✉️ Draft for ${cust?.title || r.to}${to ? '' : ' (no email address saved — add it with "add customer …")'}:\n\n${body}`, { draft: url, draftBody: body });
+      return true;
+    }
+  }
+  return false;
+}
+let lastEmail = null;
+
+// ---------------- attachments ----------------
+$('#attachBtn').onclick = () => $('#fileInput').click();
+$('#fileInput').onchange = e => { attachments.push(...e.target.files); e.target.value = ''; renderAttached(); $('#askInput').focus(); };
+function renderAttached() {
+  const el = $('#attached'); el.hidden = !attachments.length;
+  el.innerHTML = attachments.map(f => `<span title="${esc(f.name)}">📎 ${esc(f.name)}</span>`).join('');
+}
+// drag & drop files anywhere (computer)
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer?.files?.length) { attachments.push(...e.dataTransfer.files); renderAttached(); toast('File attached — ask a question or press send'); } });
+
 function openUrl(url) {
   if (!url) return;
-  if (url.startsWith('app:')) { if (!(N && N.openApp(url.slice(4)))) toast(`Couldn't find ${url.slice(4)}`); return; }
+  if (url.startsWith('app:')) { if (!((N || D) && (N || D).openApp(url.slice(4)))) toast(`Couldn't find ${url.slice(4)}`); return; }
   if (/^https?:/.test(url)) window.open(url, '_blank', 'noopener');
   else location.href = url;
 }
@@ -255,90 +358,118 @@ function openUrl(url) {
 // ---------------- the sparrow ----------------
 const bird = $('#bird');
 function setBird(cls, on) { bird.classList.toggle(cls, on); }
-function birdMood(m) {
-  if (m === 'happy') { bird.classList.remove('happy'); void bird.offsetWidth; bird.classList.add('happy'); setTimeout(() => bird.classList.remove('happy'), 1100); }
-}
-function chirp() {
+function birdMood(m) { if (m === 'happy') { bird.classList.remove('happy'); void bird.offsetWidth; bird.classList.add('happy'); setTimeout(() => bird.classList.remove('happy'), 1100); } }
+function tone(pairs, vol = .08) {
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
-    [[2600, 3600, 0], [3000, 4200, .09]].forEach(([f0, f1, t]) => {
+    pairs.forEach(([f0, f1, t0, d]) => {
       const o = ac.createOscillator(), g = ac.createGain();
-      o.frequency.setValueAtTime(f0, ac.currentTime + t); o.frequency.exponentialRampToValueAtTime(f1, ac.currentTime + t + .07);
-      g.gain.setValueAtTime(.0001, ac.currentTime + t); g.gain.exponentialRampToValueAtTime(.08, ac.currentTime + t + .01);
-      g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + t + .08);
-      o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .1);
+      o.frequency.setValueAtTime(f0, ac.currentTime + t0); o.frequency.exponentialRampToValueAtTime(f1, ac.currentTime + t0 + d * .8);
+      g.gain.setValueAtTime(.0001, ac.currentTime + t0); g.gain.exponentialRampToValueAtTime(vol, ac.currentTime + t0 + .01);
+      g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + t0 + d);
+      o.connect(g).connect(ac.destination); o.start(ac.currentTime + t0); o.stop(ac.currentTime + t0 + d + .05);
     });
-    setTimeout(() => ac.close(), 400);
+    setTimeout(() => ac.close(), 2000);
   } catch {}
 }
+const chirp = () => tone([[2600, 3600, 0, .08], [3000, 4200, .09, .08]]);
+const chime = () => tone([[880, 880, 0, .5], [1318.5, 1318.5, .16, .9]], .18);
 
 // ---------------- voice out ----------------
 let voices = [];
 function loadVoices() { voices = speechSynthesis?.getVoices?.() || []; }
 if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-const FEMALE = /samantha|ava|zoe|serena|allison|susan|karen|moira|tessa|kate|victoria|fiona|female|woman|google uk english female|google us english|en-gb-x-.*#female|siri.*female|sonia|libby|jenny|aria/i;
-const MALE = /daniel|alex|tom|evan|nathan|aaron|arthur|oliver|fred|rishi|male|man|google uk english male|en-gb-x-.*#male|guy|ryan|thomas/i;
+const FEMALE = /samantha|ava|zoe|serena|allison|susan|karen|moira|tessa|kate|victoria|fiona|female|woman|google uk english female|google us english|siri.*female|sonia|libby|jenny|aria|zira|hazel|heera|kalpana|swara|lekha|uzma|salma|hoda|zariyah/i;
+const MALE = /daniel|alex|tom|evan|nathan|aaron|arthur|oliver|fred|rishi|male|man|google uk english male|guy|ryan|thomas|david|mark|george|ravi|hemant|asad|naayf|hamed|maged/i;
 function pickVoice() {
-  const lang = (navigator.language || 'en').slice(0, 2);
-  const pool = voices.filter(v => v.lang?.toLowerCase().startsWith(lang)) .concat(voices.filter(v => v.lang?.startsWith('en')));
-  const want = store.settings.gender === 'male' ? MALE : FEMALE;
-  const quality = v => /premium|enhanced|natural|neural|siri/i.test(v.name) ? 0 : 1;
-  const matches = pool.filter(v => want.test(v.name)).sort((a, b) => quality(a) - quality(b));
-  return matches[0] || pool.sort((a, b) => quality(a) - quality(b))[0] || null;
+  const want = SPEECH_LANG[S().lang] || 'en-GB', lang = want.slice(0, 2);
+  const pool = voices.filter(v => v.lang?.toLowerCase().startsWith(lang));
+  const list = pool.length ? pool : voices.filter(v => v.lang?.startsWith('en'));
+  const re = S().gender === 'male' ? MALE : FEMALE;
+  const q = v => (/premium|enhanced|natural|neural|siri|online/i.test(v.name) ? 0 : 2) + (v.lang?.replace('_', '-') === want ? 0 : 1);
+  return list.filter(v => re.test(v.name)).sort((a, b) => q(a) - q(b))[0] || list.sort((a, b) => q(a) - q(b))[0] || null;
 }
+let speakEnd = null;
 function speak(text) {
-  if (N && text) { N.speak(text, store.settings.gender); return; }
-  if (!('speechSynthesis' in window) || !text) return;
+  if (!text) return;
+  const clean = text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}•]/gu, '').replace(/\n+/g, '. ');
+  if (N) { N.speak(clean, S().gender); return; }
+  if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/[•✅⏰🗓️📝🐦✨☔🎉🌤️⚠️✔️🗑️]/gu, ''));
-  const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; }
-  u.rate = 1.0; u.pitch = store.settings.gender === 'male' ? 0.95 : 1.05;
-  u.onstart = () => { setBird('talking', true); window.SparrowDesktop?.state({ speaking: true }); };
-  u.onend = u.onerror = () => { setBird('talking', false); window.SparrowDesktop?.state({ speaking: false }); };
+  const u = new SpeechSynthesisUtterance(clean);
+  const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = SPEECH_LANG[S().lang] || 'en-GB';
+  u.rate = S().simple ? 0.85 : 0.98; u.pitch = S().gender === 'male' ? 0.95 : 1.05;
+  u.onstart = () => { setBird('talking', true); D?.state({ speaking: true }); };
+  u.onend = u.onerror = () => { setBird('talking', false); D?.state({ speaking: false }); afterSpeech(); };
   speechSynthesis.speak(u);
+}
+// Conversation mode: after answering a spoken question, listen again without a tap.
+function afterSpeech() {
+  if (!lastWasVoice || !S().conversation) return;
+  lastWasVoice = false;
+  setTimeout(() => { if (window.SparrowVoice) window.SparrowVoice.startCommand(); else listen(true); }, 300);
 }
 
 // ---------------- voice in ----------------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, listening = false;
-function listen() {
+let rec = null, listening = false, wakeRec = null;
+function listen(quiet = false) {
   if (N) { N.listen(); return; }
   if (window.SparrowVoice) { window.SparrowVoice.toggle(); return; }
-  if (!SR) { toast('Voice input isn\'t supported in this browser — type instead.'); return; }
+  if (!SR) { if (!quiet) toast('Voice input isn\'t supported in this browser — type instead.'); return; }
   if (listening) { rec?.stop(); return; }
+  stopWake();
   speechSynthesis?.cancel();
-  rec = new SR(); rec.lang = navigator.language || 'en-GB'; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec = new SR(); rec.lang = SPEECH_LANG[S().lang] || navigator.language || 'en-GB'; rec.interimResults = true; rec.maxAlternatives = 1;
   let finalText = '';
   rec.onstart = () => { listening = true; $('#micBtn').classList.add('on'); $('#pulse').classList.add('on'); setBird('listening', true); chirp(); $('#askInput').placeholder = 'Listening…'; };
-  rec.onresult = e => {
-    let txt = ''; for (const r of e.results) txt += r[0].transcript;
-    $('#askInput').value = txt;
-    if (e.results[e.results.length - 1].isFinal) finalText = txt;
-  };
-  rec.onerror = e => { if (e.error === 'not-allowed') toast('Allow the microphone for Sparrow in your browser settings.'); };
+  rec.onresult = e => { let txt = ''; for (const r of e.results) txt += r[0].transcript; $('#askInput').value = txt; if (e.results[e.results.length - 1].isFinal) finalText = txt; };
+  rec.onerror = e => { if (e.error === 'not-allowed' && !quiet) toast('Allow the microphone for Sparrow in your settings.'); };
   rec.onend = () => {
     listening = false; $('#micBtn').classList.remove('on'); $('#pulse').classList.remove('on'); setBird('listening', false);
-    $('#askInput').placeholder = 'Ask Sparrow… e.g. remind me to call mum at 6pm';
-    const t = (finalText || $('#askInput').value).trim();
+    applyI18n();
+    const tx = (finalText || $('#askInput').value).trim();
     $('#askInput').value = '';
-    if (t) submit(t, true);
+    if (tx) submit(tx, true);
+    setTimeout(startWake, 800);
   };
-  rec.start();
+  try { rec.start(); } catch {}
 }
-$('#micBtn').onclick = listen;
-$('#micHeroBtn').onclick = listen;
-$('#birdWrap').onclick = listen;
+$('#micBtn').onclick = () => listen();
+$('#micHeroBtn').onclick = () => listen();
+$('#birdWrap').onclick = () => listen();
+
+// Hands-free on phones/browsers: listen for "Sparrow …" while the app is open.
+function startWake() {
+  if (N || D || !SR || !S().wake || wakeRec || listening || document.hidden) return;
+  try {
+    wakeRec = new SR(); wakeRec.continuous = true; wakeRec.interimResults = false; wakeRec.lang = SPEECH_LANG[S().lang] || 'en-GB';
+    wakeRec.onresult = e => {
+      const tx = e.results[e.results.length - 1][0].transcript.trim();
+      const m = tx.match(/\b(?:hey |ok )?(sparrow|spa?rrow|sparo)\b[,\s]*(.*)$/i);
+      if (!m) return;
+      stopWake();
+      if (m[2] && m[2].length > 2) submit(m[2], true); else listen(true);
+    };
+    wakeRec.onend = () => { wakeRec = null; if (S().wake && !listening) setTimeout(startWake, 1200); };
+    wakeRec.onerror = e => { if (e.error === 'not-allowed') S().wake && ($('#listenHint').hidden = true); };
+    wakeRec.start();
+    $('#listenHint').hidden = false;
+  } catch { wakeRec = null; }
+}
+function stopWake() { try { wakeRec?.abort(); } catch {} wakeRec = null; $('#listenHint').hidden = true; }
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopWake(); else setTimeout(startWake, 600); });
 
 // ---------------- briefing ----------------
 async function showBriefing(speakIt) {
-  $('#brief').textContent = `${greetingWord()}${store.settings.name ? ', ' + store.settings.name : ''}! ${daySummary(new Date(), true)}`;
+  $('#brief').textContent = `${greetingWord()}${S().name ? ', ' + S().name : ''}! ${daySummary(new Date(), true)}`;
   const text = await briefing();
   $('#brief').textContent = text;
   if (speakIt) speakSoon(text);
 }
 $('#hearBriefBtn').onclick = () => showBriefing(true);
 
-// ---------------- reminders while the app is open ----------------
+// ---------------- alerts: reminders, snooze, prayer, habits ----------------
 async function notify(msg, tag) {
   try {
     if (Notification?.permission === 'granted') {
@@ -347,223 +478,509 @@ async function notify(msg, tag) {
     }
   } catch {}
 }
-function alertNow(spoken, shown, tag) {
-  chime(); toast(shown, 8000); birdMood('happy');
-  if (N) { /* Android rings with its own alarm + voice */ } else { speakSoon(spoken); notify(shown, tag); }
+function showAlert(title, sub, itemId) {
+  $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
+  $('#alert').hidden = false;
+  $('#alertSnooze').hidden = !itemId; $('#alertSnooze').dataset.id = itemId || ''; $('#alertDone').dataset.id = itemId || '';
+  clearTimeout(showAlert.t); showAlert.t = setTimeout(() => $('#alert').hidden = true, 60000);
 }
+$('#alertSnooze').onclick = () => { const id = $('#alertSnooze').dataset.id; const it = store.items.find(i => i.id === id); if (it) { store.update(id, { snoozeUntil: Date.now() + 10 * 60000, snoozed: false, done: false }); toast('😴 Snoozed for 10 minutes'); } $('#alert').hidden = true; };
+$('#alertDone').onclick = () => { const id = $('#alertDone').dataset.id; const it = store.items.find(i => i.id === id); if (it && !it.repeat) store.update(id, { done: true, doneAt: new Date().toISOString() }); $('#alert').hidden = true; };
+function alertNow(spoken, shown, tag, itemId) {
+  chime(); showAlert(shown, itemId ? 'Or say “snooze”' : '', itemId); birdMood('happy');
+  if (itemId) setLastAlert(itemId);
+  if (!N) { speakSoon(spoken); notify(shown, tag); }
+}
+const who = () => S().name ? S().name + ', ' : '';
 async function checkDue() {
-  const now = Date.now(), s = store.settings, who = s.name ? s.name + ', ' : '';
-  const lead = (+s.lead || 0) * 60000;
+  const now = Date.now(), lead = (+S().lead || 0) * 60000;
   for (const it of store.items) {
-    if (!(it.type === 'reminder' || it.type === 'meeting') || !it.when || it.done) continue;
+    if (!['reminder', 'meeting', 'task'].includes(it.type) || it.done) continue;
+    if (it.snoozeUntil && !it.snoozed && it.snoozeUntil <= now) {
+      store.update(it.id, { snoozed: true, snoozeUntil: null });
+      alertNow(`${who()}snoozed reminder: ${it.title}.`, '⏰ ' + it.title, it.id + 'snz', it.id); continue;
+    }
+    if (!it.when || (it.type === 'task' && !it.timed)) continue;
     const at = new Date(it.when).getTime(), meet = it.type === 'meeting';
     if (!it.notified && at <= now) {
-      store.update(it.id, { notified: true, soonDone: true });
-      if (now - at < 10 * 60000)
-        alertNow(meet ? `${who}you have a meeting now: ${it.title}.` : `${who}it's time: ${it.title}.`,
-                 (meet ? '🗓️ Now: ' : '⏰ ') + it.title, it.id);
-      if (!meet) store.update(it.id, { done: true });
+      if (now - at < 10 * 60000) alertNow(meet ? `${who()}you have a meeting now: ${it.title}.` : `${who()}it's time: ${it.title}.`, (meet ? '🗓️ Now: ' : '⏰ ') + it.title, it.id, it.id);
+      if (it.repeat) { const nx = nextOccurrence(it.repeat, it.when, new Date(now)); store.update(it.id, { when: nx.toISOString(), notified: false, soonDone: false }); }
+      else store.update(it.id, { notified: true, soonDone: true, ...(it.type === 'reminder' ? { done: true, doneAt: new Date().toISOString() } : {}) });
     } else if (lead && !it.soonDone && at > now && at - now <= lead) {
       store.update(it.id, { soonDone: true });
       const mins = Math.max(1, Math.round((at - now) / 60000));
-      alertNow(meet ? `${who}you have a meeting in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.` : `${who}reminder in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.`,
-               `⏳ In ${mins} min: ${it.title}`, it.id + 'soon');
+      alertNow(meet ? `${who()}you have a meeting in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.` : `${who()}reminder in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.`, `⏳ In ${mins} min: ${it.title}`, it.id + 'soon', it.id);
     }
   }
-  checkDaily();
+  checkPrayer(); checkHabits(); checkDaily(); checkFocus();
 }
-// Morning briefing + evening check-in at the times you choose
-const dayKey = () => new Date().toDateString();
+let prayerCache = { day: '', times: null };
+function checkPrayer() {
+  const p = S().prayer, loc = S().lastLoc;
+  if (!p.on || !loc || N) return;      // Android rings these with its own alarms
+  if (prayerCache.day !== dayKey()) prayerCache = { day: dayKey(), times: prayerTimes(new Date(), loc.lat, loc.lon, p.method, p.asr) };
+  const fired = S().prayerFired || {}, now = Date.now();
+  for (const n of PRAYERS) {
+    if (n === 'Sunrise') continue;
+    const at = prayerCache.times[n].getTime() - (+p.before || 0) * 60000, key = dayKey() + n;
+    if (!fired[key] && now >= at && now - at < 10 * 60000) {
+      fired[key] = 1; S().prayerFired = Object.fromEntries(Object.entries(fired).slice(-12)); store.save();
+      const msg = +p.before ? `${n} prayer in ${p.before} minutes` : `It's time for ${n} prayer`;
+      chime(); showAlert('🕌 ' + msg, fmtTime(prayerCache.times[n])); if (p.speak) speakSoon(`${who()}${msg}.`); notify(msg, 'prayer' + n);
+    }
+  }
+}
+function checkHabits() {
+  const h = new Date().getHours(); if (h < 9 || h >= 21) return;
+  for (const hb of store.ofType('habit')) {
+    if (!hb.every || habitCount(hb) >= hb.target) continue;
+    if (Date.now() - (hb.lastNudge || 0) < hb.every * 3600e3) continue;
+    store.update(hb.id, { lastNudge: Date.now() });
+    if (!hb.lastNudge) continue;      // first run just starts the clock
+    const msg = `Time for ${/water/i.test(hb.title) ? 'a glass of water' : hb.title} — ${habitCount(hb)}/${hb.target} today`;
+    chime(); showAlert('💧 ' + msg, 'Tap ＋ on the Home screen to log it'); speakSoon(`${who()}${msg}.`);
+  }
+}
 const minsOf = hm => { const [h, m] = (hm || '0:0').split(':').map(Number); return h * 60 + m; };
 async function checkDaily() {
-  const s = store.settings, d = new Date(), mins = d.getHours() * 60 + d.getMinutes();
-  if (s.morningOn && s.lastMorning !== dayKey()) {
-    const m = minsOf(s.morningTime);
-    if (mins >= m && mins < Math.max(m + 240, 720)) {
-      s.lastMorning = dayKey(); s.lastBriefDay = dayKey(); store.save();
-      showBriefing(true); return;
-    }
+  const d = new Date(), mins = d.getHours() * 60 + d.getMinutes();
+  if (S().morningOn && S().lastMorning !== dayKey()) {
+    const m = minsOf(S().morningTime);
+    if (mins >= m && mins < Math.max(m + 240, 720)) { S().lastMorning = dayKey(); S().lastBriefDay = dayKey(); store.save(); showBriefing(true); return; }
   }
-  if (s.nightOn && s.lastNight !== dayKey()) {
-    const n = minsOf(s.nightTime);
-    if (mins >= n && mins < n + 180) { s.lastNight = dayKey(); store.save(); openCheckIn(true); }
+  if (S().nightOn && S().lastNight !== dayKey()) {
+    const n = minsOf(S().nightTime);
+    if (mins >= n && mins < n + 180) { S().lastNight = dayKey(); store.save(); openCheckIn(true); }
   }
 }
-// Browsers only allow speech after you've tapped the page once; queue it until then.
+setInterval(checkDue, 20000);
+// Browsers only allow speech after one tap on the page; queue it until then.
 let activated = false, queuedSpeech = null;
-document.addEventListener('pointerdown', () => {
-  activated = true;
-  if (queuedSpeech) { const t = queuedSpeech; queuedSpeech = null; speak(t); }
-}, { capture: true });
-function speakSoon(text) { if (activated || N) speak(text); else queuedSpeech = text; }
-function chime() {
-  try {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    [[880, 0, .5], [1318.5, .16, .9]].forEach(([f, t, d]) => {
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = 'sine'; o.frequency.value = f;
-      g.gain.setValueAtTime(.0001, ac.currentTime + t); g.gain.exponentialRampToValueAtTime(.18, ac.currentTime + t + .01);
-      g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + t + d);
-      o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + d + .05);
-    });
-    setTimeout(() => ac.close(), 1500);
-  } catch {}
-}
+document.addEventListener('pointerdown', () => { activated = true; if (queuedSpeech) { const tx = queuedSpeech; queuedSpeech = null; speak(tx); } startWake(); }, { capture: true });
+function speakSoon(text) { if (activated || N || D) speak(text); else queuedSpeech = text; }
 
 // ---------------- evening check-in ----------------
 function openCheckIn(spoken) {
   const list = tasksForDay(new Date());
   const doneToday = store.items.filter(i => i.type === 'task' && i.done && i.doneAt && new Date(i.doneAt).toDateString() === dayKey()).length;
-  const s = store.settings, hi = `Hi${s.name ? ' ' + s.name : ''}`;
-  if (spoken && !list.length) {   // nothing open: just a kind word, no sheet
+  const hi = `Hi${S().name ? ' ' + S().name : ''}`;
+  if (spoken && !list.length) {
     const msg = `${hi}, it's check-in time.${doneToday ? ` You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today. Well done!` : ' Nothing left for today.'} Want to add anything for tomorrow? Just tell me.`;
     chime(); toast('🌙 ' + msg, 7000); speakSoon(msg); return;
   }
   $('#ciSub').textContent = doneToday ? `You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today ✨` : 'How did today go?';
+  const moved = new Set();
   const render = () => {
-    const rows = tasksForDay(new Date()).concat(list.filter(i => i.done || i._moved));
-    const uniq = [...new Map(rows.map(r => [r.id, r])).values()];
-    $('#ciList').innerHTML = uniq.length ? uniq.map(i => `<div class="ci-row ${i.done ? 'done' : ''} ${i._moved ? 'moved' : ''}" data-id="${i.id}">
+    const rows = [...new Map([...tasksForDay(new Date()), ...list].map(r => [r.id, store.items.find(x => x.id === r.id) || r])).values()];
+    $('#ciList').innerHTML = rows.length ? rows.map(i => `<div class="ci-row ${i.done ? 'done' : ''} ${moved.has(i.id) ? 'moved' : ''}" data-id="${i.id}">
         <button class="check" data-ci="done">${i.done ? '✓' : ''}</button>
-        <div class="txt"><div class="t1">${esc(i.title)}</div><div class="t2">${i._moved ? 'Moved to tomorrow' : i.when ? whenText(i.when) : 'Added today'}</div></div>
-        ${i.done || i._moved ? '' : '<button class="chip" data-ci="tmr">↪ Tomorrow</button>'}
-      </div>`).join('') : '<div class="empty">Nothing left for today 🎉</div>';
-    const left = uniq.filter(i => !i.done && !i._moved).length;
+        <div class="txt"><div class="t1">${esc(i.title)}</div><div class="t2">${moved.has(i.id) ? 'Moved to tomorrow' : i.when ? whenText(i.when) : 'Added today'}</div></div>
+        ${i.done || moved.has(i.id) ? '' : '<button class="chip" data-ci="tmr">↪ Tomorrow</button>'}</div>`).join('') : '<div class="empty">Nothing left for today 🎉</div>';
+    const left = rows.filter(i => !i.done && !moved.has(i.id)).length;
     $('#ciGo').textContent = left ? `Move ${left} to tomorrow` : 'All done';
   };
   $('#ciList').onclick = e => {
     const b = e.target.closest('[data-ci]'); if (!b) return;
     const id = b.closest('.ci-row').dataset.id, it = store.items.find(x => x.id === id); if (!it) return;
-    if (b.dataset.ci === 'done') { store.update(id, { done: !it.done, doneAt: it.done ? null : new Date().toISOString() }); if (it.done) chirp(); }
-    else { moveToTomorrow(id); it._moved = true; }
+    if (b.dataset.ci === 'done') { store.update(id, { done: !it.done, doneAt: it.done ? null : new Date().toISOString() }); if (it.done) { chirp(); mem.remember('done', it.title); } }
+    else { moveToTomorrow(id); moved.add(id); }
     render();
   };
   $('#ciGo').onclick = () => {
-    const left = tasksForDay(new Date()).filter(i => !i._moved);
+    const left = tasksForDay(new Date()).filter(i => !moved.has(i.id));
     left.forEach(i => moveToTomorrow(i.id));
-    const moved = left.length + list.filter(i => i._moved).length;
-    list.forEach(i => delete i._moved);
-    closeCheckIn();
-    const msg = moved ? `Done. I moved ${moved} task${moved > 1 ? 's' : ''} to tomorrow. Sleep well${s.name ? ', ' + s.name : ''}!` : `Great job today${s.name ? ', ' + s.name : ''}! Sleep well.`;
+    const n = left.length + moved.size;
+    closeSheets();
+    const msg = n ? `Done. I moved ${n} task${n > 1 ? 's' : ''} to tomorrow. Sleep well${S().name ? ', ' + S().name : ''}!` : `Great job today${S().name ? ', ' + S().name : ''}! Sleep well.`;
     toast('🌙 ' + msg, 4000); speak(msg);
   };
-  $('#ciLater').onclick = closeCheckIn;
-  render();
-  $('#checkin').hidden = $('#sheetBg').hidden = false;
+  $('#ciLater').onclick = closeSheets;
+  render(); openSheet('#checkin');
   if (spoken) {
     chime();
-    speakSoon(list.length
-      ? `${hi}, it's check-in time.${doneToday ? ` You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today. Nice work!` : ''} ${list.length === 1 ? 'One task is' : list.length + ' tasks are'} still open: ${spokenList(list.map(i => i.title))}. Tick the ones you finished, and I'll move the rest to tomorrow.`
-      : `${hi}, it's check-in time. Nothing left for today. Well done!`);
+    speakSoon(`${hi}, it's check-in time.${doneToday ? ` You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today. Nice work!` : ''} ${list.length === 1 ? 'One task is' : list.length + ' tasks are'} still open: ${spokenList(list.map(i => i.title))}. Tick the ones you finished, and I'll move the rest to tomorrow.`);
   }
 }
-function closeCheckIn() { $('#checkin').hidden = true; $('#sheetBg').hidden = $('#sheet').hidden; }
 $('#checkinBtn').onclick = () => openCheckIn(false);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('#checkin').hidden) closeCheckIn(); else if (!$('#sheet').hidden) closeSettings(); } });
 
-setInterval(checkDue, 20000);
+// ---------------- sheets ----------------
+function openSheet(sel) { $$('.sheet').forEach(s => s.hidden = true); $(sel).hidden = false; $('#sheetBg').hidden = false; }
+function closeSheets() {
+  if (!$('#sheet').hidden) saveSettings();
+  $$('.sheet').forEach(s => s.hidden = true); $('#sheetBg').hidden = true;
+  panelCleanup?.(); panelCleanup = null;
+}
+$('#sheetBg').onclick = closeSheets;
+$('#panelClose').onclick = closeSheets;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('#focus').hidden) return; closeSheets(); } });
+let panelCleanup = null;
+function openPanel(title, html, cleanup) { $('#panelTitle').textContent = title; $('#panelBody').innerHTML = html; panelCleanup = cleanup || null; openSheet('#panel'); return $('#panelBody'); }
+
+// ---------------- memory view ----------------
+let memKinds = null;
+$$('#memSeg button').forEach(b => b.onclick = () => { memKinds = b.dataset.k ? b.dataset.k.split(',') : null; $$('#memSeg button').forEach(x => x.classList.toggle('on', x === b)); renderMemory(); });
+let memT; $('#memSearch').oninput = () => { clearTimeout(memT); memT = setTimeout(renderMemory, 250); };
+async function renderMemory() {
+  const q = $('#memSearch').value.trim();
+  let rows;
+  if (q) { const { dateRange } = await import('./brain.js'); const r = dateRange(q); rows = await mem.search({ q: r ? q.replace(/\b(today|yesterday|last|this|week|month|year|on|in)\b/gi, '') : q, from: r?.[0] || 0, to: r?.[1] || Infinity, kinds: memKinds, limit: 200 }); }
+  else rows = (await mem.recent(300)).filter(r => !memKinds || memKinds.includes(r.kind));
+  if (!S().memory.on) { $('#memList').innerHTML = '<div class="card empty">Memory is paused. Turn it on in Settings → Memory.</div>'; return; }
+  if (!rows.length) { $('#memList').innerHTML = `<div class="card empty">${q ? 'Nothing found.' : 'Nothing remembered yet.<br>Chats, files you drop, tasks and quotes appear here.'}</div>`; return; }
+  const byDay = {};
+  rows.sort((a, b) => b.at - a.at).forEach(r => { const k = new Date(r.at).toDateString(); (byDay[k] = byDay[k] || []).push(r); });
+  $('#memList').innerHTML = Object.entries(byDay).map(([day, list]) => `<div class="mem-day">${fmtDay(new Date(day))}${fmtDay(new Date(day)).length > 10 ? '' : ' · ' + new Date(day).toLocaleDateString([], { day: 'numeric', month: 'short' })}</div>
+    <div class="card list">${list.map(r => `<div class="item" data-mid="${r.id}"><div class="ic">${ICON[r.kind] || '•'}</div><div class="txt"><div class="t1">${esc(r.title)}</div><div class="t2">${new Date(r.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${esc(r.kind)}${r.text && r.kind !== 'chat' ? ' · ' + esc(r.text.slice(0, 60)) : ''}</div></div>
+      <div class="acts">${r.meta?.fileId ? `<button data-mfile="${r.meta.fileId}" title="Open">📂</button><button data-mask="${r.meta.fileId}" title="Ask about it">💬</button>` : ''}<button data-mdel="${r.id}" title="Forget">🗑️</button></div></div>`).join('')}</div>`).join('');
+}
+$('#memList').onclick = async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.mdel) { await mem.forget(+b.dataset.mdel); renderMemory(); }
+  if (b.dataset.mfile) { const f = await mem.getFile(b.dataset.mfile); if (f?.blob) tools.deliver(f.name, new Uint8Array(await f.blob.arrayBuffer()), f.type); else toast('Sparrow didn’t keep a copy of this file. Turn on “Keep a copy” in Settings → Memory.', 5000); }
+  if (b.dataset.mask) { activeDocs = [b.dataset.mask]; go('chat'); $('#askInput').placeholder = 'Ask about this file…'; $('#askInput').focus(); }
+};
+
+// ---------------- tools ----------------
+$$('.tool').forEach(b => b.onclick = () => openTool(b.dataset.tool));
+function pickFiles(accept, multiple = true) {
+  return new Promise(res => { const i = $('#toolFile'); i.accept = accept; i.multiple = multiple; i.value = ''; i.onchange = () => res([...i.files]); i.click(); });
+}
+function updateTimerLabel() { const r = tools.runningTimer(); $('#timerLbl').textContent = r ? `⏹ ${r.title} · ${tools.fmtHours(tools.hours(r))}` : 'Time tracker'; }
+setInterval(updateTimerLabel, 30000);
+async function openTool(name) {
+  const P = $('#toolPanel'); P.hidden = false;
+  const done = html => { P.innerHTML = html; P.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  const cur = S().business.currency;
+  if (name === 'quote') {
+    done(`<h3>🧾 Quote or invoice</h3><p class="small-text">Type it like you'd say it. A PDF is made on this device.</p>
+      <select id="qKind"><option>Quote</option><option>Invoice</option></select>
+      <input id="qCust" placeholder="Customer name">
+      <textarea class="field-in" id="qLines" placeholder="One line each, e.g.\n3 hours web design at 40\nHosting 20"></textarea>
+      <button class="btn" id="qGo">Make PDF</button>${!S().business.name ? '<p class="small-text">Tip: add your business name in Settings → Business.</p>' : ''}`);
+    $('#qGo').onclick = async () => {
+      const text = `${$('#qKind').value} for ${$('#qCust').value || 'Customer'}, ${$('#qLines').value.split('\n').filter(Boolean).join(', ')}`;
+      const r = await handle(text); toast(r?.reply?.split('\n')[0] || 'Done', 5000);
+    };
+  }
+  if (name === 'timer') {
+    const r = tools.runningTimer();
+    const week = store.items.filter(i => i.type === 'timer' && i.start > Date.now() - 7 * 86400e3);
+    const byLabel = {}; week.forEach(i => byLabel[i.title] = (byLabel[i.title] || 0) + tools.hours(i));
+    done(`<h3>⏱️ Time tracker</h3>${r ? `<p><b>Running:</b> ${esc(r.title)} · ${tools.fmtHours(tools.hours(r))}</p><button class="btn" id="tStop">Stop</button>`
+      : `<input id="tLabel" placeholder="What are you working on? e.g. Ali website"><button class="btn" id="tStart">Start</button>`}
+      <p class="small-text" style="margin-top:14px"><b>This week</b></p>${Object.entries(byLabel).map(([k, v]) => `<div class="res-row"><div class="txt"><div class="t1">${esc(k)}</div></div><b>${tools.fmtHours(v)}</b></div>`).join('') || '<p class="small-text">No time tracked yet.</p>'}
+      <p class="small-text">Then say “invoice Ali at £40” — tracked hours go straight onto the invoice.</p>`);
+    $('#tStart') && ($('#tStart').onclick = () => { tools.startTimer($('#tLabel').value || 'Work'); updateTimerLabel(); openTool('timer'); });
+    $('#tStop') && ($('#tStop').onclick = () => { tools.stopTimer(); updateTimerLabel(); openTool('timer'); });
+  }
+  if (name === 'expenses') {
+    const ex = tools.monthExpenses(), total = ex.reduce((n, i) => n + (+i.amount || 0), 0);
+    done(`<h3>💸 Expenses this month · ${cur}${total.toFixed(2)}</h3>
+      <div class="row-btns"><input id="exWhat" placeholder="What for?"><input id="exAmt" placeholder="Amount" inputmode="decimal" style="max-width:110px"></div>
+      <button class="btn" id="exAdd">Add expense</button>
+      ${ex.map(i => `<div class="res-row"><div class="txt"><div class="t1">${esc(i.title)}</div><div class="t2">${new Date(i.created).toLocaleDateString()}</div></div><b>${cur}${(+i.amount).toFixed(2)}</b></div>`).join('')}
+      <button class="btn ghost" id="exCsv">⬇️ Export all expenses (CSV for Excel)</button>`);
+    $('#exAdd').onclick = () => { const a = parseFloat($('#exAmt').value); if (!a) return; store.add({ type: 'expense', title: $('#exWhat').value || 'Expense', amount: a }); mem.remember('expense', `${$('#exWhat').value}: ${a}`); openTool('expenses'); };
+    $('#exCsv').onclick = () => tools.deliver(`expenses-${new Date().toISOString().slice(0, 7)}.csv`, new TextEncoder().encode(tools.csv([['Date', 'What', 'Amount'], ...store.ofType('expense').map(i => [new Date(i.created).toLocaleDateString(), i.title, i.amount])])), 'text/csv');
+  }
+  if (name === 'report') openReport();
+  if (name === 'focus') { const m = parseInt(prompt('Focus for how many minutes?', '25'), 10); if (m) startFocus(m); }
+  if (name === 'meeting') startMeetingNotes();
+  if (name === 'sync') openSync();
+  if (name === 'merge') { const f = await pickFiles('application/pdf'); if (f.length < 2) return toast('Pick two or more PDFs'); toast('Merging…'); tools.deliver('Merged.pdf', await tools.mergePDFs(f), 'application/pdf'); mem.remember('file', 'Merged PDF: ' + f.map(x => x.name).join(', ')); }
+  if (name === 'images') { const f = await pickFiles('image/*'); if (!f.length) return; toast('Making PDF…'); tools.deliver('Photos.pdf', await tools.imagesToPDF(f), 'application/pdf'); }
+  if (name === 'pages') { const [f] = await pickFiles('application/pdf', false); if (!f) return; const spec = prompt('Which pages to keep? e.g. 1-3, 5', '1'); if (!spec) return; tools.deliver(f.name.replace(/\.pdf$/i, '') + ' (pages).pdf', await tools.extractPages(f, spec), 'application/pdf'); }
+  if (name === 'rotate') { const [f] = await pickFiles('application/pdf', false); if (!f) return; tools.deliver(f.name.replace(/\.pdf$/i, '') + ' (rotated).pdf', await tools.rotatePDF(f, 90), 'application/pdf'); }
+  if (name === 'snippets') {
+    const list = S().snippets || [];
+    done(`<h3>📋 Snippets</h3><p class="small-text">Text you paste often — addresses, bank details, standard replies.</p>
+      ${list.map((s, i) => `<div class="res-row"><div class="txt"><div class="t1">${esc(s.name)}</div><div class="t2">${esc(s.text.slice(0, 70))}</div></div><button data-sc="${i}">Copy</button><button data-sd="${i}">✕</button></div>`).join('') || ''}
+      <input id="snName" placeholder="Name, e.g. Bank details"><textarea class="field-in" id="snText" placeholder="The text"></textarea><button class="btn" id="snAdd">Save snippet</button>`);
+    P.onclick = async e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.sc) { try { await navigator.clipboard.writeText(list[+b.dataset.sc].text); } catch { D?.clips('copy', list[+b.dataset.sc].text); } toast('Copied'); }
+      if (b.dataset.sd) { S().snippets = list.filter((_, i) => i !== +b.dataset.sd); store.save(); openTool('snippets'); }
+      if (b.id === 'snAdd' && $('#snName').value && $('#snText').value) { S().snippets = [...list, { name: $('#snName').value, text: $('#snText').value }]; store.save(); openTool('snippets'); }
+    };
+    return;
+  }
+  if (name === 'find' && D) {
+    done(`<h3>📁 Find files</h3><input id="fQ" placeholder="e.g. invoice Ali, contract, CV" enterkeyhint="search"><div id="fRes"></div>`);
+    $('#fQ').onkeydown = async e => { if (e.key !== 'Enter') return; $('#fRes').innerHTML = '<p class="small-text">Searching…</p>'; const files = await D.findFiles($('#fQ').value);
+      $('#fRes').innerHTML = files.map(f => `<div class="res-row"><div class="txt"><div class="t1">${esc(f.name)}</div><div class="t2">${new Date(f.mtime).toLocaleDateString()}</div></div><button data-o="${esc(f.path)}">Open</button><button data-r="${esc(f.path)}">Show</button></div>`).join('') || '<p class="small-text">Nothing found.</p>'; };
+    $('#fQ').focus();
+    P.onclick = e => { const b = e.target.closest('button'); if (b?.dataset.o) D.openPath(b.dataset.o); if (b?.dataset.r) D.openPath(b.dataset.r, true); };
+    return;
+  }
+  if (name === 'tidy' && D) {
+    const plan = await D.tidyDownloads(false), total = Object.values(plan).reduce((a, b) => a + b, 0);
+    done(`<h3>🧹 Tidy Downloads</h3>${total ? `<p>I'll sort <b>${total}</b> files into folders inside Downloads:</p><p class="small-text">${Object.entries(plan).map(([k, v]) => `${k}: ${v}`).join(' · ')}</p><button class="btn" id="tdGo">Tidy now</button>` : '<p>Your Downloads folder is already tidy ✨</p>'}`);
+    $('#tdGo') && ($('#tdGo').onclick = async () => { await D.tidyDownloads(true); toast('Downloads tidied 🧹'); openTool('tidy'); });
+  }
+  if (name === 'clipboard' && D) {
+    const clips = await D.clips('get');
+    done(`<h3>📎 Clipboard history</h3><p class="small-text">The last things you copied, kept on this computer only.</p>${clips.slice(0, 30).map((c, i) => `<div class="res-row"><div class="txt"><div class="t1">${esc(c.text.slice(0, 90))}</div><div class="t2">${new Date(c.at).toLocaleString([], { hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'short' })}</div></div><button data-ci="${i}">Copy</button></div>`).join('') || '<p class="small-text">Nothing yet — copy something.</p>'}
+      <button class="btn ghost" id="clClear">Clear history</button>`);
+    P.onclick = async e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.ci !== undefined) { D.clips('copy', clips[+b.dataset.ci].text); toast('Copied'); } if (b.id === 'clClear') { await D.clips('clear'); openTool('clipboard'); } };
+    return;
+  }
+  if (name === 'watch' && D) {
+    const st = await D.getSettings();
+    done(`<h3>👀 Watch a folder</h3><p class="small-text">I'll tell you when a new file arrives — e.g. your Invoices or Downloads folder.</p>
+      ${(st.watch || []).map(d => `<div class="res-row"><div class="txt"><div class="t1">${esc(d.split(/[\\/]/).pop())}</div><div class="t2">${esc(d)}</div></div><button data-wr="${esc(d)}">Stop</button></div>`).join('')}
+      <button class="btn" id="wAdd">＋ Choose a folder</button>`);
+    P.onclick = async e => { const b = e.target.closest('button'); if (!b) return; if (b.id === 'wAdd') { const d = await D.pickFolder(); if (d) { await D.watch('add', d); openTool('watch'); } } if (b.dataset.wr) { await D.watch('remove', b.dataset.wr); openTool('watch'); } };
+    return;
+  }
+  P.onclick = null;
+}
+
+// ---------------- daily report ----------------
+function buildReport() {
+  const tdy = dayKey(), on = d => d && new Date(d).toDateString() === tdy;
+  const done = store.items.filter(i => i.done && on(i.doneAt));
+  const meetings = store.onDay(new Date()).filter(i => i.type === 'meeting');
+  const timers = store.items.filter(i => i.type === 'timer' && on(i.start));
+  const byLabel = {}; timers.forEach(i => byLabel[i.title] = (byLabel[i.title] || 0) + tools.hours(i));
+  const docs = store.items.filter(i => ['quote', 'invoice'].includes(i.type) && on(i.created));
+  const ex = store.items.filter(i => i.type === 'expense' && on(i.created));
+  const open = tasksForDay(new Date());
+  const L = [`Daily report — ${new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}${S().name ? ' — ' + S().name : ''}`, ''];
+  L.push('Completed:', ...(done.length ? done.map(i => '• ' + i.title) : ['• —']), '');
+  if (meetings.length) L.push('Meetings:', ...meetings.map(m => `• ${fmtTime(m.when)} ${m.title}`), '');
+  if (timers.length) L.push('Time:', ...Object.entries(byLabel).map(([k, v]) => `• ${k}: ${tools.fmtHours(v)}`), '');
+  if (docs.length) L.push('Quotes & invoices:', ...docs.map(d => `• ${d.title} — ${S().business.currency}${(+d.total).toFixed(2)}`), '');
+  if (ex.length) L.push('Expenses:', ...ex.map(e => `• ${e.title} — ${S().business.currency}${(+e.amount).toFixed(2)}`), '');
+  L.push('Still open:', ...(open.length ? open.map(i => '• ' + i.title) : ['• Nothing — all clear!']));
+  return L.join('\n');
+}
+function openReport() {
+  const text = buildReport();
+  const body = openPanel('📊 Daily report', `<div class="report">${esc(text)}</div><div class="row-btns"><button class="btn ghost" id="rpCopy">📋 Copy</button><button class="btn" id="rpShare">Share</button></div>`);
+  body.querySelector('#rpCopy').onclick = async () => { try { await navigator.clipboard.writeText(text); } catch { D?.clips('copy', text); } toast('Copied'); };
+  body.querySelector('#rpShare').onclick = async () => { if (navigator.share) { try { await navigator.share({ text }); } catch {} } else openUrl('mailto:?subject=' + encodeURIComponent('Daily report') + '&body=' + encodeURIComponent(text)); };
+  mem.remember('report', 'Daily report', text);
+}
+
+// ---------------- focus ----------------
+let focusEnd = 0, focusTotal = 0;
+function startFocus(min) { focusTotal = min * 60000; focusEnd = Date.now() + focusTotal; $('#focus').hidden = false; tickFocus(); }
+function tickFocus() {
+  if ($('#focus').hidden) return;
+  const left = Math.max(0, focusEnd - Date.now());
+  $('#focusTime').textContent = `${String(Math.floor(left / 60000)).padStart(2, '0')}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}`;
+  $('#focusArc').style.strokeDashoffset = String(339.3 * (1 - left / focusTotal));
+  if (left <= 0) { $('#focus').hidden = true; chime(); const msg = `${who()}great focus! Time for a short break.`; showAlert('🎯 Focus done', 'Stretch, drink some water 💧'); speak(msg); return; }
+  setTimeout(tickFocus, 1000);
+}
+function checkFocus() { if (!$('#focus').hidden) tickFocus(); }
+$('#focusStop').onclick = () => { $('#focus').hidden = true; };
+
+// ---------------- meeting notes ----------------
+let meeting = null;
+function startMeetingNotes() {
+  const desktopVoice = window.SparrowVoice?.dictate;
+  if (!desktopVoice && !SR) { addMsg('bot', N ? 'Meeting notes need the Mac/Windows app or Chrome for now. Coming to the Android app soon.' : 'Meeting notes aren’t supported in this browser — use Chrome, or the Mac/Windows app.'); go('chat'); return; }
+  let finalText = '', partial = '';
+  const body = openPanel('🎤 Meeting notes', `<p class="small-text">Listening… everything is written ${desktopVoice ? 'on this computer, offline' : 'by your browser'}. Press Stop when the meeting ends.</p><div class="live" id="live"></div><button class="btn" id="mnStop">⏹ Stop & save</button>`, () => meeting?.stop());
+  const live = body.querySelector('#live');
+  const show = () => { live.innerHTML = esc(finalText) + `<span class="partial">${esc(partial)}</span>`; live.scrollTop = live.scrollHeight; };
+  const onText = (tx, isFinal) => { if (isFinal) { finalText += (finalText ? ' ' : '') + tx; partial = ''; } else partial = ' ' + tx; show(); };
+  let stopFn;
+  if (desktopVoice) stopFn = window.SparrowVoice.dictate(onText);
+  else {
+    stopWake();
+    let on = true; const r = new SR(); r.continuous = true; r.interimResults = true; r.lang = SPEECH_LANG[S().lang] || 'en-GB';
+    r.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) onText(e.results[i][0].transcript.trim(), e.results[i].isFinal); };
+    r.onend = () => { if (on) try { r.start(); } catch {} };
+    try { r.start(); } catch {}
+    stopFn = () => { on = false; try { r.stop(); } catch {} };
+  }
+  meeting = { stop: () => { stopFn?.(); meeting = null; } };
+  body.querySelector('#mnStop').onclick = () => finishMeeting(finalText + partial);
+}
+function stopMeetingNotes() { const live = $('#live'); finishMeeting(live ? live.textContent : ''); }
+function finishMeeting(text) {
+  meeting?.stop();
+  text = text.trim();
+  if (!text) { closeSheets(); toast('Nothing was heard.'); return; }
+  const title = `Meeting notes – ${new Date().toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`;
+  store.add({ type: 'note', title, text });
+  mem.remember('meeting-notes', title, text);
+  const items = tools.actionItems(text);
+  const body = openPanel('🎤 Saved', `<p>Saved as a note and in your memory.</p>${items.length ? `<p class="small-text"><b>Action items I spotted</b> — tick to add as tasks:</p>${items.map((a, i) => `<label class="row"><input type="checkbox" data-ai="${i}" checked> ${esc(a)}</label>`).join('')}<button class="btn" id="aiAdd">Add as tasks</button>` : ''}<button class="btn ghost" id="mnSum">✨ Summarise with AI</button>`);
+  body.querySelector('#aiAdd')?.addEventListener('click', () => { body.querySelectorAll('[data-ai]:checked').forEach(c => store.add({ type: 'task', title: items[+c.dataset.ai].slice(0, 120) })); toast('Tasks added ✅'); closeSheets(); });
+  body.querySelector('#mnSum').onclick = async () => { closeSheets(); go('chat'); addMsg('me', 'Summarise my meeting notes'); try { const r = await ask('Summarise these meeting notes in short bullet points, then list action items with owners if mentioned.', null, { context: text, noHistory: true }); addMsg('bot', r.text, { src: r.source }); } catch (e) { addMsg('bot', e.message === 'NO_AI' ? 'Turn on an AI in Settings → AI to get summaries.' : '⚠️ ' + e.message, e.message === 'NO_AI' ? { action: 'ai' } : {}); } };
+}
+
+// ---------------- sync ----------------
+function openSync() {
+  const body = openPanel('🔁 Sync devices', `<p class="small-text">Copy your tasks, reminders, notes, customers and habits between your phone and computer — no account, nothing goes online.</p>
+    <div class="row-btns"><button class="btn" id="syShow">Show my QR code</button><button class="btn ghost" id="syScan">Scan a QR code</button></div>
+    <div id="syArea"></div>
+    <div class="row-btns"><button class="btn ghost" id="syFile">Save sync file</button><button class="btn ghost" id="syOpen">Open sync file</button></div>
+    <label class="row"><input type="checkbox" id="syMem"> Include memory (text only)</label>`, () => { abort?.abort(); clearInterval(cycle); });
+  let abort = null, cycle = null;
+  body.querySelector('#syShow').onclick = async () => {
+    const codes = await sync.qrCodes(await sync.bundle($('#syMem').checked));
+    let i = 0; const area = body.querySelector('#syArea');
+    const show = () => { area.innerHTML = `<div class="qr-box">${codes[i]}</div><p class="small-text center">${codes.length > 1 ? `Code ${i + 1} of ${codes.length} — keep it in view, it changes by itself` : 'Scan this with Sparrow on your other device (Tools → Sync → Scan)'}</p>`; i = (i + 1) % codes.length; };
+    clearInterval(cycle); show(); if (codes.length > 1) cycle = setInterval(show, 900);
+  };
+  body.querySelector('#syScan').onclick = async () => {
+    const area = body.querySelector('#syArea');
+    area.innerHTML = `<video class="scan" playsinline muted></video><p class="small-text center" id="syProg">Point the camera at the QR code…</p>`;
+    abort = new AbortController();
+    try {
+      const data = await sync.scan(area.querySelector('video'), (got, total) => { area.querySelector('#syProg').textContent = `Got ${got} of ${total}…`; }, abort.signal);
+      const r = await sync.applyBundle(data);
+      area.innerHTML = `<p>✅ Synced: ${r.added} new, ${r.changed} updated.</p>`; renderAll();
+    } catch (e) { if (e.message !== 'cancelled') area.innerHTML = `<p class="small-text">⚠️ ${esc(e.message)} — allow the camera, or use a sync file.</p>`; }
+  };
+  body.querySelector('#syFile').onclick = async () => tools.deliver(`sparrow-sync-${new Date().toISOString().slice(0, 10)}.sparrow`, new TextEncoder().encode(await sync.bundle($('#syMem').checked)), 'application/octet-stream');
+  body.querySelector('#syOpen').onclick = async () => { const [f] = await pickFiles('', false); if (!f) return; try { const r = await sync.applyBundle((await f.text()).trim()); toast(`✅ Synced: ${r.added} new, ${r.changed} updated`); renderAll(); } catch { toast('That isn’t a Sparrow sync file.'); } };
+}
 
 // ---------------- settings ----------------
-function openSettings() {
-  const s = store.settings;
-  $('#sName').value = s.name; $('#sCity').value = s.city; $('#sSpeak').checked = s.speak;
-  $('#sModel').value = s.model;
-  $('#rMorningOn').checked = s.morningOn; $('#rMorning').value = s.morningTime;
-  $('#rNightOn').checked = s.nightOn; $('#rNight').value = s.nightTime; $('#rLead').value = String(s.lead);
-  $('#kGemini').value = s.keys.gemini || ''; $('#kOpenAI').value = s.keys.openai || ''; $('#kClaude').value = s.keys.claude || '';
+const PROVIDER_ORDER = Object.keys(PROVIDERS);
+function fillSettings() {
+  const s = S();
+  $('#sName').value = s.name; $('#sCity').value = s.city;
+  $('#sLang').innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}">${v}</option>`).join(''); $('#sLang').value = s.lang;
+  $$('#sTheme button').forEach(b => b.classList.toggle('on', b.dataset.th === s.theme));
+  $('#sSimple').checked = s.simple; $('#sSpeak').checked = s.speak; $('#sWake').checked = s.wake; $('#sConv').checked = s.conversation; $('#sMic').checked = s.micButton !== false;
   $$('#sGender button').forEach(b => b.classList.toggle('on', b.dataset.g === s.gender));
-  $('#sheet').hidden = $('#sheetBg').hidden = false;
+  $('#wakeNote').textContent = N ? 'On Android, also switch on “Listen for Sparrow” under Android powers.' : D ? 'Works offline on this computer.' : isIOS ? 'On iPhone, Sparrow listens while the app is open. Apple doesn’t allow listening in the background.' : 'Sparrow listens while the app is open.';
+  $('#rMorningOn').checked = s.morningOn; $('#rMorning').value = s.morningTime; $('#rNightOn').checked = s.nightOn; $('#rNight').value = s.nightTime; $('#rLead').value = String(s.lead);
+  $('#pMethod').innerHTML = Object.entries(METHODS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+  $('#pOn').checked = s.prayer.on; $('#pMethod').value = s.prayer.method; $('#pAsr').value = s.prayer.asr; $('#pBefore').value = String(s.prayer.before); $('#pSpeak').checked = s.prayer.speak;
+  $('#sProvider').innerHTML = `<option value="auto">Automatic (free first)</option>${D ? '<option value="ollama">Ollama on this computer</option>' : '<option value="local">Free AI on this device</option>'}` + PROVIDER_ORDER.map(p => `<option value="${p}">${PROVIDERS[p].name}</option>`).join('');
+  $('#sProvider').value = s.provider || 'auto';
+  $('#sModel').value = s.model;
+  $('#keyFields').innerHTML = PROVIDER_ORDER.map(p => `<label class="field"><span>${PROVIDERS[p].name}</span><div class="key-row"><input type="password" data-key="${p}" value="${esc(s.keys[p] || '')}" placeholder="API key" autocomplete="off"><a href="${PROVIDERS[p].site}" target="_blank" rel="noopener">Get a key</a></div></label>`).join('');
+  $('#bName').value = s.business.name; $('#bAddr').value = s.business.address; $('#bCur').value = s.business.currency; $('#sMusic').value = s.musicApp;
+  $('#mOn').checked = s.memory.on; $('#mCopies').checked = s.memory.keepCopies; $('#mDays').value = String(s.memory.days); $('#mRecent').checked = s.memory.recentFiles;
+}
+async function openSettings(section) {
+  fillSettings(); openSheet('#sheet');
+  if (section === 'ai') { const d = $$('#sheet details').find(x => x.querySelector('summary').textContent.includes('AI')); if (d) { d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); } }
   refreshAiStatus(); refreshAndroid();
+  if (D) {
+    const list = await ollamaModels();
+    $('#sOllama').innerHTML = '<option value="">Automatic</option>' + list.map(m => `<option>${esc(m)}</option>`).join(''); $('#sOllama').value = S().ollamaModel || '';
+    $('#ollamaNote').innerHTML = list.length ? `✅ Ollama is running with ${list.length} model${list.length > 1 ? 's' : ''}. Free and private.` : 'Not found. Install the free <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama app</a>, then run “ollama pull llama3.2”.';
+  }
 }
-function closeSettings() {
-  const s = store.settings;
-  s.name = $('#sName').value.trim(); s.city = $('#sCity').value.trim(); s.speak = $('#sSpeak').checked; s.model = $('#sModel').value;
-  s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30';
-  s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
-  s.keys = { gemini: $('#kGemini').value.trim(), openai: $('#kOpenAI').value.trim(), claude: $('#kClaude').value.trim() };
-  store.save();
-  $('#sheet').hidden = $('#sheetBg').hidden = true;
-  renderHeader();
+function saveSettings() {
+  const s = S();
+  s.name = $('#sName').value.trim(); s.city = $('#sCity').value.trim(); s.lang = $('#sLang').value; s.simple = $('#sSimple').checked;
+  s.speak = $('#sSpeak').checked; s.wake = $('#sWake').checked; s.conversation = $('#sConv').checked; s.micButton = $('#sMic').checked;
+  s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30'; s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
+  s.prayer = { ...s.prayer, on: $('#pOn').checked, method: $('#pMethod').value, asr: $('#pAsr').value, before: +$('#pBefore').value, speak: $('#pSpeak').checked };
+  s.provider = $('#sProvider').value; s.model = $('#sModel').value; if (D) s.ollamaModel = $('#sOllama').value;
+  $$('#keyFields [data-key]').forEach(i => s.keys[i.dataset.key] = i.value.trim());
+  s.business = { ...s.business, name: $('#bName').value.trim(), address: $('#bAddr').value.trim(), currency: $('#bCur').value }; s.musicApp = $('#sMusic').value;
+  s.memory = { ...s.memory, on: $('#mOn').checked, keepCopies: $('#mCopies').checked, days: +$('#mDays').value, recentFiles: $('#mRecent').checked };
+  store.save(); renderAll();
+  if (s.wake) startWake(); else stopWake();
+  window.SparrowVoice && (s.wake ? window.SparrowVoice.startWake() : window.SparrowVoice.stopWake());
 }
-$('#settingsBtn').onclick = openSettings;
-$('#closeSheet').onclick = closeSettings;
-$('#sheetBg').onclick = () => { if (!$('#checkin').hidden) closeCheckIn(); else closeSettings(); };
-$$('#sGender button').forEach(b => b.onclick = () => { store.settings.gender = b.dataset.g; $$('#sGender button').forEach(x => x.classList.toggle('on', x === b)); store.save(); });
-$('#testVoice').onclick = () => speak(`Hi${store.settings.name ? ' ' + store.settings.name : ''}! I'm Sparrow. Ready when you are.`);
-$('#exportBtn').onclick = () => {
-  const blob = new Blob([JSON.stringify({ items: store.items, settings: { ...store.settings, keys: undefined } }, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'sparrow-backup.json'; a.click();
-};
+$('#settingsBtn').onclick = () => openSettings();
+$('#closeSheet').onclick = closeSheets;
+$$('#sTheme button').forEach(b => b.onclick = () => { S().theme = b.dataset.th; $$('#sTheme button').forEach(x => x.classList.toggle('on', x === b)); applyLook(); store.save(); });
+$('#sSimple').onchange = e => { S().simple = e.target.checked; applyLook(); };
+$('#sLang').onchange = e => { S().lang = e.target.value; applyLook(); renderHeader(); };
+$$('#sGender button').forEach(b => b.onclick = () => { S().gender = b.dataset.g; $$('#sGender button').forEach(x => x.classList.toggle('on', x === b)); store.save(); });
+$('#testVoice').onclick = () => speak(`Hi${S().name ? ' ' + S().name : ''}! I'm Sparrow. Ready when you are.`);
+$('#pCalendar').onclick = async () => { const l = await getLocation(); if (!l) return toast('I need your location or city first.'); downloadICS(prayerICS(l.lat, l.lon, 30), 'Prayer times'); };
+$('#exportBtn').onclick = () => tools.deliver('sparrow-backup.json', new TextEncoder().encode(JSON.stringify({ items: store.items, settings: { ...S(), keys: undefined } }, null, 2)), 'application/json');
 $('#clearBtn').onclick = () => { if (confirm('Delete all your tasks, meetings, reminders, notes and chat?')) { store.clearAll(); renderChat(); toast('Everything deleted'); } };
+$('#mExport').onclick = async () => tools.deliver('sparrow-memory.json', new TextEncoder().encode(JSON.stringify(await mem.exportMemory())), 'application/json');
+$('#mWipe').onclick = async () => { if (confirm('Forget everything Sparrow remembers (files and history)?')) { await mem.forgetAll(); toast('Memory wiped'); renderMemory(); } };
 
 async function refreshAiStatus() {
+  if (D) return;
   const st = $('#aiStatus'), btn = $('#aiDownload');
-  if (aiReady()) { st.textContent = '✅ Free on-device AI is on. It works offline.'; btn.hidden = true; return; }
+  if (S().aiReady) { st.textContent = '✅ Free on-device AI is downloaded. It works offline.'; btn.hidden = true; return; }
   const sup = await deviceSupport();
-  if (!sup.ok) { st.textContent = '⚠️ ' + sup.why + ' Everything else still works.'; btn.disabled = true; return; }
+  if (!sup.ok) { st.textContent = '⚠️ ' + sup.why; btn.disabled = true; return; }
   btn.disabled = false; btn.hidden = false;
-  st.textContent = store.settings.aiReady
-    ? 'Downloaded — it starts the first time you ask something.'
-    : 'Your phone can run a free AI. It downloads once (use Wi-Fi), then works offline. Nothing you say leaves your phone.';
+  st.textContent = 'Your device can run a free AI. It downloads once (use Wi-Fi), then works offline. Nothing you say leaves your device.';
 }
 $('#aiDownload').onclick = async () => {
   const bar = $('#aiProgress'), btn = $('#aiDownload');
-  store.settings.model = $('#sModel').value; store.save();
+  S().model = $('#sModel').value; store.save();
   bar.hidden = false; btn.disabled = true; btn.textContent = 'Downloading…';
   try {
     await loadLocal((p, txt) => { bar.firstElementChild.style.width = Math.round(p * 100) + '%'; $('#aiStatus').textContent = txt.slice(0, 90); });
     btn.textContent = 'Ready ✅'; toast('Free AI ready 🐦'); refreshAiStatus();
-  } catch (e) {
-    btn.disabled = false; btn.textContent = '⬇️ Try again'; $('#aiStatus').textContent = '⚠️ ' + e.message;
-  }
+  } catch (e) { btn.disabled = false; btn.textContent = '⬇️ Try again'; $('#aiStatus').textContent = '⚠️ ' + e.message; }
 };
 
 // ---------------- toast ----------------
 let toastT;
-function toast(text, ms = 2600) {
-  const t = $('#toast'); t.textContent = text; t.hidden = false;
-  clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms);
-}
+function toast(text, ms = 2600) { const el = $('#toast'); el.textContent = text; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, ms); }
 
 // ---------------- install hint ----------------
 function installHint() {
-  if (N || window.SparrowDesktop) return;
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  if (standalone) return;
+  if (N || D) return;
+  if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
   const el = $('#installHint'); el.hidden = false;
-  el.innerHTML = isIOS
-    ? '📲 <b>Install Sparrow:</b> tap the <b>Share</b> button in Safari, then <b>“Add to Home Screen”</b>.'
-    : '📲 <b>Get the full Android app</b> (floating sparrow, “Sparrow…” voice, alarms): <a href="https://github.com/MuhammadTalha257/sparrow/releases/latest/download/Sparrow.apk" style="color:#F9A830">download Sparrow.apk</a> — or tap <b>⋮</b> → <b>Install app</b> for the light version.';
+  el.innerHTML = isIOS ? '📲 <b>Install Sparrow:</b> tap <b>Share</b> in Safari, then <b>“Add to Home Screen”</b>.'
+    : isAndroid ? '📲 <b>Get the full Android app</b> (floating sparrow, hands-free voice, alarms): <a href="https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk">download Sparrow.apk</a>'
+    : '💻 <b>Get Sparrow for your computer</b> — hands-free “Sparrow…”, files, clipboard and more: <a href="get.html">download for Mac or Windows</a>';
 }
 
-// ---------------- Android app events ----------------
+// ---------------- Android app ----------------
 window.sparrowEvent = raw => {
   const e = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (e.type === 'speech') submit(e.text, true);
   else if (e.type === 'ask') submit(e.text, !!e.voice);
   else if (e.type === 'partial') $('#askInput').value = e.text;
-  else if (e.type === 'listening') {
-    $('#micBtn').classList.toggle('on', e.on); $('#pulse').classList.toggle('on', e.on); setBird('listening', e.on);
-    if (e.on) chirp();
-    else if ($('#askInput').value && !e.on) {/* result follows as 'speech' */}
-  }
-  else if (e.type === 'speaking') setBird('talking', e.on);
+  else if (e.type === 'listening') { $('#micBtn').classList.toggle('on', e.on); $('#pulse').classList.toggle('on', e.on); setBird('listening', e.on); if (e.on) chirp(); }
+  else if (e.type === 'speaking') { setBird('talking', e.on); if (!e.on) afterSpeech(); }
   else if (e.type === 'toast') toast(e.text);
   else if (e.type === 'status') refreshAndroid();
   else if (e.type === 'open') { if (e.what === 'checkin') openCheckIn(false); else if (e.what === 'briefing') showBriefing(false); }
+  else if (e.type === 'http') window.dispatchEvent(new CustomEvent('sparrow-http', { detail: e }));
 };
 function refreshAndroid() {
   if (!N) return;
   let st = {}; try { st = JSON.parse(N.status()); } catch {}
-  $('#aWake').checked = !!st.wakeWord;
-  $('#aBubble').checked = !!st.bubble;
-  $('#aNotif').checked = !!st.readNotifs;
+  $('#aWake').checked = !!st.wakeWord; $('#aBubble').checked = !!st.bubble; $('#aNotif').checked = !!st.readNotifs;
   const notes = [];
   if (st.bubble && !st.overlay) notes.push('Allow "Display over other apps" for Sparrow to show the floating bird.');
   if (st.readNotifs && !st.notifAccess) notes.push('Allow "Notification access" for Sparrow to read notifications.');
   if (st.wakeWord && !st.mic) notes.push('Allow the microphone so Sparrow can hear you.');
-  if (st.wakeWord && st.overlay === false) notes.push('Tip: turn on the floating bird too — Android only lets Sparrow open apps hands-free when it is on.');
   $('#aNote').textContent = notes.join(' ');
+}
+/** Android rings these with real alarms, even when Sparrow is closed. */
+function syncAlarms() {
+  if (!N) return;
+  const s = S(), w = s.name ? s.name + ', ' : '', lead = (+s.lead || 0) * 60000, list = [];
+  const push = (i, at, suffix = '') => {
+    const meet = i.type === 'meeting';
+    list.push({ id: i.id + suffix, title: i.title, type: i.type, at, head: meet ? 'Meeting now' : 'Reminder', say: meet ? `${w}you have a meeting now: ${i.title}.` : `${w}it's time: ${i.title}.` });
+    if (lead) list.push({ id: i.id + suffix + '|soon', title: i.title, type: i.type, at: at - lead, head: `In ${s.lead} minutes`, say: meet ? `${w}you have a meeting in ${s.lead} minutes: ${i.title}.` : `${w}reminder in ${s.lead} minutes: ${i.title}.` });
+  };
+  for (const i of store.items.filter(i => i.when && !i.done && (i.type === 'reminder' || i.type === 'meeting' || (i.type === 'task' && i.timed)))) {
+    push(i, new Date(i.when).getTime());
+    if (i.repeat) { let d = new Date(i.when); for (let k = 1; k < 7; k++) { d = nextOccurrence(i.repeat, d, d); if (!d) break; push(i, d.getTime(), '|r' + k); } }
+    if (i.snoozeUntil && !i.snoozed) list.push({ id: i.id + '|snz', title: i.title, type: i.type, at: i.snoozeUntil, head: 'Reminder', say: `${w}snoozed reminder: ${i.title}.` });
+  }
+  const next = hm => { const [h, m] = (hm || '08:30').split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d; };
+  if (s.morningOn) { const d = next(s.morningTime); list.push({ id: 'morning', title: 'Good morning', type: 'briefing', at: d.getTime(), head: '☀️ Your day', open: 'briefing', say: `Good morning${s.name ? ', ' + s.name : ''}! ` + spokenPlan(d) + ' Have a lovely day!', again: `Good morning${s.name ? ', ' + s.name : ''}! Tap to hear your day.` }); }
+  if (s.nightOn) { const d = next(s.nightTime), open = tasksForDay(d); list.push({ id: 'night', title: 'Evening check-in', type: 'checkin', at: d.getTime(), head: '🌙 Check-in time', open: 'checkin',
+    say: open.length ? `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. ${open.length === 1 ? 'One task is' : open.length + ' tasks are'} still open: ${spokenList(open.map(i => i.title))}. Tap to tick what you finished.` : `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. Nothing left for today. Well done!`,
+    again: `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. Tap to tick off today's tasks.` }); }
+  if (s.prayer.on && s.lastLoc) {
+    for (let day = 0; day < 3; day++) {
+      const d = new Date(); d.setDate(d.getDate() + day);
+      const tms = prayerTimes(d, s.lastLoc.lat, s.lastLoc.lon, s.prayer.method, s.prayer.asr);
+      for (const n of PRAYERS) if (n !== 'Sunrise') { const at = tms[n].getTime() - (+s.prayer.before || 0) * 60000; if (at > Date.now()) list.push({ id: `pr-${n}-${day}`, title: `${n} prayer`, type: 'prayer', at, head: `🕌 ${n}`, say: +s.prayer.before ? `${w}${n} prayer in ${s.prayer.before} minutes.` : `${w}it's time for ${n} prayer.` }); }
+    }
+  }
+  try { N.syncAlarms(JSON.stringify(list)); } catch {}
 }
 if (N) {
   $('#androidSection').hidden = false;
@@ -573,30 +990,28 @@ if (N) {
   refreshAndroid(); syncAlarms();
 }
 
-// ---------------- Windows app extras ----------------
-if (window.SparrowDesktop) import('./desktop.js').catch(e => console.error('desktop', e));
+// ---------------- computer app extras ----------------
+if (D) import('./desktop.js').catch(e => console.error('desktop', e));
 
 // ---------------- start ----------------
-renderAll(); renderQuick(); renderChat(); installHint();
+renderAll(); installHint(); updateTimerLabel();
 bird.classList.add('fly'); setTimeout(() => { bird.classList.remove('fly'); chirp(); }, 1150);
 showBriefing(false);
-checkDue();
-// Morning briefing: spoken once a day the first time you open Sparrow (after a tap — browsers need one)
-const todayKey = new Date().toDateString();
-if (store.settings.lastBriefDay !== todayKey) {
+checkDue(); mem.prune();
+const todayK = dayKey();
+if (S().lastBriefDay !== todayK) {
   const once = e => {
-    if (e.target.closest('#birdWrap,#micBtn,#micHeroBtn,#askForm,#settingsBtn,.sheet')) return;   // let those taps do their own thing
+    if (e.target.closest('#birdWrap,#micBtn,#micHeroBtn,#askForm,#settingsBtn,.sheet,.tabs')) return;
     document.removeEventListener('pointerdown', once);
-    if (store.settings.lastBriefDay === todayKey) return;   // already given today
-    store.settings.lastBriefDay = todayKey; store.save(); showBriefing(true);
+    if (S().lastBriefDay === todayK) return;
+    S().lastBriefDay = todayK; store.save(); showBriefing(true);
   };
   document.addEventListener('pointerdown', once);
 }
-if ('Notification' in window && Notification.permission === 'default') {
-  document.addEventListener('pointerdown', () => Notification.requestPermission?.().catch(() => {}), { once: true });
-}
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('Notification' in window && Notification.permission === 'default' && !D) document.addEventListener('pointerdown', () => Notification.requestPermission?.().catch(() => {}), { once: true });
+if ('serviceWorker' in navigator && !D && !N) navigator.serviceWorker.register('sw.js').catch(() => {});
 setInterval(() => { renderHeader(); renderNext(); }, 60000);
-// Home-screen shortcut: ?ask=… prefills the box
+setInterval(() => { renderWeather(); renderPrayer(); }, 30 * 60000);
 const pre = new URLSearchParams(location.search).get('ask');
 if (pre) { $('#askInput').value = pre; $('#askInput').focus(); }
+window.Sparrow = { submit, speak, toast, openTool, store };   // for the computer app

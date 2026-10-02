@@ -1,7 +1,6 @@
 MIT License
 
 Copyright (c) 2026 Muhammad Talha (Sparrow)
-Copyright (c) 2026 Louis Raillé (portions of the Mac app code, from Coucou)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,4 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 The Sparrow name, sparrow character, icons and sounds in this repository are original
-to Sparrow. No Coucou/Mochi name, character, icon or sound is used.
+to Sparrow.
+
+Third-party libraries in lib/ keep their own licences: chrono-node (MIT), web-llm (Apache-2.0),
+pdf.js (Apache-2.0), pdf-lib (MIT), jsQR (Apache-2.0), qrcode-generator (MIT), vosk-browser (Apache-2.0).

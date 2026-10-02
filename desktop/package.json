@@ -1,0 +1,52 @@
+{
+  "name": "sparrow",
+  "productName": "Sparrow",
+  "version": "2.0.0",
+  "description": "Sparrow — a friendly little AI helper at the top of your screen.",
+  "author": "Muhammad Talha",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "prepare-web": "node scripts/copy-web.js",
+    "start": "npm run prepare-web && electron .",
+    "dist:win": "npm run prepare-web && electron-builder --win nsis --x64 --publish never",
+    "dist:mac": "npm run prepare-web && electron-builder --mac dir --universal --publish never"
+  },
+  "dependencies": {
+    "vosk-browser": "0.0.8"
+  },
+  "devDependencies": {
+    "electron": "38.2.2",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "app.sparrowai.sparrow",
+    "productName": "Sparrow",
+    "artifactName": "Sparrow-Setup.exe",
+    "files": ["main.js", "preload.js", "pill.html", "www/**", "package.json"],
+    "extraResources": [{ "from": "model", "to": "model", "filter": ["**/*"] }],
+    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sparrow"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSMicrophoneUsageDescription": "Sparrow listens when you say “Sparrow…” or tap the mic. Your voice is understood on this Mac and never uploaded.",
+        "NSAppleEventsUsageDescription": "Sparrow controls apps you ask it to, like Spotify, Music and Mail.",
+        "NSLocationUsageDescription": "Sparrow uses your location to tell you the weather and prayer times where you are.",
+        "NSLocationWhenInUseUsageDescription": "Sparrow uses your location to tell you the weather and prayer times where you are."
+      }
+    }
+  }
+}

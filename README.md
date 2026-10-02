@@ -1,6 +1,7 @@
 # Sparrow 🐦
 
-Your little AI helper for meetings, tasks, reminders and notes — free, private, on your phone.
+Your friendly little helper for meetings, tasks, reminders, files and more — on Mac, Windows, iPhone and Android.
+Free, private (everything stays on your device) and works offline. Just say “Sparrow…”.
 
 ## 📲 Get it
 
@@ -8,29 +9,35 @@ Your little AI helper for meetings, tasks, reminders and notes — free, private
 
 | Device | How |
 |---|---|
-| **Mac** | Download **[Sparrow.dmg](https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg)** → drag to Applications → first open: System Settings → Privacy & Security → **Open Anyway** |
-| **iPhone** | Open **https://muhammadtalha257.github.io/sparrow/** in Safari → **Share** → **Add to Home Screen** |
+| **Mac** (Intel + Apple silicon) | Download **[Sparrow.dmg](https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg)** → drag to Applications → first open: System Settings → Privacy & Security → **Open Anyway** |
+| **Windows 10/11** | Download **[Sparrow-Setup.exe](https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe)** → open it → if Windows warns: **More info → Run anyway** |
 | **Android** | Download **[Sparrow.apk](https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk)** → open it → allow “Install unknown apps” if asked |
-| **Windows** | Download **[Sparrow-Setup.exe](https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe)** → open it → if Windows warns: **More info → Run anyway** |
+| **iPhone / iPad** | Open **https://muhammadtalha257.github.io/sparrow/** in Safari → **Share** → **Add to Home Screen** |
 
-## ✨ What it does
+## ✨ What it does (no AI key needed)
 
-- 🗓️ **Meetings** — “meeting with Ali Friday 3pm”
-- ✅ **Tasks** — “add task buy milk”, then tick it off
-- ⏰ **Reminders** — “remind me to call mum at 6pm tomorrow” (real alarms on Android, phone calendar on iPhone)
-- ☀️ **Morning briefing** — greeting, time, weather and your day, spoken in a female or male voice
-- 📝 **Notes**, 📱 **quick actions** (“open WhatsApp”, “call 07…”, “directions to the station”)
-- 💬 **Chat** — free AI that runs on the phone (no key, works offline), or your own Gemini / ChatGPT / Claude key
+- 🗣️ Hands-free: “Sparrow, open Chrome” · conversation mode · mic button optional
+- ⏰ Spoken reminders & meetings (“Talha, you have a meeting in 5 minutes”), repeating reminders, snooze
+- ☀️ Morning briefing · 🌙 evening check-in (tick what's done, move the rest to tomorrow)
+- 🕌 Prayer times (calculated offline) · 💧 habits (water, medicine…) · 🌍 English, Urdu, Hindi, Arabic
+- 🧠 Private memory (“which file did I send on 12 September?”) · 📄 ask your documents (PDF, Word, Excel)
+- 👤 Customers & follow-ups · 🧾 quotes & invoices (PDF) · ⏱️ time tracking · 💸 expenses (CSV) · 📊 daily report
+- 🎤 Meeting notes with action items · 📑 PDF tools (merge, photos → PDF, keep pages, rotate) · 📋 snippets
+- 💻 On Mac/Windows: find files by voice, tidy Downloads, folder alerts, clipboard history, Mail replies (Mac), media & volume
+- 🎵 “Play Tum Hi Ho on Spotify” · 🔁 phone ↔ laptop sync by QR code, no account
+- 🎨 Themes: Daylight, Midnight, Pop, Sage, Sunset · 🔠 Simple mode for parents
 
-**Android extras:** a floating sparrow over any app, hands-free “Sparrow, open Chrome…” (offline), open any installed app, notifications read aloud.
-
-Everything is stored only on your phone.
+**AI for open questions (optional):** Ollama on your computer (free), a free model that runs on the phone, or your own key for
+Groq, OpenRouter, Gemini, ChatGPT, Claude, Grok, DeepSeek, Mistral or Perplexity.
 
 ## 🛠 For developers
 
-- The web app (iPhone + Android browser) is the repo root: `index.html`, `app.js`, `brain.js`, `ai.js`, `store.js`.
-- The Mac app is in `mac/` (Swift / SwiftUI). Every push builds `Sparrow.dmg` automatically (Releases → *mac-latest*).
-- The Windows app is in `windows/` (Electron, wraps the same web app + offline Vosk voice). Every push builds `Sparrow-Setup.exe` (Releases → *windows-latest*).
-- The Android app is in `android/` — it bundles the web app and adds native powers (`Bridge.kt`).
-- Every push to `main` builds a new `Sparrow.apk` automatically (GitHub Actions → *Releases*).
-- After changing the web app, bump `VERSION` in `sw.js` so installed iPhones refresh.
+- **Web app (shared by every device):** repo root — `index.html`, `app.js` (UI), `brain.js` (offline commands), `ai.js`, `store.js`,
+  `memory.js` (IndexedDB memory + file text), `tools.js` (PDFs, invoices, time, expenses), `prayer.js`, `i18n.js`, `sync.js`.
+- **Mac + Windows app:** `desktop/` (Electron). It wraps the web app and adds computer powers (`main.js`, `preload.js`, `desktop.js`)
+  plus offline voice (Vosk). Every push builds `Sparrow.dmg` and `Sparrow-Setup.exe` (Releases → *mac-latest* / *windows-latest*).
+- **Android app:** `android/` — bundles the web app and adds native powers (`Bridge.kt`: alarms, voice, bubble, play song…). Every push builds `Sparrow.apk`.
+- **Website section** for lisansystems.com: `website/`.
+- After changing the web app, bump `VERSION` in `sw.js`.
+
+Third-party libraries in `lib/` keep their own licences (see `LICENSE`).
