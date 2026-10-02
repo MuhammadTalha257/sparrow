@@ -361,6 +361,10 @@ async function location() {
     const m = out.trim().match(/^(-?[\d.]+),(-?[\d.]+)$/);
     if (m) return { lat: +m[1], lon: +m[2] };
   }
+  if (isMac && nvStart()) {
+    const ev = await new Promise(res => { nvLocWait = res; nvSend({ cmd: 'location' }); setTimeout(() => { if (nvLocWait === res) { nvLocWait = null; res(null); } }, 15000); });
+    if (ev && typeof ev.lat === 'number') return { lat: ev.lat, lon: ev.lon };
+  }
   if (isMac) {
     const out = await run('osascript', ['-l', 'JavaScript', '-e', `ObjC.import('CoreLocation');
 var m = $.CLLocationManager.alloc.init; m.requestWhenInUseAuthorization; m.startUpdatingLocation;
@@ -373,7 +377,7 @@ var l = m.location; if (l && !l.isNil()) { res = l.coordinate.latitude + ',' + l
 }
 
 // ---------- the Mac's own voice (Apple speech recognition + natural voices) ----------
-let nv = null, nvBuf = '';
+let nv = null, nvBuf = '', nvLocWait = null;
 function nvPath() { return app.isPackaged ? path.join(process.resourcesPath, 'sparrow-voice') : path.join(__dirname, 'native', 'sparrow-voice'); }
 function nvStart() {
   if (!isMac || nv || !fs.existsSync(nvPath())) return !!nv;
@@ -383,7 +387,11 @@ function nvStart() {
       nvBuf += d.toString();
       let i; while ((i = nvBuf.indexOf('\n')) >= 0) {
         const line = nvBuf.slice(0, i); nvBuf = nvBuf.slice(i + 1);
-        try { toPanel('nv-ev', JSON.parse(line)); } catch {}
+        try {
+          const ev = JSON.parse(line);
+          if (ev.ev === 'location' && nvLocWait) { const f = nvLocWait; nvLocWait = null; f(ev); }
+          toPanel('nv-ev', ev);
+        } catch {}
       }
     });
     nv.on('exit', () => { nv = null; toPanel('nv-ev', { ev: 'exit' }); });

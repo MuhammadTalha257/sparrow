@@ -9,6 +9,7 @@
 import Foundation
 import AVFoundation
 import Speech
+import CoreLocation
 
 setvbuf(stdout, nil, _IOLBF, 0)
 
@@ -142,7 +143,7 @@ final class Engine: NSObject, AVSpeechSynthesizerDelegate {
         let all = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(lang) && !$0.identifier.contains("eloquence") && !$0.identifier.contains("speech.synthesis.voice") }
         let fav = ["Zoe", "Ava", "Serena", "Samantha", "Allison", "Susan", "Kate", "Evan", "Nathan", "Tom", "Daniel", "Oliver", "Alex", "Arthur"]
         func rank(_ v: AVSpeechSynthesisVoice) -> Int {
-            (v.quality == .premium ? 0 : v.quality == .enhanced ? 100 : 200) + (v.gender == wanted ? 0 : 50) + (fav.firstIndex { v.name.hasPrefix($0) } ?? 30)
+            (v.quality.rawValue >= 3 ? 0 : v.quality.rawValue == 2 ? 100 : 200) + (v.gender == wanted ? 0 : 50) + (fav.firstIndex { v.name.hasPrefix($0) } ?? 30)
         }
         return all.min { rank($0) < rank($1) }
     }
@@ -156,7 +157,7 @@ final class Engine: NSObject, AVSpeechSynthesizerDelegate {
         if #available(macOS 13, *), let s = AVSpeechUtterance(ssmlRepresentation: "<speak>\(body)</speak>") { u = s } else { u = AVSpeechUtterance(string: text) }
         let v = bestVoice(gender: gender)
         u.voice = v
-        u.rate = Float(v?.quality == .default ? rate * 0.94 : rate)
+        u.rate = Float((v?.quality.rawValue ?? 1) <= 1 ? rate * 0.94 : rate)
         u.pitchMultiplier = gender == "male" ? 0.98 : 1.04
         u.volume = 0.95
         speaking = true
@@ -175,9 +176,10 @@ final class Engine: NSObject, AVSpeechSynthesizerDelegate {
 
     func voices() {
         let list = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }.map {
-            ["name": $0.name, "id": $0.identifier, "quality": $0.quality == .premium ? "premium" : $0.quality == .enhanced ? "enhanced" : "basic"]
+            ["name": $0.name, "id": $0.identifier, "quality": $0.quality.rawValue >= 3 ? "premium" : $0.quality.rawValue == 2 ? "enhanced" : "basic"]
         }
-        emit(["ev": "voices", "list": list, "basicOnly": !list.contains { $0["quality"] != "basic" }])
+        let basicOnly = !list.contains(where: { $0["quality"] != "basic" })
+        emit(["ev": "voices", "list": list, "basicOnly": basicOnly])
     }
 
     func handle(_ line: String) {
@@ -190,10 +192,35 @@ final class Engine: NSObject, AVSpeechSynthesizerDelegate {
         case "say": say(o["text"] as? String ?? "", gender: o["gender"] as? String ?? "female", rate: o["rate"] as? Double ?? 0.5)
         case "hush": synth.stopSpeaking(at: .immediate)
         case "voices": voices()
+        case "location": locator.get()
         default: break
         }
     }
 }
+
+// Where you are (for weather and prayer times) — Location Services, asked once.
+final class Locator: NSObject, CLLocationManagerDelegate {
+    let m = CLLocationManager()
+    func get() {
+        m.delegate = self
+        m.desiredAccuracy = kCLLocationAccuracyKilometer
+        if CLLocationManager.authorizationStatus() == .notDetermined { m.requestWhenInUseAuthorization() }
+        m.requestLocation()
+    }
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let c = locations.last?.coordinate else { return }
+        emit(["ev": "location", "lat": c.latitude, "lon": c.longitude])
+    }
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        emit(["ev": "location", "error": error.localizedDescription])
+    }
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let st = CLLocationManager.authorizationStatus()
+        if st == .denied || st == .restricted { emit(["ev": "location", "error": "denied"]) }
+        else if st == .authorizedAlways { manager.requestLocation() }
+    }
+}
+let locator = Locator()
 
 let engine = Engine()
 emit(["ev": "ready"])

@@ -442,3 +442,22 @@ html.pos-right.island-mode .sheet-bg, html.pos-left.island-mode .sheet-bg, html.
 html.pos-right.island-mode .top, html.pos-left.island-mode .top { padding-top: 14px; }
 html.pos-right.island-mode .isl-body::after, html.pos-left.island-mode .isl-body::after { border-radius: 0 0 30px 30px; }
 html.island-mode .isl-body { scrollbar-width: none; } html.island-mode .isl-body::-webkit-scrollbar { display: none; }
+
+/* Inside the island: a slim icon rail on the left, content on the right */
+html.island-mode .tabs { left: 10px; right: auto; top: 12px; bottom: 12px; width: 58px; flex-direction: column; justify-content: flex-start; gap: 6px;
+  padding: 10px 6px; border-radius: 22px; background: rgba(255,255,255,.035); }
+html.island-mode .tabs::before { content: ""; display: block; width: 36px; height: 36px; margin: 2px auto 10px; border-radius: 12px;
+  background: url(icons/icon-192.png) center/cover; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+html.island-mode .tabs button { flex: none; min-height: 0; height: 52px; padding: 6px 0; border-radius: 16px; font-size: 9.5px; gap: 3px; }
+html.island-mode .tabs button svg { width: 20px; height: 20px; }
+html.island-mode .tabs button.on { background: var(--grad); color: var(--ink); }
+html.island-mode .tabs button.on svg { color: var(--ink); }
+html.island-mode .top { padding-left: 84px; }
+html.island-mode main { padding: 0 16px 110px 84px; }
+html.island-mode .ask { left: 80px; right: 12px; bottom: 12px; }
+html.island-mode .isl-body::after { height: 90px; }
+html.island-mode .hello { font-size: 22px; }
+html.island-mode .hero { padding: 10px 12px 10px 2px; } html.island-mode .bird-wrap, html.island-mode .bird { width: 104px; height: 90px; }
+html.island-mode .quick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+html.island-mode .tool-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+html.island-mode .row2 { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }

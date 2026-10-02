@@ -68,9 +68,10 @@ jobs:
       - name: Build the Mac speech engine (Apple speech recognition + voices)
         working-directory: desktop/native
         run: |
+          set -o pipefail
           for arch in x86_64 arm64; do
             swiftc -O -swift-version 5 -target $arch-apple-macos11 SparrowVoice.swift -o sv-$arch \
-              -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Info.plist
+              -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Info.plist 2>&1 | tee -a ../build.log
           done
           lipo -create sv-x86_64 sv-arm64 -output sparrow-voice
           chmod +x sparrow-voice && file sparrow-voice
@@ -103,7 +104,7 @@ jobs:
         if: failure()
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          { echo "Mac build failed at ${GITHUB_SHA::7}"; echo; echo '```'; tail -60 desktop/build.log 2>/dev/null || echo "see Actions log"; echo '```'; } > body.md
+          { echo "Mac build failed at ${GITHUB_SHA::7}"; echo; echo '```'; grep -E "error" desktop/build.log | head -40; tail -40 desktop/build.log 2>/dev/null || echo "see Actions log"; echo '```'; } > body.md
           gh label create build-errors --color B60205 -f >/dev/null 2>&1 || true
           N=$(gh issue list --label build-errors --state open --json number -q '.[0].number')
           if [ -z "$N" ]; then gh issue create --title "Build errors" --label build-errors --body-file body.md; else gh issue comment "$N" --body-file body.md; fi
