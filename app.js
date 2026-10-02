@@ -1,5 +1,6 @@
 import { store } from './store.js';
-import { handle, briefing, daySummary, whenText, fmtTime, greetingWord, getQuick, DEFAULT_QUICK, icsFor, googleCalUrl, isIOS } from './brain.js';
+import { handle, briefing, daySummary, whenText, fmtTime, greetingWord, getQuick, DEFAULT_QUICK, icsFor, googleCalUrl, isIOS,
+  spokenPlan, spokenList, tasksForDay, moveToTomorrow } from './brain.js';
 import { ask, loadLocal, deviceSupport, aiReady } from './ai.js';
 
 const $ = s => document.querySelector(s);
@@ -47,12 +48,33 @@ function bindList(root) {
   root.onclick = e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const id = b.closest('.item').dataset.id; const it = store.items.find(x => x.id === id); if (!it) return;
-    if (b.dataset.act === 'toggle') { store.update(id, { done: !it.done }); if (!it.done) { birdMood('happy'); chirp(); } }
+    if (b.dataset.act === 'toggle') { const nd = !it.done; store.update(id, { done: nd, doneAt: nd ? new Date().toISOString() : null }); if (nd) { birdMood('happy'); chirp(); } }
     if (b.dataset.act === 'del') { store.remove(id); toast('Removed'); }
     if (b.dataset.act === 'cal') addToCalendar(it);
   };
 }
+function renderNext() {
+  const now = Date.now();
+  const next = store.items.filter(i => i.when && !i.done && i.type !== 'note' && new Date(i.when).getTime() > now)
+    .sort((a, b) => new Date(a.when) - new Date(b.when))[0];
+  const el = $('#upNext');
+  if (!next) { el.hidden = true; return; }
+  const mins = Math.round((new Date(next.when) - now) / 60000);
+  const rel = mins < 60 ? `in ${mins} min` : mins < 24 * 60 ? `in ${Math.floor(mins / 60)} h ${mins % 60 ? (mins % 60) + ' min' : ''}` : whenText(next.when);
+  el.hidden = false;
+  el.innerHTML = `<div class="un-ic">${ICON[next.type]}</div><div class="txt"><div class="un-k">UP NEXT</div><div class="t1">${esc(next.title)}</div></div><div class="un-t">${esc(rel)}<br><small>${fmtTime(next.when)}</small></div>`;
+}
+function renderProgress() {
+  const tdy = new Date().toDateString();
+  const open = tasksForDay(new Date());
+  const done = store.items.filter(i => i.type === 'task' && i.done && i.doneAt && new Date(i.doneAt).toDateString() === tdy).length;
+  const total = open.length + done, pct = total ? done / total : 0;
+  $('#ring').style.setProperty('--p', pct);
+  $('#ringTxt').textContent = total ? `${done}/${total}` : '✓';
+  $('#ringLbl').textContent = total ? (done === total ? 'All done today!' : `${open.length} task${open.length > 1 ? 's' : ''} left today`) : 'No tasks today';
+}
 function renderToday() {
+  renderNext(); renderProgress();
   const day = store.onDay(new Date()).filter(i => !(i.type === 'reminder' && i.done));
   const undatedTasks = store.openTasks().filter(i => !i.when).slice(0, 4);
   const items = [...day, ...undatedTasks];
@@ -115,8 +137,28 @@ store.onChange(() => { renderToday(); renderPlan(); syncAlarms(); });
 // Android: real alarms for reminders & meetings (ring even when Sparrow is closed)
 function syncAlarms() {
   if (!N) return;
-  const list = store.items.filter(i => i.when && !i.done && (i.type === 'reminder' || i.type === 'meeting'))
-    .map(i => ({ id: i.id, title: i.title, type: i.type, at: new Date(i.when).getTime() - (i.type === 'meeting' ? 600000 : 0) }));
+  const s = store.settings, who = s.name ? s.name + ', ' : '';
+  const lead = (+s.lead || 0) * 60000, list = [];
+  for (const i of store.items.filter(i => i.when && !i.done && (i.type === 'reminder' || i.type === 'meeting'))) {
+    const at = new Date(i.when).getTime(), meet = i.type === 'meeting';
+    list.push({ id: i.id, title: i.title, type: i.type, at,
+      head: meet ? 'Meeting now' : 'Reminder', say: meet ? `${who}you have a meeting now: ${i.title}.` : `${who}it's time: ${i.title}.` });
+    if (lead) list.push({ id: i.id + '|soon', title: i.title, type: i.type, at: at - lead,
+      head: `In ${s.lead} minutes`, say: meet ? `${who}you have a meeting in ${s.lead} minutes: ${i.title}.` : `${who}reminder in ${s.lead} minutes: ${i.title}.` });
+  }
+  // Morning briefing + evening check-in (spoken even when Sparrow is closed)
+  const next = hm => { const [h, m] = (hm || '08:30').split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d; };
+  if (s.morningOn) {
+    const d = next(s.morningTime);
+    list.push({ id: 'morning', title: 'Good morning', type: 'briefing', at: d.getTime(), head: '☀️ Your day', open: 'briefing', again: `Good morning${s.name ? ', ' + s.name : ''}! Tap to hear your day.`,
+      say: `Good morning${s.name ? ', ' + s.name : ''}! ` + spokenPlan(d) + ' Have a lovely day!' });
+  }
+  if (s.nightOn) {
+    const d = next(s.nightTime), open = tasksForDay(d);
+    list.push({ id: 'night', title: 'Evening check-in', type: 'checkin', at: d.getTime(), head: '🌙 Check-in time', open: 'checkin', again: `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. Tap to tick off today's tasks.`,
+      say: open.length ? `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. ${open.length === 1 ? 'One task is' : open.length + ' tasks are'} still open: ${spokenList(open.map(i => i.title))}. Tap to tick what you finished, and I'll move the rest to tomorrow.`
+        : `Hi${s.name ? ' ' + s.name : ''}, it's check-in time. Nothing left for today. Well done!` });
+  }
   try { N.syncAlarms(JSON.stringify(list)); } catch {}
 }
 
@@ -173,6 +215,7 @@ async function submit(text, fromVoice = false) {
   go('chat');
   const r = await handle(text);
   if (r) {
+    if (r.action === 'checkin') { openCheckIn(true); return; }
     addMsg('bot', r.reply, r.item ? { itemId: r.item.id } : {});
     birdMood(r.item ? 'happy' : 'talk');
     if (r.url) setTimeout(() => openUrl(r.url), 350);
@@ -287,31 +330,128 @@ async function showBriefing(speakIt) {
   $('#brief').textContent = `${greetingWord()}${store.settings.name ? ', ' + store.settings.name : ''}! ${daySummary(new Date(), true)}`;
   const text = await briefing();
   $('#brief').textContent = text;
-  if (speakIt) speak(text);
+  if (speakIt) speakSoon(text);
 }
 $('#hearBriefBtn').onclick = () => showBriefing(true);
 
 // ---------------- reminders while the app is open ----------------
+async function notify(msg, tag) {
+  try {
+    if (Notification?.permission === 'granted') {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      reg ? reg.showNotification('Sparrow', { body: msg, icon: 'icons/icon-192.png', tag }) : new Notification('Sparrow', { body: msg });
+    }
+  } catch {}
+}
+function alertNow(spoken, shown, tag) {
+  chime(); toast(shown, 8000); birdMood('happy');
+  if (N) { /* Android rings with its own alarm + voice */ } else { speakSoon(spoken); notify(shown, tag); }
+}
 async function checkDue() {
-  const now = Date.now();
+  const now = Date.now(), s = store.settings, who = s.name ? s.name + ', ' : '';
+  const lead = (+s.lead || 0) * 60000;
   for (const it of store.items) {
-    if ((it.type === 'reminder' || it.type === 'meeting') && it.when && !it.notified && !it.done) {
-      const t = new Date(it.when).getTime() - (it.type === 'meeting' ? 10 * 60000 : 0);
-      if (t <= now && now - t < 30 * 60000) {
-        store.update(it.id, { notified: true });
-        const msg = it.type === 'meeting' ? `Meeting at ${fmtTime(it.when)}: ${it.title}` : `Reminder: ${it.title}`;
-        toast('⏰ ' + msg, 6000); speak(msg); birdMood('happy');
-        try {
-          if (Notification?.permission === 'granted') {
-            const reg = await navigator.serviceWorker?.getRegistration();
-            reg ? reg.showNotification('Sparrow', { body: msg, icon: 'icons/icon-192.png', tag: it.id }) : new Notification('Sparrow', { body: msg });
-          }
-        } catch {}
-        if (it.type === 'reminder') store.update(it.id, { done: true });
-      } else if (t <= now) store.update(it.id, { notified: true });
+    if (!(it.type === 'reminder' || it.type === 'meeting') || !it.when || it.done) continue;
+    const at = new Date(it.when).getTime(), meet = it.type === 'meeting';
+    if (!it.notified && at <= now) {
+      store.update(it.id, { notified: true, soonDone: true });
+      if (now - at < 10 * 60000)
+        alertNow(meet ? `${who}you have a meeting now: ${it.title}.` : `${who}it's time: ${it.title}.`,
+                 (meet ? '🗓️ Now: ' : '⏰ ') + it.title, it.id);
+      if (!meet) store.update(it.id, { done: true });
+    } else if (lead && !it.soonDone && at > now && at - now <= lead) {
+      store.update(it.id, { soonDone: true });
+      const mins = Math.max(1, Math.round((at - now) / 60000));
+      alertNow(meet ? `${who}you have a meeting in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.` : `${who}reminder in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.`,
+               `⏳ In ${mins} min: ${it.title}`, it.id + 'soon');
     }
   }
+  checkDaily();
 }
+// Morning briefing + evening check-in at the times you choose
+const dayKey = () => new Date().toDateString();
+const minsOf = hm => { const [h, m] = (hm || '0:0').split(':').map(Number); return h * 60 + m; };
+async function checkDaily() {
+  const s = store.settings, d = new Date(), mins = d.getHours() * 60 + d.getMinutes();
+  if (s.morningOn && s.lastMorning !== dayKey()) {
+    const m = minsOf(s.morningTime);
+    if (mins >= m && mins < Math.max(m + 240, 720)) {
+      s.lastMorning = dayKey(); s.lastBriefDay = dayKey(); store.save();
+      showBriefing(true); return;
+    }
+  }
+  if (s.nightOn && s.lastNight !== dayKey()) {
+    const n = minsOf(s.nightTime);
+    if (mins >= n && mins < n + 180) { s.lastNight = dayKey(); store.save(); openCheckIn(true); }
+  }
+}
+// Browsers only allow speech after you've tapped the page once; queue it until then.
+let activated = false, queuedSpeech = null;
+document.addEventListener('pointerdown', () => {
+  activated = true;
+  if (queuedSpeech) { const t = queuedSpeech; queuedSpeech = null; speak(t); }
+}, { capture: true });
+function speakSoon(text) { if (activated || N) speak(text); else queuedSpeech = text; }
+function chime() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    [[880, 0, .5], [1318.5, .16, .9]].forEach(([f, t, d]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(.0001, ac.currentTime + t); g.gain.exponentialRampToValueAtTime(.18, ac.currentTime + t + .01);
+      g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + t + d);
+      o.connect(g).connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + d + .05);
+    });
+    setTimeout(() => ac.close(), 1500);
+  } catch {}
+}
+
+// ---------------- evening check-in ----------------
+function openCheckIn(spoken) {
+  const list = tasksForDay(new Date());
+  const doneToday = store.items.filter(i => i.type === 'task' && i.done && i.doneAt && new Date(i.doneAt).toDateString() === dayKey()).length;
+  const s = store.settings, hi = `Hi${s.name ? ' ' + s.name : ''}`;
+  $('#ciSub').textContent = doneToday ? `You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today ✨` : 'How did today go?';
+  const render = () => {
+    const rows = tasksForDay(new Date()).concat(list.filter(i => i.done || i._moved));
+    const uniq = [...new Map(rows.map(r => [r.id, r])).values()];
+    $('#ciList').innerHTML = uniq.length ? uniq.map(i => `<div class="ci-row ${i.done ? 'done' : ''} ${i._moved ? 'moved' : ''}" data-id="${i.id}">
+        <button class="check" data-ci="done">${i.done ? '✓' : ''}</button>
+        <div class="txt"><div class="t1">${esc(i.title)}</div><div class="t2">${i._moved ? 'Moved to tomorrow' : i.when ? whenText(i.when) : 'Added today'}</div></div>
+        ${i.done || i._moved ? '' : '<button class="chip" data-ci="tmr">↪ Tomorrow</button>'}
+      </div>`).join('') : '<div class="empty">Nothing left for today 🎉</div>';
+    const left = uniq.filter(i => !i.done && !i._moved).length;
+    $('#ciGo').textContent = left ? `Move ${left} to tomorrow` : 'All done';
+  };
+  $('#ciList').onclick = e => {
+    const b = e.target.closest('[data-ci]'); if (!b) return;
+    const id = b.closest('.ci-row').dataset.id, it = store.items.find(x => x.id === id); if (!it) return;
+    if (b.dataset.ci === 'done') { store.update(id, { done: !it.done, doneAt: it.done ? null : new Date().toISOString() }); if (it.done) chirp(); }
+    else { moveToTomorrow(id); it._moved = true; }
+    render();
+  };
+  $('#ciGo').onclick = () => {
+    const left = tasksForDay(new Date()).filter(i => !i._moved);
+    left.forEach(i => moveToTomorrow(i.id));
+    const moved = left.length + list.filter(i => i._moved).length;
+    list.forEach(i => delete i._moved);
+    closeCheckIn();
+    const msg = moved ? `Done. I moved ${moved} task${moved > 1 ? 's' : ''} to tomorrow. Sleep well${s.name ? ', ' + s.name : ''}!` : `Great job today${s.name ? ', ' + s.name : ''}! Sleep well.`;
+    toast('🌙 ' + msg, 4000); speak(msg);
+  };
+  $('#ciLater').onclick = closeCheckIn;
+  render();
+  $('#checkin').hidden = $('#sheetBg').hidden = false;
+  if (spoken) {
+    chime();
+    speakSoon(list.length
+      ? `${hi}, it's check-in time.${doneToday ? ` You finished ${doneToday} task${doneToday > 1 ? 's' : ''} today. Nice work!` : ''} ${list.length === 1 ? 'One task is' : list.length + ' tasks are'} still open: ${spokenList(list.map(i => i.title))}. Tick the ones you finished, and I'll move the rest to tomorrow.`
+      : `${hi}, it's check-in time. Nothing left for today. Well done!`);
+  }
+}
+function closeCheckIn() { $('#checkin').hidden = true; $('#sheetBg').hidden = $('#sheet').hidden; }
+$('#checkinBtn').onclick = () => openCheckIn(false);
+
 setInterval(checkDue, 20000);
 
 // ---------------- settings ----------------
@@ -319,6 +459,8 @@ function openSettings() {
   const s = store.settings;
   $('#sName').value = s.name; $('#sCity').value = s.city; $('#sSpeak').checked = s.speak;
   $('#sModel').value = s.model;
+  $('#rMorningOn').checked = s.morningOn; $('#rMorning').value = s.morningTime;
+  $('#rNightOn').checked = s.nightOn; $('#rNight').value = s.nightTime; $('#rLead').value = String(s.lead);
   $('#kGemini').value = s.keys.gemini || ''; $('#kOpenAI').value = s.keys.openai || ''; $('#kClaude').value = s.keys.claude || '';
   $$('#sGender button').forEach(b => b.classList.toggle('on', b.dataset.g === s.gender));
   $('#sheet').hidden = $('#sheetBg').hidden = false;
@@ -327,6 +469,8 @@ function openSettings() {
 function closeSettings() {
   const s = store.settings;
   s.name = $('#sName').value.trim(); s.city = $('#sCity').value.trim(); s.speak = $('#sSpeak').checked; s.model = $('#sModel').value;
+  s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30';
+  s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
   s.keys = { gemini: $('#kGemini').value.trim(), openai: $('#kOpenAI').value.trim(), claude: $('#kClaude').value.trim() };
   store.save();
   $('#sheet').hidden = $('#sheetBg').hidden = true;
@@ -334,7 +478,7 @@ function closeSettings() {
 }
 $('#settingsBtn').onclick = openSettings;
 $('#closeSheet').onclick = closeSettings;
-$('#sheetBg').onclick = closeSettings;
+$('#sheetBg').onclick = () => { if (!$('#checkin').hidden) closeCheckIn(); else closeSettings(); };
 $$('#sGender button').forEach(b => b.onclick = () => { store.settings.gender = b.dataset.g; $$('#sGender button').forEach(x => x.classList.toggle('on', x === b)); store.save(); });
 $('#testVoice').onclick = () => speak(`Hi${store.settings.name ? ' ' + store.settings.name : ''}! I'm Sparrow. Ready when you are.`);
 $('#exportBtn').onclick = () => {
@@ -397,6 +541,7 @@ window.sparrowEvent = raw => {
   else if (e.type === 'speaking') setBird('talking', e.on);
   else if (e.type === 'toast') toast(e.text);
   else if (e.type === 'status') refreshAndroid();
+  else if (e.type === 'open') { if (e.what === 'checkin') openCheckIn(false); else if (e.what === 'briefing') showBriefing(false); }
 };
 function refreshAndroid() {
   if (!N) return;
@@ -430,6 +575,7 @@ if (store.settings.lastBriefDay !== todayKey) {
   const once = e => {
     if (e.target.closest('#birdWrap,#micBtn,#micHeroBtn,#askForm,#settingsBtn,.sheet')) return;   // let those taps do their own thing
     document.removeEventListener('pointerdown', once);
+    if (store.settings.lastBriefDay === todayKey) return;   // already given today
     store.settings.lastBriefDay = todayKey; store.save(); showBriefing(true);
   };
   document.addEventListener('pointerdown', once);
@@ -438,7 +584,7 @@ if ('Notification' in window && Notification.permission === 'default') {
   document.addEventListener('pointerdown', () => Notification.requestPermission?.().catch(() => {}), { once: true });
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-setInterval(renderHeader, 60000);
+setInterval(() => { renderHeader(); renderNext(); }, 60000);
 // Home-screen shortcut: ?ask=… prefills the box
 const pre = new URLSearchParams(location.search).get('ask');
 if (pre) { $('#askInput').value = pre; $('#askInput').focus(); }

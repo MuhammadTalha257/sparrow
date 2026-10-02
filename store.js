@@ -11,6 +11,7 @@ export const store = {
   settings: Object.assign({
     name: '', city: '', gender: 'female', speak: true, model: 'Qwen2.5-0.5B-Instruct',
     aiReady: false, keys: { gemini: '', openai: '', claude: '' }, lastBriefDay: '',
+    morningOn: true, morningTime: '08:30', nightOn: true, nightTime: '21:30', lead: 5, lastMorning: '', lastNight: '',
   }, read(SKEY, {})),
   chat: read(CKEY, []),
   listeners: new Set(),

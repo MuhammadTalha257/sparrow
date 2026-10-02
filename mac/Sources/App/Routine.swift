@@ -126,12 +126,17 @@ extension Planner {
             }
         }
         if access.reminders {
-            let today = Self.todaysTasks(await Self.openTasks())
+            let all = await Self.openTasks()
+            let today = Self.todaysTasks(all).filter { $0.due != nil }
+            let undated = all.filter { $0.due == nil }
             let cal = Calendar.current
             let overdue = today.filter { ($0.due ?? .distantFuture) < cal.startOfDay(for: Date()) }
             let now = today.filter { t in !overdue.contains { $0.id == t.id } }
             if !now.isEmpty {
                 parts.append("Your task\(now.count == 1 ? " for today is" : "s for today are"): " + Self.spokenList(now.map(\.title)) + ".")
+            }
+            if !undated.isEmpty {
+                parts.append("On your list: " + Self.spokenList(undated.map(\.title), max: 4) + ".")
             }
             if !overdue.isEmpty {
                 parts.append("And \(overdue.count == 1 ? "one task" : "\(overdue.count) tasks") from before: " + Self.spokenList(overdue.map(\.title), max: 3) + ".")
@@ -158,7 +163,7 @@ final class Routine {
         RoutinePrefs.registerDefaults()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
-            MainActor.assumeIsolated { Task { await Routine.shared.tick() } }
+            Task { @MainActor in await Routine.shared.tick() }
         }
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { Routine.shared.lastRefresh = .distantPast }
@@ -166,10 +171,10 @@ final class Routine {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 Routine.shared.lastRefresh = .distantPast
-                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { Task { await Routine.shared.tick() } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { Task { @MainActor in await Routine.shared.tick() } }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { Task { await Routine.shared.tick() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { Task { @MainActor in await Routine.shared.tick() } }
     }
 
     private func tick() async {

@@ -100,10 +100,17 @@ export function googleCalUrl(item) {
 }
 
 // ---------- weather (free, no key) ----------
-let cachedLoc = null;
+let cachedLoc = null, cachedAt = 0;
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
+async function cityName(lat, lon) {
+  try {
+    const j = await getJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+    return j.city || j.locality || j.principalSubdivision || '';
+  } catch { return ''; }
+}
 async function location() {
-  if (cachedLoc) return cachedLoc;
+  if (cachedLoc && Date.now() - cachedAt < 20 * 60e3) return cachedLoc;
+  cachedAt = Date.now();
   const city = (store.settings.city || '').trim();
   if (city) {
     try {
@@ -113,9 +120,11 @@ async function location() {
     } catch {}
   }
   try {
+    // Where you are right now (phone GPS / Wi-Fi) — right even when you travel.
     const pos = await new Promise((res, rej) => navigator.geolocation
-      ? navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000, maximumAge: 3600e3 }) : rej());
-    return (cachedLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude, city: '' });
+      ? navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000, maximumAge: 10 * 60e3 }) : rej());
+    const { latitude: lat, longitude: lon } = pos.coords;
+    return (cachedLoc = { lat, lon, city: await cityName(lat, lon) });
   } catch {}
   try {
     const j = await getJSON('https://ipapi.co/json/');
@@ -165,8 +174,54 @@ export async function briefing() {
   let s = `${greetingWord()}${name}! It's ${fmtTime(new Date())}.`;
   const w = await weatherText();
   if (w) s += ' ' + w;
-  s += ' ' + daySummary(new Date());
+  s += ' ' + spokenPlan(new Date());
   return s;
+}
+
+// ---------- daily routine (offline) ----------
+const endOfDay = d => { const x = new Date(d); x.setHours(24, 0, 0, 0); return x; };
+const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+/** Tasks for a day: due that day or earlier, or added that day without a date. */
+export function tasksForDay(date = new Date(), includeUndated = false) {
+  const end = endOfDay(date);
+  return store.items.filter(i => i.type === 'task' && !i.done && (
+    i.when ? new Date(i.when) < end : (includeUndated || sameDay(i.created, date))));
+}
+export function spokenList(titles, max = 5) {
+  const t = titles.slice(0, max);
+  if (titles.length > max) t.push(`${titles.length - max} more`);
+  return t.length <= 1 ? (t[0] || '') : t.slice(0, -1).join(', ') + ' and ' + t[t.length - 1];
+}
+/** "You have 2 meetings: … Your tasks for today are: …" — written for speaking. */
+export function spokenPlan(date = new Date()) {
+  const items = store.onDay(date);
+  const now = new Date();
+  const meetings = items.filter(i => i.type === 'meeting' && (!sameDay(date, now) || new Date(i.when) > new Date(now - 30 * 60e3)));
+  const reminders = items.filter(i => i.type === 'reminder' && !i.done);
+  const d0 = new Date(date); d0.setHours(0, 0, 0, 0);
+  const tasks = tasksForDay(date, true);
+  const dated = tasks.filter(i => i.when && new Date(i.when) >= d0), overdue = tasks.filter(i => i.when && new Date(i.when) < d0);
+  const undated = tasks.filter(i => !i.when);
+  const parts = [];
+  if (meetings.length) parts.push(`You have ${meetings.length} meeting${meetings.length > 1 ? 's' : ''}: ` + spokenList(meetings.map(m => `${m.title} at ${fmtTime(m.when)}`), 4) + '.');
+  if (dated.length) parts.push(`Your task${dated.length > 1 ? 's for today are' : ' for today is'}: ` + spokenList(dated.map(i => i.title)) + '.');
+  if (undated.length) parts.push(`On your list: ` + spokenList(undated.map(i => i.title), 4) + '.');
+  if (overdue.length) parts.push(`And ${overdue.length === 1 ? 'one task' : overdue.length + ' tasks'} from before: ` + spokenList(overdue.map(i => i.title), 3) + '.');
+  if (reminders.length) parts.push(`${reminders.length === 1 ? 'One reminder' : reminders.length + ' reminders'} later: ` + spokenList(reminders.map(r => `${r.title} at ${fmtTime(r.when)}`), 3) + '.');
+  return parts.length ? parts.join(' ') : 'Your day is clear — no meetings or tasks yet.';
+}
+export function moveToTomorrow(id) {
+  const it = store.items.find(i => i.id === id); if (!it) return false;
+  const t = new Date(); t.setDate(t.getDate() + 1);
+  const d = it.when ? new Date(it.when) : new Date(t.setHours(9, 0, 0, 0));
+  d.setFullYear(t.getFullYear(), t.getMonth(), t.getDate());
+  store.update(id, { when: d.toISOString(), notified: false, soonDone: false });
+  return true;
+}
+export function moveRestToTomorrow() {
+  const list = tasksForDay(new Date());
+  list.forEach(i => moveToTomorrow(i.id));
+  return list.length;
 }
 
 // ---------- the brain ----------
@@ -192,6 +247,22 @@ export async function handle(input) {
   if (/^(show |list |what are )?(my )?(tasks|to-?dos|todo list|to do list)$/.test(t)) {
     const open = store.openTasks();
     return { reply: open.length ? 'Your tasks:\n' + open.map(i => '• ' + i.title + (i.when ? ` (${whenText(i.when)})` : '')).join('\n') : 'No open tasks. 🎉' };
+  }
+
+  // Daily routine
+  if (/^((give me|read|tell me|what('?s| is| are)) )?(my |the )?(morning briefing|briefing|tasks?( for| of)? today|today'?s tasks|plan for today)$|^brief me/.test(t))
+    return { reply: spokenPlan(new Date()) };
+  if (/^(start |open |do )?(my |the )?(evening |night |daily )?check[- ]?in\b/.test(t))
+    return { reply: 'Opening your check-in.', action: 'checkin' };
+  let mv = t.match(/^(?:move|shift|push|postpone|reschedule)\s+(.+?)(?:\s+(?:to|till|until|for)\s+tomorrow)?$/);
+  if (mv && (/tomorrow/.test(t) || t.startsWith('postpone'))) {
+    if (/^(everything|all|the rest|rest|all( my)? tasks|remaining( tasks)?|them|the remaining( ones)?)$/.test(mv[1])) {
+      const n = moveRestToTomorrow();
+      return { reply: n ? `Done. I moved ${n} task${n > 1 ? 's' : ''} to tomorrow.` : 'Nothing left for today to move.' };
+    }
+    const it = fuzzy(mv[1].replace(/^(the|my) /, ''), store.items.filter(i => !i.done && i.type !== 'note'));
+    if (it && moveToTomorrow(it.id)) return { reply: `Moved "${it.title}" to tomorrow.` };
+    return { reply: `I couldn't find "${mv[1]}" in your list.` };
   }
 
   // Reminders

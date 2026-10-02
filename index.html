@@ -73,6 +73,14 @@
       </div>
     </div>
 
+    <div class="up-next glass" id="upNext" hidden></div>
+
+    <div class="day-card glass">
+      <div class="ring" id="ring"><span id="ringTxt">✓</span></div>
+      <div class="txt"><div class="t1" id="ringLbl">No tasks today</div><div class="t2">Tick tasks as you go — I'll check in tonight.</div></div>
+      <button class="chip" id="checkinBtn">🌙 Check-in</button>
+    </div>
+
     <div class="section-title"><span>Today</span><button class="link" data-goto="plan">See all</button></div>
     <div class="glass list" id="todayList"></div>
 
@@ -124,13 +132,25 @@
   <h2>Settings</h2>
 
   <label class="field"><span>Your name</span><input id="sName" placeholder="Talha"></label>
-  <label class="field"><span>City for weather</span><input id="sCity" placeholder="Automatic"></label>
+  <label class="field"><span>City for weather</span><input id="sCity" placeholder="Leave empty = where you are now"></label>
 
   <div class="field"><span>Voice</span>
     <div class="seg small" id="sGender"><button data-g="female">Female</button><button data-g="male">Male</button></div>
   </div>
   <label class="row"><input type="checkbox" id="sSpeak"> Speak answers out loud</label>
   <button class="btn ghost" id="testVoice">🔊 Test voice</button>
+
+  <h3>My day</h3>
+  <label class="row"><input type="checkbox" id="rMorningOn"> ☀️ Morning briefing — weather, meetings &amp; today's tasks</label>
+  <label class="field"><span>Every morning at</span><input type="time" id="rMorning" value="08:30"></label>
+  <label class="row"><input type="checkbox" id="rNightOn"> 🌙 Evening check-in — tick what's done, move the rest</label>
+  <label class="field"><span>Every evening at</span><input type="time" id="rNight" value="21:30"></label>
+  <label class="field"><span>Warn me before reminders &amp; meetings</span>
+    <select id="rLead">
+      <option value="0">Only on time</option><option value="1">1 minute before</option><option value="5">5 minutes before</option>
+      <option value="10">10 minutes before</option><option value="15">15 minutes before</option>
+    </select></label>
+  <p class="small-text" id="routineNote">Works offline. Sparrow says it out loud, e.g. “Talha, you have a meeting in 5 minutes”.</p>
 
   <div id="androidSection" hidden>
     <h3>Android powers</h3>
@@ -167,6 +187,15 @@
   </div>
   <button class="btn" id="closeSheet">Done</button>
   <p class="small-text center">Sparrow · made with 🧡</p>
+</div>
+
+<!-- Evening check-in -->
+<div class="sheet glass checkin" id="checkin" hidden>
+  <div class="grab"></div>
+  <div class="ci-head"><div class="ci-moon">🌙</div><div><h2>Evening check-in</h2><p class="small-text" id="ciSub">How did today go?</p></div></div>
+  <p class="small-text">Tick what you finished. The rest moves to tomorrow.</p>
+  <div class="glass list" id="ciList"></div>
+  <div class="row-btns"><button class="btn ghost" id="ciLater">Later</button><button class="btn" id="ciGo">Move to tomorrow</button></div>
 </div>
 
 <div class="toast" id="toast" hidden></div>

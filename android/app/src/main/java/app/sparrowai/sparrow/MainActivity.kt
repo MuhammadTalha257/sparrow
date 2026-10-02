@@ -85,6 +85,10 @@ class MainActivity : Activity() {
             i.removeExtra("ask")
         }
         if (i.getBooleanExtra("listen", false)) { i.removeExtra("listen"); startListening() }
+        i.getStringExtra("open")?.let {
+            send(JSONObject().put("type", "open").put("what", it))
+            i.removeExtra("open")
+        }
     }
 
     /** Sends an event to the web app: window.sparrowEvent(json) */
