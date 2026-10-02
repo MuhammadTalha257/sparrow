@@ -65,6 +65,15 @@ jobs:
       - name: Offline voice model
         working-directory: desktop
         run: mkdir -p model && curl -fsSL -o model/model.tar.gz https://raw.githubusercontent.com/ccoreilly/vosk-browser/gh-pages/models/vosk-model-small-en-us-0.15.tar.gz
+      - name: Build the Mac speech engine (Apple speech recognition + voices)
+        working-directory: desktop/native
+        run: |
+          for arch in x86_64 arm64; do
+            swiftc -O -swift-version 5 -target $arch-apple-macos11 SparrowVoice.swift -o sv-$arch \
+              -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Info.plist
+          done
+          lipo -create sv-x86_64 sv-arm64 -output sparrow-voice
+          chmod +x sparrow-voice && file sparrow-voice
       - name: Build Sparrow.app (Apple silicon + Intel)
         working-directory: desktop
         env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" }
@@ -73,6 +82,7 @@ jobs:
         run: |
           APP=$(ls -d desktop/dist/mac*/Sparrow.app | head -1)
           echo "app: $APP"
+          codesign --force --sign - "$APP/Contents/Resources/sparrow-voice"
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --verbose=1 "$APP"
           mkdir -p dmg && cp -R "$APP" dmg/ && ln -s /Applications dmg/Applications

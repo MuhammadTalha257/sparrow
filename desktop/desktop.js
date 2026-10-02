@@ -57,8 +57,12 @@ D.onIsland(v => {
   else if (v === 'collapse') collapse();
   else if (v === 'hide-cap') html.classList.add('cap-hidden');
   else if (v === 'show-cap') html.classList.remove('cap-hidden');
+  else if (v.startsWith('pos:')) setPos(v.slice(4));
 });
 D.getSettings().then(s => { if (s.pill === false) html.classList.add('cap-hidden'); if (s.notch) html.classList.add('has-notch'); });
+
+function setPos(p) { html.classList.remove('pos-right', 'pos-left', 'pos-center'); html.classList.add('pos-' + p); }
+setPos('right');
 
 // Only the island catches the mouse — the rest of the window clicks through to your apps.
 let inside = null;
@@ -101,11 +105,14 @@ sec.innerHTML = `<summary>💻 This ${plat === 'mac' ? 'Mac' : 'computer'}</summ
   <label class="row"><input type="checkbox" id="dLogin"> 🚀 Start Sparrow when I log in</label>
   <label class="row"><input type="checkbox" id="dPill"> 🐦 Show the island at the top when Sparrow is closed</label>
   <label class="row"><input type="checkbox" id="dClip"> 📎 Keep a clipboard history (on this computer only)</label>
+  <label class="field"><span>Where Sparrow lives</span><select id="dPos"><option value="right">Top right corner</option><option value="center">Top centre (notch)</option><option value="left">Top left corner</option></select></label>
   <p class="small-text">Open Sparrow: click the island, press <b>${plat === 'mac' ? '⌘' : 'Ctrl'} + Shift + Space</b>, or just say “Sparrow…”. Close: <b>Esc</b> or click anywhere else.</p>
   <p class="small-text" id="dNote"></p>`;
 body.querySelector('#desktopSection').appendChild(sec);
 const dLogin = sec.querySelector('#dLogin'), dPill = sec.querySelector('#dPill'), dClip = sec.querySelector('#dClip');
-D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !== false; dClip.checked = s.clipboard !== false; });
+const dPos = sec.querySelector('#dPos');
+D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !== false; dClip.checked = s.clipboard !== false; dPos.value = s.position || 'right'; setPos(s.position || 'right'); });
+dPos.onchange = () => D.setSetting('position', dPos.value);
 dLogin.onchange = () => D.setSetting('login', dLogin.checked);
 dPill.onchange = () => D.setSetting('pill', dPill.checked);
 dClip.onchange = () => D.setSetting('clipboard', dClip.checked);
@@ -159,7 +166,30 @@ const Voice = {
     })();
     return this.loading;
   },
+  native: false,
+  /** On a Mac, Apple's own speech engine (much better than the built-in fallback). */
+  nativeReady() {
+    if (this.native) return true;
+    const nvx = D.nativeVoice;
+    if (!nvx || !nvx.available()) return false;
+    this.native = true;
+    nvx.on(ev => {
+      if (ev.ev === 'partial') this.onText(ev.text, false);
+      else if (ev.ev === 'final') this.onText(ev.text, true);
+      else if (ev.ev === 'speaking') send({ type: 'speaking', on: ev.on });
+      else if (ev.ev === 'auth' && !(ev.speech && ev.mic)) sec.querySelector('#dNote').textContent = 'Sparrow needs Microphone and Speech Recognition: System Settings → Privacy & Security → Microphone / Speech Recognition → turn on Sparrow.';
+      else if (ev.ev === 'voices') this.voiceList = ev;
+    });
+    nvx.send({ cmd: 'voices' });
+    return true;
+  },
+  nativeSay(text) {
+    if (!this.nativeReady()) return false;
+    const rate = S().simple ? 0.44 : 0.5;
+    return D.nativeVoice.send({ cmd: 'say', text, gender: S().gender || 'female', rate });
+  },
   async ensureMic() {
+    if (this.nativeReady()) { if (!this.nativeOn) { const ctx = [...new Set([...(S().quick || []).map(q => q.n), ...store.ofType('customer').map(c => c.title), 'Gmail', 'Spotify', 'WhatsApp'])]; D.nativeVoice.send({ cmd: 'listen', context: ctx }); this.nativeOn = true; } this.ctx = { state: 'running' }; return; }
     if (this.stream) return;
     await this.load();
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
@@ -177,13 +207,15 @@ const Voice = {
     src.connect(this.node); this.node.connect(this.ctx.destination);
   },
   onText(text, final, words) {
-    text = (text || '').replace(/\[unk\]/g, '').trim().toLowerCase();
+    text = (text || '').replace(/\[unk\]/g, '').trim().toLowerCase().replace(/[.,!?]+$/, '');
     if (this.mode === 'dictate') { if (text) this.dictateCb?.(text, final); return; }
     if (!text) return;
     const wake = /^(hey |ok |okay )?(sparrow|spar row|sparo|sparrows|sparrow's)\b/;
     if (this.mode === 'wake') {
-      if (!wake.test(text)) return;
-      const rest = text.replace(wake, '').trim();
+      // the wake word can come anywhere: "…hey Sparrow, open Gmail"
+      const m = text.match(/\b(?:hey |ok |okay )?(sparrow's|sparrows|sparrow|sparro|sparo|spar row)\b[,\s]*(.*)$/);
+      if (!m) return;
+      const rest = m[2].trim();
       if (!final) { capText('Listening…', rest || 'Go ahead'); return; }
       if (meaningful(rest, words?.slice(1))) { this.finish(rest); return; }
       this.startCommand();
@@ -205,6 +237,7 @@ const Voice = {
   },
   endCommand() {
     clearTimeout(this.cmdTimer);
+    if (this.native && !this.wakeOn && this.mode !== 'dictate') { D.nativeVoice.send({ cmd: 'stop' }); this.nativeOn = false; }
     html.classList.remove('isl-listening');
     send({ type: 'listening', on: false });
     this.mode = this.wakeOn ? 'wake' : 'off';
@@ -228,20 +261,20 @@ const Voice = {
     try {
       this.wakeOn = true; await this.ensureMic();
       if (this.mode === 'off') this.mode = 'wake';
-      sec.querySelector('#dNote').textContent = 'Listening for “Sparrow…” — understood on this computer, never uploaded.';
+      sec.querySelector('#dNote').textContent = this.native ? 'Listening for “Sparrow…” with your Mac’s own speech recognition.' : 'Listening for “Sparrow…” — understood on this computer, never uploaded.';
       pushCap();
     } catch (e) {
       this.wakeOn = false;
       sec.querySelector('#dNote').textContent = `Couldn't use the microphone: ${e.message || e}. ${plat === 'mac' ? 'Allow it in System Settings → Privacy & Security → Microphone.' : 'Allow it in Settings → Privacy → Microphone.'}`;
     }
   },
-  stopWake() { this.wakeOn = false; if (this.mode === 'wake') this.mode = 'off'; pushCap(); },
+  stopWake() { this.wakeOn = false; if (this.mode === 'wake') this.mode = 'off'; if (this.native) { D.nativeVoice.send({ cmd: 'stop' }); this.nativeOn = false; } pushCap(); },
   /** Meeting notes: every word goes to cb(text, isFinal) until the returned stop() is called. */
   dictate(cb) {
     this.dictateCb = cb;
     this.ensureMic().then(() => { if (this.ctx.state === 'suspended') this.ctx.resume(); this.mode = 'dictate'; })
       .catch(e => cb(`(microphone not available: ${e.message || e})`, true));
-    return () => { this.dictateCb = null; this.mode = this.wakeOn ? 'wake' : 'off'; };
+    return () => { this.dictateCb = null; this.mode = this.wakeOn ? 'wake' : 'off'; if (this.native && !this.wakeOn) { D.nativeVoice.send({ cmd: 'stop' }); this.nativeOn = false; } };
   },
 };
 window.SparrowVoice = Voice;

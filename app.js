@@ -399,6 +399,7 @@ function speak(text) {
   if (!text) return;
   const clean = text.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}•]/gu, '').replace(/\n+/g, '. ');
   if (N) { N.speak(clean, S().gender); return; }
+  if (window.SparrowVoice?.nativeSay && window.SparrowVoice.nativeSay(clean)) return;   // Mac: Apple's natural voices
   if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(clean);

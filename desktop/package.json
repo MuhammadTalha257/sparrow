@@ -38,11 +38,13 @@
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
       "identity": null,
+      "extraResources": [{ "from": "model", "to": "model", "filter": ["**/*"] }, { "from": "native/sparrow-voice", "to": "sparrow-voice" }],
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {
         "LSUIElement": true,
-        "NSMicrophoneUsageDescription": "Sparrow listens when you say “Sparrow…” or tap the mic. Your voice is understood on this Mac and never uploaded.",
+        "NSMicrophoneUsageDescription": "Sparrow listens when you say “Sparrow…” or tap the mic.",
+        "NSSpeechRecognitionUsageDescription": "Sparrow turns what you say into text so it can help you.",
         "NSAppleEventsUsageDescription": "Sparrow controls apps you ask it to, like Spotify, Music and Mail.",
         "NSLocationUsageDescription": "Sparrow uses your location to tell you the weather and prayer times where you are.",
         "NSLocationWhenInUseUsageDescription": "Sparrow uses your location to tell you the weather and prayer times where you are."

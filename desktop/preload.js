@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   saveFile: (name, base64) => inv('save-file', name, base64),
   onCommand: f => ipcRenderer.on('command', (_e, c) => f(c)),
   onEvent: f => ipcRenderer.on('event', (_e, ev) => f(ev)),
+  // Mac speech engine (Apple): listening + natural voices
+  nativeVoice: {
+    available: () => ipcRenderer.sendSync('nv-available'),
+    send: o => ipcRenderer.sendSync('nv', o),
+    on: f => ipcRenderer.on('nv-ev', (_e, ev) => f(ev)),
+  },
   // the island
   onIsland: f => ipcRenderer.on('island', (_e, v) => f(v)),
   islandState: st => ipcRenderer.send('island-state', st),

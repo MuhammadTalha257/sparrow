@@ -16,7 +16,7 @@ const MODEL = app.isPackaged ? path.join(process.resourcesPath, 'model') : path.
 const dataFile = n => path.join(app.getPath('userData'), n);
 
 let panel = null, tray = null, quitting = false;
-let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [] };
+let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'right' };
 
 function loadSettings() { try { settings = Object.assign(settings, JSON.parse(fs.readFileSync(dataFile('sparrow-settings.json'), 'utf8'))); } catch {} }
 function saveSettings() { try { fs.writeFileSync(dataFile('sparrow-settings.json'), JSON.stringify(settings)); } catch {} }
@@ -48,9 +48,11 @@ const detached = (cmd, args) => { try { spawn(cmd, args, { detached: true, windo
 let expanded = false;
 function islandBounds() {
   const d = screen.getPrimaryDisplay(), b = d.bounds, wa = d.workArea;
-  const W = 560, top = isMac ? b.y : wa.y;
-  const H = Math.min(880, wa.y + wa.height - top - 8);
-  return { width: W, height: H, x: Math.round(b.x + (b.width - W) / 2), y: top };
+  const pos = settings.position || 'right';
+  const W = 470, top = pos === 'center' && isMac ? b.y : wa.y + (pos === 'center' ? 0 : 6);
+  const H = Math.min(640, wa.y + wa.height - top - 8);
+  const x = pos === 'center' ? Math.round(b.x + (b.width - W) / 2) : pos === 'left' ? wa.x + 8 : wa.x + wa.width - W - 8;
+  return { width: W, height: H, x, y: top };
 }
 function createPanel() {
   panel = new BrowserWindow({
@@ -101,6 +103,7 @@ function setSetting(k, v) {
   settings[k] = v; saveSettings();
   if (k === 'login') app.setLoginItemSettings({ openAtLogin: v, openAsHidden: true, args: ['--hidden'] });
   if (k === 'pill') toPanel('island', v ? 'show-cap' : 'hide-cap');
+  if (k === 'position' && panel) { panel.setBounds(islandBounds()); toPanel('island', 'pos:' + v); }
   if (k === 'clipboard') v ? startClipboard() : stopClipboard();
   tray && tray.refresh && tray.refresh();
 }
@@ -368,6 +371,33 @@ var l = m.location; if (l && !l.isNil()) { res = l.coordinate.latitude + ',' + l
   }
   return null;
 }
+
+// ---------- the Mac's own voice (Apple speech recognition + natural voices) ----------
+let nv = null, nvBuf = '';
+function nvPath() { return app.isPackaged ? path.join(process.resourcesPath, 'sparrow-voice') : path.join(__dirname, 'native', 'sparrow-voice'); }
+function nvStart() {
+  if (!isMac || nv || !fs.existsSync(nvPath())) return !!nv;
+  try {
+    nv = spawn(nvPath(), [], { stdio: ['pipe', 'pipe', 'ignore'] });
+    nv.stdout.on('data', d => {
+      nvBuf += d.toString();
+      let i; while ((i = nvBuf.indexOf('\n')) >= 0) {
+        const line = nvBuf.slice(0, i); nvBuf = nvBuf.slice(i + 1);
+        try { toPanel('nv-ev', JSON.parse(line)); } catch {}
+      }
+    });
+    nv.on('exit', () => { nv = null; toPanel('nv-ev', { ev: 'exit' }); });
+  } catch { nv = null; }
+  return !!nv;
+}
+function nvSend(o) {
+  if (!nvStart()) return false;
+  if (o.cmd === 'listen') o.context = [...(o.context || []), ...apps.map(a => a.name)].slice(0, 100);
+  try { nv.stdin.write(JSON.stringify(o) + '\n'); return true; } catch { return false; }
+}
+ipcMain.on('nv', (e, o) => { e.returnValue = nvSend(o); });
+ipcMain.on('nv-available', e => { e.returnValue = isMac && fs.existsSync(nvPath()); });
+app.on('will-quit', () => { try { nv && nv.kill(); } catch {} });
 
 // ---------- IPC ----------
 ipcMain.on('open-app', (e, name) => { try { e.returnValue = openApp(name); } catch { e.returnValue = false; } });
