@@ -239,7 +239,7 @@ $('#chat').onclick = async e => {
 
 let attachments = [];       // files attached to the next question
 let activeDocs = [];        // file ids the conversation is about
-let lastWasVoice = false;
+let lastWasVoice = false, replyKind = 'cmd', followUps = 0;
 async function submit(text, fromVoice = false) {
   text = text.trim();
   if (!text && !attachments.length) return;
@@ -262,11 +262,14 @@ async function submit(text, fromVoice = false) {
   if (!files.length) {
     const r = await handle(text);
     if (r) {
+      const mine = store.chat[store.chat.length - 1]; if (mine?.role === 'me') mine.cmd = true;   // keep commands out of the AI's memory
+      replyKind = 'cmd';
       if (await runAction(r)) return;
-      addMsg('bot', r.reply, { ...(r.item ? { itemId: r.item.id } : {}), ...(r.results ? { results: r.results } : {}), ...(r.files ? { files: r.files } : {}) });
+      addMsg('bot', r.reply, { cmd: true, ...(r.item ? { itemId: r.item.id } : {}), ...(r.results ? { results: r.results } : {}), ...(r.files ? { files: r.files } : {}) });
       birdMood(r.item ? 'happy' : 'talk');
       if (r.url) setTimeout(() => openUrl(r.url), 350);
       if (fromVoice || S().speak) speak(r.reply);
+      if (fromVoice) window.SparrowIsland?.reply(r.reply, !r.results && !r.files);
       return;
     }
   }
@@ -283,7 +286,9 @@ async function submit(text, fromVoice = false) {
   try {
     const res = await ask(text, partial => { typing.classList.remove('typing'); typing.textContent = partial; window.scrollTo({ top: document.body.scrollHeight }); }, { context });
     typing.remove();
+    replyKind = 'ai';
     addMsg('bot', res.text || '…', { src: res.source });
+    if (fromVoice) window.SparrowIsland?.reply(res.text || '', false);
     mem.remember('chat', 'Sparrow: ' + (res.text || '').slice(0, 200));
     if (fromVoice || S().speak) speak(res.text);
   } catch (e) {
@@ -293,7 +298,7 @@ async function submit(text, fromVoice = false) {
     else addMsg('bot', '⚠️ ' + e.message);
   } finally { setBird('talking', false); }
 }
-$('#askForm').onsubmit = e => { e.preventDefault(); const v = $('#askInput').value; $('#askInput').value = ''; submit(v); };
+$('#askForm').onsubmit = e => { e.preventDefault(); const v = $('#askInput').value; $('#askInput').value = ''; followUps = 0; submit(v); };
 
 /** Things the brain asks the app to do. Returns true if fully handled. */
 async function runAction(r) {
@@ -405,8 +410,9 @@ function speak(text) {
 }
 // Conversation mode: after answering a spoken question, listen again without a tap.
 function afterSpeech() {
-  if (!lastWasVoice || !S().conversation) return;
-  lastWasVoice = false;
+  // Only after a real answer to a spoken question (never after "Opening Spotify…"), and at most twice in a row.
+  if (!lastWasVoice || !S().conversation || replyKind !== 'ai' || followUps >= 2) { lastWasVoice = false; followUps = 0; return; }
+  lastWasVoice = false; followUps++;
   setTimeout(() => { if (window.SparrowVoice) window.SparrowVoice.startCommand(); else listen(true); }, 300);
 }
 
@@ -430,7 +436,7 @@ function listen(quiet = false) {
     applyI18n();
     const tx = (finalText || $('#askInput').value).trim();
     $('#askInput').value = '';
-    if (tx) submit(tx, true);
+    if (tx && tx.length > 2 && !/^(i|a|uh|um|the|oh|ah|hmm|huh)$/i.test(tx)) submit(tx, true);
     setTimeout(startWake, 800);
   };
   try { rec.start(); } catch {}
@@ -479,6 +485,7 @@ async function notify(msg, tag) {
   } catch {}
 }
 function showAlert(title, sub, itemId) {
+  window.SparrowIsland?.peek(title, sub || '', 9000);
   $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
   $('#alert').hidden = false;
   $('#alertSnooze').hidden = !itemId; $('#alertSnooze').dataset.id = itemId || ''; $('#alertDone').dataset.id = itemId || '';

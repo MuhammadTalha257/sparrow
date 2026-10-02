@@ -27,7 +27,7 @@ const tidy = s => s.replace(/\s+/g, ' ')
   .replace(/^(to|that|about|for|of|me|a|an)\s+/i, '')
   .replace(/\s+(at|on|by|for|in|from|this|next)$/i, '')
   .replace(/^[,:\-\s]+|[,.!?:\-\s]+$/g, '').trim();
-export function partOfDay(h = new Date().getHours()) { return h >= 5 && h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 22 ? 'evening' : 'night'; }
+export function partOfDay(h = new Date().getHours()) { return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : h >= 17 && h < 22 ? 'evening' : 'night'; }
 export function greetingWord() { return tr(partOfDay()); }
 const hi = () => store.settings.name ? `, ${store.settings.name}` : '';
 

@@ -1,4 +1,5 @@
-// Extras for the Sparrow computer app (Mac + Windows). Loaded only there, never on phones.
+// The Sparrow island for Mac + Windows: a black glass island at the top of the screen that springs open.
+// Loaded only in the computer app, never on phones.
 import { store } from './store.js';
 import { greetingWord, fmtTime, tasksForDay } from './brain.js';
 import * as mem from './memory.js';
@@ -6,58 +7,114 @@ import * as mem from './memory.js';
 const D = window.SparrowDesktop;
 const S = () => store.settings;
 const plat = D.platform();
-document.documentElement.classList.add('desktop', 'os-' + plat);
+const html = document.documentElement;
+html.classList.add('desktop', 'island-mode', 'isl-collapsed', 'os-' + plat);
 
-// ---------- window bar (drag + hide) ----------
-const bar = document.createElement('div');
-bar.className = 'win-bar';
-bar.innerHTML = `<span class="wb-title">Sparrow</span><div><button data-w="min" title="Minimise" aria-label="Minimise">—</button><button data-w="hide" title="Hide — Sparrow keeps running for your reminders" aria-label="Hide">✕</button></div>`;
-document.body.prepend(bar);
-bar.onclick = e => { const b = e.target.closest('[data-w]'); if (b) D.window(b.dataset.w); };
-const css = document.createElement('style');
-css.textContent = `
-  .win-bar { position: fixed; z-index: 50; top: 0; left: 0; right: 0; height: 30px; display: flex; align-items: center; justify-content: space-between;
-    padding: 0 6px 0 14px; font-size: 12px; font-weight: 700; color: var(--faint); -webkit-app-region: drag; background: var(--bg); }
-  .win-bar button { -webkit-app-region: no-drag; width: 34px; height: 26px; border-radius: 8px; color: var(--muted); }
-  .win-bar button:hover { background: var(--soft); color: var(--text); }
-  html.desktop #installHint { display: none !important; }
-  html.desktop ::-webkit-scrollbar { width: 8px; } html.desktop ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
-`;
-document.head.appendChild(css);
+// ---------- build the island around the app ----------
+const island = document.createElement('div'); island.id = 'island';
+const body = document.createElement('div'); body.className = 'isl-body';
+[...document.body.children].forEach(el => { if (el.tagName !== 'SCRIPT') body.appendChild(el); });
+const cap = document.createElement('button'); cap.className = 'cap'; cap.setAttribute('aria-label', 'Open Sparrow');
+cap.innerHTML = `<span class="cap-bird"><img src="icons/icon-192.png" alt=""></span>
+  <span class="cap-txt"><b id="capT1">Sparrow</b><small id="capT2">Say “Sparrow…”</small></span>
+  <span class="cap-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`;
+const glow = document.createElement('div'); glow.className = 'isl-glow';
+island.append(glow, cap, body);
+document.body.prepend(island);
 
-// ---------- settings: computer section ----------
-const sec = document.createElement('details');
-sec.innerHTML = `<summary>💻 This ${plat === 'mac' ? 'Mac' : 'computer'}</summary>
-  <label class="row"><input type="checkbox" id="dLogin"> 🚀 Start Sparrow when I log in</label>
-  <label class="row"><input type="checkbox" id="dPill"> 🐦 Show the little Sparrow bar at the top of the screen</label>
-  <label class="row"><input type="checkbox" id="dClip"> 📎 Keep a clipboard history (on this computer only)</label>
-  <p class="small-text">Shortcut: <b>${plat === 'mac' ? '⌘' : 'Ctrl'} + Shift + Space</b> opens Sparrow from anywhere. Or just say “Sparrow, open Chrome”, “Sparrow, find the contract”, “Sparrow, volume up”.</p>
-  <p class="small-text" id="dNote"></p>`;
-document.querySelector('#desktopSection').appendChild(sec);
-const dLogin = sec.querySelector('#dLogin'), dPill = sec.querySelector('#dPill'), dClip = sec.querySelector('#dClip');
-D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill; dClip.checked = s.clipboard !== false; });
-dLogin.onchange = () => D.setSetting('login', dLogin.checked);
-dPill.onchange = () => D.setSetting('pill', dPill.checked);
-dClip.onchange = () => D.setSetting('clipboard', dClip.checked);
+// collapse button in the header
+const top = body.querySelector('.top');
+const shrink = document.createElement('button');
+shrink.className = 'icon-btn isl-shrink'; shrink.setAttribute('aria-label', 'Close'); shrink.title = 'Close (Esc)';
+shrink.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
+top.appendChild(shrink);
 
-// ---------- the little bar at the top of the screen ----------
-function pushState(extra = {}) {
+// ---------- states: collapsed · peek · expanded ----------
+let state = 'collapsed', peekTimer = null;
+function setState(s) {
+  state = s;
+  html.classList.toggle('isl-collapsed', s === 'collapsed');
+  html.classList.toggle('isl-peek', s === 'peek');
+  html.classList.toggle('isl-expanded', s === 'expanded');
+  D.islandState(s === 'expanded' ? 'expanded' : 'collapsed');
+  if (s === 'expanded') setTimeout(() => document.querySelector('#askInput')?.focus({ preventScroll: true }), 380);
+  if (s !== 'peek') clearTimeout(peekTimer);
+  mouseInside(s === 'expanded');
+}
+const expand = () => setState('expanded');
+const collapse = () => { if (document.querySelector('.sheet:not([hidden])')) document.querySelector('#sheetBg')?.click(); setState('collapsed'); pushCap(); };
+/** Show a short message in the island (alerts, voice replies), then shrink back. */
+function peek(t1, t2 = '', ms = 6000) {
+  if (state === 'expanded') return;
+  capText(t1, t2); setState('peek');
+  clearTimeout(peekTimer); peekTimer = setTimeout(() => { if (state === 'peek') { setState('collapsed'); pushCap(); } }, ms);
+}
+cap.onclick = expand;
+shrink.onclick = collapse;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && state === 'expanded' && document.querySelector('#focus').hidden) { e.stopPropagation(); collapse(); } }, true);
+D.onIsland(v => {
+  if (v === 'expand') expand();
+  else if (v === 'collapse') collapse();
+  else if (v === 'hide-cap') html.classList.add('cap-hidden');
+  else if (v === 'show-cap') html.classList.remove('cap-hidden');
+});
+D.getSettings().then(s => { if (s.pill === false) html.classList.add('cap-hidden'); if (s.notch) html.classList.add('has-notch'); });
+
+// Only the island catches the mouse — the rest of the window clicks through to your apps.
+let inside = null;
+function mouseInside(v) { if (v !== inside) { inside = v; D.mouseInside(v); } }
+document.addEventListener('mousemove', e => {
+  const r = island.getBoundingClientRect();
+  const over = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom + 4;
+  mouseInside(over || state === 'expanded' && !!document.querySelector('.sheet:not([hidden]), #focus:not([hidden])'));
+  html.classList.toggle('cap-hover', over && state === 'collapsed');
+});
+document.addEventListener('mouseleave', () => { if (state !== 'expanded') mouseInside(false); html.classList.remove('cap-hover'); });
+
+// ---------- capsule text ----------
+function capText(t1, t2) { cap.querySelector('#capT1').textContent = t1; cap.querySelector('#capT2').textContent = t2; }
+function pushCap() {
+  if (state === 'peek' || Voice.mode === 'command') return;
   const now = Date.now();
   const next = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now)
     .sort((a, b) => new Date(a.when) - new Date(b.when))[0];
   const left = tasksForDay(new Date()).length;
-  D.state({ hello: `${greetingWord()}${S().name ? ', ' + S().name : ''}`,
-    next: next ? `${next.title} · ${fmtTime(next.when)}` : (left ? `${left} task${left > 1 ? 's' : ''} today` : 'All clear today'), ...extra });
+  capText(`${greetingWord()}${S().name ? ', ' + S().name : ''}`,
+    next ? `${next.title} · ${fmtTime(next.when)}` : left ? `${left} task${left > 1 ? 's' : ''} today` : (Voice.wakeOn ? 'Say “Sparrow…”' : 'All clear today'));
 }
-store.onChange(() => pushState());
-setInterval(pushState, 60000);
-pushState();
+store.onChange(pushCap); setInterval(pushCap, 60000); setTimeout(pushCap, 300);
 
-// ---------- folder watcher & other events from the computer ----------
+// hooks used by app.js
+window.SparrowIsland = {
+  peek, expand, collapse, get state() { return state; },
+  /** A reply to something said while the island was closed: short ones peek, long ones open the island. */
+  reply(text, isCommand) {
+    if (state === 'expanded') return;
+    if (isCommand || text.length < 90) peek(text.split('\n')[0].slice(0, 80), isCommand ? '' : 'Tap to see more', isCommand ? 4000 : 7000);
+    else expand();
+  },
+};
+
+// ---------- settings: this computer ----------
+const sec = document.createElement('details');
+sec.innerHTML = `<summary>💻 This ${plat === 'mac' ? 'Mac' : 'computer'}</summary>
+  <label class="row"><input type="checkbox" id="dLogin"> 🚀 Start Sparrow when I log in</label>
+  <label class="row"><input type="checkbox" id="dPill"> 🐦 Show the island at the top when Sparrow is closed</label>
+  <label class="row"><input type="checkbox" id="dClip"> 📎 Keep a clipboard history (on this computer only)</label>
+  <p class="small-text">Open Sparrow: click the island, press <b>${plat === 'mac' ? '⌘' : 'Ctrl'} + Shift + Space</b>, or just say “Sparrow…”. Close: <b>Esc</b> or click anywhere else.</p>
+  <p class="small-text" id="dNote"></p>`;
+body.querySelector('#desktopSection').appendChild(sec);
+const dLogin = sec.querySelector('#dLogin'), dPill = sec.querySelector('#dPill'), dClip = sec.querySelector('#dClip');
+D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !== false; dClip.checked = s.clipboard !== false; });
+dLogin.onchange = () => D.setSetting('login', dLogin.checked);
+dPill.onchange = () => D.setSetting('pill', dPill.checked);
+dClip.onchange = () => D.setSetting('clipboard', dClip.checked);
+
+// ---------- folder watcher ----------
 D.onEvent(ev => {
   if (ev.type === 'file-arrived') {
     mem.remember('file', ev.name, '', { folder: ev.folder, path: ev.path });
-    window.Sparrow?.toast(`📥 New file in ${ev.folder}: ${ev.name}`, 6000);
+    peek(`📥 ${ev.name}`, `New file in ${ev.folder}`);
     if (S().speak) window.Sparrow?.speak(`New file in ${ev.folder}: ${ev.name.replace(/\.[^.]+$/, '')}`);
   }
 });
@@ -75,8 +132,18 @@ async function rememberRecent() {
 }
 setInterval(rememberRecent, 15 * 60000); setTimeout(rememberRecent, 20000);
 
-// ---------- voice: offline speech recognition (Vosk), wake word + dictation ----------
+// ---------- voice: offline speech recognition (Vosk) ----------
 const send = e => window.sparrowEvent && window.sparrowEvent(e);
+// Things the recogniser "hears" in background noise — never treat these as a command.
+const JUNK = /^(i|a|the|uh|um|umm|hm+|huh|oh|ah|eh|and|so|it|is|you|to|in|of|on|at|but|that|this|yeah|hey|hmm|mm|her|his|he|she|we|they|one|be|or|if|an)$/;
+function meaningful(text, words) {
+  const t = text.trim();
+  if (t.length < 3 || JUNK.test(t)) return false;
+  const w = t.split(/\s+/);
+  if (w.length === 1 && w[0].length < 4 && !/^(yes|no|stop|play|next|mute)$/.test(w[0])) return false;
+  if (words?.length) { const avg = words.reduce((n, x) => n + (x.conf ?? 1), 0) / words.length; if (avg < 0.62) return false; }
+  return true;
+}
 const Voice = {
   model: null, rec: null, ctx: null, node: null, stream: null, loading: null,
   mode: 'off',          // 'off' | 'wake' | 'command' | 'dictate'
@@ -95,10 +162,11 @@ const Voice = {
   async ensureMic() {
     if (this.stream) return;
     await this.load();
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     this.ctx = new AudioContext();
     this.rec = new this.model.KaldiRecognizer(this.ctx.sampleRate);
-    this.rec.on('result', m => this.onText(m.result.text, true));
+    try { this.rec.setWords(true); } catch {}
+    this.rec.on('result', m => this.onText(m.result.text, true, m.result.result));
     this.rec.on('partialresult', m => this.onText(m.result.partial, false));
     this.node = this.ctx.createScriptProcessor(4096, 1, 1);
     this.node.onaudioprocess = ev => {
@@ -108,38 +176,47 @@ const Voice = {
     const src = this.ctx.createMediaStreamSource(this.stream);
     src.connect(this.node); this.node.connect(this.ctx.destination);
   },
-  onText(text, final) {
-    text = (text || '').trim().toLowerCase();
+  onText(text, final, words) {
+    text = (text || '').replace(/\[unk\]/g, '').trim().toLowerCase();
     if (this.mode === 'dictate') { if (text) this.dictateCb?.(text, final); return; }
     if (!text) return;
-    const wake = /^(hey |ok |okay )?(sparrow|spar row|sparo|sparrows|barrow|sparrow's)\b/;
+    const wake = /^(hey |ok |okay )?(sparrow|spar row|sparo|sparrows|sparrow's)\b/;
     if (this.mode === 'wake') {
       if (!wake.test(text)) return;
       const rest = text.replace(wake, '').trim();
-      if (!final) { send({ type: 'partial', text: rest }); return; }
-      if (rest.length > 2) { this.finish(rest); return; }
+      if (!final) { capText('Listening…', rest || 'Go ahead'); return; }
+      if (meaningful(rest, words?.slice(1))) { this.finish(rest); return; }
       this.startCommand();
       return;
     }
     if (this.mode === 'command') {
       const tx = text.replace(wake, '').trim();
-      if (!final) { send({ type: 'partial', text: tx }); clearTimeout(this.cmdTimer); this.cmdTimer = setTimeout(() => this.endCommand(), 7000); return; }
-      if (tx) this.finish(tx); else this.endCommand();
+      if (!final) { send({ type: 'partial', text: tx }); capText('Listening…', tx || 'Go ahead'); clearTimeout(this.cmdTimer); this.cmdTimer = setTimeout(() => this.endCommand(), 6000); return; }
+      if (meaningful(tx, words)) this.finish(tx);   // noise like "i" is ignored — keep listening until the timeout
     }
   },
   async startCommand() {
     try { await this.ensureMic(); if (this.ctx.state === 'suspended') await this.ctx.resume(); } catch { return; }
     this.mode = 'command';
-    send({ type: 'listening', on: true }); D.state({ listening: true });
-    clearTimeout(this.cmdTimer); this.cmdTimer = setTimeout(() => this.endCommand(), 7000);
+    html.classList.add('isl-listening'); capText('Listening…', 'Go ahead');
+    if (state === 'collapsed') setState('peek');
+    send({ type: 'listening', on: true });
+    clearTimeout(this.cmdTimer); this.cmdTimer = setTimeout(() => this.endCommand(), 6000);
   },
   endCommand() {
     clearTimeout(this.cmdTimer);
-    send({ type: 'listening', on: false }); D.state({ listening: false }); pushState();
+    html.classList.remove('isl-listening');
+    send({ type: 'listening', on: false });
     this.mode = this.wakeOn ? 'wake' : 'off';
+    if (state === 'peek') { setState('collapsed'); }
+    pushCap();
   },
-  finish(text) { this.endCommand(); send({ type: 'partial', text: '' }); D.show(); send({ type: 'speech', text }); },
-  /** Mic button / bird tap: take one command, no wake word needed. */
+  finish(text) {
+    this.endCommand(); send({ type: 'partial', text: '' });
+    capText('🐦 ' + text.slice(0, 60), 'On it…'); if (state !== 'expanded') setState('peek');
+    send({ type: 'speech', text });
+  },
+  /** Mic button / tap: take one command, no wake word needed. */
   async toggle() {
     try {
       if (this.mode === 'command') { this.endCommand(); return; }
@@ -152,20 +229,19 @@ const Voice = {
       this.wakeOn = true; await this.ensureMic();
       if (this.mode === 'off') this.mode = 'wake';
       sec.querySelector('#dNote').textContent = 'Listening for “Sparrow…” — understood on this computer, never uploaded.';
-      document.querySelector('#listenHint').hidden = false;
+      pushCap();
     } catch (e) {
       this.wakeOn = false;
       sec.querySelector('#dNote').textContent = `Couldn't use the microphone: ${e.message || e}. ${plat === 'mac' ? 'Allow it in System Settings → Privacy & Security → Microphone.' : 'Allow it in Settings → Privacy → Microphone.'}`;
     }
   },
-  stopWake() { this.wakeOn = false; if (this.mode === 'wake') this.mode = 'off'; document.querySelector('#listenHint').hidden = true; },
+  stopWake() { this.wakeOn = false; if (this.mode === 'wake') this.mode = 'off'; pushCap(); },
   /** Meeting notes: every word goes to cb(text, isFinal) until the returned stop() is called. */
   dictate(cb) {
-    const before = this.mode;
     this.dictateCb = cb;
     this.ensureMic().then(() => { if (this.ctx.state === 'suspended') this.ctx.resume(); this.mode = 'dictate'; })
       .catch(e => cb(`(microphone not available: ${e.message || e})`, true));
-    return () => { this.dictateCb = null; this.mode = this.wakeOn ? 'wake' : (before === 'dictate' ? 'off' : before); };
+    return () => { this.dictateCb = null; this.mode = this.wakeOn ? 'wake' : 'off'; };
   },
 };
 window.SparrowVoice = Voice;

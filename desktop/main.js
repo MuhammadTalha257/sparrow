@@ -15,7 +15,7 @@ const WWW = path.join(__dirname, 'www');
 const MODEL = app.isPackaged ? path.join(process.resourcesPath, 'model') : path.join(__dirname, 'model');
 const dataFile = n => path.join(app.getPath('userData'), n);
 
-let panel = null, pill = null, tray = null, quitting = false;
+let panel = null, tray = null, quitting = false;
 let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [] };
 
 function loadSettings() { try { settings = Object.assign(settings, JSON.parse(fs.readFileSync(dataFile('sparrow-settings.json'), 'utf8'))); } catch {} }
@@ -43,42 +43,41 @@ const ps = script => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-C
 const detached = (cmd, args) => { try { spawn(cmd, args, { detached: true, windowsHide: true, stdio: 'ignore' }).unref(); } catch {} };
 
 // ---------- windows ----------
-function panelBounds() {
-  const wa = screen.getPrimaryDisplay().workArea;
-  const w = 440, h = Math.min(780, wa.height - 70);
-  return { width: w, height: h, x: Math.round(wa.x + (wa.width - w) / 2), y: wa.y + (settings.pill ? 62 : 10) };
+// The Sparrow island: one see-through window across the top of the screen. Only the island itself
+// catches the mouse; everything else clicks straight through to your apps.
+let expanded = false;
+function islandBounds() {
+  const d = screen.getPrimaryDisplay(), b = d.bounds, wa = d.workArea;
+  const W = 560, top = isMac ? b.y : wa.y;
+  const H = Math.min(880, wa.y + wa.height - top - 8);
+  return { width: W, height: H, x: Math.round(b.x + (b.width - W) / 2), y: top };
 }
 function createPanel() {
   panel = new BrowserWindow({
-    ...panelBounds(), show: false, frame: false, resizable: true, minWidth: 380, minHeight: 500,
-    backgroundColor: '#EEF4FB', title: 'Sparrow', icon: path.join(WWW, 'icons', 'icon-512.png'),
-    alwaysOnTop: true, skipTaskbar: isMac, roundedCorners: true, fullscreenable: false,
+    ...islandBounds(), show: false, frame: false, transparent: true, backgroundColor: '#00000000', resizable: false, movable: false,
+    minimizable: false, maximizable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true, fullscreenable: false,
+    roundedCorners: false, enableLargerThanScreen: true, title: 'Sparrow', icon: path.join(WWW, 'icons', 'icon-512.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false,
       backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', spellcheck: false,
     },
   });
+  panel.setAlwaysOnTop(true, 'screen-saver');
+  panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  panel.setIgnoreMouseEvents(true, { forward: true });
   panel.loadURL('app://sparrow/index.html');
-  panel.on('close', e => { if (!quitting) { e.preventDefault(); panel.hide(); } });
+  panel.once('ready-to-show', () => panel.showInactive());
+  panel.on('close', e => { if (!quitting) e.preventDefault(); });
+  panel.on('blur', () => { if (expanded) toPanel('island', 'collapse'); });
   panel.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   panel.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://')) { e.preventDefault(); shell.openExternal(url); } });
 }
-function createPill() {
-  const wa = screen.getPrimaryDisplay().workArea, w = 360, h = 54;
-  pill = new BrowserWindow({
-    width: w, height: h, x: Math.round(wa.x + (wa.width - w) / 2), y: wa.y + 6,
-    frame: false, transparent: true, resizable: false, movable: true, skipTaskbar: true, alwaysOnTop: true,
-    focusable: false, hasShadow: false, show: false, fullscreenable: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
-  });
-  pill.setAlwaysOnTop(true, 'screen-saver');
-  pill.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
-  pill.loadFile(path.join(__dirname, 'pill.html'));
-  pill.once('ready-to-show', () => { if (settings.pill) pill.showInactive(); });
-}
-function showPanel() { if (!panel) return; if (panel.isMinimized()) panel.restore(); panel.show(); panel.focus(); }
-function togglePanel() { panel && panel.isVisible() && panel.isFocused() ? panel.hide() : showPanel(); }
+function focusIsland() { panel.setIgnoreMouseEvents(false); if (isMac) app.focus({ steal: true }); panel.focus(); }
+function showPanel() { if (!panel) return; expanded = true; focusIsland(); toPanel('island', 'expand'); }
+function togglePanel() { expanded ? toPanel('island', 'collapse') : showPanel(); }
 const toPanel = (ch, v) => panel && panel.webContents.send(ch, v);
+ipcMain.on('island-state', (_e, st) => { expanded = st === 'expanded'; if (expanded) focusIsland(); });
+ipcMain.on('mouse-inside', (_e, inside) => panel && panel.setIgnoreMouseEvents(!inside, { forward: true }));
 
 // ---------- tray / menu bar ----------
 function createTray() {
@@ -89,7 +88,7 @@ function createTray() {
     { label: 'Open Sparrow', accelerator: 'CommandOrControl+Shift+Space', click: showPanel },
     { label: 'Talk to Sparrow', click: () => { showPanel(); toPanel('command', 'listen'); } },
     { type: 'separator' },
-    { label: 'Show the sparrow bar', type: 'checkbox', checked: settings.pill, click: i => setSetting('pill', i.checked) },
+    { label: 'Show the island when closed', type: 'checkbox', checked: settings.pill, click: i => setSetting('pill', i.checked) },
     { label: isMac ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: settings.login, click: i => setSetting('login', i.checked) },
     { type: 'separator' },
     { label: 'Quit Sparrow', click: () => { quitting = true; app.quit(); } },
@@ -101,7 +100,7 @@ function createTray() {
 function setSetting(k, v) {
   settings[k] = v; saveSettings();
   if (k === 'login') app.setLoginItemSettings({ openAtLogin: v, openAsHidden: true, args: ['--hidden'] });
-  if (k === 'pill' && pill) { v ? pill.showInactive() : pill.hide(); panel && panel.setBounds(panelBounds()); }
+  if (k === 'pill') toPanel('island', v ? 'show-cap' : 'hide-cap');
   if (k === 'clipboard') v ? startClipboard() : stopClipboard();
   tray && tray.refresh && tray.refresh();
 }
@@ -373,12 +372,13 @@ var l = m.location; if (l && !l.isNil()) { res = l.coordinate.latitude + ',' + l
 // ---------- IPC ----------
 ipcMain.on('open-app', (e, name) => { try { e.returnValue = openApp(name); } catch { e.returnValue = false; } });
 ipcMain.on('media', (_e, cmd) => media(cmd));
-ipcMain.on('window', (_e, what) => { if (what === 'min') panel.minimize(); else panel.hide(); });
+ipcMain.on('window', () => toPanel('island', 'collapse'));
 ipcMain.on('show', () => showPanel());
-ipcMain.on('state', (_e, s) => pill && pill.webContents.send('state', s));
-ipcMain.on('pill-click', () => togglePanel());
-ipcMain.on('pill-talk', () => { showPanel(); toPanel('command', 'listen'); });
-ipcMain.handle('get-settings', () => ({ ...settings, platform: process.platform }));
+
+ipcMain.handle('get-settings', () => {
+  const d = screen.getPrimaryDisplay();
+  return { ...settings, platform: process.platform, notch: isMac && d.workArea.y - d.bounds.y > 30 };
+});
 ipcMain.handle('set-setting', (_e, k, v) => setSetting(k, v));
 ipcMain.handle('model-url', () => 'app://sparrow/model/model.tar.gz');
 ipcMain.handle('play-song', (_e, q, where) => playSong(q, where));
@@ -431,13 +431,13 @@ app.whenReady().then(async () => {
     app.setLoginItemSettings({ openAtLogin: settings.login, openAsHidden: true, args: ['--hidden'] });
   }
   if (isMac) { try { await systemPreferences.askForMediaAccess('microphone'); } catch {} }
-  createPanel(); createPill(); createTray(); loadApps();
+  createPanel(); createTray(); loadApps();
   if (settings.clipboard) startClipboard();
   (settings.watch || []).forEach(startWatch);
   const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin;
-  panel.once('ready-to-show', () => { if (!hidden) showPanel(); });
+  if (!hidden) panel.webContents.once('did-finish-load', () => setTimeout(showPanel, 1600));
   globalShortcut.register('CommandOrControl+Shift+Space', togglePanel);
-  screen.on('display-metrics-changed', () => panel && panel.setBounds(panelBounds()));
+  screen.on('display-metrics-changed', () => panel && panel.setBounds(islandBounds()));
 });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());

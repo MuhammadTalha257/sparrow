@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   media: cmd => ipcRenderer.send('media', cmd),
   window: what => ipcRenderer.send('window', what),
   show: () => ipcRenderer.send('show'),
-  state: s => ipcRenderer.send('state', s),
+  state: () => {},
   getSettings: () => inv('get-settings'),
   setSetting: (k, v) => inv('set-setting', k, v),
   modelUrl: () => inv('model-url'),
@@ -27,8 +27,8 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   saveFile: (name, base64) => inv('save-file', name, base64),
   onCommand: f => ipcRenderer.on('command', (_e, c) => f(c)),
   onEvent: f => ipcRenderer.on('event', (_e, ev) => f(ev)),
-  // used by the little top bar
-  onState: f => ipcRenderer.on('state', (_e, s) => f(s)),
-  pillClick: () => ipcRenderer.send('pill-click'),
-  pillTalk: () => ipcRenderer.send('pill-talk'),
+  // the island
+  onIsland: f => ipcRenderer.on('island', (_e, v) => f(v)),
+  islandState: st => ipcRenderer.send('island-state', st),
+  mouseInside: inside => ipcRenderer.send('mouse-inside', inside),
 });

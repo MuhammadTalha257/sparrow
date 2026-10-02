@@ -23,7 +23,7 @@
     "appId": "app.sparrowai.sparrow",
     "productName": "Sparrow",
     "artifactName": "Sparrow-Setup.exe",
-    "files": ["main.js", "preload.js", "pill.html", "www/**", "package.json"],
+    "files": ["main.js", "preload.js", "www/**", "package.json"],
     "extraResources": [{ "from": "model", "to": "model", "filter": ["**/*"] }],
     "win": { "target": "nsis", "icon": "build/icon.png" },
     "nsis": {

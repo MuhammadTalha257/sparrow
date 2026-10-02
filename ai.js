@@ -70,7 +70,9 @@ It is now ${new Date().toLocaleString()}. ${daySummary(new Date(), true)}
 Today's items: ${store.onDay(new Date()).map(i => `${i.title} at ${fmtTime(i.when)}`).join('; ') || 'none'}.
 Open tasks: ${store.openTasks().slice(0, 15).map(i => i.title).join('; ') || 'none'}.${extra}`;
 }
-function history() { return store.chat.slice(-10).filter(m => m.text).map(m => ({ role: m.role === 'me' ? 'user' : 'assistant', content: m.text })); }
+// Only real conversation goes to the AI — not commands like "open Spotify" and their replies
+// (a small model would otherwise just repeat "Opening Spotify…").
+function history() { return store.chat.filter(m => m.text && !m.cmd).slice(-10).map(m => ({ role: m.role === 'me' ? 'user' : 'assistant', content: m.text })); }
 
 // Network: the desktop and Android apps send requests natively (no browser CORS limits).
 let reqId = 0; const pending = new Map();

@@ -13,7 +13,7 @@ export const DEFAULT_SETTINGS = {
   keys: { gemini: '', openai: '', claude: '', grok: '', deepseek: '', mistral: '', groq: '', openrouter: '', perplexity: '' },
   models: {},
   lastBriefDay: '', morningOn: true, morningTime: '08:30', nightOn: true, nightTime: '21:30', lead: 5, lastMorning: '', lastNight: '',
-  theme: 'daylight', lang: 'en', simple: false,
+  theme: 'sunset', lang: 'en', simple: false,
   wake: true, micButton: true, conversation: true, musicApp: 'spotify',
   prayer: { on: false, method: 'Karachi', asr: 'Hanafi', before: 10, speak: true },
   business: { name: '', address: '', currency: '£', invoiceNo: 1, quoteNo: 1 },
@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
 
 function mergeSettings(saved) {
   const s = Object.assign({}, DEFAULT_SETTINGS, saved || {});
+  if (!s.lookV3) { s.theme = 'sunset'; s.lookV3 = true; }   // back to the warm glass look
   for (const k of ['keys', 'prayer', 'business', 'memory']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
   return s;
 }
