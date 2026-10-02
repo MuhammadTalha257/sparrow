@@ -13,26 +13,24 @@ import UniformTypeIdentifiers
 /// Serves the bundled app files at app://sparrow/… (works offline).
 final class SparrowSchemeHandler: NSObject, WKURLSchemeHandler {
     nonisolated func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-        MainActor.assumeIsolated {
-            guard let url = urlSchemeTask.request.url, let base = Bundle.main.resourceURL?.appendingPathComponent("web") else { return }
-            var path = url.path
-            if path.isEmpty || path == "/" { path = "/index.html" }
-            let file = base.appendingPathComponent(String(path.dropFirst())).standardizedFileURL
-            guard file.path.hasPrefix(base.standardizedFileURL.path), let data = try? Data(contentsOf: file) else {
-                urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist))
-                return
-            }
-            let ext = file.pathExtension.lowercased()
-            let mime: String = [
-                "html": "text/html", "js": "text/javascript", "mjs": "text/javascript", "css": "text/css", "json": "application/json",
-                "webmanifest": "application/manifest+json", "png": "image/png", "svg": "image/svg+xml", "wasm": "application/wasm",
-            ][ext] ?? "application/octet-stream"
-            let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
-                                       headerFields: ["Content-Type": mime, "Content-Length": "\(data.count)", "Access-Control-Allow-Origin": "*"])!
-            urlSchemeTask.didReceive(resp)
-            urlSchemeTask.didReceive(data)
-            urlSchemeTask.didFinish()
+        guard let url = urlSchemeTask.request.url, let base = Bundle.main.resourceURL?.appendingPathComponent("web") else { return }
+        var path = url.path
+        if path.isEmpty || path == "/" { path = "/index.html" }
+        let file = base.appendingPathComponent(String(path.dropFirst())).standardizedFileURL
+        guard file.path.hasPrefix(base.standardizedFileURL.path), let data = try? Data(contentsOf: file) else {
+            urlSchemeTask.didFailWithError(NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist))
+            return
         }
+        let ext = file.pathExtension.lowercased()
+        let mime: String = [
+            "html": "text/html", "js": "text/javascript", "mjs": "text/javascript", "css": "text/css", "json": "application/json",
+            "webmanifest": "application/manifest+json", "png": "image/png", "svg": "image/svg+xml", "wasm": "application/wasm",
+        ][ext] ?? "application/octet-stream"
+        let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+                                   headerFields: ["Content-Type": mime, "Content-Length": "\(data.count)", "Access-Control-Allow-Origin": "*"])!
+        urlSchemeTask.didReceive(resp)
+        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didFinish()
     }
     nonisolated func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
