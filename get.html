@@ -46,7 +46,7 @@
   <header>
     <img src="icons/icon-512.png" alt="Sparrow">
     <h1>Meet Sparrow</h1>
-    <p class="tag">A friendly little AI helper that keeps your meetings, tasks and reminders — and opens your apps when you ask. Free.</p>
+    <p class="tag">A friendly little AI helper that keeps your meetings, tasks and reminders, tells you your day every morning, and opens your apps when you ask. Free — no account, no key.</p>
     <a class="primary" id="mainBtn" href="#all">Get Sparrow</a>
     <div class="sub" id="mainSub">Free · No account · Your data stays on your device</div>
   </header>
@@ -65,13 +65,13 @@
     </div>
     <div class="card" id="c-iphone">
       <div class="ic">📱</div><h3>iPhone &amp; iPad</h3>
-      <ol><li>Open the app link in <b>Safari</b></li><li>Tap <b>Share</b> → <b>Add to Home Screen</b></li><li>Open Sparrow from your home screen</li></ol>
+      <ol><li>Open the app link in <b>Safari</b></li><li>Tap <b>Share</b> → <b>Add to Home Screen</b></li><li>Open Sparrow from your home screen. Tip: tap 📅 on a meeting so your iPhone rings even when Sparrow is closed</li></ol>
       <a class="btn" href="./">Open the app</a>
     </div>
     <div class="card" id="c-windows">
       <div class="ic">🪟</div><h3>Windows</h3>
-      <ol><li>Open the app link in <b>Edge</b> or <b>Chrome</b></li><li>Click the <b>Install</b> icon in the address bar</li><li>Sparrow gets its own window &amp; Start menu icon</li></ol>
-      <a class="btn" href="./">Open the app</a>
+      <ol><li>Download and open <b>Sparrow-Setup.exe</b></li><li>If you see “Windows protected your PC”: <b>More info → Run anyway</b> (once)</li><li>Sparrow sits at the top of your screen — <b>Ctrl + Shift + Space</b></li></ol>
+      <a class="btn" href="https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe">Download for Windows</a>
     </div>
   </div>
 
@@ -82,6 +82,9 @@
     <div class="f">☀️ <b>Morning hello</b> — time, weather and your day, spoken</div>
     <div class="f">🗣️ <b>Voice</b> — “Sparrow, open Spotify”</div>
     <div class="f">💬 <b>Ask anything</b> — free AI that runs on your device</div>
+    <div class="f">🔔 <b>Spoken alerts</b> — “Talha, you have a meeting in 5 minutes”</div>
+    <div class="f">🌙 <b>Evening check-in</b> — tick what's done, the rest moves to tomorrow</div>
+    <div class="f">🌦️ <b>Weather where you are</b> — uses your current location</div>
   </div>
 
   <footer>Made with 🧡 · <a href="https://github.com/MuhammadTalha257/sparrow">Open source on GitHub</a></footer>
@@ -95,7 +98,7 @@
     mac: ['Download for Mac', 'https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg', 'For macOS 15 or newer · Apple silicon & Intel'],
     android: ['Download for Android', 'https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk', 'Android 8 or newer · 42 MB'],
     iphone: ['Open Sparrow', './', 'Then tap Share → Add to Home Screen'],
-    windows: ['Open Sparrow', './', 'Then click Install in the address bar'],
+    windows: ['Download for Windows', 'https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe', 'Windows 10 & 11 · free · works offline'],
   };
   if (os && map[os]) {
     btn.textContent = map[os][0]; btn.href = map[os][1]; sub.textContent = map[os][2];

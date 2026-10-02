@@ -11,7 +11,7 @@ Your little AI helper for meetings, tasks, reminders and notes — free, private
 | **Mac** | Download **[Sparrow.dmg](https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg)** → drag to Applications → first open: System Settings → Privacy & Security → **Open Anyway** |
 | **iPhone** | Open **https://muhammadtalha257.github.io/sparrow/** in Safari → **Share** → **Add to Home Screen** |
 | **Android** | Download **[Sparrow.apk](https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk)** → open it → allow “Install unknown apps” if asked |
-| **Windows** | Open **https://muhammadtalha257.github.io/sparrow/** in Edge or Chrome → click **Install** in the address bar |
+| **Windows** | Download **[Sparrow-Setup.exe](https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe)** → open it → if Windows warns: **More info → Run anyway** |
 
 ## ✨ What it does
 
@@ -30,6 +30,7 @@ Everything is stored only on your phone.
 
 - The web app (iPhone + Android browser) is the repo root: `index.html`, `app.js`, `brain.js`, `ai.js`, `store.js`.
 - The Mac app is in `mac/` (Swift / SwiftUI). Every push builds `Sparrow.dmg` automatically (Releases → *mac-latest*).
+- The Windows app is in `windows/` (Electron, wraps the same web app + offline Vosk voice). Every push builds `Sparrow-Setup.exe` (Releases → *windows-latest*).
 - The Android app is in `android/` — it bundles the web app and adds native powers (`Bridge.kt`).
 - Every push to `main` builds a new `Sparrow.apk` automatically (GitHub Actions → *Releases*).
 - After changing the web app, bump `VERSION` in `sw.js` so installed iPhones refresh.
