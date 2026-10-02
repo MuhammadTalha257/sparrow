@@ -281,7 +281,18 @@ final class AIService {
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let models = json["models"] as? [[String: Any]] else { return [] }
-        return models.compactMap { $0["name"] as? String }
+        // Only local chat models: skip embedding models and ":cloud" ones (they need an account + internet).
+        let names = models.compactMap { $0["name"] as? String }.filter { n in
+            let l = n.lowercased()
+            return !l.contains("embed") && !l.contains("cloud") && !l.contains("nomic") && !l.contains("bge")
+        }
+        // Prefer small, fast models first (good on any Mac), then the rest.
+        let preferred = ["llama3.2:latest", "llama3.2:3b", "qwen2.5:3b", "gemma3:4b", "qwen2.5:1.5b", "llama3.2:1b", "qwen3:4b", "phi3"]
+        return names.sorted { a, b in
+            let ia = preferred.firstIndex(where: { a.hasPrefix($0) }) ?? 99
+            let ib = preferred.firstIndex(where: { b.hasPrefix($0) }) ?? 99
+            return ia == ib ? a < b : ia < ib
+        }
     }
 
     private func callOllama(state: AppState) async throws -> String {
@@ -415,7 +426,7 @@ struct AIModelsSettings: View {
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 } else {
                     Picker("Model", selection: $state.ollamaModel) {
-                        Text("First installed").tag("")
+                        Text("Automatic (best small model)").tag("")
                         ForEach(ollamaInstalled, id: \.self) { Text($0).tag($0) }
                     }
                 }
