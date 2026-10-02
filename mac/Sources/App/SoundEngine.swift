@@ -23,7 +23,7 @@ final class SoundEngine {
         let names = ["peek","open","close","hover","blip","slap","annoyed","dizzy","greet",
                      "work","finish","error","approval","question","approve","gulp","tick",
                      "send","love","pop","proud","wink","yawn","attach","think","search",
-                     "rate","sleep"]
+                     "rate","sleep","chime"]
         for name in names {
             guard let url = Bundle.main.url(forResource: name, withExtension: "wav", subdirectory: "sounds") else { continue }
             var pool: [AVAudioPlayer] = []

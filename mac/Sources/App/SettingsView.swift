@@ -142,6 +142,10 @@ struct SettingsView: View {
                 }
                 }
 
+                if tab == .routine {
+                RoutineSettings()
+                }
+
                 if tab == .voice {
                 // MARK: Voice, greeting, notifications, apps
                 AssistantSettings(parts: [.voice, .greeting, .notifications])
@@ -218,7 +222,7 @@ struct SettingsView: View {
                             #endif
                         }
                         #if APPSTORE
-                        Text("~/.claude/coucou/nb-hook")
+                        Text("~/.claude/sparrow/nb-hook")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(.secondary)
                         HStack(spacing: 10) {
@@ -483,7 +487,7 @@ struct SettingsView: View {
         guard let claudeURL = pickClaudeFolder(prompt: "Select") else { return }
         let alert = NSAlert()
         alert.messageText = "Install Sparrow hooks in ~/.claude?"
-        alert.informativeText = "Will write:\n• ~/.claude/coucou/nb-hook\n• ~/.claude/settings.json (backup created first)"
+        alert.informativeText = "Will write:\n• ~/.claude/sparrow/nb-hook\n• ~/.claude/settings.json (backup created first)"
         alert.addButton(withTitle: "Install")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .informational
@@ -751,11 +755,12 @@ struct ShortcutRecorderButton: View {
 // MARK: - Settings tabs (friendlier than one long page)
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, voice, ai, apps, developer
+    case general, routine, voice, ai, apps, developer
     var id: String { rawValue }
     var title: String {
         switch self {
         case .general:   return "General"
+        case .routine:   return "My day"
         case .voice:     return "Voice"
         case .ai:        return "AI"
         case .apps:      return "Apps"
@@ -765,6 +770,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general:   return "slider.horizontal.3"
+        case .routine:   return "sun.horizon.fill"
         case .voice:     return "waveform"
         case .ai:        return "sparkles"
         case .apps:      return "square.grid.2x2"

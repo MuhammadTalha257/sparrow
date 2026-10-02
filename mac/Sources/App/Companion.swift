@@ -413,6 +413,27 @@ struct TodayView: View {
             }
             .padding(.horizontal, 20).padding(.top, 30).padding(.bottom, 12)
 
+            if let next = upNext {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(LinearGradient(colors: [Color(hex: "#FBC56A"), sunset], startPoint: .top, endPoint: .bottom))
+                        Image(systemName: next.icon).font(.system(size: 15, weight: .bold)).foregroundColor(Color(hex: "#1A1008"))
+                    }
+                    .frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("UP NEXT").font(.system(size: 9.5, weight: .heavy)).foregroundColor(sunset)
+                        Text(next.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                    }
+                    Spacer()
+                    Text(next.date, style: .relative).font(.system(size: 12, weight: .semibold)).foregroundColor(.secondary)
+                        .multilineTextAlignment(.trailing).frame(maxWidth: 110, alignment: .trailing)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 16).fill(sunset.opacity(0.12)))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(amber.opacity(0.3), lineWidth: 1))
+                .padding(.horizontal, 20).padding(.bottom, 12)
+            }
+
             // Add anything
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill").foregroundColor(sunset).font(.system(size: 18))
@@ -466,12 +487,25 @@ struct TodayView: View {
                 footerButton("checklist", "Reminders", "com.apple.reminders")
                 footerButton("note.text", "Notes", "com.apple.Notes")
                 Spacer()
+                Button { Task { await Routine.shared.nightCheckIn() } } label: {
+                    Label("Check-in", systemImage: "moon.stars").font(.system(size: 12))
+                }
+                .buttonStyle(.plain).foregroundColor(.secondary).help("Evening check-in: tick what's done, move the rest")
                 Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).foregroundColor(.secondary).help("Refresh")
             }
             .padding(.horizontal, 20).padding(.vertical, 10)
         }
         .frame(minWidth: 380, minHeight: 420)
+        .background(
+            ZStack {
+                VisualEffectBlur()
+                LinearGradient(colors: [sunset.opacity(0.22), amber.opacity(0.05), .clear],
+                               startPoint: .top, endPoint: .center)
+            }
+            .ignoresSafeArea()
+        )
+        .preferredColorScheme(.dark)
         .task { await model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: .todayRefresh)) { _ in Task { await model.refresh() } }
     }
@@ -588,6 +622,18 @@ struct TodayView: View {
         let h = Calendar.current.component(.hour, from: Date())
         let hello = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
         return name.isEmpty ? hello : "\(hello), \(name)"
+    }
+
+    private var upNext: (title: String, date: Date, icon: String)? {
+        let now = Date()
+        let e = model.events.filter { !$0.allDay && $0.start > now }.first
+        let t = model.tasks.filter { ($0.due ?? .distantPast) > now }.first
+        switch (e, t) {
+        case let (e?, t?): return e.start <= t.due! ? (e.title, e.start, "calendar") : (t.title, t.due!, "bell.fill")
+        case let (e?, nil): return (e.title, e.start, "calendar")
+        case let (nil, t?): return (t.title, t.due!, "bell.fill")
+        default: return nil
+        }
     }
 
     private var summary: String {

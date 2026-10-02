@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		290E13B34EA35C0759CD5712 /* Routine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A77EA4F53961DA07F28353A7 /* Routine.swift */; };
+		F6BB73D7FB79D4E70E590030 /* Routine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A77EA4F53961DA07F28353A7 /* Routine.swift */; };
 		3870CDDBE7FD0B52E03F0D74 /* Companion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D6699F1646F2B5C36FEE62B /* Companion.swift */; };
 		6CB0F6E940E2FAA5E08E7524 /* Companion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D6699F1646F2B5C36FEE62B /* Companion.swift */; };
 		E47CF92ACF8E6353D3AB310D /* DailyRoutine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AA53680D71ED066F205413 /* DailyRoutine.swift */; };
@@ -84,6 +86,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A77EA4F53961DA07F28353A7 /* Routine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Routine.swift; sourceTree = "<group>"; };
 		0D6699F1646F2B5C36FEE62B /* Companion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Companion.swift; sourceTree = "<group>"; };
 		11AA53680D71ED066F205413 /* DailyRoutine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyRoutine.swift; sourceTree = "<group>"; };
 		4168D597AFAE26F62A2D6EE3 /* Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shortcuts.swift; sourceTree = "<group>"; };
@@ -136,6 +139,7 @@
 				D4540F630F8BA04AFFFA3979 /* BotEngine.swift */,
 				3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */,
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
+				A77EA4F53961DA07F28353A7 /* Routine.swift */,
 				0D6699F1646F2B5C36FEE62B /* Companion.swift */,
 				11AA53680D71ED066F205413 /* DailyRoutine.swift */,
 				4168D597AFAE26F62A2D6EE3 /* Shortcuts.swift */,
@@ -313,6 +317,7 @@
 				C24D863967D8D32D828ED4B1 /* BotEngine.swift in Sources */,
 				4F1E0B3C838DA3CD6F864BC0 /* CalcomPoller.swift in Sources */,
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
+				F6BB73D7FB79D4E70E590030 /* Routine.swift in Sources */,
 				6CB0F6E940E2FAA5E08E7524 /* Companion.swift in Sources */,
 				44B66F88018E1F37014890D2 /* DailyRoutine.swift in Sources */,
 				9FE8E36CFE013BEE853CAC1E /* Shortcuts.swift in Sources */,
@@ -355,6 +360,7 @@
 				0E9CE475EC53C67DAB00F8E5 /* BotEngine.swift in Sources */,
 				1969590AFEE6CB21404346F1 /* CalcomPoller.swift in Sources */,
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
+				290E13B34EA35C0759CD5712 /* Routine.swift in Sources */,
 				3870CDDBE7FD0B52E03F0D74 /* Companion.swift in Sources */,
 				E47CF92ACF8E6353D3AB310D /* DailyRoutine.swift in Sources */,
 				C80B3AC6EECA8453AC73E80C /* Shortcuts.swift in Sources */,

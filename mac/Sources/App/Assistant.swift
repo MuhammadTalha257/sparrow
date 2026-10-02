@@ -4,6 +4,7 @@ import SwiftUI
 import AVFoundation
 import Speech
 import ApplicationServices
+import CoreLocation
 
 // MARK: - Settings keys (UserDefaults)
 
@@ -151,11 +152,14 @@ final class VoiceEngine: NSObject, ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
-        let u = AVSpeechUtterance(string: String(clean.prefix(1200)))
-        u.voice = currentVoice()
+        let u = Self.naturalUtterance(String(clean.prefix(1200)))
+        let voice = currentVoice()
+        u.voice = voice
         let rate = UserDefaults.standard.double(forKey: AssistantPrefs.voiceRate)
-        u.rate = Float(rate == 0 ? 0.5 : rate)
-        u.pitchMultiplier = 1.0
+        // Basic voices sound less robotic a touch slower; premium ones at a natural pace.
+        let base = Float(rate == 0 ? 0.5 : rate)
+        u.rate = voice?.quality == .default ? base * 0.94 : base
+        u.pitchMultiplier = voice?.gender == .female ? 1.04 : 0.98
         u.volume = 0.95
         u.preUtteranceDelay = 0.05
         u.prefersAssistiveTechnologySettings = false
@@ -166,6 +170,17 @@ final class VoiceEngine: NSObject, ObservableObject {
     }
 
     func stopSpeaking() { synth.stopSpeaking(at: .immediate) }
+
+    /// Short natural pauses between sentences and after "Talha," — sounds far less robotic.
+    static func naturalUtterance(_ text: String) -> AVSpeechUtterance {
+        let esc = text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        var body = esc.replacingOccurrences(of: #"([.!?])\s+"#, with: "$1<break time=\"280ms\"/> ", options: .regularExpression)
+        body = body.replacingOccurrences(of: #"\n+"#, with: "<break time=\"320ms\"/> ", options: .regularExpression)
+        body = body.replacingOccurrences(of: #":\s+"#, with: ":<break time=\"160ms\"/> ", options: .regularExpression)
+        if let u = AVSpeechUtterance(ssmlRepresentation: "<speak>\(body)</speak>") { return u }
+        return AVSpeechUtterance(string: text)
+    }
 
     fileprivate func speechFinished() {
         speaking = false
@@ -408,6 +423,7 @@ enum Assistant {
     static func start() {
         AssistantPrefs.registerDefaults()
         Briefing.shared.start()
+        Routine.shared.start()
         NotificationReader.shared.setEnabled(UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes))
         if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) {
             VoiceEngine.shared.setWakeWord(true)
@@ -457,9 +473,22 @@ final class Briefing {
         Task { await greet() }
     }
 
+    /// Called by the morning briefing so the wake greeting doesn't repeat it.
+    func markGreeted() { lastGreet = Date(); lastPeriod = Self.period() }
+    /// True if Sparrow already said hello (with the day's plan) in the last 20 minutes.
+    var greetedRecently: Bool { Date().timeIntervalSince(lastGreet) < 20 * 60 }
+
     func greet() async {
         lastGreet = Date(); lastPeriod = Self.period()
         let text = await composeGreeting()
+        // One-time tip if the Mac only has robotic voices.
+        if VoiceEngine.onlyBasicVoices && !UserDefaults.standard.bool(forKey: "voiceTipShown") {
+            UserDefaults.standard.set(true, forKey: "voiceTipShown")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
+                AppState.shared.noteMessage = "Tip: want me to sound more human? Settings → Voice → “Make Sparrow sound human”. It's free."
+                NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+            }
+        }
         let state = AppState.shared
         state.noteMessage = text
         NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
@@ -482,7 +511,7 @@ final class Briefing {
         if UserDefaults.standard.bool(forKey: AssistantPrefs.greetWeather), let w = await Weather.now() {
             text += " " + w
         }
-        text += " " + (await Planner.shared.summary())
+        text += " " + (await Planner.shared.spokenPlan())
         return text
     }
 }
@@ -527,7 +556,9 @@ enum Weather {
                 return (lat, lon, r["name"] as? String ?? city)
             }
         }
-        // Approximate location from the internet connection (no permission prompt).
+        // Real location from the Mac (Wi-Fi based) — correct even when you travel.
+        if let here = await LocationProvider.shared.current() { return here }
+        // Fallback: approximate location from the internet connection.
         if let url = URL(string: "https://ipapi.co/json/"), let json = await getJSON(url),
            let lat = json["latitude"] as? Double, let lon = json["longitude"] as? Double {
             return (lat, lon, json["city"] as? String ?? "your area")
@@ -554,6 +585,68 @@ enum Weather {
         case 71...77, 85, 86: return "snowy"
         case 95...99: return "stormy"
         default: return "mild"
+        }
+    }
+}
+
+// MARK: - Current location (Location Services, asked once)
+
+@MainActor
+final class LocationProvider: NSObject, CLLocationManagerDelegate {
+    static let shared = LocationProvider()
+    private let manager = CLLocationManager()
+    private var waiting: [CheckedContinuation<CLLocation?, Never>] = []
+    private var cached: (lat: Double, lon: Double, city: String, at: Date)?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+    }
+
+    var allowed: Bool {
+        let s = manager.authorizationStatus
+        return s == .authorizedAlways || s == .authorized
+    }
+
+    func current() async -> (lat: Double, lon: Double, city: String)? {
+        if let c = cached, Date().timeIntervalSince(c.at) < 20 * 60 { return (c.lat, c.lon, c.city) }
+        guard CLLocationManager.locationServicesEnabled() else { return nil }
+        let status = manager.authorizationStatus
+        if status == .denied || status == .restricted { return nil }
+        let loc: CLLocation? = await withCheckedContinuation { cont in
+            waiting.append(cont)
+            if status == .notDetermined { manager.requestWhenInUseAuthorization() }
+            manager.requestLocation()
+            // Never wait forever (no Wi-Fi, permission prompt ignored…)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { LocationProvider.shared.resolve(nil) }
+        }
+        guard let loc else { return nil }
+        var city = "your area"
+        if let pm = try? await CLGeocoder().reverseGeocodeLocation(loc).first {
+            city = pm.locality ?? pm.subAdministrativeArea ?? pm.administrativeArea ?? city
+        }
+        cached = (loc.coordinate.latitude, loc.coordinate.longitude, city, Date())
+        return (loc.coordinate.latitude, loc.coordinate.longitude, city)
+    }
+
+    fileprivate func resolve(_ loc: CLLocation?) {
+        let w = waiting; waiting = []
+        w.forEach { $0.resume(returning: loc) }
+    }
+
+    nonisolated func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
+        let last = locs.last
+        MainActor.assumeIsolated { LocationProvider.shared.resolve(last) }
+    }
+    nonisolated func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
+        MainActor.assumeIsolated { LocationProvider.shared.resolve(nil) }
+    }
+    nonisolated func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
+        MainActor.assumeIsolated {
+            let s = m.authorizationStatus
+            if s == .denied || s == .restricted { LocationProvider.shared.resolve(nil) }
+            else if s == .authorizedAlways || s == .authorized { m.requestLocation() }
         }
     }
 }
@@ -670,8 +763,16 @@ struct AssistantSettings: View {
                         Button("Test") { VoiceEngine.shared.speak("Hi\(AssistantPrefs.displayName.isEmpty ? "" : " \(AssistantPrefs.displayName)"), I'm Sparrow. How can I help?") }
                     }
                     if VoiceEngine.onlyBasicVoices {
-                        Text("Only basic voices are installed, so Sparrow may sound robotic.")
-                            .font(.system(size: 11)).foregroundColor(.orange)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Make Sparrow sound human (free, 2 minutes)", systemImage: "sparkles")
+                                .font(.system(size: 12.5, weight: .bold))
+                            Text("Your Mac only has the basic robotic voices. Download a natural one once — it then works offline:")
+                                .font(.system(size: 11))
+                            Text("1. Click “Get more natural voices…” below\n2. Next to System voice, click ⓘ or “Manage Voices…”\n3. English → tick “Zoe (Premium)” or “Ava (Premium)” (female) or “Evan (Enhanced)” (male)\n4. Come back here and pick it in Voice")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.12)))
                     }
                     HStack {
                         Button("Get more natural voices…") {

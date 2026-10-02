@@ -26,6 +26,10 @@
 	<string>Sparrow reads the title of the active window so you can ask about it.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Sparrow controls apps you ask it to, like Spotify, Music, Mail and your terminal.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Sparrow uses your location to tell you the weather where you are.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Sparrow uses your location to tell you the weather where you are.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sparrow listens when you hold the voice shortcut so you can talk to it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

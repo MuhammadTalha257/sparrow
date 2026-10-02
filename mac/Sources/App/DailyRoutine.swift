@@ -87,6 +87,34 @@ final class Planner {
             let day = t.contains("tomorrow") ? Calendar.current.date(byAdding: .day, value: 1, to: Date())! : Date()
             return await summary(for: day, detailed: true)
         }
+        // Daily routine
+        if t.range(of: #"^((give me|read|tell me|what('?s| is| are)) )?(my |the )?(morning briefing|briefing|tasks?( for| of)? today|today'?s tasks|plan for today)$|^brief me"#,
+                   options: .regularExpression) != nil {
+            return await spokenPlan()
+        }
+        if t.range(of: #"^(start |open |do )?(my |the )?(evening |night |daily )?check[- ]?in\b"#, options: .regularExpression) != nil {
+            Task { await Routine.shared.nightCheckIn() }
+            return "Opening your check-in."
+        }
+        if let re = try? NSRegularExpression(pattern: #"^(?:move|shift|push|postpone|reschedule)\s+(.+?)(?:\s+(?:to|till|until|for)\s+tomorrow)?$"#),
+           let m = re.firstMatch(in: t, range: NSRange(location: 0, length: (t as NSString).length)),
+           t.contains("tomorrow") || t.hasPrefix("postpone") {
+            let what = (t as NSString).substring(with: m.range(at: 1))
+            guard await remindersAccess() else { return noReminders }
+            if what.range(of: #"^(everything|all|the rest|rest|all( my)? tasks|remaining( tasks)?|them|the remaining( ones)?)$"#,
+                          options: .regularExpression) != nil {
+                let n = await moveAllToTomorrow()
+                return n == 0 ? "Nothing left for today to move." : "Done. I moved \(n) task\(n == 1 ? "" : "s") to tomorrow."
+            }
+            let all = await Self.openTasks()
+            let q = what.replacingOccurrences(of: #"^(the |my )"#, with: "", options: .regularExpression)
+            if let hit = all.first(where: { $0.title.lowercased() == q }) ?? all.first(where: { $0.title.lowercased().contains(q) }),
+               moveToTomorrow(hit.id) {
+                return "Moved \"\(hit.title)\" to tomorrow."
+            }
+            return "I couldn't find \"\(what)\" in your tasks."
+        }
+
         if t.range(of: #"^(show |list |what are )?(my )?(tasks|to-?dos|todo list|reminders)$"#, options: .regularExpression) != nil {
             guard await remindersAccess() else { return noReminders }
             let items = await Self.openReminders()

@@ -290,7 +290,7 @@ struct UploadCanvasView: View {
         cCtx.draw(btn2, at: CGPoint(x:350, y:126), anchor: .center)
     }
 
-    // MARK: - Mochi (superellipse body + eyes + mouth)
+    // MARK: - Sparrow body (eyes, beak, mouth)
 
     private func drawMochi(ctx: inout GraphicsContext, f: USFrame) {
         let R  = f.d / 2 / 1.04
@@ -306,12 +306,23 @@ struct UploadCanvasView: View {
 
         // ── Body gradient ──────────────────────────────────────────
         let bodyGrad = Gradient(stops:[
-            .init(color: Color(hex:"#EDEDEF"), location:0),
-            .init(color: Color(hex:"#C4C5CA"), location:1)
+            .init(color: Color(hex:"#D9A06E"), location:0),
+            .init(color: Color(hex:"#98643F"), location:1)
         ])
         c.fill(bp, with: .linearGradient(bodyGrad,
             startPoint:  CGPoint(x:  rx*0.7, y: -ry*0.9),
             endPoint:    CGPoint(x: -rx*0.8, y:  ry*0.9)))
+
+        // ── Sparrow plumage: dark crown + cream belly ─────────────
+        do {
+            var pc = c
+            pc.clip(to: bp)
+            let capH = ry * 0.55
+            pc.fill(Path(ellipseIn: CGRect(x: -rx*1.1, y: -ry - capH*0.6, width: rx*2.2, height: capH*1.6)),
+                    with: .color(Color(hex:"#6B4228")))
+            pc.fill(Path(ellipseIn: CGRect(x: -rx*0.62, y: ry*0.18, width: rx*1.24, height: ry*1.3)),
+                    with: .color(Color(hex:"#F8ECD9").opacity(0.92)))
+        }
 
         // ── Edge shadow ────────────────────────────────────────────
         let shadowGrad = Gradient(stops:[
@@ -375,6 +386,23 @@ struct UploadCanvasView: View {
             var ec = eCtx
             ec.concatenate(CGAffineTransform(translationX: CGFloat(sd*sp+lx), y: CGFloat(ey+ly)))
             drawEyeShape(ctx: &ec, shape: f.eye, w: CGFloat(ew), h: CGFloat(eh))
+            if f.eye == .pill {   // little shine
+                ec.fill(Path(ellipseIn: CGRect(x: -ew*0.28, y: -eh*0.38, width: ew*0.36, height: ew*0.36)),
+                        with: .color(.white.opacity(0.85)))
+            }
+        }
+
+        // ── Beak (when the mouth is closed) ───────────────────────
+        if mh <= 0.3 {
+            let bw = R * 0.30, bh = R * 0.24
+            let by = ey + ly + eh * 0.55
+            var beak = Path()
+            beak.move(to: CGPoint(x: lx - bw/2, y: by))
+            beak.addLine(to: CGPoint(x: lx + bw/2, y: by))
+            beak.addLine(to: CGPoint(x: lx, y: by + bh))
+            beak.closeSubpath()
+            c.fill(beak, with: .linearGradient(Gradient(colors: [Color(hex:"#F9A830"), Color(hex:"#D97911")]),
+                                               startPoint: CGPoint(x: lx, y: by), endPoint: CGPoint(x: lx, y: by + bh)))
         }
     }
 
