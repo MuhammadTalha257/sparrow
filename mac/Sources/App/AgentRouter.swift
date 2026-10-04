@@ -37,6 +37,16 @@ final class AgentRouter {
 
     private func single(_ raw: String) async -> String? {
         let base = Translit.toCommand(raw)
+        let lowered = base.lowercased()
+        if SparrowBubble.shared.isHidden,
+           lowered.range(of: #"^(come back|show (yourself|sparrow|up)|bring (sparrow|yourself) back|wapas aao|where are you|sparrow)$"#, options: .regularExpression) != nil {
+            SparrowBubble.shared.restore(); return "I'm back! 🐦"
+        }
+        if lowered.range(of: #"^(hide|minimi[sz]e) (yourself|sparrow|the island)$|^go hide$"#, options: .regularExpression) != nil {
+            SparrowBubble.shared.hideIsland(); return "I'll wait in my little bubble. Click it when you need me."
+        }
+        // Mac control first (shut down, Wi-Fi, Bluetooth, windows…), on the words as said and as understood.
+        if let r = MacControl.shared.handle(raw) ?? MacControl.shared.handle(base) { return r }
         let t = CommandEngine.shared.intent(base) ?? base
         if t != base { appendAppLog("agents.log", "understood \"\(raw)\" as \"\(t)\"") }
         if let r = await ContactsAgent.shared.handle(t, original: raw) { return r }
@@ -78,6 +88,7 @@ final class AgentRouter {
     /// Hands-free: is this clearly something to do (so Sparrow acts without hearing its name first)?
     func isClearRequest(_ s: String) -> Bool {
         let base = Translit.toCommand(s)
+        if MacControl.shared.matches(s) || MacControl.shared.matches(base) { return true }
         if CommandEngine.shared.intent(base) != nil { return true }
         if split(s).count > 1 { return true }
         let t = base.lowercased()
@@ -89,6 +100,7 @@ final class AgentRouter {
 
     func isAction(_ s: String) -> Bool {
         let base = Translit.toCommand(s)
+        if MacControl.shared.matches(s) { return true }
         if CommandEngine.shared.intent(base) != nil { return true }
         let t = base.lowercased()
         let starts = ["open ", "launch ", "start ", "quit ", "close ", "play", "pause", "stop music", "next", "previous", "skip",
@@ -128,6 +140,14 @@ enum Translit {
         (#"^(.+?)\s+(?:search karo|search kar do|google karo|talash karo|dhoondo|dhundo|lagao google pe)$"#, "search $1"),
         (#"^(?:search karo|google karo|dhoondo|dhundo)\s+(.+)$"#, "search $1"),
         (#"^youtube\s+(?:pe|par|pr|te)\s+(.+?)\s+(?:dikhao|lagao|chalao|search karo)$"#, "play $1 on youtube"),
+        // Mac control
+        (#"^(?:mac|computer|laptop|system)\s+(?:ko\s+)?(?:band karo|band kar do|band kardo|off karo|shut down karo|bnd karo)$"#, "shut down mac"),
+        (#"^(?:mac|computer|laptop|system)\s+(?:ko\s+)?(?:restart karo|restart kar do|dobara chalao)$"#, "restart mac"),
+        (#"^(?:mac|computer|laptop)\s+(?:ko\s+)?(?:sula do|sleep karo|sleep kar do)$"#, "sleep mac"),
+        (#"^(?:wifi|wi-fi|net)\s+(?:band karo|band kar do|off karo|off kar do|band)$"#, "turn off wifi"),
+        (#"^(?:wifi|wi-fi|net)\s+(?:on karo|on kar do|chalu karo|chalao|on)$"#, "turn on wifi"),
+        (#"^bluetooth\s+(?:band karo|band kar do|off karo)$"#, "turn off bluetooth"),
+        (#"^bluetooth\s+(?:on karo|on kar do|chalu karo|chalao)$"#, "turn on bluetooth"),
         // misc
         (#"^(?:time kya hai|kitne baje hain|kya time hai|ٹائم کیا ہے|समय क्या है|kinne vaje ne)$"#, "what time is it"),
         (#"^(?:battery kitni hai|battery kitni hai\?|battery)$"#, "battery"),

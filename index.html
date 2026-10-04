@@ -234,8 +234,17 @@
       <select id="rLead"><option value="0">Only on time</option><option value="1">1 minute before</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option></select></label>
   </details>
 
+  <details><summary>💧 Health reminders</summary>
+    <label class="row"><input type="checkbox" id="hWater"> Remind me to drink water</label>
+    <label class="field"><span>Every</span><select id="hWaterEvery"><option value="1">1 hour</option><option value="1.5">1½ hours</option><option value="2">2 hours</option><option value="3">3 hours</option></select></label>
+    <label class="row"><input type="checkbox" id="hMeds"> Remind me to take medicine</label>
+    <label class="field"><span>Medicine name</span><input id="hMedName" placeholder="medicine"></label>
+    <label class="field"><span>Times (24h)</span><input id="hMedTimes" placeholder="09:00, 21:00"></label>
+    <p class="small-text">Or just say “remind me to drink water every 2 hours”.</p>
+  </details>
+
   <details><summary>🕌 Prayer times</summary>
-    <label class="row"><input type="checkbox" id="pOn"> Show prayer times and remind me</label>
+    <label class="row"><input type="checkbox" id="pOn"> Show prayer times and remind me — times follow your location automatically</label>
     <label class="field"><span>Method</span><select id="pMethod"></select></label>
     <label class="field"><span>Asr</span><select id="pAsr"><option value="Hanafi">Hanafi (later)</option><option value="Shafi">Shafi'i, Maliki, Hanbali</option></select></label>
     <label class="field"><span>Remind me before</span><select id="pBefore"><option value="0">At the time</option><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option></select></label>

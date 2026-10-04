@@ -98,12 +98,35 @@ async function post(url, body, headers) {
   return j;
 }
 
+async function newestGemini(key) {
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } });
+    const names = ((await r.json()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => m.name.replace('models/', '')).filter(n => !/image|tts|embedding|live|audio/.test(n));
+    const ver = n => parseFloat(n.split('-')[1]) || 0;
+    const stable = names.filter(n => !/preview|exp/.test(n));
+    for (const pool of [stable, names]) {
+      const f = pool.filter(n => n.includes('flash') && !n.includes('lite')).sort((a, b) => ver(b) - ver(a))[0] || pool.filter(n => n.includes('flash')).sort((a, b) => ver(b) - ver(a))[0];
+      if (f) return f;
+    }
+    return names.sort((a, b) => ver(b) - ver(a))[0] || null;
+  } catch { return null; }
+}
+
 async function callProvider(p, key, messages) {
   const model = store.settings.models?.[p] || PROVIDERS[p].model;
   if (p === 'gemini') {
     const contents = messages.slice(1).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-    const j = await post(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      { system_instruction: { parts: [{ text: messages[0].content }] }, contents }, { 'x-goog-api-key': key });
+    const body = { system_instruction: { parts: [{ text: messages[0].content }] }, contents };
+    const run = m => post(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, body, { 'x-goog-api-key': key });
+    let j;
+    try { j = await run(store.settings.models?.gemini || store.settings.geminiAuto || model); }
+    catch (e) {
+      if (!/model|not found|no longer|deprecat|404/i.test(e.message)) throw e;
+      const pick = await newestGemini(key); if (!pick) throw e;   // Google retired it — use the newest one this key can use
+      store.settings.geminiAuto = pick; store.save();
+      j = await run(pick);
+    }
     return (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('').trim();
   }
   if (p === 'claude') {

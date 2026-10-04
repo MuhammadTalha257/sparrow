@@ -15,7 +15,8 @@ export const DEFAULT_SETTINGS = {
   lastBriefDay: '', morningOn: true, morningTime: '08:30', nightOn: true, nightTime: '21:30', lead: 5, lastMorning: '', lastNight: '',
   theme: 'sunset', lang: 'en', simple: false,
   wake: true, micButton: true, conversation: true, musicApp: 'spotify',
-  prayer: { on: false, method: 'Karachi', asr: 'Hanafi', before: 10, speak: true },
+  prayer: { on: false, method: 'Auto', asr: 'Hanafi', before: 10, speak: true },
+  health: { water: false, waterEvery: 2, meds: false, medName: 'medicine', medTimes: '09:00, 21:00' },
   business: { name: '', address: '', currency: '£', invoiceNo: 1, quoteNo: 1 },
   memory: { on: true, keepCopies: false, days: 0, recentFiles: false },
   snippets: [],
@@ -24,8 +25,9 @@ export const DEFAULT_SETTINGS = {
 
 function mergeSettings(saved) {
   const s = Object.assign({}, DEFAULT_SETTINGS, saved || {});
-  if (!s.lookV3) { s.theme = 'sunset'; s.lookV3 = true; }   // back to the warm glass look
-  for (const k of ['keys', 'prayer', 'business', 'memory']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
+  if (!s.lookV3) { s.theme = 'sunset'; s.lookV3 = true; }
+  if (!s.prayerAutoV1) { if (s.prayer.method === 'Karachi') s.prayer.method = 'Auto'; s.prayerAutoV1 = true; }   // times follow your location   // back to the warm glass look
+  for (const k of ['keys', 'prayer', 'business', 'memory', 'health']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
   return s;
 }
 

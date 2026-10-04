@@ -1,6 +1,6 @@
 import { store, DEFAULT_SETTINGS } from './store.js';
 import { t, applyI18n, LANGS, SPEECH_LANG } from './i18n.js';
-import { METHODS, NAMES as PRAYERS, prayerTimes } from './prayer.js';
+import { METHODS, NAMES as PRAYERS, prayerTimes, refreshOnline } from './prayer.js';
 import * as mem from './memory.js';
 import * as tools from './tools.js';
 import * as sync from './sync.js';
@@ -537,6 +537,7 @@ function alertNow(spoken, shown, tag, itemId) {
 const who = () => S().name ? S().name + ', ' : '';
 async function checkDue() {
   const now = Date.now(), lead = (+S().lead || 0) * 60000;
+  const missed = [];
   for (const it of store.items) {
     if (!['reminder', 'meeting', 'task'].includes(it.type) || it.done) continue;
     if (it.snoozeUntil && !it.snoozed && it.snoozeUntil <= now) {
@@ -547,6 +548,7 @@ async function checkDue() {
     const at = new Date(it.when).getTime(), meet = it.type === 'meeting';
     if (!it.notified && at <= now) {
       if (now - at < 10 * 60000) alertNow(meet ? `${who()}you have a meeting now: ${it.title}.` : `${who()}it's time: ${it.title}.`, (meet ? '🗓️ Now: ' : '⏰ ') + it.title, it.id, it.id);
+      else if (now - at < 24 * 3600e3) missed.push(`${it.title} (${fmtTime(new Date(at))})`);   // the Mac was asleep
       if (it.repeat) { const nx = nextOccurrence(it.repeat, it.when, new Date(now)); store.update(it.id, { when: nx.toISOString(), notified: false, soonDone: false }); }
       else store.update(it.id, { notified: true, soonDone: true, ...(it.type === 'reminder' ? { done: true, doneAt: new Date().toISOString() } : {}) });
     } else if (lead && !it.soonDone && at > now && at - now <= lead) {
@@ -555,13 +557,18 @@ async function checkDue() {
       alertNow(meet ? `${who()}you have a meeting in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.` : `${who()}reminder in ${mins} minute${mins > 1 ? 's' : ''}: ${it.title}.`, `⏳ In ${mins} min: ${it.title}`, it.id + 'soon', it.id);
     }
   }
-  checkPrayer(); checkHabits(); checkDaily(); checkFocus();
+  if (missed.length) {
+    const msg = `While your Mac was asleep you missed: ${missed.slice(0, 4).join(', ')}.`;
+    chime(); showAlert('⏰ You missed ' + missed.length + (missed.length > 1 ? ' reminders' : ' reminder'), missed.slice(0, 3).join(' · ')); speakSoon(`${who()}${msg}`);
+  }
+  checkPrayer(); checkHabits(); checkDaily(); checkFocus(); checkHealth();
 }
 let prayerCache = { day: '', times: null };
 function checkPrayer() {
   const p = S().prayer, loc = S().lastLoc;
   if (!p.on || !loc || N) return;      // Android rings these with its own alarms
-  if (prayerCache.day !== dayKey()) prayerCache = { day: dayKey(), times: prayerTimes(new Date(), loc.lat, loc.lon, p.method, p.asr) };
+  if (prayerCache.day !== dayKey() && p.method === 'Auto') refreshOnline(loc.lat, loc.lon, p.asr);
+  prayerCache = { day: dayKey(), times: prayerTimes(new Date(), loc.lat, loc.lon, p.method, p.asr) };
   const fired = S().prayerFired || {}, now = Date.now();
   for (const n of PRAYERS) {
     if (n === 'Sunrise') continue;
@@ -582,6 +589,31 @@ function checkHabits() {
     if (!hb.lastNudge) continue;      // first run just starts the clock
     const msg = `Time for ${/water/i.test(hb.title) ? 'a glass of water' : hb.title} — ${habitCount(hb)}/${hb.target} today`;
     chime(); showAlert('💧 ' + msg, 'Tap ＋ on the Home screen to log it'); speakSoon(`${who()}${msg}.`);
+  }
+}
+// Water and medicine reminders (Settings → Health)
+function checkHealth() {
+  const h = S().health; if (!h) return;
+  const now = new Date(), hour = now.getHours();
+  if (h.water) {
+    const every = (+h.waterEvery || 2) * 3600e3;
+    if (!h.lastWater) { h.lastWater = Date.now(); store.save(); }
+    else if (hour >= 9 && hour < 22 && Date.now() - h.lastWater >= every) {
+      h.lastWater = Date.now(); store.save();
+      chime(); showAlert('💧 Time for a glass of water', 'Stay fresh!'); speakSoon(`${who()}time for a glass of water.`);
+    }
+  }
+  if (h.meds) {
+    const fired = S().medFired || {};
+    for (const tm of String(h.medTimes || '').split(/[,\s]+/).filter(Boolean)) {
+      const [hh, mm] = tm.split(':').map(Number); if (isNaN(hh)) continue;
+      const at = new Date(now); at.setHours(hh, mm || 0, 0, 0);
+      const key = dayKey() + tm;
+      if (!fired[key] && now >= at && now - at < 15 * 60000) {
+        fired[key] = 1; S().medFired = Object.fromEntries(Object.entries(fired).slice(-10)); store.save();
+        chime(); showAlert(`💊 Time to take your ${h.medName || 'medicine'}`, tm); speakSoon(`${who()}it's time to take your ${h.medName || 'medicine'}.`);
+      }
+    }
   }
 }
 const minsOf = hm => { const [h, m] = (hm || '0:0').split(':').map(Number); return h * 60 + m; };
@@ -904,6 +936,9 @@ function fillSettings() {
   $('#wakeNote').textContent = N ? 'On Android, also switch on “Listen for Sparrow” under Android powers.' : D ? 'Works offline on this computer.' : isIOS ? 'On iPhone, Sparrow listens while the app is open. Apple doesn’t allow listening in the background.' : 'Sparrow listens while the app is open.';
   $('#rMorningOn').checked = s.morningOn; $('#rMorning').value = s.morningTime; $('#rNightOn').checked = s.nightOn; $('#rNight').value = s.nightTime; $('#rLead').value = String(s.lead);
   $('#pMethod').innerHTML = Object.entries(METHODS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+  const hl = s.health || {};
+  $('#hWater').checked = !!hl.water; $('#hWaterEvery').value = String(hl.waterEvery || 2);
+  $('#hMeds').checked = !!hl.meds; $('#hMedName').value = hl.medName || 'medicine'; $('#hMedTimes').value = hl.medTimes || '09:00, 21:00';
   $('#pOn').checked = s.prayer.on; $('#pMethod').value = s.prayer.method; $('#pAsr').value = s.prayer.asr; $('#pBefore').value = String(s.prayer.before); $('#pSpeak').checked = s.prayer.speak;
   $('#sProvider').innerHTML = `<option value="auto">Automatic (free first)</option>${D ? '<option value="ollama">Ollama on this computer</option>' : '<option value="local">Free AI on this device</option>'}` + PROVIDER_ORDER.map(p => `<option value="${p}">${PROVIDERS[p].name}</option>`).join('');
   $('#sProvider').value = s.provider || 'auto';
@@ -929,6 +964,9 @@ function saveSettings() {
   if (M) { s.listen = $('#sListen').value; s.studio = $('#sStudio').checked; }
   s.speak = $('#sSpeak').checked; s.wake = $('#sWake').checked; s.conversation = $('#sConv').checked; s.micButton = $('#sMic').checked;
   s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30'; s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
+  s.health = { ...(s.health || {}), water: $('#hWater').checked, waterEvery: +$('#hWaterEvery').value, meds: $('#hMeds').checked,
+    medName: $('#hMedName').value.trim() || 'medicine', medTimes: $('#hMedTimes').value.trim() };
+  if (!s.health.water) delete s.health.lastWater;
   s.prayer = { ...s.prayer, on: $('#pOn').checked, method: $('#pMethod').value, asr: $('#pAsr').value, before: +$('#pBefore').value, speak: $('#pSpeak').checked };
   s.provider = $('#sProvider').value; s.model = $('#sModel').value; if (D) s.ollamaModel = $('#sOllama').value;
   $$('#keyFields [data-key]').forEach(i => s.keys[i.dataset.key] = i.value.trim());
@@ -1092,6 +1130,7 @@ async function voiceAsk(text) {
   return r.reply;
 }
 window.Sparrow = {
+  catchUp: () => checkDue(),
   submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); }, newChat,
   // The Mac island speaks through here (Kokoro / Urdu / Hindi / Punjabi / Studio voice), and hears when it's done.
   neuralSay: t => S().neural === false ? Promise.resolve(false) : nv.say(t, neuralOpts({

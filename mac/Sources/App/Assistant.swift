@@ -265,6 +265,32 @@ final class VoiceEngine: NSObject, ObservableObject {
         else { stopRecognition(); status = "" }
     }
 
+    // MARK: Hold-to-talk (right ⌥ Option)
+    private(set) var pushToTalk = false
+
+    func pushToTalkDown() {
+        guard !pushToTalk else { return }
+        if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
+        pushToTalk = true
+        SoundEngine.shared.play("question")
+        NotificationCenter.default.post(name: .hookReveal, object: nil)
+        requestPermissions { ok in
+            guard ok, self.pushToTalk else { return }
+            self.oneShot = true
+            self.startRecognition()
+            self.status = "Listening… let go of ⌥ when you're done"
+        }
+    }
+
+    func pushToTalkUp() {
+        guard pushToTalk else { return }
+        pushToTalk = false
+        // a moment for the last word to arrive
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            MainActor.assumeIsolated { VoiceEngine.shared.finishUtterance() }
+        }
+    }
+
     /// Mic button: listen for one command, no wake word needed.
     func listenOnce() {
         // The mic button always wins: stop talking and listen right now.
@@ -386,13 +412,19 @@ final class VoiceEngine: NSObject, ObservableObject {
         silenceTimer?.invalidate()
         // When the person stops talking for a moment, act on what they said.
         // Simple commands ("open chrome", "pause") fire almost instantly; questions get a bit longer.
+        // Hold-to-talk: wait for the key to be released, never for silence.
+        if pushToTalk { return }
         var wait = 1.0
         if let cmd = extractCommand(heard), !cmd.isEmpty {
-            wait = CommandEngine.shared.looksLikeCommand(cmd) ? 0.5 : 0.9
+            wait = CommandEngine.shared.looksLikeCommand(cmd) ? 0.7 : 1.0
         } else if oneShot, !heard.isEmpty {
-            wait = CommandEngine.shared.looksLikeCommand(heard.lowercased()) ? 0.4 : 0.8
+            wait = CommandEngine.shared.looksLikeCommand(heard.lowercased()) ? 0.6 : 0.9
         } else if extractCommand(heard) == "" {
-            wait = 0.6   // just "Sparrow"
+            wait = 1.7   // just "Sparrow" — give a moment to say the rest in the same breath
+        }
+        // Sounds unfinished ("open spotify and…", "phir…")? Keep listening a little longer.
+        if heard.lowercased().range(of: #"\b(and|then|also|aur|phir|or|to|the|for|with|ke|ki|ka)\s*$"#, options: .regularExpression) != nil {
+            wait = max(wait, 1.8)
         }
         silenceTimer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { _ in
             MainActor.assumeIsolated { VoiceEngine.shared.finishUtterance() }
@@ -404,10 +436,15 @@ final class VoiceEngine: NSObject, ObservableObject {
     /// wake word was said, nil if the wake word wasn't said at all.
     private func extractCommand(_ said: String) -> String? {
         let lower = said.lowercased()
-        for wake in ["sparrow's", "sparrows", "sparrow", "sparro", "sparo", "spero", "spar row", "barrow", "sorrow"] {
+        for wake in ["sparrow's", "sparrows", "sparrow", "sparro", "sparo", "spero", "sperro", "spirrow", "sporrow", "spar row",
+                     "spa row", "sparrowe", "hey barrow", "barrow", "sorrow", "سپیرو", "स्पैरो"] {
             if let r = lower.range(of: wake, options: .backwards) {
                 return String(lower[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
             }
+        }
+        // Close mis-hearings at the very start: "spare open chrome", "sparo, play music"…
+        if let r = lower.range(of: #"^(hey |ok |hi )?sp[aeio]r+[oe]w?s?\b[, ]*"#, options: .regularExpression) {
+            return String(lower[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
         }
         return nil
     }
@@ -622,7 +659,12 @@ final class Briefing {
         if UserDefaults.standard.bool(forKey: AssistantPrefs.greetWeather), let w = await Weather.now() {
             text += " " + w
         }
-        text += " " + (await Planner.shared.spokenPlan())
+        // What's new: unread email (only if Mail is open — never launches it) and what's next today
+        if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.apple.mail" }),
+           let n = Int(CommandEngine.shared.runAppleScript("tell application \"Mail\" to get unread count of inbox") ?? ""), n > 0 {
+            text += " You have \(n) unread email\(n == 1 ? "" : "s")."
+        }
+        text += " " + (await Planner.shared.summary(for: Date(), detailed: false))
         return text
     }
 }

@@ -2,6 +2,7 @@
 // Standard astronomical method (sun declination + equation of time), as used by most prayer apps.
 
 export const METHODS = {
+  Auto: { name: 'Automatic — official times for where you are' },
   Karachi: { name: 'University of Islamic Sciences, Karachi', fajr: 18, isha: 18 },
   MWL: { name: 'Muslim World League', fajr: 18, isha: 17 },
   ISNA: { name: 'ISNA (North America)', fajr: 15, isha: 15 },
@@ -37,7 +38,51 @@ function sunPosition(jd) {
  * Prayer times for a date and place. Returns { Fajr: Date, Sunrise: Date, ... }.
  * method: key of METHODS; asr: 'Hanafi' | 'Shafi'
  */
+// ---------- Automatic: the official method for your area, checked online (aladhan.com) and kept for offline days ----------
+const OKEY = 'sparrow-prayer-online';
+let ONLINE = {};
+try { ONLINE = JSON.parse(localStorage.getItem(OKEY) || '{}'); } catch {}
+const dayId = (d, lat, lng) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}|${lat.toFixed(2)}|${lng.toFixed(2)}`;
+
+/** Best calculation method for a place (used offline). */
+export function autoMethod(lat, lng) {
+  if (lat > 23 && lat < 37.5 && lng > 60 && lng < 78) return 'Karachi';        // Pakistan, Afghanistan
+  if (lat > 6 && lat < 36 && lng > 68 && lng < 98) return 'Karachi';           // India, Bangladesh
+  if (lat > 15 && lat < 33 && lng > 34 && lng < 56) return 'Makkah';           // Saudi Arabia, Gulf
+  if (lat > 22 && lat < 32 && lng > 24 && lng < 37) return 'Egypt';
+  if (lng < -50 && lat > 10) return 'ISNA';                                    // North America
+  return 'MWL';
+}
+
+/** Fetches official times for today and the next two days (silently does nothing offline). */
+export async function refreshOnline(lat, lng, asr = 'Hanafi') {
+  const out = {};
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(); d.setDate(d.getDate() + i);
+    const id = dayId(d, lat, lng);
+    if (ONLINE[id]) { out[id] = ONLINE[id]; continue; }
+    try {
+      const ds = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+      const r = await fetch(`https://api.aladhan.com/v1/timings/${ds}?latitude=${lat}&longitude=${lng}&school=${asr === 'Hanafi' ? 1 : 0}`);
+      const t = (await r.json())?.data?.timings;
+      if (t) out[id] = Object.fromEntries(NAMES.map(n => [n, String(t[n]).slice(0, 5)]));
+    } catch { return false; }
+  }
+  ONLINE = out;
+  try { localStorage.setItem(OKEY, JSON.stringify(out)); } catch {}
+  return true;
+}
+
 export function prayerTimes(date, lat, lng, method = 'Karachi', asr = 'Hanafi') {
+  if (method === 'Auto') {
+    const hit = ONLINE[dayId(date, lat, lng)];
+    if (hit) {
+      const out = {};
+      for (const n of NAMES) { const [h, m] = hit[n].split(':').map(Number); const d = new Date(date); d.setHours(h, m, 0, 0); out[n] = d; }
+      return out;
+    }
+    method = autoMethod(lat, lng);
+  }
   const M = METHODS[method] || METHODS.Karachi;
   const tz = -date.getTimezoneOffset() / 60;
   const jDate = julian(date.getFullYear(), date.getMonth() + 1, date.getDate()) - lng / (15 * 24);

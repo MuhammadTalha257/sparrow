@@ -2,7 +2,7 @@
 import * as chrono from './lib/chrono.js';
 import { store } from './store.js';
 import { t as tr, normalizeCommand } from './i18n.js';
-import { prayerTimes, nextPrayer, NAMES as PRAYERS } from './prayer.js';
+import { prayerTimes, nextPrayer, refreshOnline, NAMES as PRAYERS } from './prayer.js';
 import * as mem from './memory.js';
 import { parseDoc, makeDocPDF, deliver, startTimer, stopTimer, runningTimer, timeFor, fmtHours, parseExpense, monthExpenses } from './tools.js';
 
@@ -257,6 +257,7 @@ export async function weatherText() {
 export async function prayerToday() {
   const loc = await location(); if (!loc) return null;
   const p = store.settings.prayer;
+  if (p.method === 'Auto') await refreshOnline(loc.lat, loc.lon, p.asr);
   return { loc, times: prayerTimes(new Date(), loc.lat, loc.lon, p.method, p.asr), next: nextPrayer(loc.lat, loc.lon, p.method, p.asr) };
 }
 
@@ -361,6 +362,17 @@ export async function handle(input) {
 
   if (/^(new chat|start (a )?new chat|start (a )?fresh chat|start over|clear (the |this )?chat|reset (the )?chat|naya chat|nayi chat|nai chat|chat clear kar(o|do)|نئی چیٹ|नई चैट)$/.test(t))
     return { reply: 'Fresh chat started. Ask me anything.', action: 'newchat' };
+
+  // ----- health reminders -----
+  m = t.match(/^(turn on|start|enable|switch on|on karo)?\s*(the )?(water|drink water|paani|pani) reminders?(?: every (\d+(?:\.\d+)?) hours?)?\s*(on)?$|^remind me to drink water(?: every (\d+(?:\.\d+)?) hours?)?$/);
+  if (m) { const h = store.settings.health; h.water = true; h.waterEvery = +(m[4] || m[6]) || h.waterEvery || 2; delete h.lastWater; store.save();
+    return { reply: `💧 Done — I'll remind you to drink water every ${h.waterEvery} hour${h.waterEvery > 1 ? 's' : ''} (9am to 10pm).` }; }
+  if (/^(turn off|stop|disable|switch off)\s+(the )?(water|paani|pani) reminders?$|^(water|paani) reminders? (off|band karo)$/.test(t)) { store.settings.health.water = false; store.save(); return { reply: 'Water reminders are off.' }; }
+  m = t.match(/^(?:turn on|start|enable)?\s*(?:the )?(?:medicine|meds|medication|dawai|dawa) reminders?(?: at (.+))?$/);
+  if (m) { const h = store.settings.health; h.meds = true; if (m[1]) h.medTimes = m[1].replace(/\band\b/g, ','); store.save();
+    return { reply: `💊 Medicine reminders are on (${h.medTimes}). Change the times in Settings → Health reminders.` }; }
+  if (/^(turn off|stop|disable)\s+(the )?(medicine|meds|dawai) reminders?$/.test(t)) { store.settings.health.meds = false; store.save(); return { reply: 'Medicine reminders are off.' }; }
+  if (/^(turn on|start|enable|show)\s+(the )?(prayer|namaz|salah) (times|reminders?|alerts?)$/.test(t)) { store.settings.prayer.on = true; store.save(); return { reply: '🕌 Prayer times are on. They follow your location automatically.', action: 'refresh' }; }
 
   // ----- snooze -----
   let m = t.match(/^snooze(?:\s+(?:it|for|that|this))?(?:\s+(?:for\s+)?(\d+)\s*(min(?:ute)?s?|h(?:ou)?rs?)?)?$/);

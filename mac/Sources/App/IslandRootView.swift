@@ -86,7 +86,7 @@ struct IslandContainer: View {
             if state.mode == .expanded {
                 if greetingActive {
                     // Greeting canvas: fixed 640-wide, centered by offset so x=320 aligns with island center
-                    GreetingCanvasView(state: state)
+                    SparrowGreetingView(state: state)
                         .frame(width: IslandConst.expandedWidth, height: 150)
                         .offset(x: (islandWidth - IslandConst.expandedWidth) / 2)
                         .clipShape(IslandShape(width: islandWidth, height: islandHeight,
@@ -328,6 +328,15 @@ struct BotPlacement: View {
                         .position(x: uploadCx, y: cy)
                 }
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
+            } else if state.mode != .hidden {
+                // Sparrow's own character
+                SparrowMascot(state: state, size: diameter * 1.05)
+                    .frame(width: canvasSize, height: canvasSize)
+                    .opacity(state.isDraggingBot ? 0 : opacity)
+                    .position(x: cx, y: cy)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.72), value: cx)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.72), value: cy)
+                    .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
             } else {
                 BotCanvasView(state: state, particleOverhang: overhang)
                     .frame(width: canvasSize, height: canvasSize + overhang)
@@ -491,7 +500,7 @@ struct IslandHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            MiniSparrow(color: Color(hex: "#F2A24A"), size: 17)
+            SparrowFigure(size: 15)
                 .padding(.leading, 9)
                 .help("Drag to move Sparrow")
             // Left: labelled tabs (Sparrow's own order)
@@ -549,6 +558,17 @@ struct IslandHeader: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
+
+                Button(action: { SparrowBubble.shared.hideIsland() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Color(hex: "#D8CCBF"))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
+                }
+                .buttonStyle(.plain)
+                .help("Hide Sparrow — click the little sparrow bubble to bring it back")
             }
             .padding(.trailing, 6)
         }

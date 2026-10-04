@@ -6,54 +6,79 @@ import AppKit
 // with little sparrows dressed in each app's colours.
 // =====================================================================
 
-/// A small sparrow drawn in any colour (used on app tiles instead of logos).
-struct MiniSparrow: View {
-    let color: Color
+/// Sparrow's look: round and fluffy — coloured cap and wings, cream face, shiny eyes,
+/// pink cheeks and a little orange beak. Used big (the mascot) and small (app tiles, tinted).
+struct SparrowFigure: View {
+    var color: Color = Color(hex: "#8A6650")
     var size: CGFloat = 26
+    var blink: CGFloat = 1          // 1 = open, ~0.1 = closed
+    var wing: Double = 0            // flap angle in degrees
+    var sparkle = false
 
     var body: some View {
+        let s = size
+        let dark = color.opacity(0.95)
         ZStack {
+            // wings (behind)
+            Ellipse().fill(LinearGradient(colors: [color.opacity(0.85), dark], startPoint: .top, endPoint: .bottom))
+                .frame(width: s * 0.34, height: s * 0.52)
+                .rotationEffect(.degrees(28 + wing), anchor: .top)
+                .offset(x: -s * 0.44, y: s * 0.12)
+            Ellipse().fill(LinearGradient(colors: [color.opacity(0.85), dark], startPoint: .top, endPoint: .bottom))
+                .frame(width: s * 0.34, height: s * 0.52)
+                .rotationEffect(.degrees(-28 - wing), anchor: .top)
+                .offset(x: s * 0.44, y: s * 0.12)
             // head tuft
-            Ellipse()
-                .fill(color)
-                .frame(width: size * 0.2, height: size * 0.3)
-                .rotationEffect(.degrees(-24))
-                .offset(x: -size * 0.06, y: -size * 0.46)
-            // little wing (behind the body edge)
-            Ellipse()
-                .fill(color.opacity(0.9))
-                .frame(width: size * 0.3, height: size * 0.44)
-                .rotationEffect(.degrees(28))
-                .offset(x: size * 0.4, y: size * 0.1)
-            // body
-            Circle()
-                .fill(LinearGradient(colors: [color.opacity(0.75), color], startPoint: .top, endPoint: .bottom))
-                .overlay(Circle().fill(LinearGradient(colors: [.white.opacity(0.35), .clear], startPoint: .top, endPoint: .center)))
-                .frame(width: size, height: size)
-            // face / belly
-            Ellipse()
-                .fill(Color.white.opacity(0.94))
-                .frame(width: size * 0.64, height: size * 0.52)
-                .offset(y: size * 0.13)
-            // eyes
-            HStack(spacing: size * 0.17) {
-                Circle().fill(Color(hex: "#1A1410")).frame(width: size * 0.12, height: size * 0.12)
-                Circle().fill(Color(hex: "#1A1410")).frame(width: size * 0.12, height: size * 0.12)
+            Ellipse().fill(color).frame(width: s * 0.13, height: s * 0.24)
+                .rotationEffect(.degrees(-18)).offset(x: -s * 0.03, y: -s * 0.5)
+            Ellipse().fill(color).frame(width: s * 0.1, height: s * 0.18)
+                .rotationEffect(.degrees(22)).offset(x: s * 0.07, y: -s * 0.47)
+            // body: coloured cap over a cream face
+            ZStack {
+                Circle().fill(LinearGradient(colors: [color.opacity(0.8), color], startPoint: .top, endPoint: .bottom))
+                Ellipse().fill(LinearGradient(colors: [Color(hex: "#FFFDF9"), Color(hex: "#F3E8DC")], startPoint: .top, endPoint: .bottom))
+                    .frame(width: s * 0.9, height: s * 0.8)
+                    .offset(y: s * 0.16)
+                // soft shine
+                Ellipse().fill(Color.white.opacity(0.22)).frame(width: s * 0.42, height: s * 0.16).offset(x: -s * 0.12, y: -s * 0.34)
             }
-            .offset(y: size * 0.02)
+            .frame(width: s, height: s)
+            .clipShape(Circle())
+            .shadow(color: .black.opacity(0.18), radius: s * 0.04, y: s * 0.03)
+            // eyes with highlights
+            HStack(spacing: s * 0.22) {
+                eye(s); eye(s)
+            }
+            .offset(y: s * 0.06)
             // cheeks
-            HStack(spacing: size * 0.38) {
-                Circle().fill(Color(hex: "#F9A8B8").opacity(0.7)).frame(width: size * 0.09, height: size * 0.09)
-                Circle().fill(Color(hex: "#F9A8B8").opacity(0.7)).frame(width: size * 0.09, height: size * 0.09)
+            HStack(spacing: s * 0.42) {
+                Ellipse().fill(Color(hex: "#F7A1AE").opacity(0.75)).frame(width: s * 0.14, height: s * 0.09)
+                Ellipse().fill(Color(hex: "#F7A1AE").opacity(0.75)).frame(width: s * 0.14, height: s * 0.09)
             }
-            .offset(y: size * 0.13)
+            .offset(y: s * 0.19)
             // beak
             BeakShape()
-                .fill(Color(hex: "#F59E0B"))
-                .frame(width: size * 0.16, height: size * 0.11)
-                .offset(y: size * 0.13)
+                .fill(LinearGradient(colors: [Color(hex: "#FFB547"), Color(hex: "#F28A1C")], startPoint: .top, endPoint: .bottom))
+                .frame(width: s * 0.15, height: s * 0.1)
+                .offset(y: s * 0.17)
+            if sparkle {
+                Image(systemName: "sparkle")
+                    .font(.system(size: s * 0.2, weight: .bold))
+                    .foregroundStyle(LinearGradient(colors: [Color(hex: "#FFE29A"), Color(hex: "#F9A830")], startPoint: .top, endPoint: .bottom))
+                    .offset(x: s * 0.52, y: -s * 0.3)
+                    .shadow(color: Color(hex: "#F9A830"), radius: 3)
+            }
         }
-        .frame(width: size * 1.2, height: size * 1.2)
+        .frame(width: s * 1.35, height: s * 1.3)
+    }
+
+    private func eye(_ s: CGFloat) -> some View {
+        ZStack {
+            Circle().fill(Color(hex: "#17110D"))
+            Circle().fill(Color.white).frame(width: s * 0.045, height: s * 0.045).offset(x: s * 0.025, y: -s * 0.03)
+        }
+        .frame(width: s * 0.13, height: s * 0.13)
+        .scaleEffect(x: 1, y: blink)
     }
 }
 
@@ -61,10 +86,53 @@ private struct BeakShape: Shape {
     func path(in r: CGRect) -> Path {
         var p = Path()
         p.move(to: CGPoint(x: r.minX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addQuadCurve(to: CGPoint(x: r.maxX, y: r.minY), control: CGPoint(x: r.midX, y: r.minY - r.height * 0.25))
         p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
         p.closeSubpath()
         return p
+    }
+}
+
+/// A small sparrow in any colour (app tiles).
+struct MiniSparrow: View {
+    let color: Color
+    var size: CGFloat = 26
+    var body: some View { SparrowFigure(color: color, size: size) }
+}
+
+/// The big, living sparrow: breathes, blinks, flaps when listening or talking,
+/// and flies in from the side the first time it appears.
+struct SparrowMascot: View {
+    @ObservedObject var state: AppState
+    var size: CGFloat
+    @ObservedObject private var voice = VoiceEngine.shared
+    @State private var arrived = SparrowMascot.hasFlownIn
+    nonisolated(unsafe) static var hasFlownIn = false
+
+    var body: some View {
+        TimelineView(.animation) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            let busy = voice.isListening || state.effectiveState == .working || state.effectiveState == .thinking
+            let flying = !arrived
+            let flapSpeed = flying ? 22.0 : busy ? 9.0 : 1.6
+            let flapAmp = flying ? 34.0 : busy ? 16.0 : 4.0
+            let wing = sin(t * flapSpeed) * flapAmp
+            let bob = sin(t * 2.1) * size * (busy ? 0.035 : 0.022)
+            let phase = t.truncatingRemainder(dividingBy: 4.3)
+            let blink: CGFloat = phase < 0.13 ? 0.12 : 1
+            SparrowFigure(size: size, blink: blink, wing: wing, sparkle: true)
+                .scaleEffect(1 + (busy ? CGFloat(sin(t * 4)) * 0.025 : 0))
+                .offset(y: bob)
+        }
+        .offset(x: arrived ? 0 : 260, y: arrived ? 0 : -70)
+        .rotationEffect(.degrees(arrived ? 0 : -14))
+        .scaleEffect(arrived ? 1 : 0.55)
+        .opacity(arrived ? 1 : 0)
+        .onAppear {
+            guard !arrived else { return }
+            SparrowMascot.hasFlownIn = true
+            withAnimation(.spring(response: 1.1, dampingFraction: 0.62).delay(0.15)) { arrived = true }
+        }
     }
 }
 
@@ -77,7 +145,7 @@ struct SparrowAppTile: View {
         let brand = Color(hex: item.color)
         Button { QuickItems.open(item) } label: {
             HStack(spacing: 7) {
-                MiniSparrow(color: brand, size: 22)
+                MiniSparrow(color: brand, size: 19)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(Color.white.opacity(0.16)))
                     .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
@@ -271,5 +339,140 @@ extension View {
         gesture(DragGesture(minimumDistance: 3)
             .onChanged { _ in IslandDrag.changed() }
             .onEnded { _ in IslandDrag.ended() })
+    }
+}
+
+// MARK: - Opening hello: the sparrow flies in and says good morning / afternoon / evening
+
+struct SparrowGreetingView: View {
+    @ObservedObject var state: AppState
+    @State private var landed = false
+    @State private var showText = false
+    @State private var done = false
+
+    var body: some View {
+        TimelineView(.animation) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            let wing = sin(t * (landed ? 3 : 24)) * (landed ? 8 : 38)
+            HStack(spacing: 14) {
+                SparrowFigure(size: 62, blink: t.truncatingRemainder(dividingBy: 3.6) < 0.12 ? 0.12 : 1, wing: wing, sparkle: landed)
+                    .offset(x: landed ? 0 : 340, y: landed ? CGFloat(sin(t * 2.2)) * 2 : -46)
+                    .rotationEffect(.degrees(landed ? 0 : -16))
+                    .scaleEffect(landed ? 1 : 0.5)
+                if showText {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(SparrowHeaderText.greeting + "!")
+                            .font(.system(size: 22, weight: .heavy, design: .rounded))
+                            .foregroundStyle(LinearGradient(colors: [Color.white, Color(hex: "#FFD9A0")], startPoint: .top, endPoint: .bottom))
+                        Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)) + " · I'm listening 🐦")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.75))
+                    }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .onAppear {
+            SparrowMascot.hasFlownIn = true
+            SoundEngine.shared.play("chime")
+            withAnimation(.spring(response: 1.0, dampingFraction: 0.6)) { landed = true }
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.75)) { showText = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) {
+                guard !done else { return }
+                done = true
+                NotificationCenter.default.post(name: .greetComplete, object: nil)
+            }
+        }
+    }
+}
+
+// MARK: - Hide Sparrow into a little bubble (✕), click the bubble to bring it back
+
+@MainActor
+final class SparrowBubble {
+    static let shared = SparrowBubble()
+    private var panel: NSPanel?
+    private var dragStart: NSPoint?
+    private var originStart: NSPoint?
+    private var moved = false
+
+    var isHidden: Bool { panel?.isVisible == true }
+
+    func hideIsland() {
+        guard let island = IslandDrag.panel else { return }
+        let p = panel ?? makePanel()
+        // the bubble sits where the island was
+        let f = island.frame
+        let saved = UserDefaults.standard.string(forKey: "bubbleOrigin").map { NSPointFromString($0) }
+        p.setFrameOrigin(saved ?? NSPoint(x: f.maxX - 110, y: f.maxY - 70))
+        island.orderOut(nil)
+        p.alphaValue = 0
+        p.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.25; p.animator().alphaValue = 1 }
+        SoundEngine.shared.play("close")
+    }
+
+    func restore() {
+        panel?.orderOut(nil)
+        IslandDrag.panel?.orderFrontRegardless()
+        SoundEngine.shared.play("pop")
+        NotificationCenter.default.post(name: .hookReveal, object: nil)
+    }
+
+    private func makePanel() -> NSPanel {
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 64, height: 64), styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
+        p.level = .statusBar
+        p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        let view = BubbleView(
+            onDrag: { SparrowBubble.shared.drag() },
+            onEnd: { SparrowBubble.shared.dragEnded() })
+        p.contentView = NSHostingView(rootView: view)
+        panel = p
+        return p
+    }
+
+    fileprivate func drag() {
+        guard let p = panel else { return }
+        let m = NSEvent.mouseLocation
+        if dragStart == nil { dragStart = m; originStart = p.frame.origin; moved = false }
+        guard let s = dragStart, let o = originStart else { return }
+        if abs(m.x - s.x) + abs(m.y - s.y) > 4 { moved = true }
+        if moved { p.setFrameOrigin(NSPoint(x: o.x + m.x - s.x, y: o.y + m.y - s.y)) }
+    }
+
+    fileprivate func dragEnded() {
+        defer { dragStart = nil; originStart = nil }
+        if moved, let p = panel { UserDefaults.standard.set(NSStringFromPoint(p.frame.origin), forKey: "bubbleOrigin") }
+        else { restore() }
+    }
+}
+
+private struct BubbleView: View {
+    let onDrag: () -> Void
+    let onEnd: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [Color(hex: "#2B3244").opacity(0.92), Color(hex: "#1B2131").opacity(0.92)], startPoint: .top, endPoint: .bottom))
+                    .overlay(Circle().stroke(LinearGradient(colors: [Color(hex: "#FFD27A"), Color(hex: "#F28A3C").opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
+                    .shadow(color: Color(hex: "#F9A830").opacity(hovered ? 0.7 : 0.35), radius: hovered ? 10 : 6)
+                SparrowFigure(size: 30, blink: t.truncatingRemainder(dividingBy: 4) < 0.12 ? 0.12 : 1, wing: sin(t * 1.8) * 5)
+                    .offset(y: CGFloat(sin(t * 2)) * 1.5)
+            }
+            .frame(width: 52, height: 52)
+            .scaleEffect(hovered ? 1.08 : 1)
+        }
+        .frame(width: 64, height: 64)
+        .contentShape(Circle())
+        .onHover { hovered = $0 }
+        .help("Click to bring Sparrow back · drag to move")
+        .gesture(DragGesture(minimumDistance: 0).onChanged { _ in onDrag() }.onEnded { _ in onEnd() })
     }
 }

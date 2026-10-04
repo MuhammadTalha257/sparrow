@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EABF2E8DBC8390D81E0763AE /* BackgroundKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */; };
+		B975247446E237C4D9B09761 /* BackgroundKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */; };
+		A6B4032D0A0F7B797FAF8A35 /* HoldToTalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E9D1912DEACDD585C7DE67D /* HoldToTalk.swift */; };
+		0A98A5526DF2A3F5A3D3DE54 /* HoldToTalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E9D1912DEACDD585C7DE67D /* HoldToTalk.swift */; };
+		89FDA1AE9EA7D5FA6AD4F948 /* MacControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224F911E451BBDC7247806C7 /* MacControl.swift */; };
+		6B967334DDA2C838803545F8 /* MacControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224F911E451BBDC7247806C7 /* MacControl.swift */; };
 		204C2226DB2872371B073856 /* SparrowHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B408434DFFEB4DD672F879D /* SparrowHome.swift */; };
 		56C2E4D1FA68D445B493363B /* SparrowHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B408434DFFEB4DD672F879D /* SparrowHome.swift */; };
 		ECEC694263668830BBD68EB2 /* NativeSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77091C717DACBACC21C450F /* NativeSpeech.swift */; };
@@ -102,6 +108,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeeper.swift; sourceTree = "<group>"; };
+		1E9D1912DEACDD585C7DE67D /* HoldToTalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldToTalk.swift; sourceTree = "<group>"; };
+		224F911E451BBDC7247806C7 /* MacControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacControl.swift; sourceTree = "<group>"; };
 		2B408434DFFEB4DD672F879D /* SparrowHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparrowHome.swift; sourceTree = "<group>"; };
 		B77091C717DACBACC21C450F /* NativeSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSpeech.swift; sourceTree = "<group>"; };
 		96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRouter.swift; sourceTree = "<group>"; };
@@ -163,6 +172,9 @@
 				D4540F630F8BA04AFFFA3979 /* BotEngine.swift */,
 				3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */,
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
+				2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */,
+				1E9D1912DEACDD585C7DE67D /* HoldToTalk.swift */,
+				224F911E451BBDC7247806C7 /* MacControl.swift */,
 				2B408434DFFEB4DD672F879D /* SparrowHome.swift */,
 				B77091C717DACBACC21C450F /* NativeSpeech.swift */,
 				96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */,
@@ -355,6 +367,9 @@
 				C24D863967D8D32D828ED4B1 /* BotEngine.swift in Sources */,
 				4F1E0B3C838DA3CD6F864BC0 /* CalcomPoller.swift in Sources */,
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
+				B975247446E237C4D9B09761 /* BackgroundKeeper.swift in Sources */,
+				0A98A5526DF2A3F5A3D3DE54 /* HoldToTalk.swift in Sources */,
+				6B967334DDA2C838803545F8 /* MacControl.swift in Sources */,
 				56C2E4D1FA68D445B493363B /* SparrowHome.swift in Sources */,
 				BF45817AD497779E4A6B317F /* NativeSpeech.swift in Sources */,
 				CA8D0C5E4184609464D0EA75 /* AgentRouter.swift in Sources */,
@@ -403,6 +418,9 @@
 				0E9CE475EC53C67DAB00F8E5 /* BotEngine.swift in Sources */,
 				1969590AFEE6CB21404346F1 /* CalcomPoller.swift in Sources */,
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
+				EABF2E8DBC8390D81E0763AE /* BackgroundKeeper.swift in Sources */,
+				A6B4032D0A0F7B797FAF8A35 /* HoldToTalk.swift in Sources */,
+				89FDA1AE9EA7D5FA6AD4F948 /* MacControl.swift in Sources */,
 				204C2226DB2872371B073856 /* SparrowHome.swift in Sources */,
 				ECEC694263668830BBD68EB2 /* NativeSpeech.swift in Sources */,
 				E902FF590DA9DB3ACF4AB038 /* AgentRouter.swift in Sources */,

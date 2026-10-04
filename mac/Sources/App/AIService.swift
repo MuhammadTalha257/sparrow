@@ -9,7 +9,7 @@ import FoundationModels
 // MARK: - Providers
 
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
-    case auto, claude, openai, gemini, ollama, apple
+    case auto, claude, openai, gemini, groq, ollama, apple
     var id: String { rawValue }
 
     var label: String {
@@ -18,6 +18,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .claude: return "Claude"
         case .openai: return "ChatGPT"
         case .gemini: return "Gemini"
+        case .groq:   return "Groq (fast, free)"
         case .ollama: return "Ollama (local)"
         case .apple:  return "Apple (on-device)"
         }
@@ -29,6 +30,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .claude: return "asterisk"
         case .openai: return "circle.hexagongrid"
         case .gemini: return "diamond"
+        case .groq:   return "bolt.fill"
         case .ollama: return "desktopcomputer"
         case .apple:  return "apple.logo"
         }
@@ -40,6 +42,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .claude: return "anthropic-api-key"
         case .openai: return "openai-api-key"
         case .gemini: return "gemini-api-key"
+        case .groq:   return "groq-api-key"
         default:      return nil
         }
     }
@@ -142,23 +145,47 @@ final class AIService {
         }
         history.append((role: "user", text: turn))
 
-        do {
-            let reply: String
-            switch provider {
-            case .openai: reply = try await callOpenAI(state: state)
-            case .gemini: reply = try await callGemini(state: state)
-            case .ollama: reply = try await callOllama(state: state)
-            case .apple:  reply = try await callApple()
-            default:      reply = ""
+        // Try the chosen AI first; if it fails (old model, no internet, bad key…), quietly try the others that are set up.
+        var lastError: Error?
+        for p in await fallbackChain(first: provider) {
+            do {
+                let reply = try await call(p, state: state)
+                pendingImage = nil
+                let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !clean.isEmpty else { continue }
+                history.append((role: "assistant", text: clean))
+                lastProvider = p
+                finish(clean, state: state, emote: .happy)
+                return
+            } catch {
+                lastError = error
+                appendAppLog("ai.log", "\(p.label) failed: \(error.localizedDescription)")
             }
-            pendingImage = nil
-            let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-            history.append((role: "assistant", text: clean))
-            finish(clean.isEmpty ? "(No answer.)" : clean, state: state, emote: .happy)
-        } catch {
-            history.removeLast()
-            finish("⚠︎ \(provider.label): \(error.localizedDescription)", state: state, emote: .annoyed)
         }
+        history.removeLast()
+        finish("⚠︎ \(provider.label): \(lastError?.localizedDescription ?? "no answer")", state: state, emote: .annoyed)
+    }
+
+    private func call(_ p: AIProvider, state: AppState) async throws -> String {
+        switch p {
+        case .openai: return try await callOpenAI(state: state)
+        case .gemini: return try await callGemini(state: state)
+        case .groq:   return try await callGroq(state: state)
+        case .ollama: return try await callOllama(state: state)
+        case .apple:  return try await callApple()
+        default:      return ""
+        }
+    }
+
+    /// The chosen provider, then every other one that is ready (keys first, then on-device).
+    private func fallbackChain(first: AIProvider) async -> [AIProvider] {
+        var out: [AIProvider] = [first]
+        for p in [AIProvider.groq, .gemini, .openai] where p != first {
+            if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { out.append(p) }
+        }
+        if first != .apple, Self.appleModelAvailable { out.append(.apple) }
+        if first != .ollama, !(await Self.ollamaModels()).isEmpty { out.append(.ollama) }
+        return out
     }
 
     private func finish(_ text: String, state: AppState, emote: BotEmote) {
@@ -173,7 +200,7 @@ final class AIService {
     func resolveProvider(state: AppState) async -> AIProvider? {
         let chosen = AIProvider(rawValue: state.aiProvider) ?? .auto
         if chosen != .auto { return chosen }
-        for p in [AIProvider.claude, .openai, .gemini] {
+        for p in [AIProvider.claude, .groq, .openai, .gemini] {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { return p }
         }
         if Self.appleModelAvailable { return .apple }
@@ -287,14 +314,91 @@ final class AIService {
                 messages.append(["role": m.role, "content": m.text])
             }
         }
-        let model = state.openaiModel.isEmpty ? AppState.defaultOpenAIModel : state.openaiModel
-        let json = try await postJSON(URL(string: "https://api.openai.com/v1/chat/completions")!,
-                                      body: ["model": model, "messages": messages],
-                                      headers: ["Authorization": "Bearer \(k)"])
+        let chosen = state.openaiModel.isEmpty ? (UserDefaults.standard.string(forKey: "openaiResolved") ?? AppState.defaultOpenAIModel) : state.openaiModel
+        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
+        var json: [String: Any]
+        do {
+            json = try await postJSON(url, body: ["model": chosen, "messages": messages], headers: ["Authorization": "Bearer \(k)"])
+        } catch let error where Self.isModelProblem(error) {
+            // That model was retired or isn't on this account — ask OpenAI which ones are, and use the best small one.
+            let list = try await Self.listModels(URL(string: "https://api.openai.com/v1/models")!, auth: "Bearer \(k)")
+            guard let pick = Self.best(list, prefer: ["gpt-5-mini", "gpt-5", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o", "gpt-"]) else { throw error }
+            UserDefaults.standard.set(pick, forKey: "openaiResolved")
+            json = try await postJSON(url, body: ["model": pick, "messages": messages], headers: ["Authorization": "Bearer \(k)"])
+        }
         guard let choices = json["choices"] as? [[String: Any]],
               let msg = choices.first?["message"] as? [String: Any],
               let text = msg["content"] as? String else { throw Self.badResponse }
         return text
+    }
+
+    // MARK: Groq (very fast, free tier)
+
+    private func callGroq(state: AppState) async throws -> String {
+        let k = try key(.groq)
+        var messages: [[String: Any]] = [["role": "system", "content": fullSystemPrompt]]
+        for m in history { messages.append(["role": m.role, "content": m.text]) }
+        let url = URL(string: "https://api.groq.com/openai/v1/chat/completions")!
+        let chosen = UserDefaults.standard.string(forKey: "groqResolved") ?? "llama-3.3-70b-versatile"
+        var json: [String: Any]
+        do {
+            json = try await postJSON(url, body: ["model": chosen, "messages": messages], headers: ["Authorization": "Bearer \(k)"], timeout: 30)
+        } catch let error where Self.isModelProblem(error) {
+            let list = try await Self.listModels(URL(string: "https://api.groq.com/openai/v1/models")!, auth: "Bearer \(k)")
+            guard let pick = Self.best(list.filter { !$0.contains("whisper") && !$0.contains("guard") && !$0.contains("tts") },
+                                       prefer: ["llama-3.3-70b", "llama-4", "gpt-oss-120b", "qwen", "llama-3.1-8b", "llama"]) else { throw error }
+            UserDefaults.standard.set(pick, forKey: "groqResolved")
+            json = try await postJSON(url, body: ["model": pick, "messages": messages], headers: ["Authorization": "Bearer \(k)"], timeout: 30)
+        }
+        guard let choices = json["choices"] as? [[String: Any]],
+              let msg = choices.first?["message"] as? [String: Any],
+              let text = msg["content"] as? String else { throw Self.badResponse }
+        return text
+    }
+
+    // MARK: Model discovery (so Sparrow keeps working when providers retire models)
+
+    static func isModelProblem(_ error: Error) -> Bool {
+        let m = error.localizedDescription.lowercased()
+        let code = (error as NSError).code
+        return code == 404 || m.contains("model") && (m.contains("not found") || m.contains("no longer") || m.contains("deprecated")
+            || m.contains("does not exist") || m.contains("not supported") || m.contains("decommissioned") || m.contains("unavailable"))
+    }
+
+    static func listModels(_ url: URL, auth: String) async throws -> [String] {
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.setValue(auth, forHTTPHeaderField: "Authorization")
+        let (data, _) = try await URLSession.shared.data(for: req)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return (json["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+    }
+
+    /// First model matching the preference list (newest version wins within a match).
+    static func best(_ ids: [String], prefer: [String]) -> String? {
+        for p in prefer {
+            let hits = ids.filter { $0.hasPrefix(p) || $0.contains(p) }
+            if let h = hits.sorted(by: { $0.compare($1, options: .numeric) == .orderedDescending }).first { return h }
+        }
+        return nil
+    }
+
+    static func newestGemini(key: String) async throws -> String {
+        var req = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200")!, timeoutInterval: 15)
+        req.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        let (data, _) = try await URLSession.shared.data(for: req)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        let models = (json["models"] as? [[String: Any]] ?? []).filter {
+            ($0["supportedGenerationMethods"] as? [String] ?? []).contains("generateContent")
+        }.compactMap { $0["name"] as? String }.map { $0.replacingOccurrences(of: "models/", with: "") }
+        let usable = models.filter { !$0.contains("image") && !$0.contains("tts") && !$0.contains("embedding") && !$0.contains("live") && !$0.contains("audio") }
+        func version(_ m: String) -> Double { Double(m.split(separator: "-").dropFirst().first ?? "0") ?? 0 }
+        let stable = usable.filter { !$0.contains("preview") && !$0.contains("exp") }
+        for pool in [stable, usable] {
+            if let m = pool.filter({ $0.contains("flash") && !$0.contains("lite") }).max(by: { version($0) < version($1) }) { return m }
+            if let m = pool.filter({ $0.contains("flash") }).max(by: { version($0) < version($1) }) { return m }
+            if let m = pool.max(by: { version($0) < version($1) }) { return m }
+        }
+        throw NSError(domain: "Sparrow", code: 404, userInfo: [NSLocalizedDescriptionKey: "No Gemini model is available for this key."])
     }
 
     // MARK: Google Gemini
@@ -309,12 +413,22 @@ final class AIService {
             }
             contents.append(["role": m.role == "assistant" ? "model" : "user", "parts": parts])
         }
-        let model = state.geminiModel.isEmpty ? AppState.defaultGeminiModel : state.geminiModel
-        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!
-        let json = try await postJSON(url, body: [
-            "system_instruction": ["parts": [["text": fullSystemPrompt]]],
-            "contents": contents,
-        ], headers: ["x-goog-api-key": k])
+        let chosen = state.geminiModel.isEmpty ? (UserDefaults.standard.string(forKey: "geminiResolved") ?? AppState.defaultGeminiModel) : state.geminiModel
+        let body: [String: Any] = ["system_instruction": ["parts": [["text": fullSystemPrompt]]], "contents": contents]
+        func url(_ m: String) -> URL {
+            let id = m.hasPrefix("models/") ? String(m.dropFirst(7)) : m
+            return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(id):generateContent")!
+        }
+        var json: [String: Any]
+        do {
+            json = try await postJSON(url(chosen), body: body, headers: ["x-goog-api-key": k])
+        } catch let error where Self.isModelProblem(error) {
+            // Google retires models often — ask which ones this key can use and pick the newest Flash.
+            let pick = try await Self.newestGemini(key: k)
+            UserDefaults.standard.set(pick, forKey: "geminiResolved")
+            appendAppLog("ai.log", "Gemini: switched to \(pick)")
+            json = try await postJSON(url(pick), body: body, headers: ["x-goog-api-key": k])
+        }
         guard let cands = json["candidates"] as? [[String: Any]],
               let content = cands.first?["content"] as? [String: Any],
               let parts = content["parts"] as? [[String: Any]] else { throw Self.badResponse }
@@ -437,6 +551,7 @@ struct AIModelsSettings: View {
     @ObservedObject var state: AppState
     @State private var openaiKey: String = KeychainStore.shared.get("openai-api-key") ?? ""
     @State private var geminiKey: String = KeychainStore.shared.get("gemini-api-key") ?? ""
+    @State private var groqKey: String = KeychainStore.shared.get("groq-api-key") ?? ""
     @State private var ollamaInstalled: [String] = []
     @State private var saved: String = ""
 
@@ -446,13 +561,17 @@ struct AIModelsSettings: View {
                 Picker("Use", selection: $state.aiProvider) {
                     ForEach(AIProvider.allCases) { p in Text(p.label).tag(p.rawValue) }
                 }
-                Text("Auto picks the first one that's set up: Claude, ChatGPT, Gemini, Apple, then Ollama. Opening apps, music and volume always work, even with nothing set up.")
+                Text("Auto picks the first one that's set up: Claude, Groq, ChatGPT, Gemini, Apple, then Ollama — and if one fails, Sparrow quietly tries the next. Models are picked automatically. Opening apps, music and volume always work, even with nothing set up.")
                     .font(.system(size: 11)).foregroundColor(.secondary)
 
                 Divider()
                 Text("ChatGPT (OpenAI)").font(.system(size: 12, weight: .semibold))
                 SecureField("API key (sk-…)", text: $openaiKey).textFieldStyle(.roundedBorder)
                 TextField("Model (default \(AppState.defaultOpenAIModel))", text: $state.openaiModel).textFieldStyle(.roundedBorder)
+
+                Divider()
+                Text("Groq — the fastest, free key at console.groq.com").font(.system(size: 12, weight: .semibold))
+                SecureField("API key (gsk_…)", text: $groqKey).textFieldStyle(.roundedBorder)
 
                 Divider()
                 Text("Gemini (Google)").font(.system(size: 12, weight: .semibold))
@@ -463,6 +582,8 @@ struct AIModelsSettings: View {
                     Button("Save keys") {
                         save("openai-api-key", openaiKey)
                         save("gemini-api-key", geminiKey)
+                        save("groq-api-key", groqKey)
+                        UserDefaults.standard.removeObject(forKey: "geminiResolved")
                         AIService.shared.clearConversation()
                         saved = "✓ Saved"
                     }

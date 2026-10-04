@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
 
     @objc private func openIsland() {
+        if SparrowBubble.shared.isHidden { SparrowBubble.shared.restore() }
         islandController?.expand(to: .overview)
     }
 
@@ -120,6 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WebHub.shared.start()
         StudioVoice.shared.start()
         NativeSpeech.shared.start()
+        HoldToTalk.start()
+        BackgroundKeeper.start()
         // Pet mode: bring the sparrow back if it was on screen last time
         if UserDefaults.standard.bool(forKey: "petVisible") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
