@@ -46,7 +46,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     @Published private(set) var status = ""
 
     private let synth = AVSpeechSynthesizer()
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var recognizer = SFSpeechRecognizer(locale: Locale(identifier: VoiceEngine.listenLocaleID))
     private let audio = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -109,6 +109,30 @@ final class VoiceEngine: NSObject, ObservableObject {
         }
     }
 
+    // MARK: Languages
+
+    /// What Sparrow listens for. English (India) understands Roman Urdu / Hindi / Punjabi mixed with English best.
+    static var listenLocaleID: String {
+        let s = UserDefaults.standard.string(forKey: "listenLocale") ?? ""
+        return s.isEmpty ? "en-US" : s
+    }
+
+    func setListenLocale(_ id: String) {
+        guard id != Self.listenLocaleID || recognizer?.locale.identifier != id else { return }
+        let wanted = SFSpeechRecognizer(locale: Locale(identifier: id))
+        // Not every language can be recognised on every Mac — fall back sensibly.
+        let pick = (wanted?.isAvailable ?? false) ? wanted : (id.hasPrefix("en") ? nil : SFSpeechRecognizer(locale: Locale(identifier: "en-IN")))
+        guard let pick else { return }
+        UserDefaults.standard.set(pick.locale.identifier, forKey: "listenLocale")
+        recognizer = pick
+        appendAppLog("voice.log", "listening language: \(pick.locale.identifier) (asked \(id))")
+        restartIfWanted(after: 0.3)
+    }
+
+    static var supportedListenLocales: [String] {
+        SFSpeechRecognizer.supportedLocales().map { $0.identifier }.sorted()
+    }
+
     // MARK: Speaking
 
     static func availableVoices(gender: String) -> [AVSpeechSynthesisVoice] {
@@ -152,6 +176,32 @@ final class VoiceEngine: NSObject, ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        // Natural neural voices (Kokoro / Urdu-Hindi-Punjabi / Studio) live in the Sparrow web engine.
+        if UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true, WebHub.shared.isReady {
+            if isListening { resumeAfterSpeech = true; pauseRecognition() }
+            speaking = true
+            neuralTurn += 1
+            let turn = neuralTurn
+            Task { @MainActor in
+                let ok = await WebHub.shared.say(String(clean.prefix(1200)))
+                guard turn == self.neuralTurn else { return }
+                if !ok { self.appleSpeak(clean) }
+                else {
+                    // Safety net in case the page never reports the end.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
+                        if turn == VoiceEngine.shared.neuralTurn, VoiceEngine.shared.speaking { VoiceEngine.shared.neuralEnded() }
+                    }
+                }
+            }
+            return
+        }
+        appleSpeak(clean)
+    }
+
+    private var neuralTurn = 0
+    func neuralEnded() { neuralTurn += 1; speechFinished() }
+
+    private func appleSpeak(_ clean: String) {
         let u = Self.naturalUtterance(String(clean.prefix(1200)))
         let voice = currentVoice()
         u.voice = voice
@@ -169,7 +219,10 @@ final class VoiceEngine: NSObject, ObservableObject {
         synth.speak(u)
     }
 
-    func stopSpeaking() { synth.stopSpeaking(at: .immediate) }
+    func stopSpeaking() {
+        synth.stopSpeaking(at: .immediate)
+        if speaking, neuralTurn > 0 { WebHub.shared.hush(); neuralEnded() }
+    }
 
     /// Short natural pauses between sentences and after "Talha," — sounds far less robotic.
     static func naturalUtterance(_ text: String) -> AVSpeechUtterance {
@@ -319,7 +372,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         // Simple commands ("open chrome", "pause") fire almost instantly; questions get a bit longer.
         var wait = 1.0
         if let cmd = extractCommand(heard), !cmd.isEmpty {
-            wait = CommandEngine.shared.looksLikeCommand(cmd) ? 0.4 : 0.9
+            wait = CommandEngine.shared.looksLikeCommand(cmd) ? 0.5 : 0.9
         } else if oneShot, !heard.isEmpty {
             wait = CommandEngine.shared.looksLikeCommand(heard.lowercased()) ? 0.4 : 0.8
         } else if extractCommand(heard) == "" {
@@ -391,11 +444,11 @@ enum Assistant {
     static func run(_ text: String, spoken: Bool) async {
         let state = AppState.shared
         // Voice: everyday commands run instantly without opening the chat.
-        if spoken, let reply = await CommandEngine.shared.handle(text) {
+        if spoken, let reply = await AgentRouter.shared.handle(text) {
             let actionWords = ["Opening", "Closing", "Playing", "Paused", "Next", "Previous", "Volume", "Muted",
                                "Sound back", "Searching", "Locking", "Dark mode", "Light mode", "Select an area"]
             NotificationCenter.default.post(name: .petSay, object: reply)
-            if actionWords.contains(where: { reply.hasPrefix($0) }) {
+            if actionWords.contains(where: { reply.hasPrefix($0) }), !reply.contains(". ") {
                 SoundEngine.shared.play("approve")          // quick chirp = done
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
             } else {

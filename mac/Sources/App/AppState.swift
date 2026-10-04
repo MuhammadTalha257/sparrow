@@ -499,3 +499,15 @@ struct ChatMessage: Identifiable {
     let role: ChatRole
     let content: String
 }
+
+
+extension AppState {
+    /// Fresh conversation: clears the chat, the attached file and what the AI remembers of it.
+    func newChat() {
+        chatHistory.removeAll()
+        droppedFile = nil
+        noteMessage = nil
+        AIService.shared.clearConversation()
+        WebHub.shared.run("window.Sparrow && window.Sparrow.newChat && window.Sparrow.newChat(true)")
+    }
+}

@@ -103,7 +103,23 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         if let tab { run("window.Sparrow && window.Sparrow.go && window.Sparrow.go('\(tab)')") }
     }
 
-    private func run(_ js: String) { webView?.evaluateJavaScript(js, completionHandler: nil) }
+    func run(_ js: String) { webView?.evaluateJavaScript(js, completionHandler: nil) }
+
+    var isReady: Bool { ready }
+
+    /// Speaks with Sparrow's natural voices. true = speaking now (the end arrives as a "speaking" message).
+    func say(_ text: String) async -> Bool {
+        guard ready, let wv = webView else { return false }
+        do {
+            let r = try await wv.callAsyncJavaScript("return await window.Sparrow.neuralSay(t)", arguments: ["t": text], in: nil, contentWorld: .page)
+            return (r as? Bool) == true || (r as? NSNumber)?.boolValue == true
+        } catch {
+            appendAppLog("web.log", "neural voice failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    func hush() { run("window.Sparrow && window.Sparrow.neuralStop && window.Sparrow.neuralStop()") }
 
     /// Lets the shared app answer things the island doesn't know (habits, invoices, memory…). nil = not handled.
     func ask(_ text: String) async -> String? {
@@ -128,6 +144,22 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             if let t = o["text"] as? String { VoiceEngine.shared.speak(t) }
         case "listen":
             VoiceEngine.shared.listenOnce()
+        case "speaking":
+            if (o["on"] as? Bool) == false { VoiceEngine.shared.neuralEnded() }
+        case "prefs":
+            if let l = o["listen"] as? String, !l.isEmpty { VoiceEngine.shared.setListenLocale(l) }
+            if let n = o["neural"] as? Bool { UserDefaults.standard.set(n, forKey: "neuralVoice") }
+            if let st = o["studio"] as? Bool { UserDefaults.standard.set(st, forKey: "studioVoice"); if st { StudioVoice.shared.start() } }
+        case "studio":
+            switch o["action"] as? String {
+            case "install": StudioVoice.shared.install()
+            case "start": StudioVoice.shared.start()
+            default: reply(id, ["installed": StudioVoice.shared.isInstalled, "running": StudioVoice.shared.isRunning])
+            }
+        case "locales":
+            reply(id, VoiceEngine.supportedListenLocales)
+        case "log":
+            appendAppLog("web.log", o["text"] as? String ?? "")
         case "note":
             let title = o["title"] as? String ?? ""
             AppState.shared.noteMessage = [title, o["sub"] as? String ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")

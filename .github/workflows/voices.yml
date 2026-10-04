@@ -23,7 +23,7 @@ jobs:
           git clone --depth 1 --branch 3.0.2 https://github.com/huggingface/transformers.js tjs > git.log 2>&1 || fail git.log
           pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu > pip.log 2>&1 || fail pip.log
           grep -v -e nvidia -e graphsurgeon tjs/scripts/requirements.txt > req.txt
-          pip install -r req.txt "numpy<2" >> pip.log 2>&1 || fail pip.log
+          pip install -r req.txt "numpy<2" onnx-graphsurgeon >> pip.log 2>&1 || fail pip.log
       - name: Convert voices
         run: |
           mkdir -p out

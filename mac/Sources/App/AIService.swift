@@ -97,7 +97,7 @@ final class AIService {
 
     func chat(query: String, context: PromptContext?, state: AppState) async {
         // 1) Built-in commands run instantly, offline, with no API key.
-        if let reply = await CommandEngine.shared.handle(query) {
+        if let reply = await AgentRouter.shared.handle(query) {
             finish(reply, state: state, emote: .happy)
             return
         }

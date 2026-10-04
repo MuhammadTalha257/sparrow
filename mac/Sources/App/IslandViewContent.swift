@@ -758,6 +758,20 @@ struct PromptView: View {
 
                 HStack(spacing: 6) {
                     ProviderMenu(state: state)
+                    if !state.chatHistory.isEmpty || state.droppedFile != nil {
+                        Button { AppState.shared.newChat() } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "square.and.pencil").font(.system(size: 9, weight: .semibold))
+                                Text("New chat").font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(.white.opacity(0.75))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Start a fresh conversation (forgets the attached file)")
+                    }
                     Spacer(minLength: 0)
                     MicButton()
                 }

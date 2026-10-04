@@ -8,3 +8,6 @@ android/local.properties
 mac/build/
 mac/build.log
 mac/Resources/web/
+tools/voice-lib/node_modules/
+tools/voice-lib/dist/
+mac/Resources/web/

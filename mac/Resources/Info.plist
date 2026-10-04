@@ -30,6 +30,8 @@
 	<string>Sparrow uses your location to tell you the weather where you are.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Sparrow uses your location to tell you the weather where you are.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Sparrow saves and finds phone numbers when you ask, like "save this number as Ali".</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Sparrow listens when you hold the voice shortcut so you can talk to it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

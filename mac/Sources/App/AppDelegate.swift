@@ -118,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Voice, greeting, weather and notification reading
         Assistant.start()
         WebHub.shared.start()
+        StudioVoice.shared.start()
         // Pet mode: bring the sparrow back if it was on screen last time
         if UserDefaults.standard.bool(forKey: "petVisible") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
