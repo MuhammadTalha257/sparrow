@@ -30,9 +30,10 @@ jobs:
           mkdir -p out
           cat > conv.py <<'PY'
           import collections, os, sys, onnx, torch
-          sys.path.insert(0, os.path.abspath("../mms"))
-          from vits import utils
-          from vits.models import SynthesizerTrn
+          root = os.path.join(os.environ["GITHUB_WORKSPACE"], "mms")
+          sys.path.insert(0, os.path.join(root, "vits")); sys.path.insert(0, root)
+          import utils
+          from models import SynthesizerTrn
           from onnxruntime.quantization import quantize_dynamic, QuantType
           class M(torch.nn.Module):
               def __init__(s, m): super().__init__(); s.m = m
