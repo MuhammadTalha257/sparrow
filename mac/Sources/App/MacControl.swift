@@ -43,20 +43,20 @@ final class MacControl {
             return countdown("log you out", script: "tell application \"System Events\" to log out")
         }
         if has("^(sleep|put\\s+\(machine)\\s+to sleep|\(machine)\\s+(to )?sleep|sleep\\s+\(machine)|go to sleep mac)$") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { Self.run("/usr/bin/pmset", ["sleepnow"]) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { MainActor.assumeIsolated { Self.run("/usr/bin/pmset", ["sleepnow"]) } }
             return "Putting your Mac to sleep. Good night!"
         }
         if has("^(lock|lock\\s+\(machine)|lock (the )?screen|lock it)$") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated {
                 // Ctrl-Cmd-Q = Lock Screen (needs Accessibility); otherwise sleep the display, which locks it too.
                 if CommandEngine.shared.runAppleScript("tell application \"System Events\" to keystroke \"q\" using {control down, command down}") == nil {
                     MacControl.run("/usr/bin/pmset", ["displaysleepnow"])
                 }
-            }
+            } }
             return "Locking your Mac."
         }
         if has(#"^(turn off|switch off|sleep) (the )?(screen|display|monitor)$"#) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { Self.run("/usr/bin/pmset", ["displaysleepnow"]) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated { Self.run("/usr/bin/pmset", ["displaysleepnow"]) } }
             return "Turning off the screen."
         }
 
@@ -116,16 +116,16 @@ final class MacControl {
         if let text = first(#"^(?:type|likho)\s+(.+)$"#, spoken) {
             let esc = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
             if let front = AppState.shared.lastExternalApp { front.activate(options: .activateIgnoringOtherApps) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { MainActor.assumeIsolated {
                 _ = CommandEngine.shared.runAppleScript("tell application \"System Events\" to keystroke \"\(esc)\"")
-            }
+            } }
             return "Typing it now."
         }
         // Screenshot of the whole screen to the Desktop
         if has(#"^(take a |take )?(full )?screenshot( of (the )?(whole |full )?screen)?( to (the )?desktop)?$"#) && has(#"whole|full|desktop"#) {
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
             let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/Sparrow screenshot \(f.string(from: Date())).png").path
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { Self.run("/usr/sbin/screencapture", ["-x", path]) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { MainActor.assumeIsolated { Self.run("/usr/sbin/screencapture", ["-x", path]) } }
             return "Screenshot saved to your Desktop."
         }
         return nil
@@ -172,9 +172,9 @@ final class MacControl {
     private func keys(_ key: String, _ mods: [String], _ reply: String) -> String {
         if let front = AppState.shared.lastExternalApp { front.activate(options: .activateIgnoringOtherApps) }
         let using = mods.map { "\($0) down" }.joined(separator: ", ")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { MainActor.assumeIsolated {
             _ = CommandEngine.shared.runAppleScript("tell application \"System Events\" to keystroke \"\(key)\" using {\(using)}")
-        }
+        } }
         return reply
     }
 
@@ -230,7 +230,7 @@ final class MacControl {
     }
 
     @discardableResult
-    static func run(_ path: String, _ args: [String]) -> Bool {
+    nonisolated static func run(_ path: String, _ args: [String]) -> Bool {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
@@ -238,7 +238,7 @@ final class MacControl {
         do { try p.run(); p.waitUntilExit(); return p.terminationStatus == 0 } catch { return false }
     }
 
-    static func output(_ path: String, _ args: [String]) -> String {
+    nonisolated static func output(_ path: String, _ args: [String]) -> String {
         let p = Process(), pipe = Pipe()
         p.executableURL = URL(fileURLWithPath: path); p.arguments = args; p.standardOutput = pipe
         guard (try? p.run()) != nil else { return "" }
@@ -246,7 +246,7 @@ final class MacControl {
         return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     }
 
-    static func wifiDevice() -> String? {
+    nonisolated static func wifiDevice() -> String? {
         let out = output("/usr/sbin/networksetup", ["-listallhardwareports"])
         let lines = out.components(separatedBy: "\n")
         for (i, l) in lines.enumerated() where l.contains("Wi-Fi") || l.contains("AirPort") {
@@ -255,7 +255,7 @@ final class MacControl {
         return nil
     }
 
-    static func runShortcut(_ name: String) -> Bool {
+    nonisolated static func runShortcut(_ name: String) -> Bool {
         let list = output("/usr/bin/shortcuts", ["list"]).components(separatedBy: "\n")
         guard let hit = list.first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return false }
         return run("/usr/bin/shortcuts", ["run", hit])

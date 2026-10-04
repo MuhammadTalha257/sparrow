@@ -17,7 +17,7 @@ enum HoldToTalk {
         if let g = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handler) { monitors.append(g) }
         if let l = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { e in handler(e); return e }) { monitors.append(l) }
         // Global key events need Accessibility permission; ask once so the key works everywhere.
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         if !AXIsProcessTrustedWithOptions(opts) { appendAppLog("voice.log", "hold-to-talk: waiting for Accessibility permission") }
     }
 

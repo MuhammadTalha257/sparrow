@@ -282,11 +282,6 @@ struct GlassCard<Content: View>: View {
             if glow {
                 RadialGradient(colors: [Color(hex: "#F9A830").opacity(0.42), .clear], center: UnitPoint(x: 0.17, y: 0.55), startRadius: 2, endRadius: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                Circle()
-                    .stroke(LinearGradient(colors: [Color(hex: "#FFD27A"), Color(hex: "#F28A3C").opacity(0.4)], startPoint: .top, endPoint: .bottom), lineWidth: 1.6)
-                    .frame(width: 78, height: 78)
-                    .shadow(color: Color(hex: "#F9A830").opacity(0.8), radius: 6)
-                    .offset(x: 19)
             }
             content()
         }
@@ -337,8 +332,8 @@ extension View {
     /// Drag this area to move the whole island anywhere on screen.
     func movesIsland() -> some View {
         gesture(DragGesture(minimumDistance: 3)
-            .onChanged { _ in IslandDrag.changed() }
-            .onEnded { _ in IslandDrag.ended() })
+            .onChanged { _ in MainActor.assumeIsolated { IslandDrag.changed() } }
+            .onEnded { _ in MainActor.assumeIsolated { IslandDrag.ended() } })
     }
 }
 
@@ -378,7 +373,8 @@ struct SparrowGreetingView: View {
             SoundEngine.shared.play("chime")
             withAnimation(.spring(response: 1.0, dampingFraction: 0.6)) { landed = true }
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.75)) { showText = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_600_000_000)
                 guard !done else { return }
                 done = true
                 NotificationCenter.default.post(name: .greetComplete, object: nil)
@@ -427,8 +423,8 @@ final class SparrowBubble {
         p.level = .statusBar
         p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         let view = BubbleView(
-            onDrag: { SparrowBubble.shared.drag() },
-            onEnd: { SparrowBubble.shared.dragEnded() })
+            onDrag: { MainActor.assumeIsolated { SparrowBubble.shared.drag() } },
+            onEnd: { MainActor.assumeIsolated { SparrowBubble.shared.dragEnded() } })
         p.contentView = NSHostingView(rootView: view)
         panel = p
         return p
