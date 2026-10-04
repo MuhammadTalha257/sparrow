@@ -1,0 +1,4 @@
+urd urd-script_arabic Urdu
+urd-latn urd-script_latin Urdu
+hin hin Hindi
+pan pan Punjabi

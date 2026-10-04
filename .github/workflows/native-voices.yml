@@ -1,0 +1,83 @@
+name: Build native voices
+
+# Prepares Sparrow's fast on-device voices for the Mac (sherpa-onnx engine, k2-fsa, Apache-2.0):
+#   English: Kokoro (int8)   ·   Urdu, Roman Urdu, Hindi, Punjabi: Meta MMS (CC-BY-NC 4.0), int8
+on:
+  push:
+    paths: [".github/workflows/native-voices.yml", "voices/mms-native.txt"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  mms:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.10" }
+      - name: Tools
+        run: |
+          fail() { tail -9 "$1" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          pip install -q onnx==1.14.1 onnxruntime==1.16.3 scipy Cython "numpy<2" phonemizer unidecode > pip.log 2>&1 || fail pip.log
+          pip install -q torch==1.13.1+cpu -f https://download.pytorch.org/whl/torch_stable.html >> pip.log 2>&1 || fail pip.log
+          git clone -q https://huggingface.co/spaces/mms-meta/MMS mms > git.log 2>&1 || fail git.log
+          cd mms/vits/monotonic_align && mkdir -p monotonic_align && python setup.py build_ext --inplace > ../../../ma.log 2>&1 || true
+      - name: Convert
+        run: |
+          set -e
+          mkdir -p out
+          cat > conv.py <<'PY'
+          import collections, os, sys, onnx, torch
+          sys.path.insert(0, os.path.abspath("../mms"))
+          from vits import utils
+          from vits.models import SynthesizerTrn
+          from onnxruntime.quantization import quantize_dynamic, QuantType
+          class M(torch.nn.Module):
+              def __init__(s, m): super().__init__(); s.m = m
+              def forward(s, x, x_lengths, noise_scale=0.667, length_scale=1.0, noise_scale_w=0.8):
+                  return s.m.infer(x=x, x_lengths=x_lengths, noise_scale=noise_scale, length_scale=length_scale, noise_scale_w=noise_scale_w)[0]
+          hps = utils.get_hparams_from_file("config.json")
+          symbols = [l.replace("\n", "") for l in open("vocab.txt", encoding="utf-8")]
+          up = [i.upper() for i in symbols]; dup = {k for k, c in collections.Counter(up).items() if c > 1}
+          with open("tokens.txt", "w", encoding="utf-8") as f:
+              for i, t in enumerate(symbols):
+                  f.write(f"{t} {i}\n")
+                  if t.lower() != t.upper() and len(t.upper()) == 1 and t.upper() not in dup: f.write(f"{t.upper()} {i}\n")
+          net = SynthesizerTrn(len(symbols), hps.data.filter_length // 2 + 1, hps.train.segment_size // hps.data.hop_length, **hps.model)
+          net.eval(); utils.load_checkpoint("G_100000.pth", net, None)
+          x = torch.randint(1, 10, (1, 50), dtype=torch.int64); xl = torch.tensor([50], dtype=torch.int64); one = torch.tensor([1.0])
+          torch.onnx.export(M(net), (x, xl, one, one, one), "model.onnx", opset_version=13,
+              input_names=["x", "x_length", "noise_scale", "length_scale", "noise_scale_w"], output_names=["y"],
+              dynamic_axes={"x": {0: "N", 1: "L"}, "x_length": {0: "N"}, "y": {0: "N", 2: "L"}})
+          meta = {"model_type": "vits", "comment": "mms", "add_blank": int(hps.data.add_blank), "language": os.environ.get("LANGNAME", ""),
+                  "frontend": "characters", "n_speakers": int(hps.data.n_speakers), "sample_rate": hps.data.sampling_rate}
+          m = onnx.load("model.onnx")
+          for k, v in meta.items():
+              p = m.metadata_props.add(); p.key = k; p.value = str(v)
+          onnx.save(m, "model.onnx")
+          quantize_dynamic("model.onnx", "model.int8.onnx", weight_type=QuantType.QUInt8)
+          print("ok", meta)
+          PY
+          while read -r name code langname; do
+            [ -z "$name" ] && continue
+            echo "== $name ($code)"
+            d="work/vits-mms-$name"; mkdir -p "$d"
+            for f in G_100000.pth config.json vocab.txt; do
+              curl -fsSL -o "$d/$f" "https://huggingface.co/facebook/mms-tts/resolve/main/models/$code/$f"
+            done
+            (cd "$d" && LANGNAME="$langname" python ../../conv.py) > conv.log 2>&1 || { tail -7 conv.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+            mkdir -p "pack/vits-mms-$name"
+            cp "$d/model.int8.onnx" "$d/tokens.txt" "pack/vits-mms-$name/"
+            tar -C pack -cjf "out/vits-mms-$name.tar.bz2" "vits-mms-$name"
+            echo "::notice::$name $(du -h "$d/model.int8.onnx" | cut -f1)"
+          done < voices/mms-native.txt
+          ls -lh out
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: voices-native
+          name: Sparrow native voices
+          make_latest: false
+          files: out/*.tar.bz2
+          body: Fast on-device voices for Sparrow on Mac (MMS-TTS, CC-BY-NC 4.0, converted for sherpa-onnx).
