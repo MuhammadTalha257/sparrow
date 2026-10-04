@@ -63,7 +63,7 @@ export async function ollamaModels() {
 
 function systemPrompt(extra = '') {
   const s = store.settings;
-  const langNote = s.lang && s.lang !== 'en' ? ` Reply in ${{ ur: 'Urdu', hi: 'Hindi', ar: 'Arabic' }[s.lang]} unless the user writes in English.` : '';
+  const langNote = s.lang && s.lang !== 'en' ? ` Reply in ${{ ur: 'Urdu', hi: 'Hindi', pa: 'Punjabi (Shahmukhi script)', ar: 'Arabic' }[s.lang]} unless the user writes in English. If the user writes Roman Urdu/Hindi/Punjabi (Latin letters), reply the same way.` : '';
   return `You are Sparrow, a friendly, smart little assistant on the user's ${window.SparrowDesktop ? 'computer' : 'phone'}.${s.name ? ` The user's name is ${s.name}.` : ''}${langNote}
 Be clear and concise (2–6 sentences unless asked for more). Plain text, no markdown symbols like ** or ##.
 It is now ${new Date().toLocaleString()}. ${daySummary(new Date(), true)}

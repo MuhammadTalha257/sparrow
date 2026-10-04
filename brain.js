@@ -359,6 +359,9 @@ export async function handle(input) {
   if (/^(hi|hello|hey|salam|assalam|aoa|good (morning|afternoon|evening))\b/.test(t) && t.split(' ').length <= 4)
     return { reply: `${greetingWord()}${hi()}! How can I help? 🐦` };
 
+  if (/^(new chat|start (a )?new chat|start (a )?fresh chat|start over|clear (the |this )?chat|reset (the )?chat|naya chat|nayi chat|nai chat|chat clear kar(o|do)|نئی چیٹ|नई चैट)$/.test(t))
+    return { reply: 'Fresh chat started. Ask me anything.', action: 'newchat' };
+
   // ----- snooze -----
   let m = t.match(/^snooze(?:\s+(?:it|for|that|this))?(?:\s+(?:for\s+)?(\d+)\s*(min(?:ute)?s?|h(?:ou)?rs?)?)?$/);
   if (m) {

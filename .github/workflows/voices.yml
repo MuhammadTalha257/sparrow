@@ -19,7 +19,7 @@ jobs:
         with: { python-version: "3.10" }
       - name: Get the converter
         run: |
-          fail() { tail -25 "$1" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          fail() { tail -9 "$1" | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
           git clone --depth 1 --branch 3.0.2 https://github.com/huggingface/transformers.js tjs > git.log 2>&1 || fail git.log
           pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu > pip.log 2>&1 || fail pip.log
           grep -v -e nvidia -e graphsurgeon tjs/scripts/requirements.txt > req.txt
@@ -30,7 +30,7 @@ jobs:
           while read -r name repo; do
             [ -z "$name" ] && continue
             echo "== $name ($repo)"
-            (cd tjs && python -m scripts.convert --quantize --model_id "$repo") > conv.log 2>&1 || { tail -25 conv.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+            (cd tjs && python -m scripts.convert --quantize --model_id "$repo") > conv.log 2>&1 || { tail -7 conv.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
             d="tjs/models/$repo"
             ls -la "$d" "$d/onnx"
             mkdir -p "pack/$name/onnx"

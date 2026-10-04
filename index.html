@@ -101,6 +101,7 @@
 
   <!-- CHAT -->
   <section class="view" id="view-chat">
+    <div class="chat-bar"><button class="pill-btn" id="newChatBtn" title="Start a fresh conversation">✏️ New chat</button></div>
     <div class="chat" id="chat"></div>
   </section>
 
@@ -202,6 +203,19 @@
 
   <details><summary>🗣️ Voice</summary>
     <div class="field"><span>Sparrow's voice</span><div class="seg small" id="sGender"><button data-g="female">Female</button><button data-g="male">Male</button></div></div>
+    <label class="field"><span>Voice</span><select id="sVoiceName"></select></label>
+    <label class="row"><input type="checkbox" id="sNeural"> ✨ Natural voice (built in, works offline). Speaks Urdu, Hindi and Punjabi too</label>
+    <div id="macVoice" hidden>
+      <label class="field"><span>Listen for</span><select id="sListen">
+        <option value="">Automatic (follows your language)</option>
+        <option value="en-US">English (US)</option><option value="en-GB">English (UK)</option>
+        <option value="en-IN">English + Roman Urdu / Hindi / Punjabi</option>
+        <option value="ur-PK">اردو Urdu</option><option value="hi-IN">हिन्दी Hindi</option><option value="pa-IN">ਪੰਜਾਬੀ Punjabi</option>
+      </select></label>
+      <label class="row"><input type="checkbox" id="sStudio"> 🎙️ Studio voice (OmniVoice): the richest voice, extra download, a little slower</label>
+      <p class="small-text" id="studioNote"></p>
+      <button class="btn ghost" id="studioInstall" hidden>⬇️ Install Studio voice</button>
+    </div>
     <label class="row"><input type="checkbox" id="sSpeak"> Speak answers out loud</label>
     <label class="row"><input type="checkbox" id="sWake"> Talk without pressing anything — just say “Sparrow…”</label>
     <label class="row"><input type="checkbox" id="sConv"> Keep listening after Sparrow answers (conversation)</label>

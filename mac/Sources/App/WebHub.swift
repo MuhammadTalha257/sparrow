@@ -144,6 +144,8 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             if let t = o["text"] as? String { VoiceEngine.shared.speak(t) }
         case "listen":
             VoiceEngine.shared.listenOnce()
+        case "newchat":
+            AppState.shared.newChat()
         case "speaking":
             if (o["on"] as? Bool) == false { VoiceEngine.shared.neuralEnded() }
         case "prefs":

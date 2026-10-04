@@ -10,6 +10,7 @@ import {
   setLastAlert, lastAlert, findCustomer,
 } from './brain.js';
 import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
+import * as nv from './neuralvoice.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -300,6 +301,14 @@ async function submit(text, fromVoice = false) {
     else addMsg('bot', '⚠️ ' + e.message);
   } finally { setBird('talking', false); }
 }
+/** Fresh conversation: clears the chat, attached files and the files it was talking about. */
+function newChat(fromIsland = false) {
+  store.chat = []; store.save();
+  attachments = []; activeDocs = []; followUps = 0; replyKind = 'cmd';
+  renderAttached(); renderChat();
+  if (M && !fromIsland) M.post('newchat');
+}
+$('#newChatBtn').onclick = () => { newChat(); toast('New chat'); $('#askInput').focus(); };
 $('#askForm').onsubmit = e => { e.preventDefault(); const v = $('#askInput').value; $('#askInput').value = ''; followUps = 0; submit(v); };
 
 /** Things the brain asks the app to do. Returns true if fully handled. */
@@ -316,6 +325,7 @@ async function runAction(r) {
     case 'meeting-start': addMsg('bot', 'Opening meeting notes…'); startMeetingNotes(); return true;
     case 'meeting-stop': stopMeetingNotes(); return true;
     case 'sync': openSync(); return true;
+    case 'newchat': newChat(); addMsg('bot', r.reply, { cmd: true }); return true;
     case 'refresh': renderAll(); addMsg('bot', r.reply); return true;
     case 'email': addMsg('bot', r.reply); lastEmail = r.email; speak(`Email from ${r.email.from.replace(/<.*>/, '')}. ${r.email.subject}`); return true;
     case 'email-reply': {
@@ -404,6 +414,24 @@ function speak(text) {
   if (N) { N.speak(clean, S().gender); return; }
   if (M) { M.post('speak', { text: clean }); return; }   // the Mac island speaks with Apple's natural voices
   if (window.SparrowVoice?.nativeSay && window.SparrowVoice.nativeSay(clean)) return;   // Mac: Apple's natural voices
+  if (S().neural !== false) {
+    const myTurn = ++speakTurn;
+    try { speechSynthesis?.cancel(); } catch {}
+    nv.say(clean, neuralOpts()).then(ok => { if (!ok && myTurn === speakTurn) systemSpeak(clean); });
+    return;
+  }
+  systemSpeak(clean);
+}
+let speakTurn = 0;
+function neuralOpts(extra = {}) {
+  return {
+    lang: S().lang, gender: S().gender, voice: S().voiceName || undefined, studio: !!S().studio, speed: S().simple ? 0.9 : 1,
+    onstart: () => { setBird('talking', true); D?.state({ speaking: true }); },
+    onend: () => { setBird('talking', false); D?.state({ speaking: false }); afterSpeech(); },
+    ...extra,
+  };
+}
+function systemSpeak(clean) {
   if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(clean);
@@ -866,6 +894,13 @@ function fillSettings() {
   $$('#sTheme button').forEach(b => b.classList.toggle('on', b.dataset.th === s.theme));
   $('#sSimple').checked = s.simple; $('#sSpeak').checked = s.speak; $('#sWake').checked = s.wake; $('#sConv').checked = s.conversation; $('#sMic').checked = s.micButton !== false;
   $$('#sGender button').forEach(b => b.classList.toggle('on', b.dataset.g === s.gender));
+  $('#sVoiceName').innerHTML = '<option value="">Automatic</option>' + Object.entries(nv.KOKORO_VOICES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  $('#sVoiceName').value = s.voiceName || ''; $('#sNeural').checked = s.neural !== false;
+  $('#macVoice').hidden = !M;
+  if (M) {
+    $('#sListen').value = s.listen || ''; $('#sStudio').checked = !!s.studio;
+    M.call('studio', {}).then(st => { $('#studioNote').textContent = st?.installed ? (st.running ? '✅ Studio voice is installed and running.' : '✅ Installed — it starts when you switch it on.') : 'Not installed. It downloads about 4 GB once (OmniVoice), then works offline.'; $('#studioInstall').hidden = !!st?.installed; });
+  }
   $('#wakeNote').textContent = N ? 'On Android, also switch on “Listen for Sparrow” under Android powers.' : D ? 'Works offline on this computer.' : isIOS ? 'On iPhone, Sparrow listens while the app is open. Apple doesn’t allow listening in the background.' : 'Sparrow listens while the app is open.';
   $('#rMorningOn').checked = s.morningOn; $('#rMorning').value = s.morningTime; $('#rNightOn').checked = s.nightOn; $('#rNight').value = s.nightTime; $('#rLead').value = String(s.lead);
   $('#pMethod').innerHTML = Object.entries(METHODS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
@@ -890,6 +925,8 @@ async function openSettings(section) {
 function saveSettings() {
   const s = S();
   s.name = $('#sName').value.trim(); s.city = $('#sCity').value.trim(); s.lang = $('#sLang').value; s.simple = $('#sSimple').checked;
+  s.voiceName = $('#sVoiceName').value; s.neural = $('#sNeural').checked;
+  if (M) { s.listen = $('#sListen').value; s.studio = $('#sStudio').checked; }
   s.speak = $('#sSpeak').checked; s.wake = $('#sWake').checked; s.conversation = $('#sConv').checked; s.micButton = $('#sMic').checked;
   s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30'; s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
   s.prayer = { ...s.prayer, on: $('#pOn').checked, method: $('#pMethod').value, asr: $('#pAsr').value, before: +$('#pBefore').value, speak: $('#pSpeak').checked };
@@ -897,7 +934,7 @@ function saveSettings() {
   $$('#keyFields [data-key]').forEach(i => s.keys[i.dataset.key] = i.value.trim());
   s.business = { ...s.business, name: $('#bName').value.trim(), address: $('#bAddr').value.trim(), currency: $('#bCur').value }; s.musicApp = $('#sMusic').value;
   s.memory = { ...s.memory, on: $('#mOn').checked, keepCopies: $('#mCopies').checked, days: +$('#mDays').value, recentFiles: $('#mRecent').checked };
-  store.save(); renderAll();
+  store.save(); renderAll(); sendVoicePrefs();
   if (s.wake) startWake(); else stopWake();
   window.SparrowVoice && (s.wake ? window.SparrowVoice.startWake() : window.SparrowVoice.stopWake());
 }
@@ -907,7 +944,10 @@ $$('#sTheme button').forEach(b => b.onclick = () => { S().theme = b.dataset.th; 
 $('#sSimple').onchange = e => { S().simple = e.target.checked; applyLook(); };
 $('#sLang').onchange = e => { S().lang = e.target.value; applyLook(); renderHeader(); };
 $$('#sGender button').forEach(b => b.onclick = () => { S().gender = b.dataset.g; $$('#sGender button').forEach(x => x.classList.toggle('on', x === b)); store.save(); });
-$('#testVoice').onclick = () => speak(`Hi${S().name ? ' ' + S().name : ''}! I'm Sparrow. Ready when you are.`);
+$('#studioInstall').onclick = () => { M?.post('studio', { action: 'install' }); toast('A Terminal window opens and installs the Studio voice — keep it open until it says ✅.', 7000); };
+$('#sVoiceName').onchange = e => { S().voiceName = e.target.value; store.save(); };
+$('#sLang').addEventListener('change', () => { store.save(); sendVoicePrefs(); });
+$('#testVoice').onclick = () => speak(S().lang === 'ur' ? 'السلام علیکم! میں سپیرو ہوں۔ آپ کی کیا مدد کروں؟' : S().lang === 'hi' ? 'नमस्ते! मैं स्पैरो हूँ। बताइए, मैं क्या मदद करूँ?' : S().lang === 'pa' ? 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਸਪੈਰੋ ਹਾਂ। ਦੱਸੋ, ਮੈਂ ਕੀ ਮਦਦ ਕਰਾਂ?' : `Hi${S().name ? ' ' + S().name : ''}! I'm Sparrow. Ready when you are.`);
 $('#pCalendar').onclick = async () => { const l = await getLocation(); if (!l) return toast('I need your location or city first.'); downloadICS(prayerICS(l.lat, l.lon, 30), 'Prayer times'); };
 $('#exportBtn').onclick = () => tools.deliver('sparrow-backup.json', new TextEncoder().encode(JSON.stringify({ items: store.items, settings: { ...S(), keys: undefined } }, null, 2)), 'application/json');
 $('#clearBtn').onclick = () => { if (confirm('Delete all your tasks, meetings, reminders, notes and chat?')) { store.clearAll(); renderChat(); toast('Everything deleted'); } };
@@ -1051,5 +1091,18 @@ async function voiceAsk(text) {
   if (r.results?.length || r.files?.length) { go('chat'); M?.post('show', { tab: 'chat' }); }
   return r.reply;
 }
-window.Sparrow = { submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); } };   // for the computer apps
-if (M) M.post('ready');
+window.Sparrow = {
+  submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); }, newChat,
+  // The Mac island speaks through here (Kokoro / Urdu / Hindi / Punjabi / Studio voice), and hears when it's done.
+  neuralSay: t => S().neural === false ? Promise.resolve(false) : nv.say(t, neuralOpts({
+    onstart: () => setBird('talking', true),
+    onend: () => { setBird('talking', false); M?.post('speaking', { on: false }); },
+  })),
+  neuralStop: () => nv.stop(),
+};   // for the computer apps
+function sendVoicePrefs() {
+  if (!M) return;
+  const listen = S().listen || ({ en: 'en-US', ur: 'en-IN', hi: 'en-IN', pa: 'en-IN', ar: 'ar-SA' }[S().lang] || 'en-US');
+  M.post('prefs', { listen, neural: S().neural !== false, studio: !!S().studio });
+}
+if (M) { M.post('ready'); sendVoicePrefs(); setTimeout(() => nv.warmUp(), 2500); }

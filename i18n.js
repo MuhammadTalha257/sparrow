@@ -2,9 +2,9 @@
 // Roman Urdu / Hindi ("kal 5 baje yaad dilana…", "chrome kholo") are understood too.
 import { store } from './store.js';
 
-export const LANGS = { en: 'English', ur: 'اردو Urdu', hi: 'हिन्दी Hindi', ar: 'العربية Arabic' };
-export const SPEECH_LANG = { en: 'en-GB', ur: 'ur-PK', hi: 'hi-IN', ar: 'ar-SA' };
-const RTL = new Set(['ur', 'ar']);
+export const LANGS = { en: 'English', ur: 'اردو Urdu', hi: 'हिन्दी Hindi', pa: 'پنجابی Punjabi', ar: 'العربية Arabic' };
+export const SPEECH_LANG = { en: 'en-GB', ur: 'ur-PK', hi: 'hi-IN', pa: 'pa-IN', ar: 'ar-SA' };
+const RTL = new Set(['ur', 'ar', 'pa']);
 
 const T = {
   en: {
@@ -31,6 +31,14 @@ const T = {
     morning: 'सुप्रभात', afternoon: 'नमस्ते', evening: 'शुभ संध्या', night: 'नमस्ते', noTasks: 'आज कोई काम नहीं', clear: 'आज का दिन खाली है',
     tasksLeft: 'काम बाकी हैं', allDone: 'आज के सब काम पूरे!', tickHint: 'काम पूरे करते जाइए — रात को मैं पूछूँगा।',
   },
+  pa: {
+    home: 'ہوم', chat: 'گل بات', plan: 'منصوبہ', memory: 'یادداشت', tools: 'ٹولز', settings: 'سیٹنگاں', today: 'اج', seeAll: 'سارے ویکھو',
+    quick: 'فوری', aiApps: 'اے آئی ایپس', myDay: 'میرا دن', talk: 'گل کرو', upNext: 'اگلا', checkIn: 'جائزہ', ask: 'سپیرو نوں پچھو… جیویں کل 5 وجے یاد کروانا',
+    tasks: 'کم', meetings: 'میٹنگاں', reminders: 'یاد دہانیاں', notes: 'نوٹس', customers: 'گاہک', money: 'حساب', habits: 'عادتاں',
+    prayer: 'نماز دے ویلے', nextPrayer: 'اگلی نماز', done: 'ہو گیا', later: 'بعد وچ', snooze: '10 منٹ بعد', search: 'اپنی یادداشت وچ لبھو…',
+    morning: 'صبح بخیر', afternoon: 'سلام', evening: 'شام بخیر', night: 'السلام علیکم', noTasks: 'اج کوئی کم نئیں', clear: 'اج دا دن خالی اے',
+    tasksLeft: 'کم باقی نیں', allDone: 'اج دے سارے کم پورے!', tickHint: 'کم پورے کردے جاؤ — رات نوں میں پچھاں گا۔',
+  },
   ar: {
     home: 'الرئيسية', chat: 'محادثة', plan: 'الخطة', memory: 'الذاكرة', tools: 'أدوات', settings: 'الإعدادات', today: 'اليوم', seeAll: 'عرض الكل',
     quick: 'سريع', aiApps: 'تطبيقات الذكاء', myDay: 'يومي', talk: 'تحدث', upNext: 'التالي', checkIn: 'المراجعة', ask: 'اسأل سبارو… مثلاً ذكّرني غداً الساعة 5',
@@ -56,7 +64,12 @@ export function applyI18n(root = document) {
 export function normalizeCommand(text) {
   let s = ' ' + text.trim() + ' ';
   const rules = [
-    [/\s(yaad\s*dila(o|na|dena|do|yen|ana)|یاد\s*دلا\S*|याद\s*दिला\S*|ذكرني|ذكّرني)\s/gi, ' remind me '],
+    [/\s(yaad\s*dila(o|na|dena|do|yen|ana)|yaad\s*karwa(o|na|di|do|ein|yin)?|chete\s*karwa(o|na|di|yin)?|یاد\s*دلا\S*|یاد\s*کروا\S*|چیتے\s*کروا\S*|याद\s*दिला\S*|ਯਾਦ\s*ਕਰਵਾ\S*|ذكرني|ذكّرني)\s/gi, ' remind me '],
+    [/\s(kallh|kalh|ਕੱਲ੍ਹ|ਕੱਲ)\s/gi, ' tomorrow '],
+    [/\s(ajj|اج|ਅੱਜ)\s/gi, ' today '],
+    [/\s(savere|sawere|سویرے|ਸਵੇਰੇ)\s/gi, ' morning '],
+    [/\s(\d{1,2})\s*(vaje|waje|وجے|ਵਜੇ)\s/gi, ' at $1 '],
+    [/\s(mainu|mennu|مینوں|ਮੈਨੂੰ)\s/gi, ' '],
     [/\s(kal|کل|कल|غدا|غداً)\s/gi, ' tomorrow '],
     [/\s(aaj|aj|آج|आज|اليوم)\s/gi, ' today '],
     [/\s(parson|پرسوں|परसों)\s/gi, ' day after tomorrow '],
@@ -75,9 +88,9 @@ export function normalizeCommand(text) {
   // Urdu/Hindi put the verb last: "… remind me" → "remind me …"
   if (/\sremind me\s/.test(s) && !/^\s*remind me/.test(s)) s = ' remind me ' + s.replace(/\sremind me\s/, ' ');
   // "chrome kholo" / "کروم کھولو" / "क्रोम खोलो" → "open chrome"
-  const open = s.trim().match(/^(.+?)\s+(kholo|khol\s*do|kholna|chalao|chala\s*do|کھولو|کھول\s*دو|چلاؤ|खोलो|खोल\s*दो|चलाओ|افتح)$/i);
+  const open = s.trim().match(/^(.+?)\s+(kholo|khol\s*do|khol\s*de|kholna|chalao|chala\s*do|کھولو|کھول\s*دو|کھول\s*دے|چلاؤ|खोलो|खोल\s*दो|चलाओ|ਖੋਲ੍ਹੋ|ਖੋਲ੍ਹ\s*ਦੇ|افتح)$/i);
   if (open) return 'open ' + open[1].trim();
-  const play = s.trim().match(/^(.+?)\s+(lagao|laga\s*do|chalao|bajao|لگاؤ|بجاؤ|लगाओ|बजाओ)$/i);
+  const play = s.trim().match(/^(.+?)\s+(lagao|laga\s*do|la\s*de|chalao|chala\s*de|bajao|لگاؤ|لا\s*دے|بجاؤ|लगाओ|बजाओ|ਲਾ\s*ਦੇ|ਚਲਾ\s*ਦੇ)$/i);
   if (play) return 'play ' + play[1].trim();
   return s.replace(/\s+/g, ' ').trim();
 }

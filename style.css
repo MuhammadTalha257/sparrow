@@ -461,3 +461,7 @@ html.island-mode .hero { padding: 10px 12px 10px 2px; } html.island-mode .bird-w
 html.island-mode .quick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 html.island-mode .tool-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 html.island-mode .row2 { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+
+/* New chat */
+.chat-bar { display: flex; justify-content: flex-end; position: sticky; top: 0; z-index: 2; padding: 2px 0 6px; }
+.chat-bar .pill-btn { min-height: 32px; padding: 6px 12px; font-size: 13px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
