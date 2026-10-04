@@ -1071,6 +1071,9 @@ struct AppearanceSettings: View {
                 Picker("Where Sparrow sits", selection: $position) {
                     ForEach(SparrowPosition.allCases) { Text($0.label).tag($0.rawValue) }
                 }
+                .onChange(of: position) { _, _ in UserDefaults.standard.removeObject(forKey: "islandOrigin") }
+                Text("Tip: drag the top bar of the island to put Sparrow anywhere you like.")
+                    .font(.system(size: 11)).foregroundColor(.secondary)
                 if position != startPosition {
                     HStack {
                         Text("Restart Sparrow to move it.").font(.system(size: 11)).foregroundColor(.orange)

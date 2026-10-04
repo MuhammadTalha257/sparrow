@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		204C2226DB2872371B073856 /* SparrowHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B408434DFFEB4DD672F879D /* SparrowHome.swift */; };
+		56C2E4D1FA68D445B493363B /* SparrowHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B408434DFFEB4DD672F879D /* SparrowHome.swift */; };
 		ECEC694263668830BBD68EB2 /* NativeSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77091C717DACBACC21C450F /* NativeSpeech.swift */; };
 		BF45817AD497779E4A6B317F /* NativeSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77091C717DACBACC21C450F /* NativeSpeech.swift */; };
 		E902FF590DA9DB3ACF4AB038 /* AgentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */; };
@@ -100,6 +102,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2B408434DFFEB4DD672F879D /* SparrowHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparrowHome.swift; sourceTree = "<group>"; };
 		B77091C717DACBACC21C450F /* NativeSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSpeech.swift; sourceTree = "<group>"; };
 		96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRouter.swift; sourceTree = "<group>"; };
 		5C80BF14A616585C9854E4BA /* StudioVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioVoice.swift; sourceTree = "<group>"; };
@@ -160,6 +163,7 @@
 				D4540F630F8BA04AFFFA3979 /* BotEngine.swift */,
 				3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */,
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
+				2B408434DFFEB4DD672F879D /* SparrowHome.swift */,
 				B77091C717DACBACC21C450F /* NativeSpeech.swift */,
 				96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */,
 				5C80BF14A616585C9854E4BA /* StudioVoice.swift */,
@@ -351,6 +355,7 @@
 				C24D863967D8D32D828ED4B1 /* BotEngine.swift in Sources */,
 				4F1E0B3C838DA3CD6F864BC0 /* CalcomPoller.swift in Sources */,
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
+				56C2E4D1FA68D445B493363B /* SparrowHome.swift in Sources */,
 				BF45817AD497779E4A6B317F /* NativeSpeech.swift in Sources */,
 				CA8D0C5E4184609464D0EA75 /* AgentRouter.swift in Sources */,
 				C15BCE7E02F8B526FF1E30B3 /* StudioVoice.swift in Sources */,
@@ -398,6 +403,7 @@
 				0E9CE475EC53C67DAB00F8E5 /* BotEngine.swift in Sources */,
 				1969590AFEE6CB21404346F1 /* CalcomPoller.swift in Sources */,
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
+				204C2226DB2872371B073856 /* SparrowHome.swift in Sources */,
 				ECEC694263668830BBD68EB2 /* NativeSpeech.swift in Sources */,
 				E902FF590DA9DB3ACF4AB038 /* AgentRouter.swift in Sources */,
 				032291879CF46ED4CA957E73 /* StudioVoice.swift in Sources */,

@@ -39,6 +39,9 @@ struct OverviewView: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            if agent == nil || agent?.isIntegration == true {
+                SparrowContextCard(state: state).frame(width: 300)
+            } else {
             // Left card: title row + ticker below + ↗ button overlay
             ZStack(alignment: .topLeading) {
                 CardBackground(wash: nil)
@@ -103,12 +106,11 @@ struct OverviewView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .frame(width: 322)
-
-            // Right card: agent pills
-            CardBackground(wash: nil) {
-                AgentPillsView(state: state)
+            .frame(width: 300)
             }
+
+            // Right card: favourite apps, each with a sparrow in its colours
+            SparrowAppGrid()
         }
         .onChange(of: state.focusId) { _, _ in showingN8nDetail = false }
     }
@@ -166,23 +168,9 @@ struct EmptyStateView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        ZStack {
-            CardBackground(wash: nil)
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Nothing running right now.")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("Drop a file or window, or ask me anything.")
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: "#A6988A"))
-                }
-                Spacer()
-                PrimaryButton("Ask Claude") {
-                    state.view = .prompt
-                }
-            }
-            .padding(.leading, 118)
-            .padding(.trailing, 18)
+        HStack(spacing: 10) {
+            SparrowContextCard(state: state).frame(width: 300)
+            SparrowAppGrid()
         }
     }
 }

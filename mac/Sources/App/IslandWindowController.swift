@@ -61,13 +61,19 @@ final class IslandWindowController: NSWindowController {
         let panelH: CGFloat = 320
         let sf = screen.frame
         let menuBarH = max(sf.maxY - screen.visibleFrame.maxY, NSStatusBar.system.thickness)
-        let panelX: CGFloat
+        let defaultX: CGFloat
         switch position {
-        case .notch: panelX = sf.midX - panelW/2
-        case .left:  panelX = sf.minX - 30
-        case .right: panelX = sf.maxX - panelW + 30
+        case .notch: defaultX = sf.midX - panelW/2
+        case .left:  defaultX = sf.minX - 30
+        case .right: defaultX = sf.maxX - panelW + 30
         }
-        let panelY = position == .notch ? sf.maxY - panelH : sf.maxY - menuBarH - panelH - 4
+        var panelY = position == .notch ? sf.maxY - panelH : sf.maxY - menuBarH - panelH - 4
+        var panelX = defaultX
+        // Wherever the person dragged it last time
+        if position != .notch, let o = IslandDrag.savedOrigin,
+           sf.insetBy(dx: -60, dy: -60).contains(NSPoint(x: o.x + panelW / 2, y: o.y + panelH - 20)) {
+            panelX = o.x; panelY = o.y
+        }
         let panel = IslandPanel(
             contentRect: NSRect(x: panelX, y: panelY,
                                 width: panelW, height: panelH),

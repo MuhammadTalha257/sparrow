@@ -60,16 +60,24 @@ struct IslandContainer: View {
                 ZStack {
                     VisualEffectBlur()
                     // Black at the very top so it melts into the notch, warm glass below
-                    LinearGradient(stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black.opacity(0.85), location: 0.12),
-                        .init(color: Color(hex: "#20140C").opacity(0.45), location: 0.45),
-                        .init(color: Color(hex: "#2A1A10").opacity(0.35), location: 1),
-                    ], startPoint: .top, endPoint: .bottom)
+                    if SparrowPosition.current == .notch {
+                        LinearGradient(stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black.opacity(0.85), location: 0.12),
+                            .init(color: Color(hex: "#1E2433").opacity(0.5), location: 0.45),
+                            .init(color: Color(hex: "#2A2F40").opacity(0.4), location: 1),
+                        ], startPoint: .top, endPoint: .bottom)
+                    } else {
+                        LinearGradient(colors: [Color(hex: "#1B2131").opacity(0.62), Color(hex: "#2B3244").opacity(0.42)],
+                                       startPoint: .top, endPoint: .bottom)
+                    }
+                    RadialGradient(colors: [Color(hex: "#F9A830").opacity(0.22), .clear],
+                                   center: UnitPoint(x: 0.1, y: 0.7), startRadius: 4, endRadius: 260)
                 }
                 .clipShape(shape)
-                .overlay(shape.stroke(LinearGradient(colors: [.clear, Color(hex: "#F9A830").opacity(0.25)],
+                .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch ? 0 : 0.3), Color.white.opacity(0.12)],
                                                      startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
             } else {
                 shape.fill(Color.black)
             }
@@ -483,8 +491,11 @@ struct IslandHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            MiniSparrow(color: Color(hex: "#F2A24A"), size: 17)
+                .padding(.leading, 9)
+                .help("Drag to move Sparrow")
             // Left: labelled tabs (Sparrow's own order)
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 TabButton(icon: "house.fill", label: "Home", view: .overview, state: state)
                 TabButton(icon: "sparkles", label: "Ask", view: .prompt, state: state, preAction: {
                     #if !APPSTORE
@@ -497,14 +508,14 @@ struct IslandHeader: View {
                 HeaderChip(icon: "square.grid.2x2.fill", label: "More") { WebHub.shared.show() }
                 HeaderChip(icon: "bird.fill", label: "Pet") { PetController.shared.toggle() }
             }
-            .padding(.leading, 12)
+            .padding(.leading, 4)
 
-            Spacer()
+            Spacer(minLength: 6)
 
             // Right: friendly greeting
             VStack(alignment: .trailing, spacing: 0) {
                 Text(SparrowHeaderText.greeting)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(Color(hex: "#FBF3E9"))
                     .lineLimit(1)
                 Text(Date().formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
@@ -514,28 +525,43 @@ struct IslandHeader: View {
             .padding(.trailing, 12)
 
             // Right: action icons
-            HStack(spacing: 14) {
+            HStack(spacing: 6) {
                 Button(action: {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         state.view = .settings
                     }
                 }) {
                     Image(systemName: state.view == .settings ? "gearshape.fill" : "gearshape")
-                        .font(.system(size: 14))
-                        .foregroundColor(state.view == .settings ? Color(hex: "#FBF3E9") : Color(hex: "#A39486"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(state.view == .settings ? Color(hex: "#FBF3E9") : Color(hex: "#D8CCBF"))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
 
                 Button(action: { state.soundEnabled.toggle() }) {
                     Image(systemName: state.soundEnabled ? "speaker.wave.2" : "speaker.slash")
-                        .font(.system(size: 14))
-                        .foregroundColor(Color(hex: "#A39486"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Color(hex: "#D8CCBF"))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.trailing, 14)
+            .padding(.trailing, 6)
         }
         .frame(maxHeight: .infinity)
+        // Glass bar behind the header — drag it to move Sparrow anywhere.
+        .background(
+            Capsule(style: .continuous)
+                .fill(LinearGradient(colors: [Color.white.opacity(0.12), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom))
+                .overlay(Capsule(style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.7))
+                .contentShape(Capsule())
+                .movesIsland()
+        )
+        .padding(.horizontal, 8)
     }
 }
 
