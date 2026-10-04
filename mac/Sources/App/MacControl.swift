@@ -43,7 +43,7 @@ final class MacControl {
             return countdown("log you out", script: "tell application \"System Events\" to log out")
         }
         if has("^(sleep|put\\s+\(machine)\\s+to sleep|\(machine)\\s+(to )?sleep|sleep\\s+\(machine)|go to sleep mac)$") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { MainActor.assumeIsolated { Self.run("/usr/bin/pmset", ["sleepnow"]) } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { _ = MacControl.run("/usr/bin/pmset", ["sleepnow"]) }
             return "Putting your Mac to sleep. Good night!"
         }
         if has("^(lock|lock\\s+\(machine)|lock (the )?screen|lock it)$") {
@@ -56,7 +56,7 @@ final class MacControl {
             return "Locking your Mac."
         }
         if has(#"^(turn off|switch off|sleep) (the )?(screen|display|monitor)$"#) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated { Self.run("/usr/bin/pmset", ["displaysleepnow"]) } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { _ = MacControl.run("/usr/bin/pmset", ["displaysleepnow"]) }
             return "Turning off the screen."
         }
 
@@ -125,7 +125,7 @@ final class MacControl {
         if has(#"^(take a |take )?(full )?screenshot( of (the )?(whole |full )?screen)?( to (the )?desktop)?$"#) && has(#"whole|full|desktop"#) {
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
             let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/Sparrow screenshot \(f.string(from: Date())).png").path
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { MainActor.assumeIsolated { Self.run("/usr/sbin/screencapture", ["-x", path]) } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { _ = MacControl.run("/usr/sbin/screencapture", ["-x", path]) }
             return "Screenshot saved to your Desktop."
         }
         return nil
