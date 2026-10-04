@@ -14,6 +14,8 @@ export const KOKORO_VOICES = {
   am_michael: 'Michael (calm, American)', bm_george: 'George (British)',
 };
 const MMS = { urd: 'mms-urd', 'urd-latn': 'mms-urd-latn', hin: 'mms-hin', pan: 'mms-pan' };
+export const MMS_DTYPES = ['int8', 'q8', 'fp16'];
+const ortMessage = e => (typeof e === 'number' || /^\d+$/.test(String(e?.message ?? e))) ? 'engine error ' + (e?.message ?? e) : String(e?.message || e);
 
 let lib = null, kokoro = null, kokoroLoading = null;
 const mms = {};
@@ -61,14 +63,21 @@ async function getMMS(key) {
   if (mms[key]) return mms[key];
   mms[key] = (async () => {
     const { VitsModel, AutoTokenizer } = await loadLib();
-    const [tok, model] = await Promise.all([
-      AutoTokenizer.from_pretrained(MMS[key]),
-      VitsModel.from_pretrained(MMS[key], { dtype: 'q8', device: 'wasm' }),
-    ]);
-    return async text => {
-      const { waveform } = await model(tok(text));
-      return { audio: waveform.data, sampling_rate: model.config.sampling_rate };
-    };
+    const tok = await AutoTokenizer.from_pretrained(MMS[key]);
+    let lastErr;
+    for (const dtype of MMS_DTYPES) {
+      try {
+        const model = await VitsModel.from_pretrained(MMS[key], { dtype, device: 'wasm' });
+        const run = async text => {
+          const { waveform } = await model(tok(text));
+          return { audio: waveform.data, sampling_rate: model.config.sampling_rate };
+        };
+        await run('a');                      // make sure this build actually runs here
+        log('voice', key, 'ready as', dtype);
+        return run;
+      } catch (e) { lastErr = e; log('voice', key, dtype, 'failed:', ortMessage(e)); }
+    }
+    throw lastErr;
   })().catch(e => { delete mms[key]; throw e; });
   return mms[key];
 }

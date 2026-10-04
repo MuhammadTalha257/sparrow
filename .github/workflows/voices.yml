@@ -36,6 +36,18 @@ jobs:
             mkdir -p "pack/$name/onnx"
             cp "$d"/*.json "pack/$name/" 
             cp "$d/onnx/model_quantized.onnx" "pack/$name/onnx/"
+            # Extra variants, so the app can use whichever runs best in the browser engine:
+            #   int8 = only the matrix multiplies quantized · fp16 = half precision
+            python - "$d/onnx/model.onnx" "pack/$name/onnx" <<'PY' > q.log 2>&1 || { tail -7 q.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          import sys, onnx
+          from onnxruntime.quantization import quantize_dynamic, QuantType
+          from onnxconverter_common import float16
+          src, out = sys.argv[1], sys.argv[2]
+          quantize_dynamic(src, f"{out}/model_int8.onnx", weight_type=QuantType.QInt8, op_types_to_quantize=["MatMul"], per_channel=False)
+          m = float16.convert_float_to_float16(onnx.load(src), keep_io_types=True)
+          onnx.save(m, f"{out}/model_fp16.onnx")
+          PY
+            ls -la "pack/$name/onnx"
             tar -C pack -czf "out/voice-$name.tar.gz" "$name"
           done < voices/list.txt
           ls -lh out

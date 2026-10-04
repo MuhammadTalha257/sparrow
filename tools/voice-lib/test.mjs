@@ -29,7 +29,7 @@ const lines = [
 ];
 const browser = await chromium.launch();
 const page = await browser.newPage();
-page.on('console', m => { console.log('  page:', m.text()); if (m.type() === 'error') console.log('::warning::page: ' + m.text().slice(0, 300)); });
+page.on('console', m => { console.log('  page:', m.text()); if (m.text().startsWith('[voice]')) console.log('::notice::' + m.text().slice(0, 300)); if (m.type() === 'error') console.log('::warning::page: ' + m.text().slice(0, 300)); });
 page.on('pageerror', e => console.log('::error::page error: ' + e.message.slice(0, 300)));
 await page.goto('http://localhost:8765/voicetest.html');
 await page.waitForFunction('window.ready === true', null, { timeout: 30000 });
