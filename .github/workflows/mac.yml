@@ -115,7 +115,7 @@ jobs:
 
       - name: Make the download (.dmg)
         run: |
-          ls mac/build/Release/Sparrow.app/Contents/Resources/web/models
+          du -sh mac/build/Release/Sparrow.app/Contents/Resources/speech
           mkdir -p dmg && cp -R mac/build/Release/Sparrow.app dmg/ && ln -s /Applications dmg/Applications
           hdiutil create -volname "Sparrow" -srcfolder dmg -ov -format UDZO Sparrow.dmg
           ls -lh Sparrow.dmg
