@@ -2,8 +2,8 @@ name: Build Mac app
 
 on:
   push:
-    branches: [main]
-    paths: ["mac/**", ".github/workflows/mac.yml", "*.js", "*.html", "*.css", "lib/**"]
+    branches: [main, test]
+    paths: ["mac/**", ".github/workflows/mac.yml", "*.js", "*.html", "*.css", "lib/**", "tools/voice-lib/**"]
   workflow_dispatch: {}
 
 permissions:
@@ -11,22 +11,84 @@ permissions:
   issues: write
 
 jobs:
+  # 1) The Sparrow web app + built-in natural voices, tested in a real browser.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Copy the Sparrow web app
+        run: |
+          mkdir -p web
+          cp index.html style.css app.js brain.js store.js ai.js i18n.js prayer.js memory.js tools.js sync.js neuralvoice.js manifest.webmanifest web/
+          cp -R lib icons web/
+
+      - name: Build the voice engine
+        working-directory: tools/voice-lib
+        run: |
+          npm ci --no-audit --no-fund
+          node build.mjs ../../web/lib/voice
+
+      - name: English voice (Kokoro-82M)
+        run: |
+          pip install -q huggingface_hub
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download("onnx-community/Kokoro-82M-v1.0-ONNX", local_dir="web/models/kokoro",
+              allow_patterns=["config.json", "tokenizer.json", "tokenizer_config.json", "onnx/model_quantized.onnx",
+                              "voices/af_heart.bin", "voices/af_bella.bin", "voices/bf_emma.bin", "voices/am_michael.bin", "voices/bm_george.bin"])
+          PY
+          rm -rf web/models/kokoro/.cache
+
+      - name: Urdu, Hindi and Punjabi voices (MMS)
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p dl && gh release download voices -p 'voice-*.tar.gz' -D dl --repo "$GITHUB_REPOSITORY"
+          for f in dl/voice-*.tar.gz; do
+            n=$(basename "$f" .tar.gz); n=${n#voice-}
+            tar -xzf "$f" -C web/models && mv "web/models/$n" "web/models/mms-$n"
+          done
+          du -sh web/models/* web/lib/voice
+
+      - name: Test the voices in a browser (and save samples to listen to)
+        working-directory: tools/voice-lib
+        run: |
+          npx playwright install --with-deps chromium > /dev/null
+          node test.mjs ../../web ../../samples
+
+      - uses: actions/upload-artifact@v4
+        with: { name: web, path: web, retention-days: 3 }
+
+      - name: Publish voice samples
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: voice-samples
+          name: Sparrow voice samples
+          prerelease: true
+          make_latest: false
+          files: samples/*
+          body: |
+            Listen to Sparrow's built-in voices: download any `.wav` file. `report.txt` shows how quickly each was made.
+
+  # 2) The Mac island app with everything inside.
   build:
+    needs: web
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-
-      - name: Copy the Sparrow web app into the Mac app
-        run: |
-          mkdir -p mac/Resources/web
-          cp index.html style.css app.js brain.js store.js ai.js i18n.js prayer.js memory.js tools.js sync.js manifest.webmanifest mac/Resources/web/
-          cp -R lib icons mac/Resources/web/
-          ls mac/Resources/web
+      - uses: actions/download-artifact@v4
+        with: { name: web, path: mac/Resources/web }
 
       - name: Build Sparrow.app (Apple silicon + Intel)
         working-directory: mac
         run: |
           xcodebuild -version
+          du -sh Resources/web
           set +e
           xcodebuild -project Sparrow.xcodeproj -target NotchBuddy -configuration Release \
             SYMROOT="$PWD/build" ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
@@ -40,13 +102,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          { echo "Mac build failed at ${GITHUB_SHA::7}"; echo; echo '```'; grep -E "error:" mac/build.log | sed "s#$GITHUB_WORKSPACE/##" | sort -u | head -80; echo '```'; } > body.md
+          { echo "Mac build failed at ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"; echo; echo '```'; grep -E "error:" mac/build.log | sed "s#$GITHUB_WORKSPACE/##" | sort -u | head -80; echo '```'; } > body.md
           gh label create build-errors --color B60205 -f >/dev/null 2>&1 || true
           N=$(gh issue list --label build-errors --state open --json number -q '.[0].number')
           if [ -z "$N" ]; then gh issue create --title "Build errors" --label build-errors --body-file body.md; else gh issue comment "$N" --body-file body.md; fi
 
       - name: Make the download (.dmg)
         run: |
+          ls mac/build/Release/Sparrow.app/Contents/Resources/web/models
           mkdir -p dmg && cp -R mac/build/Release/Sparrow.app dmg/ && ln -s /Applications dmg/Applications
           hdiutil create -volname "Sparrow" -srcfolder dmg -ov -format UDZO Sparrow.dmg
           ls -lh Sparrow.dmg
@@ -58,7 +121,23 @@ jobs:
           N=$(gh issue list --label build-errors --state open --json number -q '.[0].number' 2>/dev/null)
           [ -n "$N" ] && gh issue close "$N" --comment "Mac build fixed at ${GITHUB_SHA::7} ✅" || true
 
+      - name: Publish test download
+        if: github.ref_name != 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mac-test
+          name: Sparrow for Mac (test copy)
+          prerelease: true
+          make_latest: false
+          files: Sparrow.dmg
+          body: |
+            **Test copy** — try it before it becomes the main download.
+            1. Quit Sparrow (menu bar icon → Quit).
+            2. Download `Sparrow.dmg`, open it, drag **Sparrow** onto **Applications** and choose **Replace**.
+            3. Open it; if macOS blocks it: System Settings → Privacy & Security → **Open Anyway**.
+
       - name: Publish download
+        if: github.ref_name == 'main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mac-latest

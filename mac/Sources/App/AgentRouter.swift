@@ -156,7 +156,8 @@ final class ContactsAgent {
         await withCheckedContinuation { c in store.requestAccess(for: .contacts) { ok, _ in c.resume(returning: ok) } }
     }
     private func access() async -> Bool {
-        CNContactStore.authorizationStatus(for: .contacts) == .authorized ? true : await Self.askAccess()
+        if CNContactStore.authorizationStatus(for: .contacts) == .authorized { return true }
+        return await Self.askAccess()
     }
 
     private static let phoneRE = #"(\+?\d[\d\s\-]{6,}\d)"#

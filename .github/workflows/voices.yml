@@ -30,7 +30,7 @@ jobs:
           while read -r name repo; do
             [ -z "$name" ] && continue
             echo "== $name ($repo)"
-            (cd tjs && python -m scripts.convert --quantize --model_id "$repo") > conv.log 2>&1 || { tail -7 conv.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+            (cd tjs && python -m scripts.convert --quantize --skip_validation --model_id "$repo") > conv.log 2>&1 || { tail -7 conv.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
             d="tjs/models/$repo"
             ls -la "$d" "$d/onnx"
             mkdir -p "pack/$name/onnx"

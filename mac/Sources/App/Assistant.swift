@@ -189,7 +189,7 @@ final class VoiceEngine: NSObject, ObservableObject {
                 else {
                     // Safety net in case the page never reports the end.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
-                        if turn == VoiceEngine.shared.neuralTurn, VoiceEngine.shared.speaking { VoiceEngine.shared.neuralEnded() }
+                        MainActor.assumeIsolated { VoiceEngine.shared.neuralTimeout(turn) }
                     }
                 }
             }
@@ -200,6 +200,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     private var neuralTurn = 0
     func neuralEnded() { neuralTurn += 1; speechFinished() }
+    fileprivate func neuralTimeout(_ turn: Int) { if turn == neuralTurn, speaking { neuralEnded() } }
 
     private func appleSpeak(_ clean: String) {
         let u = Self.naturalUtterance(String(clean.prefix(1200)))
