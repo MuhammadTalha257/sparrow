@@ -512,7 +512,8 @@ enum Assistant {
                 return
             }
             // Too short or garbled to be a real question, or no AI to ask: a warm "say that again".
-            if text.split(separator: " ").count <= 2 || (await AIService.shared.resolveProvider(state: state)) == nil {
+            let hasAI = await AIService.shared.resolveProvider(state: state) != nil
+            if text.split(separator: " ").count <= 1 || !hasAI {
                 askAgain(); return
             }
         }

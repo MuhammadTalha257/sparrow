@@ -75,6 +75,29 @@ final class Voice {
     }
 }
 
+/// Phrases Sparrow says often are kept on disk, so they play instantly next time.
+enum Cache {
+    static let dir: URL = {
+        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Sparrow/voice")
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }()
+    static func key(_ s: String) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h ^= UInt64(b); h = h &* 0x100000001b3 }
+        return String(h, radix: 16)
+    }
+    static func get(_ k: String) -> [Float]? {
+        guard let d = try? Data(contentsOf: dir.appendingPathComponent(k + ".f32")), d.count > 4 else { return nil }
+        return d.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+    }
+    static func put(_ k: String, _ v: [Float]) {
+        guard v.count < 24000 * 12 else { return }          // only short phrases
+        let d = v.withUnsafeBufferPointer { Data(buffer: $0) }
+        try? d.write(to: dir.appendingPathComponent(k + ".f32"))
+    }
+}
+
 final class Speaker {
     let genQ = DispatchQueue(label: "sparrow.speech.gen", qos: .userInitiated)
     var voices: [String: Voice] = [:]          // touched only on genQ
@@ -153,8 +176,11 @@ final class Speaker {
                 DispatchQueue.main.sync { cancelled = my != self.turn }
                 if cancelled { return }
                 let t0 = Date()
-                let samples = v.generate(p, sid: sid, speed: speed)
-                let took = Date().timeIntervalSince(t0)
+                let ck = Cache.key("\(model)|\(sid)|\(speed)|\(p)")
+                var samples = Cache.get(ck) ?? []
+                let cached = !samples.isEmpty
+                if !cached { samples = v.generate(p, sid: sid, speed: speed); if p.count <= 120 { Cache.put(ck, samples) } }
+                let took = cached ? 0 : Date().timeIntervalSince(t0)
                 DispatchQueue.main.async {
                     guard my == self.turn else { return }
                     if self.speedLogs < 15, !samples.isEmpty {
@@ -209,7 +235,16 @@ final class Speaker {
         switch cmd {
         case "say": say(id: o["id"] as? Int ?? 0, text: o["text"] as? String ?? "", model: model, sid: sid, speed: Float(o["speed"] as? Double ?? 1))
         case "stop": stop()
-        case "warm": genQ.async { _ = self.voice(model).map { $0.generate("Hi.", sid: sid, speed: 1) } }
+        case "warm":
+            let phrases = o["phrases"] as? [String] ?? []
+            genQ.async {
+                guard let v = self.voice(model) else { return }
+                _ = v.generate("Hi.", sid: sid, speed: 1)
+                for p in phrases {                  // quietly prepare what Sparrow says most
+                    let ck = Cache.key("\(model)|\(sid)|1.0|\(p)")
+                    if Cache.get(ck) == nil { Cache.put(ck, v.generate(p, sid: sid, speed: 1)) }
+                }
+            }
         case "render": render(text: o["text"] as? String ?? "", model: model, sid: sid, path: o["path"] as? String ?? "/tmp/sparrow.wav")
         default: break
         }

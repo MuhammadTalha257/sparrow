@@ -22,6 +22,13 @@ final class NativeSpeech {
         "am_michael": (16, "Michael (calm, American)"), "bm_george": (26, "George (British)"), "bm_lewis": (27, "Lewis (British)"),
     ]
 
+    /// Things Sparrow says often — prepared in the background so they play instantly.
+    static let common = ["Playing.", "Paused.", "Next song.", "Previous song.", "Muted.", "Sound back on.", "Done.",
+                         "Opening Spotify.", "Opening Google Chrome.", "Opening Safari.", "Opening WhatsApp.", "Opening Notes.",
+                         "Opening Finder.", "Opening Gmail in your browser.", "Opening YouTube in your browser.",
+                         "Playing music on Spotify.", "Sorry, I didn't quite catch that. Could you say it again?",
+                         "Hmm, I missed that one. Say it once more?", "Saved in your Notes."]
+
     private var dir: URL? { Bundle.main.resourceURL?.appendingPathComponent("speech") }
     var isAvailable: Bool {
         guard let d = dir else { return false }
@@ -50,7 +57,7 @@ final class NativeSpeech {
             try p.run()
             proc = p
             input = inPipe.fileHandleForWriting
-            send(["cmd": "warm", "model": "kokoro", "sid": sid()])
+            send(["cmd": "warm", "model": "kokoro", "sid": sid(), "phrases": Self.common])
             appendAppLog("voice.log", "natural voice engine started")
         } catch {
             failures += 1
