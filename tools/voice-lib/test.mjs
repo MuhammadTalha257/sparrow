@@ -26,6 +26,7 @@ const lines = [
   ['roman-urdu', 'ur', 'Talha, aap ki meeting paanch minute mein hai. Main Spotify khol rahi hoon.'],
   ['hindi', 'hi', 'नमस्ते तलहा! पाँच मिनट में आपकी अली के साथ मीटिंग है।'],
   ['punjabi', 'pa', 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਪੰਜ ਮਿੰਟ ਵਿੱਚ ਤੁਹਾਡੀ ਮੀਟਿੰਗ ਹੈ।'],
+  ['hindi-reference', 'hi', 'नमस्ते तलहा! पाँच मिनट में आपकी अली के साथ मीटिंग है।', undefined, 'hin-x'],
 ];
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -35,14 +36,14 @@ await page.goto('http://localhost:8765/voicetest.html');
 await page.waitForFunction('window.ready === true', null, { timeout: 30000 });
 let failed = 0;
 const report = [];
-for (const [name, lang, text, voice] of lines) {
+for (const [name, lang, text, voice, model] of lines) {
   const t0 = Date.now();
   try {
-    const r = await page.evaluate(async ([text, lang, voice]) => {
-      const r = await window.nv.renderWav(text, { lang, voice });
+    const r = await page.evaluate(async ([text, lang, voice, model]) => {
+      const r = await window.nv.renderWav(text, { lang, voice, model });
       let s = ''; for (const b of r.wav) s += String.fromCharCode(b);
       return { b64: btoa(s), model: r.model, seconds: r.seconds };
-    }, [text, lang, voice]);
+    }, [text, lang, voice, model]);
     const ms = Date.now() - t0;
     fs.writeFileSync(path.join(out, `sparrow-voice-${name}.wav`), Buffer.from(r.b64, 'base64'));
     const line = `${name}: ${r.model}, ${r.seconds.toFixed(1)}s of audio in ${(ms / 1000).toFixed(1)}s`;

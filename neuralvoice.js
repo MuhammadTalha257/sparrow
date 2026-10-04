@@ -13,7 +13,8 @@ export const KOKORO_VOICES = {
   af_heart: 'Heart (warm, American)', af_bella: 'Bella (bright, American)', bf_emma: 'Emma (British)',
   am_michael: 'Michael (calm, American)', bm_george: 'George (British)',
 };
-const MMS = { urd: 'mms-urd', 'urd-latn': 'mms-urd-latn', hin: 'mms-hin', pan: 'mms-pan' };
+const MMS = { urd: 'mms-urd', 'urd-latn': 'mms-urd-latn', hin: 'mms-hin', pan: 'mms-pan', 'hin-x': 'mms-hin-x' };
+const PROBE = { urd: 'سلام', 'urd-latn': 'salam', hin: 'नमस्ते', pan: 'ਸਤ ਸ੍ਰੀ', 'hin-x': 'नमस्ते' };
 export const MMS_DTYPES = ['int8', 'q8', 'fp16'];
 const ortMessage = e => (typeof e === 'number' || /^\d+$/.test(String(e?.message ?? e))) ? 'engine error ' + (e?.message ?? e) : String(e?.message || e);
 
@@ -72,7 +73,7 @@ async function getMMS(key) {
           const { waveform } = await model(tok(text));
           return { audio: waveform.data, sampling_rate: model.config.sampling_rate };
         };
-        await run('a');                      // make sure this build actually runs here
+        await run(PROBE[key] || 'salam');    // make sure this build actually runs here
         log('voice', key, 'ready as', dtype);
         return run;
       } catch (e) { lastErr = e; log('voice', key, dtype, 'failed:', ortMessage(e)); }
