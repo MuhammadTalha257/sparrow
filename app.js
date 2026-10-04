@@ -1105,4 +1105,4 @@ function sendVoicePrefs() {
   const listen = S().listen || ({ en: 'en-US', ur: 'en-IN', hi: 'en-IN', pa: 'en-IN', ar: 'ar-SA' }[S().lang] || 'en-US');
   M.post('prefs', { listen, neural: S().neural !== false, studio: !!S().studio });
 }
-if (M) { M.post('ready'); sendVoicePrefs(); setTimeout(() => nv.warmUp(), 2500); }
+if (M) { M.post('ready'); sendVoicePrefs(); setTimeout(async () => { await nv.warmUp(); nv.prepareCommon(S().voiceName || (S().gender === 'male' ? 'bm_george' : 'af_heart')); }, 2500); }

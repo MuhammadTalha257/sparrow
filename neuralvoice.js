@@ -15,7 +15,7 @@ export const KOKORO_VOICES = {
 };
 const MMS = { urd: 'mms-urd', 'urd-latn': 'mms-urd-latn', hin: 'mms-hin', pan: 'mms-pan', 'hin-x': 'mms-hin-x' };
 const PROBE = { urd: 'سلام', 'urd-latn': 'salam', hin: 'नमस्ते', pan: 'ਸਤ ਸ੍ਰੀ', 'hin-x': 'नमस्ते' };
-export const MMS_DTYPES = ['int8', 'q8', 'fp16'];
+export const MMS_DTYPES = ['int8', 'q8'];
 const ortMessage = e => (typeof e === 'number' || /^\d+$/.test(String(e?.message ?? e))) ? 'engine error ' + (e?.message ?? e) : String(e?.message || e);
 
 let lib = null, kokoro = null, kokoroLoading = null;
@@ -114,6 +114,11 @@ function sentences(text) {
     while (p.length > 220) { const cut = p.lastIndexOf(',', 200) > 60 ? p.lastIndexOf(',', 200) + 1 : p.lastIndexOf(' ', 200); out.push(p.slice(0, cut).trim()); p = p.slice(cut).trim(); }
     if (out.length && out[out.length - 1].length < 25) out[out.length - 1] += ' ' + p; else out.push(p);
   }
+  // Start talking sooner: if the first sentence is long, say its first clause on its own.
+  if (out.length && out[0].length > 70) {
+    const f = out[0], cut = f.search(/[,;:]\s/);
+    if (cut > 12 && cut < 70) out.splice(0, 1, f.slice(0, cut + 1), f.slice(cut + 2));
+  }
   return out;
 }
 
@@ -152,7 +157,34 @@ async function speakChunk(model, text, o) {
   if (out.pcm) cachePut(key, { pcm: out.pcm instanceof Float32Array ? out.pcm : Float32Array.from(out.pcm), rate: out.rate });
   return out;
 }
+let rtfLogged = 0;
+function noteSpeed(model, text, t0, out) {
+  const secs = out.pcm ? out.pcm.length / out.rate : 0;
+  if (!secs || rtfLogged > 20) return;
+  rtfLogged++;
+  log('speed', model, `${secs.toFixed(1)}s audio in ${((performance.now() - t0) / 1000).toFixed(1)}s`, `"${text.slice(0, 40)}"`);
+}
+const COMMON = ['Done.', 'Playing.', 'Paused.', 'Next song.', 'Previous song.', 'Muted.', 'Sound back on.', 'Opening Spotify.', 'Opening Chrome.',
+  'Opening Safari.', 'Opening WhatsApp.', 'Opening Gmail in your browser.', 'Opening YouTube in your browser.', 'Opening Notes.', 'Opening Finder.',
+  'Opening your Downloads folder.', '📝 Saved in your Notes.', 'Here I am!', 'Yes?', 'Sorry, I didn\'t catch that.', 'Locking the screen.'];
+/** After start-up, quietly prepares the phrases Sparrow says most, so they play instantly. */
+export async function prepareCommon(voice) {
+  if (!(await available())) return;
+  for (const p of COMMON) {
+    const text = sentences(p)[0]; if (!text) continue;
+    const key = `kokoro|${voice}|1|${text}`;
+    if (await cacheGet(key)) continue;
+    try { await speakChunk('kokoro', text, { voice, speed: 1 }); } catch { return; }
+    await new Promise(r => setTimeout(r, 300));
+  }
+}
 async function generate(model, text, o) {
+  const t0 = performance.now();
+  const out = await generateRaw(model, text, o);
+  noteSpeed(model, text, t0, out);
+  return out;
+}
+async function generateRaw(model, text, o) {
   if (model === 'studio') {
     const r = await fetch(STUDIO + '/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang: o.lang || 'en', speed: o.speed || 1 }) });
     if (!r.ok) throw new Error('studio ' + r.status);

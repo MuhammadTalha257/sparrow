@@ -60,6 +60,12 @@ jobs:
           npx playwright install --with-deps chromium > /dev/null
           node test.mjs ../../web ../../samples
 
+      - name: Keep only what the app uses
+        run: |
+          rm -rf web/models/mms-hin-x
+          rm -f web/models/mms-*/onnx/model_fp16.onnx web/models/mms-*/onnx/model_quantized.onnx
+          du -sh web/models/* web
+
       - uses: actions/upload-artifact@v4
         with: { name: web, path: web, retention-days: 3 }
 
