@@ -35,9 +35,10 @@ final class StudioVoice {
     }
 
     private func waitForInstall() {
-        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { t in
-            MainActor.assumeIsolated {
-                if StudioVoice.shared.isInstalled { t.invalidate(); StudioVoice.shared.start() }
+        Task { @MainActor in
+            for _ in 0..<720 {                         // up to 2 hours
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if StudioVoice.shared.isInstalled { StudioVoice.shared.start(); return }
             }
         }
     }
