@@ -27,10 +27,14 @@ jobs:
       - name: Convert voices
         run: |
           mkdir -p out
-          while read -r name repo; do
+          while read -r name repo kind; do
             [ -z "$name" ] && continue
             echo "== $name ($repo)"
-            (cd tjs && python -m scripts.convert --quantize --skip_validation --model_id "$repo") > conv.log 2>&1 || { tail -7 conv.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+            if [ "$kind" = "x" ]; then   # already converted by someone else — just package it
+              python -c "from huggingface_hub import snapshot_download as s; s('$repo', local_dir='pack/$name', allow_patterns=['*.json','onnx/model_quantized.onnx'])"
+              rm -rf "pack/$name/.cache"; tar -C pack -czf "out/voice-$name.tar.gz" "$name"; continue
+            fi
+            (cd tjs && python -m scripts.convert --quantize --skip_validation --skip_onnxslim --model_id "$repo") > conv.log 2>&1 || { tail -7 conv.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
             d="tjs/models/$repo"
             ls -la "$d" "$d/onnx"
             mkdir -p "pack/$name/onnx"
