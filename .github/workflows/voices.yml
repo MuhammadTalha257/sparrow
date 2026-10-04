@@ -1,0 +1,49 @@
+name: Build offline voices
+
+# Converts Meta's MMS text-to-speech voices (Urdu, Roman Urdu, Hindi, Punjabi) to small ONNX files
+# that Sparrow downloads once and then speaks with offline.
+on:
+  push:
+    paths: ["voices/**", ".github/workflows/voices.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Get the converter
+        run: |
+          git clone --depth 1 --branch 3.0.2 https://github.com/huggingface/transformers.js tjs
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet -r tjs/scripts/requirements.txt
+      - name: Convert voices
+        run: |
+          mkdir -p out
+          while read -r name repo; do
+            [ -z "$name" ] && continue
+            echo "== $name ($repo)"
+            (cd tjs && python -m scripts.convert --quantize --model_id "$repo")
+            d="tjs/models/$repo"
+            ls -la "$d" "$d/onnx"
+            mkdir -p "pack/$name/onnx"
+            cp "$d"/*.json "pack/$name/" 
+            cp "$d/onnx/model_quantized.onnx" "pack/$name/onnx/"
+            tar -C pack -czf "out/voice-$name.tar.gz" "$name"
+          done < voices/list.txt
+          ls -lh out
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: voices
+          name: Sparrow offline voices
+          make_latest: false
+          files: out/*.tar.gz
+          body: |
+            Offline voices for Sparrow (Urdu, Roman Urdu, Hindi, Punjabi), converted from Meta's MMS-TTS models
+            (licence CC-BY-NC 4.0: free, non-commercial use). Sparrow downloads these by itself the first time you pick a language.

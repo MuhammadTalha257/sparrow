@@ -1,0 +1,4 @@
+urd facebook/mms-tts-urd-script_arabic
+urd-latn facebook/mms-tts-urd-script_latin
+hin facebook/mms-tts-hin
+pan facebook/mms-tts-pan
