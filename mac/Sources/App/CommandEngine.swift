@@ -274,7 +274,13 @@ final class CommandEngine {
                 openURL("https://www.youtube.com/results?search_query=" + enc(q))
                 return "Searching YouTube for \(q)."
             }
+            let wantsSpotify = q.hasSuffix(" on spotify"), wantsMusic = q.hasSuffix(" on apple music")
             q = q.replacingOccurrences(of: " on spotify", with: "").replacingOccurrences(of: " on apple music", with: "")
+            if ["music", "songs", "song", "some music", "my music", "something", "tunes"].contains(q) {
+                let app = wantsSpotify ? "Spotify" : wantsMusic ? "Music" : player
+                if runAppleScript("tell application \"\(app)\" to play") != nil { return "Playing music on \(app == "Music" ? "Apple Music" : app)." }
+                return "I couldn't control \(app). Allow Sparrow under System Settings → Privacy & Security → Automation."
+            }
             for a in ["some ", "a song by ", "songs by ", "music by "] where q.hasPrefix(a) { q = String(q.dropFirst(a.count)) }
             if player == "Spotify", let url = URL(string: "spotify:search:" + enc(q)) {
                 NSWorkspace.shared.open(url)
@@ -431,4 +437,85 @@ final class CommandEngine {
 
     private func openURL(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }
     private func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+}
+
+// MARK: - Understanding many ways of saying the same thing
+// "play music for me on spotify", "put some songs on", "can you fire up chrome", "turn it up a bit",
+// "I want to listen to Arijit Singh", "shut down whatsapp" … → one clear command.
+
+extension CommandEngine {
+    /// The longest app / website / folder name mentioned anywhere in the sentence.
+    func knownTarget(in text: String) -> String? {
+        buildIndex()
+        let t = " " + text.lowercased().replacingOccurrences(of: #"[^\p{L}\p{N}\s.]"#, with: " ", options: .regularExpression) + " "
+        var names = Set(Self.websites.keys).union(Self.appAliases.keys)
+        names.formUnion(["downloads", "documents", "desktop", "pictures", "trash", "settings"])
+        for e in appIndex where e.key.count >= 3 { names.insert(e.key) }
+        let stop: Set<String> = ["music", "time", "notes", "photos", "camera", "messages", "maps", "home", "mail", "files", "code", "x", "vs", "safety"]
+        var best: String?
+        for n in names where t.contains(" \(n) ") {
+            if stop.contains(n) && !t.contains("open \(n)") && !t.contains("\(n) app") && !t.hasPrefix(" \(n) ") { continue }
+            if best == nil || n.count > best!.count { best = n }
+        }
+        return best
+    }
+
+    /// Turns a free-form request into a command the agents know. nil = not clearly a command.
+    func intent(_ raw: String) -> String? {
+        var t = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
+        let polite = #"^(hey |hi |ok |okay )?(sparrow[, ]*)?(please |can you |could you |would you |will you |can u |pls |i want you to |i need you to |i'd like you to |go ahead and |just )*"#
+        t = t.replacingOccurrences(of: polite, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"\s+(for me|please|now|right now|thanks|thank you|a bit|a little|quickly)$"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"\s+(for me|please)\b"#, with: "", options: .regularExpression)
+        guard !t.isEmpty else { return nil }
+        let has = { (re: String) in t.range(of: re, options: .regularExpression) != nil }
+
+        // Media controls
+        if has(#"^(pause|stop)( the| this)?( music| song| track| playback| playing| it)?$"#) || has(#"^(stop|pause) (spotify|apple music)$"#) { return "pause" }
+        if has(#"^(skip|next)( this| the)?( song| track| one)?$|^(play )?(the )?next (song|track|one)$|^skip it$"#) { return "next song" }
+        if has(#"^(go back|previous|play the previous|back)( song| track| one)?$|^(play )?(the )?(previous|last) (song|track)$"#) { return "previous song" }
+        if has(#"^(resume|continue|unpause)( the)?( music| song| playing)?$"#) { return "play" }
+        if has(#"\b(turn|make|crank|pump)\b.*\b(up|louder)\b|^louder$|^(volume|sound) up$|increase (the )?(volume|sound)"#) { return "volume up" }
+        if has(#"\b(turn|make)\b.*\b(down|quieter|softer)\b|^(quieter|softer)$|^(volume|sound) down$|(decrease|lower|reduce) (the )?(volume|sound)"#) { return "volume down" }
+        if has(#"^(mute|silence)( the)?( sound| volume| audio| it| mac)?$"#) { return "mute" }
+
+        // Music: "play music for me on spotify", "put some songs on", "i want to listen to arijit singh"
+        let musicVerb = #"^(play|put on|put|start|turn on|i want to listen to|i wanna listen to|let me hear|listen to|play me|play some|blast)\b"#
+        if has(musicVerb) || has(#"\b(music|songs?|playlist|track)\b.*\b(on|in)\s+(spotify|apple music)$"#) {
+            var q = t.replacingOccurrences(of: musicVerb, with: "", options: .regularExpression)
+            var app = ""
+            if let r = q.range(of: #"\s*\b(on|in|using|with|from)\s+(spotify|apple music|youtube|music app)\s*$"#, options: .regularExpression) {
+                app = String(q[r]).replacingOccurrences(of: #"^\s*\b(on|in|using|with|from)\s+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+                q.removeSubrange(r)
+            }
+            q = q.replacingOccurrences(of: #"^\s*(me |some |a |the |any |my )*"#, with: "", options: .regularExpression)
+                 .replacingOccurrences(of: #"\s*\b(on)\s*$"#, with: "", options: .regularExpression)
+                 .trimmingCharacters(in: .whitespaces)
+            let generic = q.isEmpty || has(#"^(play|put on|start|turn on|listen to|play me|play some) (some |a |the |my |any )*(music|songs?|tunes|something|playlist|a song)\b"#)
+                || ["music", "songs", "song", "tunes", "something", "a song", "my playlist", "playlist", "some music"].contains(q)
+            if app == "youtube" { return generic ? "open youtube" : "play \(q) on youtube" }
+            if generic { return app == "spotify" ? "play music on spotify" : app == "apple music" ? "play music on apple music" : "play music" }
+            if has(#"^(put on|start|turn on)\b"#), knownTarget(in: q) != nil, !q.contains("song") { return "open \(q)" }
+            return "play \(q)" + (app.isEmpty ? "" : " on \(app)")
+        }
+
+        // Close apps: "close chrome", "shut whatsapp", "get rid of spotify"
+        if has(#"^(close|quit|exit|shut|shut down|kill|get rid of|stop)\b"#), let target = knownTarget(in: t) { return "quit \(target)" }
+        // Open apps / sites: "fire up chrome", "take me to youtube", "can you get me spotify", "spotify please"
+        if has(#"\b(open|launch|start|run|fire up|bring up|pull up|switch to|go to|take me to|show me|get me|load|boot up|kholo|khol)\b"#) || knownTarget(in: t) == t {
+            if has(#"\b(settings|preferences)\b"#), let pane = t.range(of: #"(wifi|wi-fi|bluetooth|sound|display|displays|battery|notifications|privacy|security|keyboard|network|wallpaper|login items)"#, options: .regularExpression) {
+                return "open \(t[pane]) settings"
+            }
+            if let target = knownTarget(in: t) { return "open \(target)" }
+        }
+        // Search: "look up the weather in paris", "find pizza places on google"
+        if let r = t.range(of: #"^(look up|search for|search|google|find)\s+"#, options: .regularExpression) {
+            var q = String(t[r.upperBound...])
+            if q.hasSuffix(" on youtube") { q = String(q.dropLast(11)); return "youtube \(q)" }
+            q = q.replacingOccurrences(of: #"\s+(on|in) google$"#, with: "", options: .regularExpression)
+            return "search \(q)"
+        }
+        return nil
+    }
 }

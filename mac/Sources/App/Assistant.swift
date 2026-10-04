@@ -176,19 +176,23 @@ final class VoiceEngine: NSObject, ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
-        // Natural neural voices (Kokoro / Urdu-Hindi-Punjabi / Studio) live in the Sparrow web engine.
-        if UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true, WebHub.shared.isReady {
+        // Sparrow's built-in natural voice (fast, native). Falls back to Apple's voice instantly if it can't.
+        if UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true, NativeSpeech.shared.isAvailable {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
             speaking = true
             neuralTurn += 1
             let turn = neuralTurn
+            let text = String(clean.prefix(1200))
             Task { @MainActor in
-                let ok = await WebHub.shared.say(String(clean.prefix(1200)))
+                let ok = await NativeSpeech.shared.say(text) {
+                    if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
+                }
                 guard turn == self.neuralTurn else { return }
                 if !ok { self.appleSpeak(clean) }
                 else {
-                    // Safety net in case the page never reports the end.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 90) {
+                    // Safety net: never leave the microphone paused.
+                    let secs = 6.0 + Double(text.count) / 9.0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
                         MainActor.assumeIsolated { VoiceEngine.shared.neuralTimeout(turn) }
                     }
                 }
@@ -222,7 +226,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     func stopSpeaking() {
         synth.stopSpeaking(at: .immediate)
-        if speaking, neuralTurn > 0 { WebHub.shared.hush(); neuralEnded() }
+        if speaking, neuralTurn > 0 { NativeSpeech.shared.stop(); neuralEnded() }
     }
 
     /// Short natural pauses between sentences and after "Talha," — sounds far less robotic.
@@ -236,8 +240,17 @@ final class VoiceEngine: NSObject, ObservableObject {
         return AVSpeechUtterance(string: text)
     }
 
+    /// Set before speaking a question; Sparrow listens again as soon as it finishes.
+    var listenAfterSpeech = false
+
     fileprivate func speechFinished() {
         speaking = false
+        if listenAfterSpeech {
+            listenAfterSpeech = false
+            resumeAfterSpeech = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { VoiceEngine.shared.listenOnce() } }
+            return
+        }
         if resumeAfterSpeech {
             resumeAfterSpeech = false
             if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { startRecognition() }
@@ -254,6 +267,8 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     /// Mic button: listen for one command, no wake word needed.
     func listenOnce() {
+        // The mic button always wins: stop talking and listen right now.
+        if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
         requestPermissions { ok in
             guard ok else { return }
             self.oneShot = true
@@ -414,7 +429,17 @@ final class VoiceEngine: NSObject, ObservableObject {
         if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { startRecognition() }   // fresh transcript
         else if wasOneShot { stopRecognition(); status = "" }
 
-        guard let command else { return }
+        guard let command else {
+            // Hands-free: no need to say "Sparrow" first — act when it's clearly a request.
+            let handsFree = UserDefaults.standard.object(forKey: "handsFree") as? Bool ?? true
+            if handsFree, !said.isEmpty, AgentRouter.shared.isClearRequest(said) {
+                appendAppLog("voice.log", "hands-free command: \(said)")
+                Task { await Assistant.run(said, spoken: true) }
+            } else if !said.isEmpty {
+                appendAppLog("voice.log", "not for me (no \"Sparrow\"): \(said)")
+            }
+            return
+        }
         if command.isEmpty {
             // Like Siri: a quick chirp, the sparrow pops out and listens for the command.
             SoundEngine.shared.play("question")
@@ -442,8 +467,25 @@ extension VoiceEngine: AVSpeechSynthesizerDelegate {
 
 @MainActor
 enum Assistant {
+    static let notUnderstood = [
+        "Sorry, I didn't quite catch that. Could you say it again?",
+        "Hmm, I missed that one. Say it once more?",
+        "I didn't get that. Try something like \"open Spotify\" or \"play some music\".",
+    ]
+
+    /// A warm "say that again" — then Sparrow listens straight away.
+    static func askAgain() {
+        let line = notUnderstood.randomElement()!
+        AppState.shared.noteMessage = "🐦 " + line
+        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+        NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
+        VoiceEngine.shared.listenAfterSpeech = true
+        VoiceEngine.shared.speak(line)
+    }
+
     static func run(_ text: String, spoken: Bool) async {
         let state = AppState.shared
+
         // Voice: everyday commands run instantly without opening the chat.
         if spoken, let reply = await AgentRouter.shared.handle(text) {
             let actionWords = ["Opening", "Closing", "Playing", "Paused", "Next", "Previous", "Volume", "Muted",
@@ -459,6 +501,20 @@ enum Assistant {
                 VoiceEngine.shared.speak(reply)
             }
             return
+        }
+        if spoken {
+            // Habits, prayer times, memory, invoices… (Sparrow's offline brain)
+            if let reply = await WebHub.shared.ask(text) {
+                state.noteMessage = reply
+                NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+                NotificationCenter.default.post(name: .petSay, object: reply)
+                VoiceEngine.shared.speak(reply)
+                return
+            }
+            // Too short or garbled to be a real question, or no AI to ask: a warm "say that again".
+            if text.split(separator: " ").count <= 2 || (await AIService.shared.resolveProvider(state: state)) == nil {
+                askAgain(); return
+            }
         }
         state.chatHistory.append(ChatMessage(role: .user, content: text))
         state.stateOverride = .thinking

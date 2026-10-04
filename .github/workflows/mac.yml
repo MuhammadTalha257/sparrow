@@ -11,69 +11,74 @@ permissions:
   issues: write
 
 jobs:
-  # 1) The Sparrow web app + built-in natural voices, tested in a real browser.
-  web:
-    runs-on: ubuntu-latest
+  # 2) The Mac island app with everything inside.
+  build:
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "20" }
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
 
       - name: Copy the Sparrow web app
         run: |
-          mkdir -p web
-          cp index.html style.css app.js brain.js store.js ai.js i18n.js prayer.js memory.js tools.js sync.js neuralvoice.js manifest.webmanifest web/
-          cp -R lib icons web/
+          mkdir -p mac/Resources/web
+          cp index.html style.css app.js brain.js store.js ai.js i18n.js prayer.js memory.js tools.js sync.js neuralvoice.js manifest.webmanifest mac/Resources/web/
+          cp -R lib icons mac/Resources/web/
 
-      - name: Build the voice engine
-        working-directory: tools/voice-lib
-        run: |
-          npm ci --no-audit --no-fund
-          node build.mjs ../../web/lib/voice
-
-      - name: English voice (Kokoro-82M)
-        run: |
-          pip install -q huggingface_hub
-          python - <<'PY'
-          from huggingface_hub import snapshot_download
-          snapshot_download("onnx-community/Kokoro-82M-v1.0-ONNX", local_dir="web/models/kokoro",
-              allow_patterns=["config.json", "tokenizer.json", "tokenizer_config.json", "onnx/model_quantized.onnx",
-                              "voices/af_heart.bin", "voices/af_bella.bin", "voices/bf_emma.bin", "voices/am_michael.bin", "voices/bm_george.bin"])
-          PY
-          rm -rf web/models/kokoro/.cache
-
-      - name: Urdu, Hindi and Punjabi voices (MMS)
+      - name: Build the natural voice engine (sherpa-onnx)
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          mkdir -p dl && gh release download voices -p 'voice-*.tar.gz' -D dl --repo "$GITHUB_REPOSITORY"
-          for f in dl/voice-*.tar.gz; do
-            n=$(basename "$f" .tar.gz); n=${n#voice-}
-            tar -xzf "$f" -C web/models && mv "web/models/$n" "web/models/mms-$n"
+          set -e
+          fail() { echo "::error::$1"; exit 1; }
+          TAG=$(gh release view --repo k2-fsa/sherpa-onnx --json tagName -q .tagName)
+          echo "::notice::sherpa-onnx $TAG"
+          mkdir -p dl
+          gh release download "$TAG" --repo k2-fsa/sherpa-onnx -p "sherpa-onnx-$TAG-osx-universal2-shared.tar.bz2" -D dl \
+            || { gh release view "$TAG" --repo k2-fsa/sherpa-onnx --json assets -q '.assets[].name' | grep osx | head -9 | while read -r a; do echo "::warning::$a"; done; fail "no osx-universal2-shared asset"; }
+          tar -xjf dl/*.tar.bz2 -C dl
+          SH=$(find dl -maxdepth 1 -type d -name 'sherpa-onnx-*' | head -1)
+          ls "$SH" "$SH/lib"
+          OUT=mac/Resources/speech; mkdir -p "$OUT"
+          for a in arm64 x86_64; do
+            swiftc -O -swift-version 5 -target $a-apple-macos11 mac/speech/SparrowSpeech.swift \
+              -import-objc-header "$SH/include/sherpa-onnx/c-api/c-api.h" -L "$SH/lib" -lsherpa-onnx-c-api \
+              -Xlinker -rpath -Xlinker @executable_path -o sp-$a 2>&1 | tee -a swift.log
           done
-          du -sh web/models/* web/lib/voice
-
-      - name: Test the voices in a browser (and save samples to listen to)
-        working-directory: tools/voice-lib
-        run: |
-          npx playwright install --with-deps chromium > /dev/null
-          node test.mjs ../../web ../../samples 2>&1 | tee ../../voice-test.log
-          test ${PIPESTATUS[0]} -eq 0
-
-      - name: Keep only what the app uses
-        run: |
-          rm -rf web/models/mms-hin-x
-          rm -f web/models/mms-*/onnx/model_fp16.onnx
-          # The small q8 build is used when it works in the test above; otherwise the int8 one.
-          for k in urd urd-latn hin pan; do
-            if grep -q "voice $k ready as q8" voice-test.log; then rm -f "web/models/mms-$k/onnx/model_int8.onnx"
-            else rm -f "web/models/mms-$k/onnx/model_quantized.onnx"; fi
+          grep -E "error:" swift.log | head -9 | while IFS= read -r l; do echo "::error::$l"; done
+          lipo -create sp-arm64 sp-x86_64 -output "$OUT/SparrowSpeech"
+          cp -a "$SH"/lib/*.dylib "$OUT/"
+          otool -L "$OUT/SparrowSpeech" | head
+          # English voice: Kokoro (int8)
+          gh release download tts-models --repo k2-fsa/sherpa-onnx -p 'kokoro-int8-multi-lang-v1_0.tar.bz2' -D dl || fail "kokoro model missing"
+          tar -xjf dl/kokoro-int8-multi-lang-v1_0.tar.bz2 -C dl
+          K=$(find dl -maxdepth 1 -type d -name 'kokoro-int8-multi-lang-v1_0*' | head -1); ls -la "$K"
+          mkdir -p "$OUT/kokoro"
+          cp "$K"/*.onnx "$K/voices.bin" "$K/tokens.txt" "$OUT/kokoro/"
+          [ -f "$K/lexicon-us-en.txt" ] && cp "$K/lexicon-us-en.txt" "$OUT/kokoro/"
+          cp -R "$K/espeak-ng-data" "$OUT/kokoro/"
+          # Urdu / Roman Urdu / Hindi / Punjabi: MMS (int8)
+          gh release download voices-native -p 'vits-mms-*.tar.bz2' -D dl --repo "$GITHUB_REPOSITORY" || fail "native MMS voices missing"
+          for f in dl/vits-mms-*.tar.bz2; do
+            n=$(basename "$f" .tar.bz2); n=${n#vits-mms-}
+            tar -xjf "$f" -C dl && mkdir -p "$OUT/mms-$n" && cp dl/vits-mms-$n/* "$OUT/mms-$n/"
           done
-          du -sh web/models/* web
+          find "$OUT" -name '*.dylib' -o -name SparrowSpeech | while read -r f; do codesign --force -s - "$f" 2>/dev/null || true; done
+          du -sh "$OUT"/*
 
-      - uses: actions/upload-artifact@v4
-        with: { name: web, path: web, retention-days: 3 }
+      - name: Test the voice engine
+        run: |
+          OUT=mac/Resources/speech
+          ( printf '%s\n' \
+            '{"cmd":"render","text":"Hi Talha! You have a meeting with Ali in five minutes. Shall I open Zoom for you?","model":"kokoro","sid":3,"path":"/tmp/en.wav"}' \
+            '{"cmd":"render","text":"السلام علیکم طلحہ! پانچ منٹ میں آپ کی میٹنگ ہے۔","model":"urd","path":"/tmp/ur.wav"}' \
+            '{"cmd":"render","text":"Talha, aap ki meeting paanch minute mein hai.","model":"urd-latn","path":"/tmp/url.wav"}' \
+            '{"cmd":"render","text":"नमस्ते तलहा! पाँच मिनट में आपकी मीटिंग है।","model":"hin","path":"/tmp/hi.wav"}' \
+            '{"cmd":"render","text":"ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਪੰਜ ਮਿੰਟ ਵਿੱਚ ਤੁਹਾਡੀ ਮੀਟਿੰਗ ਹੈ।","model":"pan","path":"/tmp/pa.wav"}'; sleep 90 ) \
+            | "$OUT/SparrowSpeech" "$OUT" > speech.log 2>&1 &
+          for i in $(seq 1 90); do [ "$(grep -c rendered speech.log)" -ge 5 ] && break; sleep 1; done
+          cat speech.log
+          grep -E '"ev":"(rendered|loaded|error)"' speech.log | while IFS= read -r l; do echo "::notice::$l"; done
+          [ "$(grep -c rendered speech.log)" -ge 5 ] || { echo "::error::voice engine test failed"; exit 1; }
+          mkdir -p samples && cp /tmp/en.wav samples/sparrow-native-english.wav && cp /tmp/ur.wav samples/sparrow-native-urdu.wav \
+            && cp /tmp/url.wav samples/sparrow-native-roman-urdu.wav && cp /tmp/hi.wav samples/sparrow-native-hindi.wav && cp /tmp/pa.wav samples/sparrow-native-punjabi.wav
 
       - name: Publish voice samples
         if: always()
@@ -84,17 +89,6 @@ jobs:
           prerelease: true
           make_latest: false
           files: samples/*
-          body: |
-            Listen to Sparrow's built-in voices: download any `.wav` file. `report.txt` shows how quickly each was made.
-
-  # 2) The Mac island app with everything inside.
-  build:
-    needs: web
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with: { name: web, path: mac/Resources/web }
 
       - name: Build Sparrow.app (Apple silicon + Intel)
         working-directory: mac

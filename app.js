@@ -895,7 +895,7 @@ function fillSettings() {
   $('#sSimple').checked = s.simple; $('#sSpeak').checked = s.speak; $('#sWake').checked = s.wake; $('#sConv').checked = s.conversation; $('#sMic').checked = s.micButton !== false;
   $$('#sGender button').forEach(b => b.classList.toggle('on', b.dataset.g === s.gender));
   $('#sVoiceName').innerHTML = '<option value="">Automatic</option>' + Object.entries(nv.KOKORO_VOICES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-  $('#sVoiceName').value = s.voiceName || ''; $('#sNeural').checked = s.neural !== false;
+  $('#sVoiceName').value = s.voiceName || ''; $('#sNeural').checked = s.neural !== false; $('#sHandsFree').checked = s.handsFree !== false; $('#handsFreeRow').hidden = !M;
   $('#macVoice').hidden = !M;
   if (M) {
     $('#sListen').value = s.listen || ''; $('#sStudio').checked = !!s.studio;
@@ -925,7 +925,7 @@ async function openSettings(section) {
 function saveSettings() {
   const s = S();
   s.name = $('#sName').value.trim(); s.city = $('#sCity').value.trim(); s.lang = $('#sLang').value; s.simple = $('#sSimple').checked;
-  s.voiceName = $('#sVoiceName').value; s.neural = $('#sNeural').checked;
+  s.voiceName = $('#sVoiceName').value; s.neural = $('#sNeural').checked; s.handsFree = $('#sHandsFree').checked;
   if (M) { s.listen = $('#sListen').value; s.studio = $('#sStudio').checked; }
   s.speak = $('#sSpeak').checked; s.wake = $('#sWake').checked; s.conversation = $('#sConv').checked; s.micButton = $('#sMic').checked;
   s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30'; s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
@@ -943,9 +943,9 @@ $('#closeSheet').onclick = closeSheets;
 $$('#sTheme button').forEach(b => b.onclick = () => { S().theme = b.dataset.th; $$('#sTheme button').forEach(x => x.classList.toggle('on', x === b)); applyLook(); store.save(); });
 $('#sSimple').onchange = e => { S().simple = e.target.checked; applyLook(); };
 $('#sLang').onchange = e => { S().lang = e.target.value; applyLook(); renderHeader(); };
-$$('#sGender button').forEach(b => b.onclick = () => { S().gender = b.dataset.g; $$('#sGender button').forEach(x => x.classList.toggle('on', x === b)); store.save(); });
+$$('#sGender button').forEach(b => b.onclick = () => { S().gender = b.dataset.g; $$('#sGender button').forEach(x => x.classList.toggle('on', x === b)); store.save(); sendVoicePrefs(); });
 $('#studioInstall').onclick = () => { M?.post('studio', { action: 'install' }); toast('A Terminal window opens and installs the Studio voice — keep it open until it says ✅.', 7000); };
-$('#sVoiceName').onchange = e => { S().voiceName = e.target.value; store.save(); };
+$('#sVoiceName').onchange = e => { S().voiceName = e.target.value; store.save(); sendVoicePrefs(); };
 $('#sLang').addEventListener('change', () => { store.save(); sendVoicePrefs(); });
 $('#testVoice').onclick = () => speak(S().lang === 'ur' ? 'السلام علیکم! میں سپیرو ہوں۔ آپ کی کیا مدد کروں؟' : S().lang === 'hi' ? 'नमस्ते! मैं स्पैरो हूँ। बताइए, मैं क्या मदद करूँ?' : S().lang === 'pa' ? 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਸਪੈਰੋ ਹਾਂ। ਦੱਸੋ, ਮੈਂ ਕੀ ਮਦਦ ਕਰਾਂ?' : `Hi${S().name ? ' ' + S().name : ''}! I'm Sparrow. Ready when you are.`);
 $('#pCalendar').onclick = async () => { const l = await getLocation(); if (!l) return toast('I need your location or city first.'); downloadICS(prayerICS(l.lat, l.lon, 30), 'Prayer times'); };
@@ -1103,6 +1103,6 @@ window.Sparrow = {
 function sendVoicePrefs() {
   if (!M) return;
   const listen = S().listen || ({ en: 'en-US', ur: 'en-IN', hi: 'en-IN', pa: 'en-IN', ar: 'ar-SA' }[S().lang] || 'en-US');
-  M.post('prefs', { listen, neural: S().neural !== false, studio: !!S().studio });
+  M.post('prefs', { listen, neural: S().neural !== false, studio: !!S().studio, lang: S().lang || 'en', voiceName: S().voiceName || '', gender: S().gender || 'female', handsFree: S().handsFree !== false });
 }
-if (M) { M.post('ready'); sendVoicePrefs(); setTimeout(async () => { await nv.warmUp(); nv.prepareCommon(S().voiceName || (S().gender === 'male' ? 'bm_george' : 'af_heart')); }, 2500); }
+if (M) { M.post('ready'); sendVoicePrefs(); }   // the Mac app speaks with its own fast native voice engine

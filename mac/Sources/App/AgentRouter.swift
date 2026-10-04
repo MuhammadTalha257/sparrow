@@ -36,7 +36,9 @@ final class AgentRouter {
     }
 
     private func single(_ raw: String) async -> String? {
-        let t = Translit.toCommand(raw)
+        let base = Translit.toCommand(raw)
+        let t = CommandEngine.shared.intent(base) ?? base
+        if t != base { appendAppLog("agents.log", "understood \"\(raw)\" as \"\(t)\"") }
         if let r = await ContactsAgent.shared.handle(t, original: raw) { return r }
         if let r = MessagesAgent.shared.handle(t) { return r }
         if let r = NotesAgent.shared.handle(t) { return r }
@@ -73,8 +75,22 @@ final class AgentRouter {
         return steps.count > 1 && isAction(steps[0]) ? steps : [raw]
     }
 
+    /// Hands-free: is this clearly something to do (so Sparrow acts without hearing its name first)?
+    func isClearRequest(_ s: String) -> Bool {
+        let base = Translit.toCommand(s)
+        if CommandEngine.shared.intent(base) != nil { return true }
+        if split(s).count > 1 { return true }
+        let t = base.lowercased()
+        let starts = ["remind me", "add task", "take a note", "note ", "save this", "save that", "message ", "text ", "whatsapp ",
+                      "what time", "what's the time", "what's the weather", "weather", "prayer times", "battery", "lock screen", "dark mode",
+                      "light mode", "screenshot", "new chat", "naya chat", "what's on", "what do i have", "my tasks", "brief me", "snooze"]
+        return starts.contains { t.hasPrefix($0) } || (t.contains("number") && (t.contains("save") || t.contains("what")))
+    }
+
     func isAction(_ s: String) -> Bool {
-        let t = Translit.toCommand(s).lowercased()
+        let base = Translit.toCommand(s)
+        if CommandEngine.shared.intent(base) != nil { return true }
+        let t = base.lowercased()
         let starts = ["open ", "launch ", "start ", "quit ", "close ", "play", "pause", "stop music", "next", "previous", "skip",
                       "volume", "mute", "unmute", "search ", "google ", "youtube ", "lock", "dark mode", "light mode", "screenshot",
                       "remind me", "add task", "note", "take a note", "save this", "save that", "save ", "write down", "message ",

@@ -154,6 +154,10 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         case "prefs":
             if let l = o["listen"] as? String, !l.isEmpty { VoiceEngine.shared.setListenLocale(l) }
             if let n = o["neural"] as? Bool { UserDefaults.standard.set(n, forKey: "neuralVoice") }
+            if let l = o["lang"] as? String { UserDefaults.standard.set(l, forKey: "sparrowLang") }
+            if let v = o["voiceName"] as? String { UserDefaults.standard.set(v, forKey: "voiceName") }
+            if let g = o["gender"] as? String { UserDefaults.standard.set(g, forKey: AssistantPrefs.voiceGender) }
+            if let h = o["handsFree"] as? Bool { UserDefaults.standard.set(h, forKey: "handsFree") }
             if let st = o["studio"] as? Bool { UserDefaults.standard.set(st, forKey: "studioVoice"); if st { StudioVoice.shared.start() } }
         case "studio":
             switch o["action"] as? String {

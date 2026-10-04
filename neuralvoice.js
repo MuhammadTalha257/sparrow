@@ -12,6 +12,7 @@ const STUDIO = 'http://127.0.0.1:47321';
 export const KOKORO_VOICES = {
   af_heart: 'Heart (warm, American)', af_bella: 'Bella (bright, American)', bf_emma: 'Emma (British)',
   am_michael: 'Michael (calm, American)', bm_george: 'George (British)',
+  ...(window.SparrowHost === 'mac' ? { af_nicole: 'Nicole (soft, American)', bf_isabella: 'Isabella (British)', bm_lewis: 'Lewis (British)' } : {}),
 };
 const MMS = { urd: 'mms-urd', 'urd-latn': 'mms-urd-latn', hin: 'mms-hin', pan: 'mms-pan', 'hin-x': 'mms-hin-x' };
 const PROBE = { urd: 'سلام', 'urd-latn': 'salam', hin: 'नमस्ते', pan: 'ਸਤ ਸ੍ਰੀ', 'hin-x': 'नमस्ते' };

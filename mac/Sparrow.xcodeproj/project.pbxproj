@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ECEC694263668830BBD68EB2 /* NativeSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77091C717DACBACC21C450F /* NativeSpeech.swift */; };
+		BF45817AD497779E4A6B317F /* NativeSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77091C717DACBACC21C450F /* NativeSpeech.swift */; };
 		E902FF590DA9DB3ACF4AB038 /* AgentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */; };
 		CA8D0C5E4184609464D0EA75 /* AgentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */; };
 		032291879CF46ED4CA957E73 /* StudioVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C80BF14A616585C9854E4BA /* StudioVoice.swift */; };
@@ -71,6 +73,8 @@
 		B3EC9CF3C8BD629C3530E8F1 /* sounds in Resources */ = {isa = PBXBuildFile; fileRef = C066E2B991AA4F56B2724263 /* sounds */; };
 		A1B2C3D4E5F60718293A4B01 /* web in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B00 /* web */; };
 		A1B2C3D4E5F60718293A4B11 /* studio in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B10 /* studio */; };
+		A1B2C3D4E5F60718293A4B21 /* speech in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B20 /* speech */; };
+		A1B2C3D4E5F60718293A4B22 /* speech in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B20 /* speech */; };
 		A1B2C3D4E5F60718293A4B12 /* studio in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B10 /* studio */; };
 		A1B2C3D4E5F60718293A4B02 /* web in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B00 /* web */; };
 		B605F976F4141435F27CF266 /* IslandRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15A1A8206F73376F4CAF2057 /* IslandRootView.swift */; };
@@ -96,6 +100,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B77091C717DACBACC21C450F /* NativeSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSpeech.swift; sourceTree = "<group>"; };
 		96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRouter.swift; sourceTree = "<group>"; };
 		5C80BF14A616585C9854E4BA /* StudioVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioVoice.swift; sourceTree = "<group>"; };
 		F509572E5EA0BB745FA4AFD4 /* WebHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebHub.swift; sourceTree = "<group>"; };
@@ -133,6 +138,7 @@
 		C066E2B991AA4F56B2724263 /* sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = sounds; path = Resources/sounds; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60718293A4B00 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = Resources/web; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60718293A4B10 /* studio */ = {isa = PBXFileReference; lastKnownFileType = folder; name = studio; path = Resources/studio; sourceTree = SOURCE_ROOT; };
+		A1B2C3D4E5F60718293A4B20 /* speech */ = {isa = PBXFileReference; lastKnownFileType = folder; name = speech; path = Resources/speech; sourceTree = SOURCE_ROOT; };
 		C2E4F18AA940EFF7E047B9F7 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		C581F7B1A9F14B281B60063E /* GreetingCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GreetingCanvasView.swift; sourceTree = "<group>"; };
 		D4540F630F8BA04AFFFA3979 /* BotEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotEngine.swift; sourceTree = "<group>"; };
@@ -154,6 +160,7 @@
 				D4540F630F8BA04AFFFA3979 /* BotEngine.swift */,
 				3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */,
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
+				B77091C717DACBACC21C450F /* NativeSpeech.swift */,
 				96BE0EF865BAAA699BC7DCD0 /* AgentRouter.swift */,
 				5C80BF14A616585C9854E4BA /* StudioVoice.swift */,
 				F509572E5EA0BB745FA4AFD4 /* WebHub.swift */,
@@ -223,6 +230,7 @@
 				C066E2B991AA4F56B2724263 /* sounds */,
 				A1B2C3D4E5F60718293A4B00 /* web */,
 				A1B2C3D4E5F60718293A4B10 /* studio */,
+				A1B2C3D4E5F60718293A4B20 /* speech */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -313,6 +321,7 @@
 				B3EC9CF3C8BD629C3530E8F1 /* sounds in Resources */,
 				A1B2C3D4E5F60718293A4B01 /* web in Resources */,
 				A1B2C3D4E5F60718293A4B11 /* studio in Resources */,
+				A1B2C3D4E5F60718293A4B21 /* speech in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -324,6 +333,7 @@
 				F06EE0A97CB77096A337AA8B /* sounds in Resources */,
 				A1B2C3D4E5F60718293A4B02 /* web in Resources */,
 				A1B2C3D4E5F60718293A4B12 /* studio in Resources */,
+				A1B2C3D4E5F60718293A4B22 /* speech in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -341,6 +351,7 @@
 				C24D863967D8D32D828ED4B1 /* BotEngine.swift in Sources */,
 				4F1E0B3C838DA3CD6F864BC0 /* CalcomPoller.swift in Sources */,
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
+				BF45817AD497779E4A6B317F /* NativeSpeech.swift in Sources */,
 				CA8D0C5E4184609464D0EA75 /* AgentRouter.swift in Sources */,
 				C15BCE7E02F8B526FF1E30B3 /* StudioVoice.swift in Sources */,
 				9DFB2633F5AD50BA695216BD /* WebHub.swift in Sources */,
@@ -387,6 +398,7 @@
 				0E9CE475EC53C67DAB00F8E5 /* BotEngine.swift in Sources */,
 				1969590AFEE6CB21404346F1 /* CalcomPoller.swift in Sources */,
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
+				ECEC694263668830BBD68EB2 /* NativeSpeech.swift in Sources */,
 				E902FF590DA9DB3ACF4AB038 /* AgentRouter.swift in Sources */,
 				032291879CF46ED4CA957E73 /* StudioVoice.swift in Sources */,
 				284E31A5C9C487575A38B96A /* WebHub.swift in Sources */,
