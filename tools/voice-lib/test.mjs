@@ -29,7 +29,8 @@ const lines = [
 ];
 const browser = await chromium.launch();
 const page = await browser.newPage();
-page.on('console', m => console.log('  page:', m.text()));
+page.on('console', m => { console.log('  page:', m.text()); if (m.type() === 'error') console.log('::warning::page: ' + m.text().slice(0, 300)); });
+page.on('pageerror', e => console.log('::error::page error: ' + e.message.slice(0, 300)));
 await page.goto('http://localhost:8765/voicetest.html');
 await page.waitForFunction('window.ready === true', null, { timeout: 30000 });
 let failed = 0;
@@ -45,9 +46,9 @@ for (const [name, lang, text, voice] of lines) {
     const ms = Date.now() - t0;
     fs.writeFileSync(path.join(out, `sparrow-voice-${name}.wav`), Buffer.from(r.b64, 'base64'));
     const line = `${name}: ${r.model}, ${r.seconds.toFixed(1)}s of audio in ${(ms / 1000).toFixed(1)}s`;
-    console.log('✓', line); report.push('✓ ' + line);
-    if (r.seconds < 1) { failed++; console.log('✗ too short'); }
-  } catch (e) { failed++; console.log('✗', name, e.message); report.push(`✗ ${name}: ${e.message}`); }
+    console.log('::notice::✓ ' + line); report.push('✓ ' + line);
+    if (r.seconds < 1) { failed++; console.log('::error::' + name + ' too short'); }
+  } catch (e) { failed++; console.log('::error::✗ ' + name + ': ' + String(e.message).slice(0, 400)); report.push(`✗ ${name}: ${e.message}`); }
 }
 fs.writeFileSync(path.join(out, 'report.txt'), report.join('\n') + '\n');
 fs.unlinkSync(path.join(root, 'voicetest.html'));
