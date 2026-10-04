@@ -15,7 +15,7 @@ export const KOKORO_VOICES = {
 };
 const MMS = { urd: 'mms-urd', 'urd-latn': 'mms-urd-latn', hin: 'mms-hin', pan: 'mms-pan', 'hin-x': 'mms-hin-x' };
 const PROBE = { urd: 'سلام', 'urd-latn': 'salam', hin: 'नमस्ते', pan: 'ਸਤ ਸ੍ਰੀ', 'hin-x': 'नमस्ते' };
-export const MMS_DTYPES = ['int8', 'q8'];
+export const MMS_DTYPES = ['q8', 'int8'];
 const ortMessage = e => (typeof e === 'number' || /^\d+$/.test(String(e?.message ?? e))) ? 'engine error ' + (e?.message ?? e) : String(e?.message || e);
 
 let lib = null, kokoro = null, kokoroLoading = null;

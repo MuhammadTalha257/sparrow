@@ -58,12 +58,19 @@ jobs:
         working-directory: tools/voice-lib
         run: |
           npx playwright install --with-deps chromium > /dev/null
-          node test.mjs ../../web ../../samples
+          node test.mjs ../../web ../../samples 2>&1 | tee ../../voice-test.log
+          test ${PIPESTATUS[0]} -eq 0
 
       - name: Keep only what the app uses
         run: |
           rm -rf web/models/mms-hin-x
-          rm -f web/models/mms-*/onnx/model_fp16.onnx web/models/mms-*/onnx/model_quantized.onnx
+          rm -f web/models/mms-*/onnx/model_fp16.onnx
+          # The small q8 build is used when it works in the test above; otherwise the int8 one.
+          if grep -q "ready as q8" samples/report.txt 2>/dev/null || grep -q "ready as q8" voice-test.log 2>/dev/null; then
+            rm -f web/models/mms-*/onnx/model_int8.onnx
+          else
+            rm -f web/models/mms-*/onnx/model_quantized.onnx
+          fi
           du -sh web/models/* web
 
       - uses: actions/upload-artifact@v4
