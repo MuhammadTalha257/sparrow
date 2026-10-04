@@ -1,2 +1,2 @@
 export { KokoroTTS } from 'kokoro-js';
-export { pipeline, env } from '@huggingface/transformers';
+export { env, VitsModel, AutoTokenizer } from '@huggingface/transformers';

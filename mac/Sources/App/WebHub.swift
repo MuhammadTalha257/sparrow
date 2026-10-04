@@ -27,7 +27,10 @@ final class SparrowSchemeHandler: NSObject, WKURLSchemeHandler {
             "webmanifest": "application/manifest+json", "png": "image/png", "svg": "image/svg+xml", "wasm": "application/wasm",
         ][ext] ?? "application/octet-stream"
         let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
-                                   headerFields: ["Content-Type": mime, "Content-Length": "\(data.count)", "Access-Control-Allow-Origin": "*"])!
+                                   headerFields: ["Content-Type": mime, "Content-Length": "\(data.count)", "Access-Control-Allow-Origin": "*",
+                                                  // lets the voice engine use several CPU cores (SharedArrayBuffer)
+                                                  "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp",
+                                                  "Cross-Origin-Resource-Policy": "same-origin"])!
         urlSchemeTask.didReceive(resp)
         urlSchemeTask.didReceive(data)
         urlSchemeTask.didFinish()

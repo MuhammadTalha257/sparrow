@@ -41,6 +41,7 @@ async function loadLib() {
   env.backends.onnx.wasm.wasmPaths = LIB;
   env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
   globalThis.SPARROW_KOKORO_VOICES = MODELS + 'kokoro/voices/';
+  log('engine: threads', env.backends.onnx.wasm.numThreads, 'isolated', !!self.crossOriginIsolated, 'secure', !!self.isSecureContext);
   return lib;
 }
 
@@ -59,8 +60,15 @@ async function getKokoro() {
 async function getMMS(key) {
   if (mms[key]) return mms[key];
   mms[key] = (async () => {
-    const { pipeline } = await loadLib();
-    return pipeline('text-to-speech', MMS[key], { dtype: 'q8', device: 'wasm' });
+    const { VitsModel, AutoTokenizer } = await loadLib();
+    const [tok, model] = await Promise.all([
+      AutoTokenizer.from_pretrained(MMS[key]),
+      VitsModel.from_pretrained(MMS[key], { dtype: 'q8', device: 'wasm' }),
+    ]);
+    return async text => {
+      const { waveform } = await model(tok(text));
+      return { audio: waveform.data, sampling_rate: model.config.sampling_rate };
+    };
   })().catch(e => { delete mms[key]; throw e; });
   return mms[key];
 }
@@ -99,8 +107,42 @@ function sentences(text) {
   return out;
 }
 
+// ---------- a small cache: phrases Sparrow says often play instantly ----------
+let dbP = null;
+function db() {
+  if (!dbP) dbP = new Promise(res => {
+    try {
+      const r = indexedDB.open('sparrow-voice-cache', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('a');
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null);
+    } catch { res(null); }
+  });
+  return dbP;
+}
+async function cacheGet(k) {
+  const d = await db(); if (!d) return null;
+  return new Promise(res => { try { const q = d.transaction('a').objectStore('a').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); } catch { res(null); } });
+}
+async function cachePut(k, v) {
+  const d = await db(); if (!d) return;
+  try {
+    const st = d.transaction('a', 'readwrite').objectStore('a');
+    st.put(v, k);
+    const c = st.count(); c.onsuccess = () => { if (c.result > 600) st.clear(); };
+  } catch {}
+}
+
 // ---------- generation ----------
 async function speakChunk(model, text, o) {
+  if (model === 'studio' || text.length > 140) return generate(model, text, o);
+  const key = `${model}|${o.voice}|${o.speed}|${text}`;
+  const hit = await cacheGet(key);
+  if (hit) return hit.wav ? { wav: hit.wav } : { pcm: hit.pcm, rate: hit.rate };
+  const out = await generate(model, text, o);
+  if (out.pcm) cachePut(key, { pcm: out.pcm instanceof Float32Array ? out.pcm : Float32Array.from(out.pcm), rate: out.rate });
+  return out;
+}
+async function generate(model, text, o) {
   if (model === 'studio') {
     const r = await fetch(STUDIO + '/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang: o.lang || 'en', speed: o.speed || 1 }) });
     if (!r.ok) throw new Error('studio ' + r.status);
