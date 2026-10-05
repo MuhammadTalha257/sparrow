@@ -1,0 +1,7 @@
+{
+  "name": "sparrow-launch-film",
+  "private": true,
+  "type": "module",
+  "scripts": { "render": "node render.mjs out" },
+  "dependencies": { "kokoro-js": "1.2.1", "playwright": "1.55.0" }
+}

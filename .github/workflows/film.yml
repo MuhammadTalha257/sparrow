@@ -1,0 +1,42 @@
+name: Render launch film
+
+on:
+  push:
+    paths: ["marketing/**", ".github/workflows/film.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  film:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Tools
+        working-directory: marketing
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium > /dev/null
+      - name: Render (animation + Kokoro voiceover + score)
+        working-directory: marketing
+        run: |
+          node render.mjs out 2>&1 | tee render.log
+          grep -E "^line" render.log | while IFS= read -r l; do echo "::notice::$l"; done
+          ls -lh out
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: launch-film
+          name: Sparrow — 30-second launch film
+          prerelease: true
+          make_latest: false
+          files: |
+            marketing/out/sparrow-30s.mp4
+            marketing/out/sparrow-poster.jpg
+            marketing/share-copy.txt
+          body: |
+            30-second animated launch film for Sparrow (1920×1080, 30 fps) with voiceover and an original soundtrack.
+            `sparrow-30s.mp4` — the film · `sparrow-poster.jpg` — thumbnail · `share-copy.txt` — captions for posting.

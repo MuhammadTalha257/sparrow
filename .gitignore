@@ -12,3 +12,5 @@ tools/voice-lib/node_modules/
 tools/voice-lib/dist/
 mac/Resources/web/
 mac/Resources/speech/
+marketing/node_modules/
+marketing/out/
