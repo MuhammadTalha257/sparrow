@@ -286,10 +286,10 @@ extension Planner {
     func ensureAccess() async -> (calendar: Bool, reminders: Bool) {
         let c: Bool
         if EKEventStore.authorizationStatus(for: .event) == .fullAccess { c = true }
-        else { c = await withCheckedContinuation { cont in Planner.store.requestFullAccessToEvents { ok, _ in cont.resume(returning: ok) } } }
+        else { c = await Planner.askEvents() }        // asked off the main thread: the permission reply arrives on a background queue
         let r: Bool
         if EKEventStore.authorizationStatus(for: .reminder) == .fullAccess { r = true }
-        else { r = await withCheckedContinuation { cont in Planner.store.requestFullAccessToReminders { ok, _ in cont.resume(returning: ok) } } }
+        else { r = await Planner.askReminders() }
         return (c, r)
     }
 

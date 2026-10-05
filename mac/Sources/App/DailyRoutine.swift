@@ -14,12 +14,12 @@ final class Planner {
 
     // MARK: Permissions
 
-    nonisolated private static func askEvents() async -> Bool {
+    nonisolated static func askEvents() async -> Bool {
         await withCheckedContinuation { cont in
             store.requestFullAccessToEvents { ok, _ in cont.resume(returning: ok) }
         }
     }
-    nonisolated private static func askReminders() async -> Bool {
+    nonisolated static func askReminders() async -> Bool {
         await withCheckedContinuation { cont in
             store.requestFullAccessToReminders { ok, _ in cont.resume(returning: ok) }
         }
