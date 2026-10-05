@@ -159,6 +159,15 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         }
     }
 
+    /// A value from the job agent's CV profile ("email", "phone", "cover letter"…), for "Sparrow, type my email".
+    func jobField(_ name: String) async -> String? {
+        start()
+        for _ in 0..<30 where !ready { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard ready, let wv = webView else { return nil }
+        let r = try? await wv.callAsyncJavaScript("return window.Sparrow.jobField ? window.Sparrow.jobField(n) : ''", arguments: ["n": name], in: nil, contentWorld: .page)
+        return (r as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     func hush() { run("window.Sparrow && window.Sparrow.neuralStop && window.Sparrow.neuralStop()") }
 
     /// Lets the shared app answer things the island doesn't know (habits, invoices, memory…). nil = not handled.
@@ -227,7 +236,11 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         case "save":
             save(name: o["name"] as? String ?? "Sparrow file", base64: o["base64"] as? String ?? "", id: id)
         case "http":
-            http(url: o["url"] as? String ?? "", headers: o["headers"] as? [String: String] ?? [:], body: o["body"] as? String ?? "", id: id)
+            http(url: o["url"] as? String ?? "", method: o["method"] as? String ?? "POST", headers: o["headers"] as? [String: String] ?? [:], body: o["body"] as? String ?? "", id: id)
+        case "complete":
+            // The job agent's AI fallback: uses the keys saved in Sparrow's own settings.
+            let prompt = o["prompt"] as? String ?? ""
+            Task { if let t = await SmartPlanner.shared.complete(prompt) { self.reply(id, t) } else { self.reply(id, NSNull()) } }
         case "location":
             Task {
                 if let l = await LocationProvider.shared.current() { self.reply(id, ["lat": l.lat, "lon": l.lon, "city": l.city]) }
@@ -258,13 +271,14 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         } else { reply(id, NSNull()) }
     }
 
-    private func http(url: String, headers: [String: String], body: String, id: Int) {
+    private func http(url: String, method: String = "POST", headers: [String: String], body: String, id: Int) {
         guard let u = URL(string: url), u.scheme == "https" else { reply(id, ["status": 400, "text": "{\"error\":{\"message\":\"Blocked\"}}"]); return }
-        var req = URLRequest(url: u, timeoutInterval: 90)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var req = URLRequest(url: u, timeoutInterval: method == "GET" ? 20 : 90)
+        req.httpMethod = method == "GET" ? "GET" : "POST"
+        req.setValue("application/json", forHTTPHeaderField: method == "GET" ? "Accept" : "Content-Type")
+        if method == "GET" { req.setValue("Sparrow/1.0 (Macintosh)", forHTTPHeaderField: "User-Agent") }
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
-        req.httpBody = body.data(using: .utf8)
+        if method != "GET" { req.httpBody = body.data(using: .utf8) }
         Task {
             do {
                 let (data, resp) = try await URLSession.shared.data(for: req)

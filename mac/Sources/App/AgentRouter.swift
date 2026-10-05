@@ -52,11 +52,35 @@ final class AgentRouter {
         if lowered.range(of: #"^(hide|minimi[sz]e) (yourself|sparrow|the island)$|^go hide$"#, options: .regularExpression) != nil {
             SparrowBubble.shared.hideIsland(); return "I'll wait in my little bubble. Click it when you need me."
         }
-        if lowered.range(of: #"^(start|begin|take|record)( the| my)? (meeting )?(notes|minutes)|^(start|begin) (recording|transcribing) (the )?meeting|^meeting notes( start)?$|^take notes$"#, options: .regularExpression) != nil {
+        if lowered.range(of: #"^(start|begin|take|record)( the| my)? (meeting )?(notes|minutes)|^(start|begin) (recording|transcribing) (the )?meeting|^meeting notes( start)?$|^take notes$"#, options: .regularExpression) != nil
+            || (lowered.range(of: #"^(?:start|begin|take|turn on|record|start taking|switch on)(?:\s+(?:the|my|this|meeting|call|video|zoom|teams|whatsapp|notes|minutes|recording|transcript|taking|of|on))+$"#, options: .regularExpression) != nil
+                && lowered.range(of: #"\b(meeting|notes|minutes|recording|transcript)\b"#, options: .regularExpression) != nil) {
             return MeetingNotes.shared.start()
         }
         if lowered.range(of: #"^(stop|end|finish|save)( the| my)? (meeting )?(notes|minutes|recording)|^meeting (khatam|over|done)"#, options: .regularExpression) != nil {
             return await MeetingNotes.shared.stop()
+        }
+        // Job agent: "type my email" fills the box you clicked in an application form with your CV details.
+        if let m = lowered.range(of: #"^(?:type|fill|paste|enter|likho) (?:in )?(?:my |the )?(email|e-mail|phone(?: number)?|mobile(?: number)?|number|full name|first name|last name|surname|name|linkedin(?: url| profile)?|website|portfolio|github|city|location|address|headline|cover letter|pitch|summary)$"#, options: .regularExpression) {
+            let field = String(lowered[m]).replacingOccurrences(of: #"^(?:type|fill|paste|enter|likho) (?:in )?(?:my |the )?"#, with: "", options: .regularExpression)
+            guard let value = await WebHub.shared.jobField(field) else {
+                return "I don't have your \(field) yet. Add your CV in the job agent and I'll remember it."
+            }
+            if let front = AppState.shared.lastExternalApp { front.activate(options: []) }
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            // Paste (fast, keeps line breaks, never presses Enter by accident), then put your clipboard back.
+            let pb = NSPasteboard.general, old = pb.string(forType: .string)
+            pb.clearContents(); pb.setString(value, forType: .string)
+            _ = CommandEngine.shared.runAppleScript("tell application \"System Events\" to keystroke \"v\" using command down")
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            if let old { pb.clearContents(); pb.setString(old, forType: .string) }
+            return field.contains("cover") ? "Pasted your cover letter." : "Typed your \(field)."
+        }
+        // Job agent: CV, job search, cover letters, applications → the shared app's job agent.
+        if lowered.range(of: #"\b(cv|resume|résumé)\b|\b(jobs?|vacanc(y|ies)|naukri|cover letter|job applications?|job tracker)\b"#, options: .regularExpression) != nil,
+           lowered.range(of: #"^(find|search|look for|show|get|analy[sz]e|review|check|score|rate|improve|tailor|customi[sz]e|write|make|apply|my|which|what|open|job|jobs|meri|mera|mere)\b|(dhoondo|dhundo|talash karo|dikhao|check karo)$"#, options: .regularExpression) != nil,
+           let r = await WebHub.shared.ask(raw) {
+            return r
         }
         // Mac control first (shut down, Wi-Fi, Bluetooth, windows…), on the words as said and as understood.
         if let r = MacControl.shared.handle(raw) ?? MacControl.shared.handle(base) { return r }
@@ -105,7 +129,7 @@ final class AgentRouter {
         if CommandEngine.shared.intent(base) != nil { return true }
         if split(s).count > 1 { return true }
         let t = base.lowercased()
-        let starts = ["remind me", "add task", "take a note", "note ", "save this", "save that", "message ", "text ", "whatsapp ",
+        let starts = ["find jobs", "analyse my cv", "analyze my cv", "remind me", "add task", "take a note", "note ", "save this", "save that", "message ", "text ", "whatsapp ",
                       "what time", "what's the time", "what's the weather", "weather", "prayer times", "battery", "lock screen", "dark mode",
                       "light mode", "screenshot", "new chat", "naya chat", "what's on", "what do i have", "my tasks", "brief me", "snooze"]
         return starts.contains { t.hasPrefix($0) } || (t.contains("number") && (t.contains("save") || t.contains("what")))

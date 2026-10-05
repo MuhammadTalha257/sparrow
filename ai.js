@@ -113,7 +113,7 @@ async function newestGemini(key) {
   } catch { return null; }
 }
 
-async function callProvider(p, key, messages) {
+async function callProvider(p, key, messages, maxTokens = 1200) {
   const model = store.settings.models?.[p] || PROVIDERS[p].model;
   if (p === 'gemini') {
     const contents = messages.slice(1).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
@@ -130,7 +130,7 @@ async function callProvider(p, key, messages) {
     return (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('').trim();
   }
   if (p === 'claude') {
-    const j = await post('https://api.anthropic.com/v1/messages', { model, max_tokens: 1200, system: messages[0].content, messages: messages.slice(1) },
+    const j = await post('https://api.anthropic.com/v1/messages', { model, max_tokens: maxTokens, system: messages[0].content, messages: messages.slice(1) },
       { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' });
     return (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
   }
@@ -156,7 +156,8 @@ async function order() {
  */
 export async function ask(question, onToken, opts = {}) {
   const extra = opts.context ? `\n\nUse this information from the user's files to answer. If the answer isn't there, say so.\n<files>\n${opts.context}\n</files>` : '';
-  const messages = [{ role: 'system', content: systemPrompt(extra) }, ...(opts.noHistory ? [] : history()), { role: 'user', content: question }];
+  // opts.system replaces Sparrow's chatty persona (used for structured jobs: CV analysis, cover letters, JSON).
+  const messages = [{ role: 'system', content: opts.system ? opts.system + extra : systemPrompt(extra) }, ...(opts.noHistory ? [] : history()), { role: 'user', content: question }];
   const tried = [];
   for (const p of await order()) {
     try {
@@ -169,13 +170,13 @@ export async function ask(question, onToken, opts = {}) {
       if (p === 'local') {
         if (!engine) await loadLocal();
         let text = '';
-        const stream = await engine.chat.completions.create({ messages, stream: true, temperature: 0.6, max_tokens: 500 });
+        const stream = await engine.chat.completions.create({ messages, stream: true, temperature: 0.6, max_tokens: Math.min(opts.maxTokens || 500, 1500) });
         for await (const chunk of stream) { text += chunk.choices[0]?.delta?.content || ''; onToken?.(text); }
         return { text: text.trim(), source: 'on-device AI' };
       }
       const key = store.settings.keys?.[p];
       if (!key || !PROVIDERS[p]) continue;
-      return { text: await callProvider(p, key, messages), source: PROVIDERS[p].name.split(' (')[0] };
+      return { text: await callProvider(p, key, messages, opts.maxTokens || 1200), source: PROVIDERS[p].name.split(' (')[0] };
     } catch (e) { tried.push(`${p}: ${e.message}`); }
   }
   if (tried.length) throw new Error(tried[tried.length - 1]);

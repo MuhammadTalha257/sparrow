@@ -353,6 +353,7 @@ export async function handle(input) {
     .replace(/^(um+|uh+|erm|so|okay|ok|well|please|can you|could you|would you)[,\s]+/i, '');
   const t = o.toLowerCase().replace(/[?!.]+$/, '').trim();
   const D = window.SparrowDesktop, N = window.SparrowNative;
+  let m;
   if (!t) return { reply: 'Yes? 🐦' };
 
   if (/^(help|what can you do|commands)\b/.test(t)) return { reply:
@@ -362,6 +363,26 @@ export async function handle(input) {
 
   if (/^(new chat|start (a )?new chat|start (a )?fresh chat|start over|clear (the |this )?chat|reset (the )?chat|naya chat|nayi chat|nai chat|chat clear kar(o|do)|نئی چیٹ|नई चैट)$/.test(t))
     return { reply: 'Fresh chat started. Ask me anything.', action: 'newchat' };
+
+  // ----- job agent (CV, job search, cover letters, applications) -----
+  {
+    const num = String.raw`(?:the )?(?:job |number |no\.? )?(\d+|first|second|third|fourth|fifth|top|best|one|two|three|four|five)(?: one| job)?`;
+    let j;
+    if (/^((analy[sz]e|review|check|read|score|rate|improve|look at) (my |the )?(cv|resume|résumé|c\.v\.?)|(meri |mera )?(cv|resume) (check|dekho|analy[sz]e|review) ?(karo|kar do|kr do)?|how good is my (cv|resume))$/.test(t))
+      return { reply: 'Reading your CV…', action: 'cv-analyse' };
+    if ((j = t.match(/^(?:find|search(?: for)?|look for|show|get|search me|find me)(?: me)?(?: some| new| the latest| latest)? (.+?) (?:jobs?|roles?|vacanc(?:y|ies)|positions?|openings?)(?: (?:in|near|around|at|for) (.+))?$/)) && !/\b(my|file|files)\b/.test(j[1]))
+      return { reply: 'Looking for jobs…', action: 'jobs-search', q: j[1], where: j[2] || '' };
+    if ((j = t.match(/^(?:find|search(?: for)?|look for|show|get)(?: me)?(?: some| new)? (?:jobs?|work|vacancies)(?: for me)?(?: (?:in|near|around) (.+))?$/)))
+      return { reply: 'Looking for jobs that fit you…', action: 'jobs-search', q: '', where: j[1] || '' };
+    if ((j = t.match(/^(?:(.+?) (?:mein|me|main|vich) )?(.+?) (?:ki|ke|di|de) (?:jobs?|naukri|naukriyan) (?:dhoondo|dhundo|talash karo|dikhao|search karo)$/)))
+      return { reply: 'Looking for jobs…', action: 'jobs-search', q: j[2], where: j[1] || '' };
+    if (/^(?:mere liye |meri )?(?:jobs?|naukri) (?:dhoondo|dhundo|talash karo|dikhao)$/.test(t)) return { reply: 'Looking for jobs…', action: 'jobs-search', q: '', where: '' };
+    if ((j = t.match(new RegExp(`^(?:tailor|customi[sz]e|adapt)(?: my)?(?: cv| resume)?(?: for)? ${num}$`))) || (j = t.match(new RegExp(`^(?:write |make )?(?:a |the |my )?cover letter for ${num}$`))))
+      return { reply: 'Writing your cover letter…', action: 'jobs-tailor', n: j[1] };
+    if ((j = t.match(new RegExp(`^apply (?:to|for) ${num}$`)))) return { reply: 'Opening the application…', action: 'jobs-apply', n: j[1] };
+    if (/^(my )?(job )?(applications|tracker|job tracker)$|^(which |what )?jobs (have i|did i) appl(y|ied)( to| for)?$|^jobs i applied (to|for)$/.test(t)) return { reply: 'Your applications…', action: 'jobs-tracker' };
+    if (/^(job agent|jobs?|job search|my jobs|open jobs?|career|naukri)$/.test(t)) return { reply: 'Opening your job agent…', action: 'jobs-open' };
+  }
 
   // ----- health reminders -----
   m = t.match(/^(turn on|start|enable|switch on|on karo)?\s*(the )?(water|drink water|paani|pani) reminders?(?: every (\d+(?:\.\d+)?) hours?)?\s*(on)?$|^remind me to drink water(?: every (\d+(?:\.\d+)?) hours?)?$/);
@@ -375,7 +396,7 @@ export async function handle(input) {
   if (/^(turn on|start|enable|show)\s+(the )?(prayer|namaz|salah) (times|reminders?|alerts?)$/.test(t)) { store.settings.prayer.on = true; store.save(); return { reply: '🕌 Prayer times are on. They follow your location automatically.', action: 'refresh' }; }
 
   // ----- snooze -----
-  let m = t.match(/^snooze(?:\s+(?:it|for|that|this))?(?:\s+(?:for\s+)?(\d+)\s*(min(?:ute)?s?|h(?:ou)?rs?)?)?$/);
+  m = t.match(/^snooze(?:\s+(?:it|for|that|this))?(?:\s+(?:for\s+)?(\d+)\s*(min(?:ute)?s?|h(?:ou)?rs?)?)?$/);
   if (m) {
     const it = lastAlert && store.items.find(i => i.id === lastAlert.id);
     if (!it) return { reply: 'Nothing to snooze right now.' };

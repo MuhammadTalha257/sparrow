@@ -482,6 +482,10 @@ extension CommandEngine {
 
         // Music: "play music for me on spotify", "put some songs on", "i want to listen to arijit singh"
         let musicVerb = #"^(play|put on|put|start|turn on|i want to listen to|i wanna listen to|let me hear|listen to|play me|play some|blast)\b"#
+        // "start" / "turn on" mean music only when music is mentioned ("start some music") — never "start", "start meeting notes"…
+        let softVerb = has(#"^(start|turn on|put)\b"#) && !has(#"\b(music|songs?|tunes|playlist|track|album|radio|spotify|apple music)\b"#)
+        if softVerb && !has(#"^(start|turn on|put on)\s+\S+"#) { return nil }
+        if softVerb && has(#"\b(meeting|notes?|minutes|recording|timer|focus|call|transcri\w*)\b"#) { return nil }
         if has(musicVerb) || has(#"\b(music|songs?|playlist|track)\b.*\b(on|in)\s+(spotify|apple music)$"#) {
             var q = t.replacingOccurrences(of: musicVerb, with: "", options: .regularExpression)
             var app = ""
@@ -497,6 +501,7 @@ extension CommandEngine {
             if app == "youtube" { return generic ? "open youtube" : "play \(q) on youtube" }
             if generic { return app == "spotify" ? "play music on spotify" : app == "apple music" ? "play music on apple music" : "play music" }
             if has(#"^(put on|start|turn on)\b"#), knownTarget(in: q) != nil, !q.contains("song") { return "open \(q)" }
+            if softVerb { return nil }          // "start something" that isn't music or an app: not a music request
             return "play \(q)" + (app.isEmpty ? "" : " on \(app)")
         }
 

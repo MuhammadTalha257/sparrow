@@ -32,6 +32,7 @@ final class SmartPlanner {
     put <app> on the left and <app> on the right · run shortcut <name> · type <text>
     start meeting notes · stop meeting notes
     check my emails · read the email from <name> · reply to <name> saying <what to tell them> · send · cancel
+    analyse my cv · find <role> jobs in <place> · find jobs for me · tailor my cv for job <n> · apply to job <n> · my job applications · type my email|phone|name|linkedin|cover letter
     check whatsapp · whatsapp <name> saying <text> · reply to <name> on whatsapp saying <text>
     """
 

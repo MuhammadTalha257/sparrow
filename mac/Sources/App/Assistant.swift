@@ -460,7 +460,10 @@ final class VoiceEngine: NSObject, ObservableObject {
         if pushToTalk { return }
         var wait = 1.0
         func complete(_ c: String) -> Bool {
-            c.split(separator: " ").count <= 7 && (CommandEngine.shared.intent(c) != nil || CommandEngine.shared.looksLikeCommand(c.lowercased()))
+            let l = c.lowercased()
+            // Half-said commands ("start…", "start meeting…", "remind me…") wait for the rest instead of firing.
+            if l.range(of: #"^(start|begin|take|record|turn on|turn off|open|close|set|remind me|start taking|stop|play|put)( the| my| a)?$|^(start|begin|take|turn on|start taking)( the| my)? (meeting|call|notes?)$"#, options: .regularExpression) != nil { return false }
+            return c.split(separator: " ").count <= 7 && (CommandEngine.shared.intent(c) != nil || CommandEngine.shared.looksLikeCommand(l))
         }
         if let cmd = extractCommand(heard), !cmd.isEmpty {
             wait = complete(cmd) ? 0.5 : 1.1        // a clear command runs the moment you stop
@@ -470,7 +473,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             wait = 1.7   // just "Sparrow" — give a moment to say the rest in the same breath
         }
         // Sounds unfinished ("open spotify and…", "phir…")? Keep listening a little longer.
-        if heard.lowercased().range(of: #"\b(and|then|also|aur|phir|or|to|the|for|with|ke|ki|ka)\s*$"#, options: .regularExpression) != nil {
+        if heard.lowercased().range(of: #"\b(and|then|also|aur|phir|or|to|the|for|with|ke|ki|ka|start|begin|take|meeting|my)\s*$"#, options: .regularExpression) != nil {
             wait = max(wait, 1.8)
         }
         extraWait = 0

@@ -11,6 +11,7 @@ import {
 } from './brain.js';
 import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
 import * as nv from './neuralvoice.js';
+import * as jobs from './jobs.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -254,6 +255,11 @@ async function submit(text, fromVoice = false) {
     const saved = [];
     for (const f of files) { try { saved.push(await mem.addFile(f)); } catch {} }
     activeDocs = saved.map(s => s.id);
+    if (!text && saved.length === 1 && jobs.isCV(saved[0])) {
+      addMsg('bot', `Got your CV — ${saved[0].name}. Give me a moment to read it…`);
+      const a = await jobs.analyseCV(saved[0]); addMsg('bot', a.reply); if (a.ok) jobs.openJobs('profile');
+      return;
+    }
     if (!text) {
       const words = saved.reduce((n, s) => n + (s.text ? s.text.split(/\s+/).length : 0), 0);
       addMsg('bot', `Got it — I saved ${saved.map(s => s.name).join(', ')} in your memory${words ? ` (${words.toLocaleString()} words)` : ''}. Ask me anything about ${saved.length > 1 ? 'them' : 'it'}.`);
@@ -356,6 +362,20 @@ async function runAction(r) {
     case 'meeting-stop': stopMeetingNotes(); return true;
     case 'sync': openSync(); return true;
     case 'newchat': newChat(); addMsg('bot', r.reply, { cmd: true }); return true;
+    // ----- job agent -----
+    case 'jobs-open': jobs.openJobs(); addMsg('bot', jobs.data.profile ? 'Here’s your job agent.' : 'Here’s your job agent — start by adding your CV.', { cmd: true }); return true;
+    case 'cv-analyse': {
+      addMsg('bot', 'Reading your CV…', { cmd: true });
+      const a = await jobs.analyseCV(activeDocs.length ? await mem.getFile(activeDocs[0]).then(f => jobs.isCV(f) ? f : null).catch(() => null) : null);
+      addMsg('bot', a.reply, { cmd: true }); if (a.ok) jobs.openJobs('profile'); return true;
+    }
+    case 'jobs-search': {
+      addMsg('bot', `Looking for ${r.q || 'jobs that fit you'}${r.where ? ' in ' + r.where : ''}…`, { cmd: true });
+      const a = await jobs.searchJobs(r.q, r.where); addMsg('bot', a.reply, { cmd: true }); jobs.openJobs('jobs'); return true;
+    }
+    case 'jobs-tailor': { const a = await jobs.tailor(jobs.jobAt(r.n)); addMsg('bot', a.reply, { cmd: true }); if (a.ok) jobs.openJobs('jobs'); return true; }
+    case 'jobs-apply': { const a = await jobs.startApply(jobs.jobAt(r.n)); addMsg('bot', a.reply, { cmd: true }); return true; }
+    case 'jobs-tracker': addMsg('bot', jobs.trackerSummary(), { cmd: true }); jobs.openJobs('applied'); return true;
     case 'refresh': renderAll(); addMsg('bot', r.reply); return true;
     case 'email': addMsg('bot', r.reply); lastEmail = r.email; speak(`Email from ${r.email.from.replace(/<.*>/, '')}. ${r.email.subject}`); return true;
     case 'email-reply': {
@@ -754,6 +774,7 @@ function pickFiles(accept, multiple = true) {
 function updateTimerLabel() { const r = tools.runningTimer(); $('#timerLbl').textContent = r ? `⏹ ${r.title} · ${tools.fmtHours(tools.hours(r))}` : 'Time tracker'; }
 setInterval(updateTimerLabel, 30000);
 async function openTool(name) {
+  if (name === 'jobs') { jobs.openJobs(); return; }
   const P = $('#toolPanel'); P.hidden = false;
   const done = html => { P.innerHTML = html; P.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const cur = S().business.currency;
@@ -1159,6 +1180,7 @@ async function voiceAsk(text) {
   if (r.results?.length || r.files?.length) { go('chat'); M?.post('show', { tab: 'chat' }); }
   return r.reply;
 }
+jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
   catchUp: () => checkDue(),
   rememberNote: (title, text) => mem.remember('meeting-notes', title, text),
@@ -1168,6 +1190,8 @@ window.Sparrow = {
     activeDocs = [rec.id];
     return rec.id;
   },
+  // "Sparrow, type my email" (Mac): the value comes from your CV profile / latest cover letter.
+  jobField: name => jobs.field(name),
   submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); }, newChat,
   // Island chats go to History too, so they can be continued here.
   archiveChat: msgs => { archiveChat((msgs || []).map(m => ({ role: m.role === 'user' ? 'me' : 'bot', text: m.content, ts: Date.now() }))); store.save(); },
