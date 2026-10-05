@@ -38,7 +38,7 @@ final class MeetingNotes {
         let body = "\(summary)\n\n— Full transcript —\n\(transcript)"
         // Apple Notes
         let html = "<h2>\(esc(title))</h2>" + body.split(separator: "\n", omittingEmptySubsequences: false).map { "<div>\(esc(String($0)))</div>" }.joined()
-        let script = "tell application \"Notes\" to make new note with properties {name:\"\(as(title))\", body:\"\(as(html))\"}"
+        let script = "tell application \"Notes\" to make new note with properties {name:\"\(asq(title))\", body:\"\(asq(html))\"}"
         let saved = CommandEngine.shared.runAppleScript(script) != nil
         // Sparrow's memory (searchable later: "what did we decide in the meeting on Monday?")
         WebHub.shared.run("window.Sparrow && window.Sparrow.rememberNote && window.Sparrow.rememberNote(\(json(title)), \(json(body)))")
@@ -59,7 +59,7 @@ final class MeetingNotes {
     }
 
     private func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;") }
-    private func `as`(_ s: String) -> String { s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
+    private func asq(_ s: String) -> String { s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
     private func json(_ s: String) -> String {
         (try? String(data: JSONSerialization.data(withJSONObject: [s]), encoding: .utf8)).map { String($0.dropFirst().dropLast()) } ?? "\"\""
     }
