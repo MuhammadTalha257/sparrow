@@ -2,14 +2,25 @@ name: Render launch film
 
 on:
   push:
-    paths: ["marketing/**", ".github/workflows/film.yml"]
+    paths: [".github/workflows/film.yml"]
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 jobs:
+  # The film is delivered in chat, not stored in the repo or releases.
+  cleanup:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          git push origin --delete launch-film-files || true
+          gh release delete launch-film --cleanup-tag -y || true
   film:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,22 +38,5 @@ jobs:
           node render.mjs out 2>&1 | tee render.log
           grep -E "^line" render.log | while IFS= read -r l; do echo "::notice::$l"; done
           ls -lh out
-      - name: Keep a copy on the launch-film-files branch
-        run: |
-          mkdir -p /tmp/f && cp marketing/out/sparrow-30s.mp4 marketing/out/sparrow-poster.jpg marketing/share-copy.txt /tmp/f/
-          git config user.name "sparrow-bot"; git config user.email "sparrow-bot@users.noreply.github.com"
-          git checkout --orphan launch-film-files && git rm -rfq . && cp /tmp/f/* . && git add sparrow-30s.mp4 sparrow-poster.jpg share-copy.txt
-          git commit -qm "Launch film ${GITHUB_SHA::7}" && git push -f origin launch-film-files
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: launch-film
-          name: Sparrow — 30-second launch film
-          prerelease: true
-          make_latest: false
-          files: |
-            marketing/out/sparrow-30s.mp4
-            marketing/out/sparrow-poster.jpg
-            marketing/share-copy.txt
-          body: |
-            30-second animated launch film for Sparrow (1920×1080, 30 fps) with voiceover and an original soundtrack.
-            `sparrow-30s.mp4` — the film · `sparrow-poster.jpg` — thumbnail · `share-copy.txt` — captions for posting.
+      - uses: actions/upload-artifact@v4
+        with: { name: sparrow-launch-film, path: marketing/out/sparrow-30s.mp4, retention-days: 7 }
