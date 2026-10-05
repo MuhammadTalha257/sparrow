@@ -27,6 +27,12 @@ jobs:
           node render.mjs out 2>&1 | tee render.log
           grep -E "^line" render.log | while IFS= read -r l; do echo "::notice::$l"; done
           ls -lh out
+      - name: Keep a copy on the launch-film-files branch
+        run: |
+          mkdir -p /tmp/f && cp marketing/out/sparrow-30s.mp4 marketing/out/sparrow-poster.jpg marketing/share-copy.txt /tmp/f/
+          git config user.name "sparrow-bot"; git config user.email "sparrow-bot@users.noreply.github.com"
+          git checkout --orphan launch-film-files && git rm -rfq . && cp /tmp/f/* . && git add sparrow-30s.mp4 sparrow-poster.jpg share-copy.txt
+          git commit -qm "Launch film ${GITHUB_SHA::7}" && git push -f origin launch-film-files
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: launch-film
