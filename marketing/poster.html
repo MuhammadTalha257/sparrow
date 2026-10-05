@@ -1,0 +1,77 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sparrow Poster</title><style>
+@font-face { font-family: Inter; font-weight: 200; src: url(fonts/inter-latin-200-normal.woff2) format('woff2'); }
+@font-face { font-family: Inter; font-weight: 300; src: url(fonts/inter-latin-300-normal.woff2) format('woff2'); }
+@font-face { font-family: Inter; font-weight: 400; src: url(fonts/inter-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: Inter; font-weight: 400; src: url(fonts/inter-cyrillic-400-normal.woff2) format('woff2'); unicode-range: U+0400-04FF; }
+@font-face { font-family: Inter; font-weight: 600; src: url(fonts/inter-latin-600-normal.woff2) format('woff2'); }
+@font-face { font-family: Inter; font-weight: 700; src: url(fonts/inter-latin-700-normal.woff2) format('woff2'); }
+@font-face { font-family: Inter; font-weight: 800; src: url(fonts/inter-latin-800-normal.woff2) format('woff2'); }
+@font-face { font-family: Serif; font-style: normal; src: url(fonts/instrument-serif-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: Serif; font-style: italic; src: url(fonts/instrument-serif-latin-400-italic.woff2) format('woff2'); }
+@font-face { font-family: Arab; src: url(fonts/noto-sans-arabic-arabic-500-normal.woff2) format('woff2'); }
+@font-face { font-family: Deva; src: url(fonts/noto-sans-devanagari-devanagari-500-normal.woff2) format('woff2'); }
+@font-face { font-family: Guru; src: url(fonts/noto-sans-gurmukhi-gurmukhi-500-normal.woff2) format('woff2'); }
+html,body{margin:0;background:#0C0805}
+#p{position:relative;width:1080px;height:1350px;overflow:hidden;background:radial-gradient(ellipse 70% 55% at 50% 44%,#2A1A0E 0%,#140D08 55%,#0A0705 100%);font-family:Inter;color:#F3E7D8}
+canvas{position:absolute;inset:0}
+.lbl{position:absolute;font-size:13px;font-weight:400;letter-spacing:5px;text-transform:uppercase;color:rgba(243,231,216,.48)}
+.g{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;color:rgba(243,231,216,.82)}
+#bird{position:absolute;left:440px;top:484px;transform:scale(.8);transform-origin:100px 92px;width:200px;height:170px;overflow:visible}
+h1{position:absolute;left:0;right:0;top:1032px;margin:0;text-align:center;font-family:Serif;font-weight:400;font-size:92px;line-height:1;letter-spacing:-1px}
+h1 em{font-style:italic;color:transparent;background:linear-gradient(90deg,#FFD9A0,#F9A830 45%,#FF8A66);-webkit-background-clip:text}
+.wm{position:absolute;left:0;right:0;top:118px;text-align:center;font-weight:200;font-size:30px;letter-spacing:22px;padding-left:22px;color:#F3E7D8}
+.chips{position:absolute;left:0;right:0;top:1160px;display:flex;justify-content:center;gap:14px}
+.chip{font-size:15px;font-weight:400;letter-spacing:3px;text-transform:uppercase;padding:11px 20px;border-radius:999px;border:1px solid rgba(249,168,48,.32);color:rgba(255,222,170,.9);background:rgba(249,168,48,.05)}
+</style></head><body><div id="p">
+<canvas id="c" width="2160" height="2700" style="width:1080px;height:1350px"></canvas>
+<div class="wm">SPARROW</div>
+<div class="lbl" style="left:64px;top:64px">Fig. 01</div>
+<div class="lbl" style="right:64px;top:64px;text-align:right">Signal · Answer</div>
+<div id="greets"></div>
+<svg id="bird" viewBox="0 0 200 170">
+<defs><linearGradient id="gB" x1="0.8" y1="0" x2="0.2" y2="1"><stop offset="0" stop-color="#DDA672"/><stop offset="1" stop-color="#97633E"/></linearGradient>
+<radialGradient id="gS" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<clipPath id="bc"><ellipse cx="100" cy="92" rx="66" ry="56"/></clipPath></defs>
+<g class="feet"><path d="M88 146 v10 m-5 0 h10 M112 146 v10 m-5 0 h10" stroke="#E8A040" stroke-width="3.5" stroke-linecap="round" fill="none"/></g>
+<g class="tail"><path d="M150 104 Q176 82 190 62 Q196 74 194 86 Q182 104 162 122 Z" fill="#6B4228"/></g>
+<g class="body"><ellipse cx="100" cy="92" rx="66" ry="56" fill="url(#gB)"/>
+<g clip-path="url(#bc)"><ellipse cx="100" cy="128" rx="44" ry="40" fill="#F8ECD9"/><ellipse cx="100" cy="40" rx="64" ry="34" fill="#6B4228"/></g>
+<ellipse cx="100" cy="92" rx="66" ry="56" fill="url(#gS)"/>
+<g class="eyes"><g transform="translate(80 90)"><g class="eye"><rect x="-7.5" y="-10" width="15" height="20" rx="7.5" fill="#1A1412"/><circle cx="2.5" cy="-4.5" r="3.2" fill="#fff"/></g></g>
+<g transform="translate(120 90)"><g class="eye"><rect x="-7.5" y="-10" width="15" height="20" rx="7.5" fill="#1A1412"/><circle cx="2.5" cy="-4.5" r="3.2" fill="#fff"/></g></g></g>
+<path class="beak" d="M91 104 Q100 98 109 104 L100 118 Z" fill="#F9A830"/>
+<ellipse cx="62" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".38"/><ellipse cx="138" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".38"/></g>
+<g class="wing"><path d="M40 98 Q62 92 76 108 Q70 128 46 132 Q30 124 40 98 Z" fill="#7A4E30"/></g></svg>
+<h1>Your voice is <em>all it needs.</em></h1>
+<div class="chips"><span class="chip">Multi-language</span><span class="chip">Works offline</span><span class="chip">On your command</span></div>
+<div class="lbl" style="left:0;right:0;bottom:64px;text-align:center;letter-spacing:7px">Mac &nbsp;·&nbsp; Windows &nbsp;·&nbsp; iPhone &nbsp;·&nbsp; Android</div>
+</div><script>
+const X=540,Y=572, c=document.getElementById('c').getContext('2d'); c.scale(2,2);
+function mul(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const r=mul(11);
+// outer field: hundreds of faint concentric hairlines, denser near the centre
+for(let i=0;i<190;i++){const rad=120+Math.pow(i/190,1.6)*720;c.beginPath();c.arc(X,Y,rad,0,7);
+ c.strokeStyle=`rgba(249,168,48,${.015+.09*Math.pow(1-i/190,2.2)})`;c.lineWidth=.5;c.stroke()}
+// orbit ellipse the greetings ride on
+for(let k=0;k<3;k++){c.beginPath();c.ellipse(X,Y,330+k*4,118+k*2,0,0,7);c.strokeStyle=`rgba(255,217,160,${.16-k*.05})`;c.lineWidth=.6;c.stroke()}
+// halo: many overlapping fine strokes, like the orb in the film
+for(let i=0;i<620;i++){const a0=r()*6.283,len=.3+r()*1.6,rad=96+Math.pow(r(),1.8)*44;
+ c.beginPath();c.ellipse(X,Y,rad,rad*(.94+r()*.1),r()*3,a0,a0+len);
+ c.strokeStyle=`rgba(${249},${150+r()*60|0},${48+r()*40|0},${.06+r()*.22})`;c.lineWidth=.35+r()*.6;c.stroke()}
+// soft glow + dark orb
+let g=c.createRadialGradient(X,Y,60,X,Y,260);g.addColorStop(0,'rgba(249,168,48,.30)');g.addColorStop(1,'rgba(249,168,48,0)');c.fillStyle=g;c.beginPath();c.arc(X,Y,260,0,7);c.fill();
+c.beginPath();c.arc(X,Y,92,0,7);c.fillStyle='#120B07';c.fill();c.strokeStyle='rgba(255,217,160,.35)';c.lineWidth=.8;c.stroke();
+// tick marks around the outer measuring ring, every 6°, longer each 30°
+for(let d=0;d<360;d+=6){const a=d*Math.PI/180,l=d%30?7:16,R=390;c.beginPath();c.moveTo(X+Math.cos(a)*R,Y+Math.sin(a)*R);c.lineTo(X+Math.cos(a)*(R+l),Y+Math.sin(a)*(R+l));
+ c.strokeStyle=`rgba(243,231,216,${d%30?.14:.3})`;c.lineWidth=.6;c.stroke()}
+c.beginPath();c.arc(X,Y,390,0,7);c.strokeStyle='rgba(243,231,216,.12)';c.lineWidth=.6;c.stroke();
+// a teal accent: the one calm certainty (offline)
+c.beginPath();c.arc(X,Y,390,-1.95,-1.19);c.strokeStyle='rgba(125,227,218,.75)';c.lineWidth=1.4;c.stroke();
+// greetings on the orbit, nearer = brighter & bigger
+const G=[['Hello','Inter'],['سلام','Arab'],['नमस्ते','Deva'],['Hola','Inter'],['ਸਤ ਸ੍ਰੀ ਅਕਾਲ','Guru'],['Bonjour','Inter'],['Merhaba','Inter'],['Привет','Inter'],['Ciao','Inter'],['مرحبا','Arab']];
+G.forEach(([w,f],i)=>{const a=i/G.length*6.283+.42,z=Math.sin(a),e=document.createElement('div');e.className='g';e.textContent=w;
+ e.style.left=X+Math.cos(a)*330+'px';e.style.top=Y+z*118+'px';e.style.fontFamily=f==='Inter'?'Inter':f+',Inter';e.style.fontWeight=f==='Inter'?300:500;
+ e.style.fontSize=(17+13*(z+1)/2)+'px';e.style.opacity=.38+.62*(z+1)/2;e.style.zIndex=z>0?3:0;document.getElementById('greets').appendChild(e)});
+document.getElementById('bird').style.zIndex=2;
+document.fonts.ready.then(()=>Promise.all(['300 20px Inter','500 20px Arab','500 20px Deva','500 20px Guru','92px Serif','italic 92px Serif','200 20px Inter'].map(f=>document.fonts.load(f,'Aनਸ Привет سلام')))).then(()=>window.READY=true);
+</script></body></html>

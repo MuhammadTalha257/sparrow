@@ -13,19 +13,35 @@ const FPS = 30, DUR = 30, W = 1920, H = 1080, SR = 44100;
 
 // ---------------------------------------------------------------- 1. voiceover
 const LINES = [
-  { at: 0.45, end: 3.95, text: 'Meet Sparrow, the little helper at the top of your Mac.' },
-  { at: 4.30, end: 9.85, text: 'Just say: Sparrow, open Spotify and play some music... and it is already playing.' },
-  { at: 10.30, end: 15.35, text: 'Talk the way you talk. English, Urdu, or Hindi, it plans your day.' },
-  { at: 15.80, end: 20.35, text: 'It takes your meeting notes, and keeps prayers and water on time.' },
-  { at: 20.80, end: 25.35, text: 'It even runs your Mac, from Wi-Fi to shut down. Always safely.' },
-  { at: 26.20, end: 29.75, text: 'Sparrow. Private, fast, and free, at lisansystems dot com.' },
+  { at: 0.40, end: 4.40, text: 'Every day, we lose hours to clicks, tabs, and things we forget.' },
+  { at: 4.90, end: 8.00, text: 'What if your computer could simply... listen?' },
+  { at: 8.90, end: 13.40, text: "Meet Sparrow. You say it, and it's done." },
+  { at: 13.90, end: 18.00, text: 'It understands many languages, so it speaks yours.' },
+  { at: 18.50, end: 22.40, text: 'No internet? It still works, privately, on your device.' },
+  { at: 22.90, end: 26.40, text: 'On Mac, Windows, iPhone, and Android.' },
+  { at: 27.00, end: 29.80, text: 'Sparrow. Your voice is all it needs.' },
 ];
 const VOICE = process.env.SPARROW_VOICE || 'af_heart';
 const vo = new Float32Array(SR * DUR);
 const speech = [];
 const SKIP_VOICE = process.env.SKIP_VOICE === '1';     // for quick picture checks without the voice model
 let tts = null;
-if (!SKIP_VOICE) {
+const VOICE_DIR = process.env.VOICE_DIR;               // optional: pre-made line-N.wav files (32-bit float, e.g. from the sherpa Kokoro engine)
+function readWav(f) {
+  const b = fs.readFileSync(f); let o = 12, rate = 24000, fmt = 1, bits = 16;
+  while (o < b.length) {
+    const id = b.toString('ascii', o, o + 4), n = b.readUInt32LE(o + 4);
+    if (id === 'fmt ') { fmt = b.readUInt16LE(o + 8); rate = b.readUInt32LE(o + 12); bits = b.readUInt16LE(o + 22); }
+    if (id === 'data') {
+      const cnt = n / (bits / 8), a = new Float32Array(cnt);
+      for (let i = 0; i < cnt; i++) a[i] = fmt === 3 ? b.readFloatLE(o + 8 + i * 4) : b.readInt16LE(o + 8 + i * 2) / 32768;
+      return { audio: a, sampling_rate: rate };
+    }
+    o += 8 + n;
+  }
+}
+if (VOICE_DIR) tts = { generate: async (_t, _o) => readWav(path.join(VOICE_DIR, `line-${LINES.findIndex(l => l.text === _t)}.wav`)) };
+else if (!SKIP_VOICE) {
   console.log('Loading Kokoro…');
   const { KokoroTTS } = await import('kokoro-js');
   tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { dtype: 'fp32', device: 'cpu' });
@@ -111,10 +127,33 @@ function pop(at, f = 880, gain = .06) {
   }
 }
 function chime(at) { [72, 76, 79, 84].forEach((m, j) => pop(at + j * .09, hz(m), .05)); }
-[3.8, 9.8, 15.3, 20.3, 25.3].forEach(t => whoosh(t));
-whoosh(0.15, 1.6, .04);                                  // the sparrow flying in
-[2.0, 8.0, 12.5, 13.0, 16.4, 16.65, 16.9, 21.4, 21.7, 22.0, 24.2].forEach((t, i) => pop(t, 700 + (i % 3) * 180));
-chime(26.6);
+function riser(a, b, gain = .05) {             // rising filtered noise + tone into the WOW moment
+  let lp = 0; const i0 = Math.round(a * SR), n = Math.round((b - a) * SR);
+  for (let k = 0; k < n && i0 + k < L.length; k++) {
+    const u = k / n, tt = k / SR;
+    lp += (rnd() - lp) * (.01 + .3 * u * u);
+    const tone = Math.sin(2 * Math.PI * (220 + 660 * u * u) * tt) * .25;
+    const v = (lp + tone) * u * u * gain;
+    L[i0 + k] += v; R[i0 + k] += v;
+  }
+}
+function impact(at, gain = .22) {                  // deep boom + bright shimmer
+  const i0 = Math.round(at * SR);
+  for (let k = 0; k < SR * 1.6 && i0 + k < L.length; k++) {
+    const tt = k / SR;
+    const boom = Math.sin(2 * Math.PI * (38 + 90 * Math.exp(-tt * 18)) * tt) * Math.exp(-tt * 3.2);
+    const sh = [84, 88, 91, 96].reduce((s, m) => s + Math.sin(2 * Math.PI * hz(m) * tt), 0) * .06 * Math.exp(-tt * 2.2) * Math.min(1, tt * 60);
+    L[i0 + k] += (boom + sh * (1 + .3 * Math.sin(tt * 9))) * gain;
+    R[i0 + k] += (boom + sh * (1 - .3 * Math.sin(tt * 9))) * gain;
+  }
+}
+[4.6, 13.6, 18.2, 22.6, 26.6].forEach(t => whoosh(t - .2));
+whoosh(0.1, 1.2, .035);
+riser(6.2, 8.2);
+impact(8.2);
+[11.0, 11.35, 11.7].forEach((t, i) => pop(t, 760 + i * 160));
+[23.3, 23.9, 24.5, 25.1].forEach((t, i) => pop(t, 640 + i * 120, .05));
+chime(27.6);
 
 // duck the music under the voice, then mix
 const duck = new Float32Array(L.length).fill(1);
@@ -148,7 +187,7 @@ for (let f = 0; f < total; f++) {
 ff.stdin.end();
 await new Promise(r => ff.on('close', r));
 // poster: the logo moment
-await page.evaluate(t => window.renderAt(t), 28.2);
+await page.evaluate(t => window.renderAt(t), 28.4);
 await page.screenshot({ path: path.join(out, 'sparrow-poster.jpg'), type: 'jpeg', quality: 92 });
 await browser.close();
 
