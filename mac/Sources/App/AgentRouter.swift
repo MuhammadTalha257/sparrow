@@ -17,9 +17,14 @@ import Contacts
 final class AgentRouter {
     static let shared = AgentRouter()
 
+    /// Which inbox Sparrow last talked about, so "reply to Ahmed…" goes to the right app.
+    enum Channel { case none, mail, whatsapp }
+    static var lastChannel: Channel = .none
+
     /// Handles a request if any agent can. nil = nobody could (the caller asks the AI instead).
     func handle(_ raw: String) async -> String? {
         // Email first: a reply like "tell him yes and thanks" must not be split into steps.
+        if WhatsAppAgent.shared.claims(raw), let r = await WhatsAppAgent.shared.handle(raw) { return r }
         if MailAgent.shared.claims(raw), let r = await MailAgent.shared.handle(raw) { return r }
         let steps = split(raw)
         if steps.count <= 1 { return await single(raw) }
@@ -123,6 +128,9 @@ final class AgentRouter {
 
 enum Translit {
     private static let rules: [(String, String)] = [
+        // WhatsApp  ("Ahmed ko whatsapp karo ke main aa raha hoon", "whatsapp check karo")
+        (#"^(.+?)\s+(?:ko|nu)\s+(?:whats ?app|whatsapp)\s+(?:pe\s+|par\s+|pr\s+|te\s+)?(?:karo|kar do|kardo|bhejo|bhej do|message karo|msg karo|reply karo|likho)\s*(?:ke|keh|ki|:)?\s+(.+)$"#, "whatsapp $1 saying $2"),
+        (#"^(?:whats ?app|whatsapp)\s+(?:check karo|check kar do|dekho|dikhao|parho|batao|sunao|check kro)$|^(?:whats ?app|whatsapp)\s+(?:pe|par|pr|te)\s+(?:koi\s+)?(?:naya|new)\s+(?:message|msg)\s+(?:aaya|aya|hai)\s*(?:hai)?\??$"#, "check whatsapp"),
         // email  ("email check karo", "naye email", "Ahmed ko reply karo ke main kal bhej dunga")
         (#"^(?:mere\s+)?(?:naye|nai|new)?\s*(?:e-?mails?|mails?|inbox)\s+(?:check karo|check kar do|dekho|dikhao|parho|parh do|batao|sunao|check kro)$|^(?:koi\s+)?(?:naya|nayi|new)\s+(?:e-?mail|mail)\s+(?:aayi|aaya|hai|ayi|aya)\s*(?:hai)?\??$"#, "check my emails"),
         (#"^(.+?)\s+(?:ko|nu)\s+(?:reply|jawab)\s+(?:karo|kar do|kardo|do|de do|likho|bhejo)\s*(?:ke|keh|ki|that|:)?\s+(.+)$"#, "reply to $1 saying $2"),

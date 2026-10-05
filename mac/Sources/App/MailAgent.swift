@@ -36,8 +36,11 @@ final class MailAgent {
     private static let pronounRE = #"^(?:it|him|her|them|that|this|back|that one|this one|the last one|the first one|(?:that|this|the|the last|the latest|his|her) (?:e-?mail|mail|message|one))$"#
 
     /// Does this belong to the mail agent? Checked before a request is split into steps, so "and" inside a reply stays in it.
+    func dropDraft() { draft = nil }
+
     func claims(_ raw: String) -> Bool {
         let t = Self.clean(raw)
+        if t.contains("whatsapp") || t.contains("whats app") { return false }
         if draft != nil, Self.isSend(t) || Self.isCancel(t) || Self.isChange(t) != nil { return true }
         return t.range(of: Self.replyRE, options: .regularExpression) != nil
             || (t.range(of: Self.replyBareRE, options: .regularExpression) != nil && (t.contains("email") || t.contains("mail") || lastMail != nil))
@@ -77,6 +80,7 @@ final class MailAgent {
     // MARK: Jobs
 
     func checkNew() async -> String {
+        AgentRouter.lastChannel = .mail
         guard let res = await Self.osa(Self.listScript(limit: 6)) else { return Self.mailProblem }
         let (total, mails) = Self.parseList(res)
         recent = mails
@@ -102,6 +106,7 @@ final class MailAgent {
     }
 
     private func read(_ mail: Mail) async -> String {
+        AgentRouter.lastChannel = .mail
         lastMail = mail
         _ = await Self.osa("""
         tell application "Mail"
@@ -124,6 +129,8 @@ final class MailAgent {
         if who.lowercased().range(of: Self.pronounRE, options: .regularExpression) != nil { mail = lastMail ?? recent.first } else { mail = await find(who) }
         guard let mail else { return notFound(who) }
         lastMail = mail
+        AgentRouter.lastChannel = .mail
+        WhatsAppAgent.shared.dropDraft()
         let body = await compose(for: mail, instruction: what, previous: nil)
         draft = Draft(mail: mail, body: body, made: Date())
         return present(draft!)

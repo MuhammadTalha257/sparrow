@@ -24,7 +24,7 @@ final class SmartPlanner {
     open <app or website> · quit <app> · play music · play music on spotify · play <song or artist> · play <song> on spotify · play <query> on youtube
     pause · next song · previous song · volume <0-100> · volume up · volume down · mute
     remind me to <task> at <time> <day> · meeting with <who> <day> at <time> · add task <task> · note <text> · what's on today · my tasks
-    save <phone number> as <name> · what's <name>'s number · message <name> on whatsapp saying <text>
+    save <phone number> as <name> · what's <name>'s number
     search <query> · youtube <query> · weather · prayer times · battery · what time is it · new chat
     remind me to drink water every <n> hours · medicine reminders at <times>
     shut down mac · restart mac · sleep mac · lock screen · turn on wifi · turn off wifi · turn on bluetooth · turn off bluetooth
@@ -32,6 +32,7 @@ final class SmartPlanner {
     put <app> on the left and <app> on the right · run shortcut <name> · type <text>
     start meeting notes · stop meeting notes
     check my emails · read the email from <name> · reply to <name> saying <what to tell them> · send · cancel
+    check whatsapp · whatsapp <name> saying <text> · reply to <name> on whatsapp saying <text>
     """
 
     private func systemPrompt() -> String {
