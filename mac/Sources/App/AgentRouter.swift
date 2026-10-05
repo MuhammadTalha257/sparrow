@@ -19,6 +19,8 @@ final class AgentRouter {
 
     /// Handles a request if any agent can. nil = nobody could (the caller asks the AI instead).
     func handle(_ raw: String) async -> String? {
+        // Email first: a reply like "tell him yes and thanks" must not be split into steps.
+        if MailAgent.shared.claims(raw), let r = await MailAgent.shared.handle(raw) { return r }
         let steps = split(raw)
         if steps.count <= 1 { return await single(raw) }
         var replies: [String] = []
@@ -121,6 +123,10 @@ final class AgentRouter {
 
 enum Translit {
     private static let rules: [(String, String)] = [
+        // email  ("email check karo", "naye email", "Ahmed ko reply karo ke main kal bhej dunga")
+        (#"^(?:mere\s+)?(?:naye|nai|new)?\s*(?:e-?mails?|mails?|inbox)\s+(?:check karo|check kar do|dekho|dikhao|parho|parh do|batao|sunao|check kro)$|^(?:koi\s+)?(?:naya|nayi|new)\s+(?:e-?mail|mail)\s+(?:aayi|aaya|hai|ayi|aya)\s*(?:hai)?\??$"#, "check my emails"),
+        (#"^(.+?)\s+(?:ko|nu)\s+(?:reply|jawab)\s+(?:karo|kar do|kardo|do|de do|likho|bhejo)\s*(?:ke|keh|ki|that|:)?\s+(.+)$"#, "reply to $1 saying $2"),
+        (#"^(.+?)\s+(?:ki|ka|di|da)\s+(?:e-?mail|mail)\s+(?:parho|parh do|sunao|dikhao|kholo)$"#, "read the email from $1"),
         // open / close  ("spotify kholo", "chrome band karo", "notes khol de")
         (#"^(.+?)\s+(?:ko\s+)?(?:kholo|khol do|khol de|kholdo|khol|open karo|open kar do|open kardo|open kr do|open kro|chalu karo|start karo|کھولو|کھول دو|खोलो|खोल दो)(?:\s+(?:na|ji|please|yaar))?$"#, "open $1"),
         (#"^(?:kholo|khol do|open karo)\s+(.+)$"#, "open $1"),

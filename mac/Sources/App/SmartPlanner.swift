@@ -31,6 +31,7 @@ final class SmartPlanner {
     brightness up · brightness down · dark mode · light mode · hide everything · screenshot · full screen · close this window · new tab
     put <app> on the left and <app> on the right · run shortcut <name> · type <text>
     start meeting notes · stop meeting notes
+    check my emails · read the email from <name> · reply to <name> saying <what to tell them> · send · cancel
     """
 
     private func systemPrompt() -> String {
