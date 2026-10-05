@@ -28,7 +28,7 @@ final class WhatsAppAgent {
     private static let sendRE = #"^(?:send\s+)?(?:a\s+)?(?:whats ?app|whatsapp|message|msg|text|reply(?: to)?|respond to|write to|tell)\s+(?:to\s+)?(.+?)(?:\s+(?:on|via|in) (?:whats ?app|whatsapp))?\s*(?:saying|that|and say|and tell (?:him|her|them)|to say|ke|keh do|bolo|:|,)\s*(.+)$"#
 
     private static func clean(_ raw: String, keepCase: Bool = false) -> String {
-        let s = Translit.toCommand(raw)
+        let s = Translit.toCommand(raw.replacingOccurrences(of: "’", with: "'"))
             .replacingOccurrences(of: #"^(?:can you|could you|please|will you)\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
             .trimmingCharacters(in: CharacterSet(charactersIn: " .!?"))
         return keepCase ? s : s.lowercased()

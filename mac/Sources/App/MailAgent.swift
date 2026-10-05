@@ -29,8 +29,8 @@ final class MailAgent {
 
     // MARK: Understanding
 
-    private static let checkRE = #"^(?:check|read|show|any|do i have|have i got|got any|what are|what's in)?\s*(?:my |any |the |new |unread |latest |recent )*(?:e-?mails?|mails?|inbox)(?:\s+(?:today|now|please))?\??$|^(?:check|open) (?:my )?inbox$|^(?:any(?:thing)?|something) new in (?:my )?(?:e-?mail|mail|inbox)\??$|^(?:who|has anyone) (?:e-?mailed|wrote to) me\??$"#
-    private static let latestRE = #"^(?:read|open|show|check|tell me|give me|what'?s|what is|what was)(?: me)?(?: my| the)? (?:latest|last|newest|most recent|recent|new|top|first|current)(?: new| unread| received)? (?:e-?mail|mail|message|inbox message)(?: i got| i received| in (?:my )?inbox)?\??$|^who (?:e-?mailed|wrote to|mailed) me (?:last|most recently)\??$|^(?:read|open) (?:my |the )?(?:e-?mail|mail)(?: for me)?$"#
+    private static let checkRE = #"^(?:check|read|show|any|do i have|have i got|got any|what are|what's in)?\s*(?:my |any |the |new |unread |latest |recent )*(?:e-?mails?|mails?|inbox)(?:\s+(?:today|now|please))?\??$|^(?:check|open) (?:my )?inbox$|^(?:any(?:thing)?|something) new in (?:my )?(?:e-?mail|mail|inbox)\??$|^(?:who|has anyone) (?:e-?mailed|wrote to) me\??$|^what'?s new (?:in|on) (?:my )?(?:e-?mails?|mails?|inbox)\??$|^(?:any|new) (?:e-?mails?|mails?)\??$"#
+    private static let latestRE = #"^(?:read|open|show|check|tell me|give me|what'?s|what is|what was)(?: me)?(?: my| the)? (?:latest|last|newest|most recent|recent|new|top|first|current)(?: new| unread| received)? (?:e-?mail|mail|message|inbox message)(?: i got| i received| in (?:my )?inbox)?\??$|^who (?:e-?mailed|wrote to|mailed) me (?:last|most recently)\??$|^(?:read|open) (?:my |the )?(?:e-?mail|mail)(?: for me)?$|^(?:my |the )?(?:latest|last|newest|new|most recent) (?:e-?mail|mail)\??$|^(?:open|read|show)(?: me)? (?:the )?(?:lates|latests|latest|last|new) (?:e-?mail|mail|message)$"#
     private static let readRE  = #"^(?:read|open|what does|what did|show)(?: me)? (?:the |that |this )?(?:e-?mail|mail|message)?\s*(?:from|by|of)\s+(.+?)(?:\s+(?:say|says|said))?\??$|^(?:read|open) (?:it|that|that one|this one|the last one|the latest one|the first one)$"#
     private static let replyRE = #"^(?:reply|respond|write back)(?: to)?\s+(.+?)\s*(?:saying|say|that|and say|and tell (?:him|her|them)|to say|:|,)\s*(.+)$"#
     private static let replyBareRE = #"^(?:reply|respond|write back)(?: to)?\s+(.+)$"#
@@ -68,7 +68,7 @@ final class MailAgent {
             VoiceEngine.shared.listenAfterSpeech = true
             return "What should I tell \(mail.name)?"
         }
-        if t.range(of: Self.latestRE, options: .regularExpression) != nil { return await readLatest() }
+        if t.range(of: Self.latestRE, options: .regularExpression) != nil { return await readLatest(show: t.hasPrefix("open") || t.hasPrefix("show")) }
         if let m = Self.match(Self.readRE, t) {
             let who = m.first ?? ""
             let mail: Mail?
@@ -110,13 +110,24 @@ final class MailAgent {
     }
 
     /// The newest email in the inbox (read or not), read out.
-    func readLatest() async -> String {
+    func readLatest(show: Bool = false) async -> String {
         AgentRouter.lastChannel = .mail
         var res = await Self.osa(Self.latestScript(days: 3))
         if let r = res, Self.failed(r) { return Self.problem(r) }
         if res.map({ Self.parseList($0).1.isEmpty }) ?? true { res = await Self.osa(Self.latestScript(days: 60)) }
         guard let r = res, !Self.failed(r) else { return Self.problem(res) }
         guard let mail = Self.parseList(r).1.first else { return "Your inbox looks empty. Is your account switched on in Mail?" }
+        if show {
+            // "open latest mail": it appears on screen in Mail, and Sparrow tells you what it's about.
+            _ = await Self.osa("""
+            tell application "Mail"
+              activate
+              try
+                open (first message of inbox whose id is \(mail.id))
+              end try
+            end tell
+            """)
+        }
         return await read(mail)
     }
 
@@ -237,7 +248,7 @@ final class MailAgent {
     // MARK: Words
 
     private static func clean(_ raw: String, keepCase: Bool = false) -> String {
-        let s = Translit.toCommand(raw)
+        let s = Translit.toCommand(raw.replacingOccurrences(of: "’", with: "'"))
             .replacingOccurrences(of: #"^(?:can you|could you|please|will you)\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
             .trimmingCharacters(in: CharacterSet(charactersIn: " .!?"))
         return keepCase ? s : s.lowercased()
