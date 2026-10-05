@@ -240,6 +240,9 @@ final class VoiceEngine: NSObject, ObservableObject {
         return AVSpeechUtterance(string: text)
     }
 
+    /// Meeting notes: everything heard is written down (only "Sparrow, stop…" is treated as a command).
+    var meetingMode = false
+
     /// Set before speaking a question; Sparrow listens again as soon as it finishes.
     var listenAfterSpeech = false
 
@@ -263,6 +266,32 @@ final class VoiceEngine: NSObject, ObservableObject {
     func setWakeWord(_ on: Bool) {
         if on { requestPermissions { ok in if ok { self.startRecognition() } } }
         else { stopRecognition(); status = "" }
+    }
+
+    // MARK: Voice level (end of speech + orb)
+    @Published private(set) var level: Float = 0
+    private var noiseFloor: Float = 0.01
+    private var lastLoudAt = Date.distantPast
+    private var extraWait: TimeInterval = 0
+
+    func noteLevel(_ rms: Float) {
+        noiseFloor = rms < noiseFloor ? noiseFloor * 0.9 + rms * 0.1 : noiseFloor * 0.999 + rms * 0.001
+        if rms > max(0.012, noiseFloor * 3) { lastLoudAt = Date() }
+        let l = min(1, rms * 8)
+        if abs(l - level) > 0.04 { level = level * 0.6 + l * 0.4 }
+    }
+
+    /// Called when the pause timer fires: if you're still making sound (a long sentence, a breath), wait a little more.
+    fileprivate func maybeFinish() {
+        if Date().timeIntervalSince(lastLoudAt) < 0.35, extraWait < 6, !heard.isEmpty {
+            extraWait += 0.4
+            silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { _ in
+                MainActor.assumeIsolated { VoiceEngine.shared.maybeFinish() }
+            }
+            return
+        }
+        extraWait = 0
+        finishUtterance()
     }
 
     // MARK: Hold-to-talk (right ⌥ Option)
@@ -331,7 +360,17 @@ final class VoiceEngine: NSObject, ObservableObject {
     nonisolated private static func installTap(_ node: AVAudioInputNode, _ req: SFSpeechAudioBufferRecognitionRequest) {
         let fmt = node.outputFormat(forBus: 0)
         nonisolated(unsafe) let r = req
-        node.installTap(onBus: 0, bufferSize: 1024, format: fmt) { buffer, _ in r.append(buffer) }
+        node.installTap(onBus: 0, bufferSize: 1024, format: fmt) { buffer, _ in
+            r.append(buffer)
+            // How loud it is right now — used to know when you've really stopped talking, and for the orb.
+            guard let ch = buffer.floatChannelData?[0] else { return }
+            let n = Int(buffer.frameLength)
+            var sum: Float = 0
+            var i = 0
+            while i < n { sum += ch[i] * ch[i]; i += 4 }
+            let rms = (sum / Float(max(1, n / 4))).squareRoot()
+            Task { @MainActor in VoiceEngine.shared.noteLevel(rms) }
+        }
     }
     nonisolated private static func startTask(_ rec: SFSpeechRecognizer, _ req: SFSpeechAudioBufferRecognitionRequest,
                                               _ cb: @escaping @Sendable (String?, Bool) -> Void) -> SFSpeechRecognitionTask {
@@ -351,8 +390,13 @@ final class VoiceEngine: NSObject, ObservableObject {
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         req.contextualStrings = ["Sparrow", "hey Sparrow", "Sparrow open", "open", "close", "Claude", "Spotify", "Chrome",
-                                 "Safari", "WhatsApp", "Gmail", "YouTube", "Finder", "Visual Studio Code", "volume", "pause", "next song"]
-        if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
+                                 "Safari", "WhatsApp", "Gmail", "YouTube", "Finder", "Visual Studio Code", "volume", "pause", "next song",
+                                 "remind me", "meeting notes", "Wi-Fi", "Bluetooth", "shut down", "restart", "kholo", "chalao", "band karo",
+                                 "yaad dilao", "gaana", "awaaz"]
+        // "Sparrow…" is listened for privately on this Mac. Once you're talking to Sparrow (after its name, the mic
+        // button or the ⌥ key), Apple's sharper online recognition is used when there's internet.
+        let sharp = (oneShot || pushToTalk) && NetStatus.shared.online && UserDefaults.standard.object(forKey: "sharpHearing") as? Bool ?? true
+        if recognizer.supportsOnDeviceRecognition && !sharp { req.requiresOnDeviceRecognition = true }
         request = req
         let node = audio.inputNode
         Self.installTap(node, req)
@@ -415,10 +459,13 @@ final class VoiceEngine: NSObject, ObservableObject {
         // Hold-to-talk: wait for the key to be released, never for silence.
         if pushToTalk { return }
         var wait = 1.0
+        func complete(_ c: String) -> Bool {
+            c.split(separator: " ").count <= 7 && (CommandEngine.shared.intent(c) != nil || CommandEngine.shared.looksLikeCommand(c.lowercased()))
+        }
         if let cmd = extractCommand(heard), !cmd.isEmpty {
-            wait = CommandEngine.shared.looksLikeCommand(cmd) ? 0.7 : 1.0
+            wait = complete(cmd) ? 0.5 : 1.1        // a clear command runs the moment you stop
         } else if oneShot, !heard.isEmpty {
-            wait = CommandEngine.shared.looksLikeCommand(heard.lowercased()) ? 0.6 : 0.9
+            wait = complete(heard) ? 0.5 : 1.0
         } else if extractCommand(heard) == "" {
             wait = 1.7   // just "Sparrow" — give a moment to say the rest in the same breath
         }
@@ -426,10 +473,13 @@ final class VoiceEngine: NSObject, ObservableObject {
         if heard.lowercased().range(of: #"\b(and|then|also|aur|phir|or|to|the|for|with|ke|ki|ka)\s*$"#, options: .regularExpression) != nil {
             wait = max(wait, 1.8)
         }
+        extraWait = 0
         silenceTimer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { _ in
-            MainActor.assumeIsolated { VoiceEngine.shared.finishUtterance() }
+            MainActor.assumeIsolated { VoiceEngine.shared.maybeFinish() }
         }
-        if ended { finishUtterance() }
+        if ended && !oneShot { finishUtterance() }
+        else if ended { silenceTimer?.invalidate(); silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
+            MainActor.assumeIsolated { VoiceEngine.shared.maybeFinish() } } }
     }
 
     /// Text after the wake word ("hey sparrow, open chrome" → "open chrome"), "" if only the
@@ -454,6 +504,22 @@ final class VoiceEngine: NSObject, ObservableObject {
         let said = heard.trimmingCharacters(in: .whitespacesAndNewlines)
         let wasOneShot = oneShot
         if !said.isEmpty { appendAppLog("voice.log", "heard: \(said)") }
+        if meetingMode && !said.isEmpty {
+            heard = ""
+            if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) || meetingMode { startRecognition() }
+            let low = said.lowercased()
+            if low.contains("stop meeting") || low.contains("end meeting") || low.contains("meeting khatam") || low.contains("stop the notes") {
+                Task {
+                    let r = await MeetingNotes.shared.stop()
+                    AppState.shared.noteMessage = r
+                    NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+                    VoiceEngine.shared.speak(r)
+                }
+            } else {
+                MeetingNotes.shared.add(said)
+            }
+            return
+        }
         var command: String?
         if wasOneShot {
             command = said.isEmpty ? nil : said
@@ -468,7 +534,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
         guard let command else {
             // Hands-free: no need to say "Sparrow" first — act when it's clearly a request.
-            let handsFree = UserDefaults.standard.object(forKey: "handsFree") as? Bool ?? true
+            let handsFree = UserDefaults.standard.object(forKey: "handsFree") as? Bool ?? false
             if handsFree, !said.isEmpty, AgentRouter.shared.isClearRequest(said) {
                 appendAppLog("voice.log", "hands-free command: \(said)")
                 Task { await Assistant.run(said, spoken: true) }
@@ -483,6 +549,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             NotificationCenter.default.post(name: .hookReveal, object: nil)
             NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
             oneShot = true
+            startRecognition()          // fresh session with sharper recognition for what comes next
             status = "Listening…"
             return
         }
@@ -540,14 +607,31 @@ enum Assistant {
             return
         }
         if spoken {
-            // Habits, prayer times, memory, invoices… (Sparrow's offline brain)
-            if let reply = await WebHub.shared.ask(text) {
+            func say(_ reply: String) {
                 state.noteMessage = reply
                 NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
                 NotificationCenter.default.post(name: .petSay, object: reply)
+                NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
                 VoiceEngine.shared.speak(reply)
-                return
             }
+            let short = text.split(separator: " ").count <= 6
+            // Habits, prayer times, memory, invoices… (Sparrow's offline brain) — instant for short requests
+            if short, let reply = await WebHub.shared.ask(text) { say(reply); return }
+            // Anything else, any language: the smart planner turns it into actions and answers like a person
+            if let plan = await SmartPlanner.shared.plan(text) {
+                if plan.commands.isEmpty && plan.say.isEmpty { askAgain(); return }
+                if plan.commands.isEmpty, plan.say.count > 260 {
+                    // a long answer belongs in the chat
+                    state.chatHistory.append(ChatMessage(role: .user, content: text))
+                    state.chatHistory.append(ChatMessage(role: .assistant, content: plan.say))
+                    state.view = .prompt
+                    NotificationCenter.default.post(name: .hookExpand, object: IslandView.prompt)
+                    VoiceEngine.shared.speak(plan.say)
+                    return
+                }
+                say(await SmartPlanner.shared.run(plan)); return
+            }
+            if !short, let reply = await WebHub.shared.ask(text) { say(reply); return }
             // Too short or garbled to be a real question, or no AI to ask: a warm "say that again".
             let hasAI = await AIService.shared.resolveProvider(state: state) != nil
             if text.split(separator: " ").count <= 1 || !hasAI {
@@ -637,9 +721,7 @@ final class Briefing {
                 NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
             }
         }
-        let state = AppState.shared
-        state.noteMessage = text
-        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+        // Just spoken — no text on screen.
         NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
         VoiceEngine.shared.speak(text)
     }

@@ -302,13 +302,43 @@ async function submit(text, fromVoice = false) {
   } finally { setBird('talking', false); }
 }
 /** Fresh conversation: clears the chat, attached files and the files it was talking about. */
+/** Keeps a finished conversation in History so it can be reopened and continued later. */
+function archiveChat(msgs = store.chat) {
+  const real = msgs.filter(m => m.role === 'me' || m.role === 'bot');
+  if (real.filter(m => m.role === 'me').length < 1) return;
+  const first = real.find(m => m.role === 'me')?.text || 'Chat';
+  store.sessions = [{ id: 's' + Date.now().toString(36), title: first.replace(/\s+/g, ' ').slice(0, 60), ts: real[real.length - 1].ts || Date.now(), chat: real.slice(-80) },
+    ...store.sessions].slice(0, 40);
+}
 function newChat(fromIsland = false) {
+  archiveChat();
   store.chat = []; store.save();
   attachments = []; activeDocs = []; followUps = 0; replyKind = 'cmd';
   renderAttached(); renderChat();
   if (M && !fromIsland) M.post('newchat');
 }
-$('#newChatBtn').onclick = () => { newChat(); toast('New chat'); $('#askInput').focus(); };
+$('#newChatBtn').onclick = () => { newChat(); renderHistory(false); toast('New chat'); $('#askInput').focus(); };
+function renderHistory(show = !$('#historyList').classList.contains('open')) {
+  const el = $('#historyList');
+  el.classList.toggle('open', show);
+  if (!show) return;
+  el.innerHTML = store.sessions.length
+    ? store.sessions.map(s => `<div class="hist-row" data-id="${s.id}"><div class="txt"><div class="t1">${esc(s.title)}</div><div class="t2">${new Date(s.ts).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${s.chat.length} messages</div></div><button class="hist-del" data-del="${s.id}" title="Delete">✕</button></div>`).join('')
+    : '<div class="hist-empty">No past chats yet. When you start a new chat, the old one is kept here.</div>';
+}
+$('#historyBtn').onclick = () => renderHistory();
+$('#historyList').onclick = e => {
+  const del = e.target.closest('[data-del]');
+  if (del) { store.sessions = store.sessions.filter(s => s.id !== del.dataset.del); store.save(); renderHistory(true); return; }
+  const row = e.target.closest('.hist-row'); if (!row) return;
+  const s = store.sessions.find(x => x.id === row.dataset.id); if (!s) return;
+  archiveChat();                                   // keep what was open
+  store.sessions = store.sessions.filter(x => x.id !== s.id);
+  store.chat = s.chat.slice(); activeDocs = []; replyKind = 'ai';
+  store.save(); renderHistory(false); renderChat(); go('chat');
+  toast('Chat reopened — carry on, I remember it');
+  $('#askInput').focus();
+};
 $('#askForm').onsubmit = e => { e.preventDefault(); const v = $('#askInput').value; $('#askInput').value = ''; followUps = 0; submit(v); };
 
 /** Things the brain asks the app to do. Returns true if fully handled. */
@@ -927,7 +957,7 @@ function fillSettings() {
   $('#sSimple').checked = s.simple; $('#sSpeak').checked = s.speak; $('#sWake').checked = s.wake; $('#sConv').checked = s.conversation; $('#sMic').checked = s.micButton !== false;
   $$('#sGender button').forEach(b => b.classList.toggle('on', b.dataset.g === s.gender));
   $('#sVoiceName').innerHTML = '<option value="">Automatic</option>' + Object.entries(nv.KOKORO_VOICES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-  $('#sVoiceName').value = s.voiceName || ''; $('#sNeural').checked = s.neural !== false; $('#sHandsFree').checked = s.handsFree !== false; $('#handsFreeRow').hidden = !M;
+  $('#sVoiceName').value = s.voiceName || ''; $('#sNeural').checked = s.neural !== false; $('#sHandsFree').checked = s.handsFree === true; $('#handsFreeRow').hidden = !M;
   $('#macVoice').hidden = !M;
   if (M) {
     $('#sListen').value = s.listen || ''; $('#sStudio').checked = !!s.studio;
@@ -1131,7 +1161,16 @@ async function voiceAsk(text) {
 }
 window.Sparrow = {
   catchUp: () => checkDue(),
+  rememberNote: (title, text) => mem.remember('meeting-notes', title, text),
+  rememberFile: async (name, type, base64) => {
+    const bin = atob(base64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    const rec = await mem.addFile(new File([u], name, { type }), true);
+    activeDocs = [rec.id];
+    return rec.id;
+  },
   submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); }, newChat,
+  // Island chats go to History too, so they can be continued here.
+  archiveChat: msgs => { archiveChat((msgs || []).map(m => ({ role: m.role === 'user' ? 'me' : 'bot', text: m.content, ts: Date.now() }))); store.save(); },
   // The Mac island speaks through here (Kokoro / Urdu / Hindi / Punjabi / Studio voice), and hears when it's done.
   neuralSay: t => S().neural === false ? Promise.resolve(false) : nv.say(t, neuralOpts({
     onstart: () => setBird('talking', true),
@@ -1142,6 +1181,10 @@ window.Sparrow = {
 function sendVoicePrefs() {
   if (!M) return;
   const listen = S().listen || ({ en: 'en-US', ur: 'en-IN', hi: 'en-IN', pa: 'en-IN', ar: 'ar-SA' }[S().lang] || 'en-US');
-  M.post('prefs', { listen, neural: S().neural !== false, studio: !!S().studio, lang: S().lang || 'en', voiceName: S().voiceName || '', gender: S().gender || 'female', handsFree: S().handsFree !== false });
+  M.post('prefs', { listen, neural: S().neural !== false, studio: !!S().studio, lang: S().lang || 'en', voiceName: S().voiceName || '', gender: S().gender || 'female', handsFree: S().handsFree === true });
 }
-if (M) { M.post('ready'); sendVoicePrefs(); }   // the Mac app speaks with its own fast native voice engine
+if (M) {
+  M.post('ready'); sendVoicePrefs();
+  // Esc tucks the panel away (unless a sheet is open, then Esc closes the sheet first)
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('.sheet:not([hidden])')) M.post('hide'); });
+}   // the Mac app speaks with its own fast native voice engine

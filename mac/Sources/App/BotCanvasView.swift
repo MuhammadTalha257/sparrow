@@ -8,6 +8,7 @@ struct BotCanvasView: View {
 
     // One engine per view instance (main bot)
     @StateObject private var engine = BotEngine()
+    @ObservedObject private var voice = VoiceEngine.shared
 
     var body: some View {
         TimelineView(.animation(paused: state.mode == .hidden)) { timeline in
@@ -26,12 +27,14 @@ struct BotCanvasView: View {
                     engine.slotHTarget = 0
                     if engine.morph < 0.05 { engine.slotH = 0; engine.slotHVel = 0 }
                 }
-                // Integration pills have a fixed brand color → use it as bodyColor.
-                // Claude Code tasks use state-based gradient (working=blue, thinking=purple, etc.).
-                engine.bodyColor = (state.focusTask?.isIntegration == true)
-                    ? cgColorFromHex(state.focusTask!.color)
-                    : nil
+                // Always Sparrow's own colours (like the pet).
+                engine.bodyColor = nil
                 engine.update(dt: dt)
+                // Wings, like the pet: fast while flying in, flapping while listening to you, tucked otherwise
+                if now < SparrowFlight.until { engine.hands = 0.65 + 0.35 * CGFloat(sin(now * 38)) }
+                else if voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) {
+                    engine.hands = 0.35 + 0.25 * CGFloat(sin(now * 18)) + CGFloat(voice.level) * 0.3
+                } else if engine.hands > 0.01 && now > engine.waveUntil { engine.hands *= 0.85 }
                 engine.drawHandsBehind(context: context, size: size)
                 engine.draw(context: context, size: size)
                 engine.drawHandsAndExtras(context: context, size: size)
@@ -176,3 +179,46 @@ extension CGColor {
         cgColorFromHex(hex) ?? CGColor(gray: 0.5, alpha: 1)
     }
 }
+
+
+/// When the sparrow is flying (e.g. arriving when Sparrow opens), its wings flap fast.
+enum SparrowFlight {
+    nonisolated(unsafe) static var until: Double = 0
+    static func fly(for seconds: Double) { until = Date().timeIntervalSinceReferenceDate + seconds }
+}
+
+/// A little sparrow (same character as the big one) in any colour — used on app tiles and the header.
+struct LittleSparrow: View {
+    let color: String?
+    var size: CGFloat = 26
+    @StateObject private var engine: BotEngine
+
+    init(color: String?, size: CGFloat = 26) {
+        self.color = color
+        self.size = size
+        _engine = StateObject(wrappedValue: {
+            let e = BotEngine()
+            e.isMini = true
+            e.bodyColor = color.flatMap { cgColorFromHex($0) }
+            return e
+        }())
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
+            Canvas { context, sz in
+                let now = timeline.date.timeIntervalSinceReferenceDate
+                engine.update(dt: min(0.05, now - engine.lastTime))
+                engine.draw(context: context, size: sz)
+            }
+        }
+        .frame(width: size / 0.6, height: size / 0.6)
+        .frame(width: size, height: size)
+        .onAppear { engine.setState(.idle, force: true); engine.setPermanentEmote(.happy) }
+        .onReceive(NotificationCenter.default.publisher(for: .littleSparrowReact)) { n in
+            if (n.object as? String) == color { engine.triggerEmote(.love) }
+        }
+    }
+}
+
+extension Notification.Name { static let littleSparrowReact = Notification.Name("sparrow.littleReact") }

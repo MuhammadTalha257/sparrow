@@ -370,11 +370,15 @@ final class BotEngine: ObservableObject {
         let now = CACurrentMediaTime()
         slapTimes = slapTimes.filter { now - $0 < 1.7 }
         slapTimes.append(now)
-        SoundEngine.shared.play("slap")
+        if slapTimes.count > 1 { SoundEngine.shared.play("slap") }
         squash()
         if slapTimes.count >= 3 {
             slapTimes = []
             NotificationCenter.default.post(name: .botDizzy, object: nil)
+        } else if slapTimes.count == 1 {
+            // A single tap is affection: hearts and a happy chirp.
+            triggerEmote(.love)
+            SoundEngine.shared.play("approve")
         } else {
             // Annoyed: line eyes for 800ms, annoyed sound after 60ms delay
             eyeOverride = .line

@@ -68,6 +68,7 @@ enum FileDropHandler {
                 await MainActor.run {
                     state.droppedFile = DroppedFile(url: dest, name: name)
                     state.promptContext = .file(name: name, fileURL: dest)
+                    WebHub.shared.rememberFile(dest)       // keep it in Sparrow's memory
                 }
             }
         }

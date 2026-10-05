@@ -7,6 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7E77366681351C1D17AF60A0 /* MeetingNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E09494230512EF3241740F36 /* MeetingNotes.swift */; };
+		68CE94D17A2B6DA61FCEEC80 /* MeetingNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E09494230512EF3241740F36 /* MeetingNotes.swift */; };
+		C07E53BDAC5D497CF979CCBE /* SmartPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71055F0E5D33857DB26A3635 /* SmartPlanner.swift */; };
+		C36B064F9F1187AF1D810E74 /* SmartPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71055F0E5D33857DB26A3635 /* SmartPlanner.swift */; };
+		16CF2A91F191A8DB00D4A4FF /* NetStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C705035F81568D3A64CB2907 /* NetStatus.swift */; };
+		7A51D4595B97D84CFFB4215B /* NetStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C705035F81568D3A64CB2907 /* NetStatus.swift */; };
+		5CED2C1E919A02CE9D0C4EC8 /* MemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBBF5A6891B36387EE6D8CA /* MemoryStore.swift */; };
+		1EC9131DAFB67F0087AD337A /* MemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBBF5A6891B36387EE6D8CA /* MemoryStore.swift */; };
 		EABF2E8DBC8390D81E0763AE /* BackgroundKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */; };
 		B975247446E237C4D9B09761 /* BackgroundKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */; };
 		A6B4032D0A0F7B797FAF8A35 /* HoldToTalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E9D1912DEACDD585C7DE67D /* HoldToTalk.swift */; };
@@ -108,6 +116,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		E09494230512EF3241740F36 /* MeetingNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingNotes.swift; sourceTree = "<group>"; };
+		71055F0E5D33857DB26A3635 /* SmartPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPlanner.swift; sourceTree = "<group>"; };
+		C705035F81568D3A64CB2907 /* NetStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetStatus.swift; sourceTree = "<group>"; };
+		5CBBF5A6891B36387EE6D8CA /* MemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryStore.swift; sourceTree = "<group>"; };
 		2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeeper.swift; sourceTree = "<group>"; };
 		1E9D1912DEACDD585C7DE67D /* HoldToTalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldToTalk.swift; sourceTree = "<group>"; };
 		224F911E451BBDC7247806C7 /* MacControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacControl.swift; sourceTree = "<group>"; };
@@ -172,6 +184,10 @@
 				D4540F630F8BA04AFFFA3979 /* BotEngine.swift */,
 				3104222B3F17BA5E8DEA5277 /* CalcomPoller.swift */,
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
+				E09494230512EF3241740F36 /* MeetingNotes.swift */,
+				71055F0E5D33857DB26A3635 /* SmartPlanner.swift */,
+				C705035F81568D3A64CB2907 /* NetStatus.swift */,
+				5CBBF5A6891B36387EE6D8CA /* MemoryStore.swift */,
 				2A6F28D209FEE7CAF9AE7EEE /* BackgroundKeeper.swift */,
 				1E9D1912DEACDD585C7DE67D /* HoldToTalk.swift */,
 				224F911E451BBDC7247806C7 /* MacControl.swift */,
@@ -367,6 +383,10 @@
 				C24D863967D8D32D828ED4B1 /* BotEngine.swift in Sources */,
 				4F1E0B3C838DA3CD6F864BC0 /* CalcomPoller.swift in Sources */,
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
+				68CE94D17A2B6DA61FCEEC80 /* MeetingNotes.swift in Sources */,
+				C36B064F9F1187AF1D810E74 /* SmartPlanner.swift in Sources */,
+				7A51D4595B97D84CFFB4215B /* NetStatus.swift in Sources */,
+				1EC9131DAFB67F0087AD337A /* MemoryStore.swift in Sources */,
 				B975247446E237C4D9B09761 /* BackgroundKeeper.swift in Sources */,
 				0A98A5526DF2A3F5A3D3DE54 /* HoldToTalk.swift in Sources */,
 				6B967334DDA2C838803545F8 /* MacControl.swift in Sources */,
@@ -418,6 +438,10 @@
 				0E9CE475EC53C67DAB00F8E5 /* BotEngine.swift in Sources */,
 				1969590AFEE6CB21404346F1 /* CalcomPoller.swift in Sources */,
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
+				7E77366681351C1D17AF60A0 /* MeetingNotes.swift in Sources */,
+				C07E53BDAC5D497CF979CCBE /* SmartPlanner.swift in Sources */,
+				16CF2A91F191A8DB00D4A4FF /* NetStatus.swift in Sources */,
+				5CED2C1E919A02CE9D0C4EC8 /* MemoryStore.swift in Sources */,
 				EABF2E8DBC8390D81E0763AE /* BackgroundKeeper.swift in Sources */,
 				A6B4032D0A0F7B797FAF8A35 /* HoldToTalk.swift in Sources */,
 				89FDA1AE9EA7D5FA6AD4F948 /* MacControl.swift in Sources */,

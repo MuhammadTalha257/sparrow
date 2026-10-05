@@ -45,6 +45,12 @@ final class AgentRouter {
         if lowered.range(of: #"^(hide|minimi[sz]e) (yourself|sparrow|the island)$|^go hide$"#, options: .regularExpression) != nil {
             SparrowBubble.shared.hideIsland(); return "I'll wait in my little bubble. Click it when you need me."
         }
+        if lowered.range(of: #"^(start|begin|take|record)( the| my)? (meeting )?(notes|minutes)|^(start|begin) (recording|transcribing) (the )?meeting|^meeting notes( start)?$|^take notes$"#, options: .regularExpression) != nil {
+            return MeetingNotes.shared.start()
+        }
+        if lowered.range(of: #"^(stop|end|finish|save)( the| my)? (meeting )?(notes|minutes|recording)|^meeting (khatam|over|done)"#, options: .regularExpression) != nil {
+            return await MeetingNotes.shared.stop()
+        }
         // Mac control first (shut down, Wi-Fi, Bluetooth, windows…), on the words as said and as understood.
         if let r = MacControl.shared.handle(raw) ?? MacControl.shared.handle(base) { return r }
         let t = CommandEngine.shared.intent(base) ?? base

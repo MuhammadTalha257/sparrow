@@ -328,15 +328,6 @@ struct BotPlacement: View {
                         .position(x: uploadCx, y: cy)
                 }
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
-            } else if state.mode != .hidden {
-                // Sparrow's own character
-                SparrowMascot(state: state, size: diameter * 1.05)
-                    .frame(width: canvasSize, height: canvasSize)
-                    .opacity(state.isDraggingBot ? 0 : opacity)
-                    .position(x: cx, y: cy)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.72), value: cx)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.72), value: cy)
-                    .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
             } else {
                 BotCanvasView(state: state, particleOverhang: overhang)
                     .frame(width: canvasSize, height: canvasSize + overhang)
@@ -500,7 +491,7 @@ struct IslandHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SparrowFigure(size: 15)
+            LittleSparrow(color: nil, size: 17)
                 .padding(.leading, 9)
                 .help("Drag to move Sparrow")
             // Left: labelled tabs (Sparrow's own order)

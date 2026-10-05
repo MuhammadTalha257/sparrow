@@ -479,3 +479,22 @@ html.island-mode .row2 { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
 .row input[type=checkbox]:checked, .sheet input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
 .row input[type=checkbox]:checked::before, .sheet input[type=checkbox]:checked::before { transform: translateX(18px); }
 .row input[type=checkbox]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-bar { gap: 6px; }
+.history-list { display: none; flex-direction: column; gap: 6px; margin: 2px 0 10px; max-height: 50vh; overflow: auto; }
+.history-list.open { display: flex; }
+.hist-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 14px; background: var(--card); border: var(--bw, 1px) solid var(--line); cursor: pointer; transition: transform .15s ease, background .15s ease; }
+.hist-row:hover { transform: translateY(-1px); background: var(--soft); }
+.hist-row .txt { flex: 1; min-width: 0; }
+.hist-row .t1 { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-row .t2 { font-size: 12px; opacity: .65; margin-top: 2px; }
+.hist-del { width: 26px; height: 26px; border-radius: 50%; background: transparent; opacity: .5; }
+.hist-del:hover { opacity: 1; background: var(--soft); }
+.hist-empty { padding: 14px; opacity: .7; font-size: 14px; }
+
+/* Inside the Mac app's compact "More" panel */
+html.mac-host { font-size: 14px; }
+html.mac-host .hello { font-size: 20px; }
+html.mac-host main { padding-top: 6px; }
+html.mac-host .hero .bird-wrap { transform: scale(.82); transform-origin: left center; }
+html.mac-host .card { border-radius: 18px; }
+html.mac-host .tabs button span, html.mac-host .tabs .lbl { font-size: 11px; }

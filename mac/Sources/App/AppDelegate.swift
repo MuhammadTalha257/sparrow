@@ -107,13 +107,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         islandController?.showWindow(nil)
         islandController?.fsm.launch()
         HookServer.shared.start()
-        N8nPoller.shared.start()
-        VercelPoller.shared.start()
-        ResendPoller.shared.start()
-        GithubPoller.shared.start()
-        StripePoller.shared.start()
-        CalcomPoller.shared.start()
-        NotionPoller.shared.start()
+        // Developer-service monitors only run when you've connected them (keeps Sparrow light).
+        let has = { (k: String) in !(KeychainStore.shared.get(k) ?? "").isEmpty }
+        if has("n8n-api-key") && has("n8n-url") { N8nPoller.shared.start() }
+        if has("vercel-token") { VercelPoller.shared.start() }
+        if has("resend-api-key") { ResendPoller.shared.start() }
+        if has("github-token") { GithubPoller.shared.start() }
+        if has("stripe-api-key") { StripePoller.shared.start() }
+        if has("calcom-api-key") { CalcomPoller.shared.start() }
+        if has("notion-api-key") { NotionPoller.shared.start() }
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings),
                                                name: .openFullSettings, object: nil)
         // Voice, greeting, weather and notification reading

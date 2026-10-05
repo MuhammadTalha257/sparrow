@@ -2,6 +2,7 @@
 const KEY = 'sparrow.items.v1';
 const SKEY = 'sparrow.settings.v1';
 const CKEY = 'sparrow.chat.v1';
+const HKEY = 'sparrow.sessions.v1';   // past chats (History)
 
 const read = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
@@ -18,7 +19,7 @@ export const DEFAULT_SETTINGS = {
   prayer: { on: false, method: 'Auto', asr: 'Hanafi', before: 10, speak: true },
   health: { water: false, waterEvery: 2, meds: false, medName: 'medicine', medTimes: '09:00, 21:00' },
   business: { name: '', address: '', currency: '£', invoiceNo: 1, quoteNo: 1 },
-  memory: { on: true, keepCopies: false, days: 0, recentFiles: false },
+  memory: { on: true, keepCopies: true, days: 0, recentFiles: false },
   snippets: [],
   quick: null,
 };
@@ -26,8 +27,9 @@ export const DEFAULT_SETTINGS = {
 function mergeSettings(saved) {
   const s = Object.assign({}, DEFAULT_SETTINGS, saved || {});
   if (!s.lookV3) { s.theme = 'sunset'; s.lookV3 = true; }
-  if (!s.prayerAutoV1) { if (s.prayer.method === 'Karachi') s.prayer.method = 'Auto'; s.prayerAutoV1 = true; }   // times follow your location   // back to the warm glass look
   for (const k of ['keys', 'prayer', 'business', 'memory', 'health']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
+  if (!s.memCopiesV1) { s.memory.keepCopies = true; s.memory.on = true; s.memCopiesV1 = true; }   // remember files (with a copy) by default
+  if (!s.prayerAutoV1) { if (s.prayer.method === 'Karachi') s.prayer.method = 'Auto'; s.prayerAutoV1 = true; }   // times follow your location
   return s;
 }
 
@@ -35,9 +37,10 @@ export const store = {
   items: read(KEY, []),
   settings: mergeSettings(read(SKEY, {})),
   chat: read(CKEY, []),
+  sessions: read(HKEY, []),
   listeners: new Set(),
 
-  save() { write(KEY, this.items); write(SKEY, this.settings); write(CKEY, this.chat.slice(-80)); this.listeners.forEach(f => { try { f(); } catch (e) { console.error(e); } }); },
+  save() { write(KEY, this.items); write(SKEY, this.settings); write(CKEY, this.chat.slice(-80)); write(HKEY, this.sessions.slice(0, 40)); this.listeners.forEach(f => { try { f(); } catch (e) { console.error(e); } }); },
   onChange(f) { this.listeners.add(f); },
 
   add(item) {

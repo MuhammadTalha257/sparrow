@@ -27,7 +27,29 @@ const tx = async (store, mode, fn) => {
     t.oncomplete = () => res(out); t.onerror = () => rej(t.error);
   });
 };
+// Inside the Mac app, memory lives in the app itself (Application Support), shared with the island — reliable and private.
+const NATIVE = window.SparrowHost === 'mac' && window.SparrowMac;
+const nat = (op, args = {}) => window.SparrowMac.call('mem', { op, ...args });
+const b64 = async blob => { const u = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+const back = {
+  logAdd: r => NATIVE ? nat('logAdd', { rec: r }) : tx('log', 'readwrite', s => s.add(r)),
+  logDel: id => NATIVE ? nat('logDel', { id }) : tx('log', 'readwrite', s => s.delete(id)),
+  filePut: async r => {
+    if (!NATIVE) return tx('files', 'readwrite', s => s.put(r));
+    const { blob, ...lite } = r;
+    return nat('filePut', { rec: lite, base64: blob ? await b64(blob) : '' });
+  },
+  fileGet: async id => {
+    if (!NATIVE) return tx('files', 'readonly', s => s.get(id));
+    const r = await nat('fileGet', { id }); if (!r) return null;
+    if (r.base64) { const bin = atob(r.base64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); r.blob = new Blob([u], { type: r.type || 'application/octet-stream' }); }
+    delete r.base64; return r;
+  },
+  fileDel: id => NATIVE ? nat('fileDel', { id }) : tx('files', 'readwrite', s => s.delete(id)),
+  clear: async () => { if (NATIVE) return nat('wipe'); await tx('log', 'readwrite', s => s.clear()); await tx('files', 'readwrite', s => s.clear()); },
+};
 const all = async (name) => {
+  if (NATIVE) return (await nat(name === 'log' ? 'logAll' : 'fileAll')) || [];
   const d = await db();
   return new Promise((res, rej) => {
     const r = d.transaction(name).objectStore(name).getAll();
@@ -38,7 +60,7 @@ const all = async (name) => {
 /** Remember something. kind: chat | file | task | done | reminder | meeting | note | quote | invoice | expense | email | opened | meeting-notes | customer | habit | report */
 export async function remember(kind, title, text = '', meta = {}) {
   if (!store.settings.memory?.on) return null;
-  try { return await tx('log', 'readwrite', s => s.add({ at: Date.now(), kind, title: String(title).slice(0, 300), text: String(text || '').slice(0, 20000), meta })); }
+  try { return await back.logAdd({ at: Date.now(), kind, title: String(title).slice(0, 300), text: String(text || '').slice(0, 20000), meta }); }
   catch { return null; }
 }
 
@@ -118,13 +140,13 @@ export async function addFile(file, keepCopy = store.settings.memory?.keepCopies
   const text = await fileText(file);
   const rec = { id: 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: file.name, type: file.type, size: file.size,
     at: Date.now(), text: text.slice(0, 400000), blob: keepCopy && file.size < 30e6 ? file : null };
-  try { await tx('files', 'readwrite', s => s.put(rec)); } catch {}
+  try { await back.filePut(rec); } catch (e) { console.warn('memory: file not saved', e); }
   await remember('file', file.name, text.slice(0, 4000), { fileId: rec.id, size: file.size, copy: !!rec.blob });
   const { blob, ...lite } = rec;
   return lite;
 }
-export async function getFile(id) { try { return await tx('files', 'readonly', s => s.get(id)); } catch { return null; } }
-export async function listFiles() { return (await all('files')).sort((a, b) => b.at - a.at).map(({ blob, ...r }) => ({ ...r, hasCopy: !!blob })); }
+export async function getFile(id) { try { return await back.fileGet(id); } catch { return null; } }
+export async function listFiles() { return (await all('files')).sort((a, b) => b.at - a.at).map(({ blob, ...r }) => ({ ...r, hasCopy: !!blob || !!r.hasCopy })); }
 
 // ---------- search ----------
 /** Search memory. opts: { q, from, to, kinds } — from/to are timestamps. */
@@ -139,11 +161,9 @@ export async function search({ q = '', from = 0, to = Infinity, kinds = null, li
   return scored.slice(0, limit).map(x => x.r);
 }
 export async function recent(limit = 100) { return (await all('log')).sort((a, b) => b.at - a.at).slice(0, limit); }
-export async function forget(id) { try { await tx('log', 'readwrite', s => s.delete(id)); } catch {} }
-export async function forgetFile(id) { try { await tx('files', 'readwrite', s => s.delete(id)); } catch {} }
-export async function forgetAll() {
-  try { await tx('log', 'readwrite', s => s.clear()); await tx('files', 'readwrite', s => s.clear()); } catch {}
-}
+export async function forget(id) { try { await back.logDel(id); } catch {} }
+export async function forgetFile(id) { try { await back.fileDel(id); } catch {} }
+export async function forgetAll() { try { await back.clear(); } catch {} }
 /** Remove entries older than the chosen number of days (0 = keep forever). */
 export async function prune() {
   const days = +store.settings.memory?.days || 0;
@@ -155,8 +175,8 @@ export async function prune() {
 export async function exportMemory() { return { log: await all('log'), files: (await all('files')).map(({ blob, ...f }) => f) }; }
 export async function importMemory(data) {
   const have = new Set((await all('log')).map(r => r.at + r.title));
-  for (const r of data?.log || []) if (!have.has(r.at + r.title)) { const { id, ...rest } = r; await tx('log', 'readwrite', s => s.add(rest)); }
-  for (const f of data?.files || []) await tx('files', 'readwrite', s => s.put(f));
+  for (const r of data?.log || []) if (!have.has(r.at + r.title)) { const { id, ...rest } = r; await back.logAdd(rest); }
+  for (const f of data?.files || []) await back.filePut(f);
 }
 
 /** Text chunks from your files that best match a question (for "ask your documents"). */

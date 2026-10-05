@@ -39,7 +39,7 @@ final class SparrowSchemeHandler: NSObject, WKURLSchemeHandler {
 }
 
 @MainActor
-final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     static let shared = WebHub()
     private(set) var webView: WKWebView!
     private var window: NSWindow?
@@ -75,7 +75,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         webView = wv
         wv.load(URLRequest(url: URL(string: "app://sparrow/index.html")!))
         // A window that stays alive (hidden) so the page keeps running.
-        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 720),
+        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 580),
                         styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         w.title = "Sparrow"
@@ -86,8 +86,9 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         w.hidesOnDeactivate = false
         w.level = .floating
         w.backgroundColor = NSColor(red: 0.08, green: 0.05, blue: 0.03, alpha: 1)
-        w.contentMinSize = NSSize(width: 380, height: 480)
+        w.contentMinSize = NSSize(width: 360, height: 440)
         w.contentView = wv
+        w.delegate = self
         window = w
     }
 
@@ -96,10 +97,17 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         start()
         guard let w = window else { return }
         if !w.isVisible, let screen = NSScreen.main {
+            // Opens right under the island, never covering the whole screen
             let vf = screen.visibleFrame
-            let pos = SparrowPosition.current
-            let x = pos == .left ? vf.minX + 12 : pos == .right ? vf.maxX - w.frame.width - 12 : vf.midX - w.frame.width / 2
-            w.setFrameOrigin(NSPoint(x: x, y: vf.maxY - w.frame.height - 60))
+            var x = vf.midX - w.frame.width / 2
+            var top = vf.maxY - 8
+            if let island = IslandDrag.panel {
+                x = island.frame.midX - w.frame.width / 2
+                top = min(vf.maxY - 8, island.frame.maxY - 175)
+            }
+            x = min(max(x, vf.minX + 8), vf.maxX - w.frame.width - 8)
+            let h = min(w.frame.height, top - vf.minY - 8)
+            w.setFrame(NSRect(x: x, y: top - h, width: w.frame.width, height: h), display: false)
         }
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -108,7 +116,36 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
 
     func run(_ js: String) { webView?.evaluateJavaScript(js, completionHandler: nil) }
 
+    func hide() { window?.orderOut(nil) }
+    /// Click anywhere else → the panel tucks away (like a popover).
+    func windowDidResignKey(_ notification: Notification) {
+        guard UserDefaults.standard.object(forKey: "morePinned") as? Bool != true else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            MainActor.assumeIsolated {
+                guard let w = WebHub.shared.window, !w.isKeyWindow, NSApp.modalWindow == nil, w.attachedSheet == nil else { return }
+                if NSApp.windows.contains(where: { $0 is NSOpenPanel || $0 is NSSavePanel }) { return }
+                w.orderOut(nil)
+            }
+        }
+    }
+
     var isReady: Bool { ready }
+
+    /// Saves a file you dropped on the island into Sparrow's memory (text for search + a copy).
+    func rememberFile(_ url: URL) {
+        guard let data = try? Data(contentsOf: url), data.count < 30_000_000, let wv = webView else { return }
+        let ext = url.pathExtension.lowercased()
+        let mime = ["pdf": "application/pdf", "txt": "text/plain", "md": "text/markdown", "csv": "text/csv", "json": "application/json",
+                    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"][ext] ?? "application/octet-stream"
+        Task {
+            for _ in 0..<30 where !self.ready { try? await Task.sleep(nanoseconds: 100_000_000) }
+            _ = try? await wv.callAsyncJavaScript("return await window.Sparrow.rememberFile(n, t, b)",
+                                                 arguments: ["n": url.lastPathComponent, "t": mime, "b": data.base64EncodedString()],
+                                                 in: nil, contentWorld: .page)
+        }
+    }
 
     /// Speaks with Sparrow's natural voices. true = speaking now (the end arrives as a "speaking" message).
     func say(_ text: String) async -> Bool {
@@ -147,6 +184,10 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             if let t = o["text"] as? String { VoiceEngine.shared.speak(t) }
         case "listen":
             VoiceEngine.shared.listenOnce()
+        case "mem":
+            reply(id, MemoryStore.shared.handle(o))
+        case "hide":
+            hide()
         case "newchat":
             AppState.shared.newChat()
         case "speaking":

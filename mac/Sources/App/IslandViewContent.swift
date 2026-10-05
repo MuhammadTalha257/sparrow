@@ -40,7 +40,7 @@ struct OverviewView: View {
     var body: some View {
         HStack(spacing: 10) {
             if agent == nil || agent?.isIntegration == true {
-                SparrowContextCard(state: state).frame(width: 300)
+                SparrowHomeView(state: state)
             } else {
             // Left card: title row + ticker below + ↗ button overlay
             ZStack(alignment: .topLeading) {
@@ -107,10 +107,9 @@ struct OverviewView: View {
                 }
             }
             .frame(width: 300)
-            }
-
             // Right card: favourite apps, each with a sparrow in its colours
             SparrowAppGrid()
+            }
         }
         .onChange(of: state.focusId) { _, _ in showingN8nDetail = false }
     }
@@ -168,10 +167,7 @@ struct EmptyStateView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        HStack(spacing: 10) {
-            SparrowContextCard(state: state).frame(width: 300)
-            SparrowAppGrid()
-        }
+        SparrowHomeView(state: state)
     }
 }
 

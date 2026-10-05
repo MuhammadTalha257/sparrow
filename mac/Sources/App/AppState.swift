@@ -504,6 +504,11 @@ struct ChatMessage: Identifiable {
 extension AppState {
     /// Fresh conversation: clears the chat, the attached file and what the AI remembers of it.
     func newChat() {
+        // Keep it in History (in "More") so it can be reopened and continued.
+        let msgs = chatHistory.map { ["role": $0.role == .user ? "user" : "assistant", "content": $0.content] }
+        if !msgs.isEmpty, let d = try? JSONSerialization.data(withJSONObject: msgs), let j = String(data: d, encoding: .utf8) {
+            WebHub.shared.run("window.Sparrow && window.Sparrow.archiveChat && window.Sparrow.archiveChat(\(j))")
+        }
         chatHistory.removeAll()
         droppedFile = nil
         noteMessage = nil
