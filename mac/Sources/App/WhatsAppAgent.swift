@@ -69,7 +69,9 @@ final class WhatsAppAgent {
             return "WhatsApp isn't open. Say \"open WhatsApp\" and ask me again."
         }
         guard AXIsProcessTrusted() else {
-            return "To read WhatsApp, allow Sparrow in System Settings → Privacy & Security → Accessibility."
+            // Shows macOS's own prompt (and adds Sparrow to the list if it isn't there).
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            return "macOS hasn't given me Accessibility yet. In System Settings → Privacy & Security → Accessibility, select Sparrow, press the minus button to remove it, then quit and reopen Sparrow and allow it again. After an update macOS keeps the old switch, which no longer counts."
         }
         let badge = await Self.dockBadge()
         let rows = await Self.unreadRows()

@@ -17,7 +17,7 @@ import AppKit
 final class MailAgent {
     static let shared = MailAgent()
 
-    struct Mail { let id: String; let sender: String; let subject: String; let date: String; let body: String; let account: String
+    struct Mail { let id: String; let sender: String; let subject: String; let date: String; let body: String; let account: String; var age: Int = 0
         var name: String { MailAgent.name(of: sender) }
         var address: String { MailAgent.address(of: sender) }
     }
@@ -30,6 +30,7 @@ final class MailAgent {
     // MARK: Understanding
 
     private static let checkRE = #"^(?:check|read|show|any|do i have|have i got|got any|what are|what's in)?\s*(?:my |any |the |new |unread |latest |recent )*(?:e-?mails?|mails?|inbox)(?:\s+(?:today|now|please))?\??$|^(?:check|open) (?:my )?inbox$|^(?:any(?:thing)?|something) new in (?:my )?(?:e-?mail|mail|inbox)\??$|^(?:who|has anyone) (?:e-?mailed|wrote to) me\??$"#
+    private static let latestRE = #"^(?:read|open|show|check|tell me|give me|what'?s|what is|what was)(?: me)?(?: my| the)? (?:latest|last|newest|most recent|recent|new|top|first|current)(?: new| unread| received)? (?:e-?mail|mail|message|inbox message)(?: i got| i received| in (?:my )?inbox)?\??$|^who (?:e-?mailed|wrote to|mailed) me (?:last|most recently)\??$|^(?:read|open) (?:my |the )?(?:e-?mail|mail)(?: for me)?$"#
     private static let readRE  = #"^(?:read|open|what does|what did|show)(?: me)? (?:the |that |this )?(?:e-?mail|mail|message)?\s*(?:from|by|of)\s+(.+?)(?:\s+(?:say|says|said))?\??$|^(?:read|open) (?:it|that|that one|this one|the last one|the latest one|the first one)$"#
     private static let replyRE = #"^(?:reply|respond|write back)(?: to)?\s+(.+?)\s*(?:saying|say|that|and say|and tell (?:him|her|them)|to say|:|,)\s*(.+)$"#
     private static let replyBareRE = #"^(?:reply|respond|write back)(?: to)?\s+(.+)$"#
@@ -46,6 +47,7 @@ final class MailAgent {
             || (t.range(of: Self.replyBareRE, options: .regularExpression) != nil && (t.contains("email") || t.contains("mail") || lastMail != nil))
             || t.range(of: Self.checkRE, options: [.regularExpression, .caseInsensitive]) != nil
             || t.range(of: Self.readRE, options: .regularExpression) != nil
+            || t.range(of: Self.latestRE, options: .regularExpression) != nil
     }
 
     func handle(_ raw: String) async -> String? {
@@ -66,6 +68,7 @@ final class MailAgent {
             VoiceEngine.shared.listenAfterSpeech = true
             return "What should I tell \(mail.name)?"
         }
+        if t.range(of: Self.latestRE, options: .regularExpression) != nil { return await readLatest() }
         if let m = Self.match(Self.readRE, t) {
             let who = m.first ?? ""
             let mail: Mail?
@@ -81,7 +84,8 @@ final class MailAgent {
 
     func checkNew() async -> String {
         AgentRouter.lastChannel = .mail
-        guard let res = await Self.osa(Self.listScript(limit: 6)) else { return Self.mailProblem }
+        let got = await Self.osa(Self.listScript(limit: 6))
+        guard let res = got, !Self.failed(res) else { return Self.problem(got) }
         let (total, mails) = Self.parseList(res)
         recent = mails
         lastMail = mails.first
@@ -103,6 +107,17 @@ final class MailAgent {
         let gist = mails.map { "\($0.name): \($0.subject.isEmpty ? "no subject" : $0.subject)." }.joined(separator: " ")
         VoiceEngine.shared.listenAfterSpeech = true
         return "\(head) \(gist) Want me to reply to any?"
+    }
+
+    /// The newest email in the inbox (read or not), read out.
+    func readLatest() async -> String {
+        AgentRouter.lastChannel = .mail
+        var res = await Self.osa(Self.latestScript(days: 3))
+        if let r = res, Self.failed(r) { return Self.problem(r) }
+        if res.map({ Self.parseList($0).1.isEmpty }) ?? true { res = await Self.osa(Self.latestScript(days: 60)) }
+        guard let r = res, !Self.failed(r) else { return Self.problem(res) }
+        guard let mail = Self.parseList(r).1.first else { return "Your inbox looks empty. Is your account switched on in Mail?" }
+        return await read(mail)
     }
 
     private func read(_ mail: Mail) async -> String {
@@ -203,12 +218,20 @@ final class MailAgent {
             .replacingOccurrences(of: #"'s$|’s$"#, with: "", options: .regularExpression)
         guard !w.isEmpty else { return nil }
         if let m = recent.first(where: { $0.sender.lowercased().contains(w) || $0.subject.lowercased().contains(w) }) { return m }
-        guard let res = await Self.osa(Self.findScript(w)) else { return nil }
-        let (_, mails) = Self.parseList(res)
-        return mails.first
+        if let res = await Self.osa(Self.findScript(w)), let m = Self.parseList(res).1.first { return m }
+        if let res = await Self.osa(Self.findSubjectScript(w)), let m = Self.parseList(res).1.first { return m }
+        return nil
     }
 
     private func notFound(_ who: String) -> String { "I couldn't find a recent email from \(who). Try their first name, or say \"any new emails\"." }
+    nonisolated static func failed(_ s: String) -> Bool { s.hasPrefix("\u{15}") }
+    private static func problem(_ s: String?) -> String {
+        let e = s.map { failed($0) ? String($0.dropFirst()) : "" } ?? ""
+        if e.contains("-1743") || e.lowercased().contains("not authori") || e.lowercased().contains("not allowed") {
+            return "Sparrow isn't allowed to use Mail yet. Open System Settings → Privacy & Security → Automation → Sparrow and switch on Mail."
+        }
+        return mailProblem
+    }
     private static let mailProblem = "I couldn't reach Mail. Add your email in System Settings → Internet Accounts, open Mail once, and allow Sparrow to use Mail when your Mac asks."
 
     // MARK: Words
@@ -261,40 +284,55 @@ final class MailAgent {
           try
             set acc to item 1 of (email addresses of (account of (mailbox of m)))
           end try
-          set out to out & (id of m) & \(FS) & (sender of m) & \(FS) & (subject of m) & \(FS) & ((date received of m) as string) & \(FS) & c & \(FS) & acc & \(RS)
+          set age to 0
+          try
+            set age to ((current date) - (date received of m)) as integer
+          end try
+          set out to out & (id of m) & \(FS) & (sender of m) & \(FS) & (subject of m) & \(FS) & ((date received of m) as string) & \(FS) & c & \(FS) & acc & \(FS) & age & \(RS)
     """
 
-    private static func listScript(limit: Int) -> String {
+    /// The newest `limit` inbox messages matching `filter` (Mail doesn't promise any order, so Sparrow sorts by date itself).
+    private static func newestScript(_ filter: String, limit: Int, total: String = "0") -> String {
         """
         tell application "Mail"
-          set total to unread count of inbox
-          set msgs to (messages of inbox whose read status is false)
+          set total to \(total)
+          set msgs to (messages of inbox whose \(filter))
           set n to count of msgs
-          if n > \(limit) then set n to \(limit)
           set out to ""
-          repeat with i from 1 to n
-            set m to item i of msgs
+          if n > 0 then
+            set ds to date received of (messages of inbox whose \(filter))
+            set picked to {}
+            set want to \(limit)
+            if want > n then set want to n
+            repeat want times
+              set best to 0
+              repeat with i from 1 to n
+                if picked does not contain i then
+                  if best = 0 then
+                    set best to i
+                  else if item i of ds > item best of ds then
+                    set best to i
+                  end if
+                end if
+              end repeat
+              set end of picked to best
+            end repeat
+            repeat with i in picked
+              set m to item i of msgs
         \(rowScript)
-          end repeat
+            end repeat
+          end if
           return (total as string) & (character id 29) & out
         end tell
         """
     }
-
+    private static func listScript(limit: Int) -> String { newestScript("read status is false", limit: limit, total: "unread count of inbox") }
+    private static func latestScript(days: Int) -> String { newestScript("date received > ((current date) - \(days) * days)", limit: 1, total: "1") }
     private static func findScript(_ who: String) -> String {
-        """
-        tell application "Mail"
-          set msgs to (messages of inbox whose sender contains \(q(who)))
-          if (count of msgs) = 0 then set msgs to (messages of inbox whose subject contains \(q(who)))
-          set out to ""
-          if (count of msgs) > 0 then
-            set m to item 1 of msgs
-        \(rowScript)
-          end if
-          return "1" & (character id 29) & out
-        end tell
-        """
+        // by sender first; the subject is tried by find() if nobody matches
+        newestScript("sender contains \(q(who))", limit: 1, total: "1")
     }
+    private static func findSubjectScript(_ what: String) -> String { newestScript("subject contains \(q(what))", limit: 1, total: "1") }
 
     nonisolated private static func parseList(_ s: String) -> (Int, [Mail]) {
         let parts = s.components(separatedBy: "\u{1D}")
@@ -303,10 +341,10 @@ final class MailAgent {
         let mails = rows.compactMap { r -> Mail? in
             let f = r.components(separatedBy: "\u{1F}")
             guard f.count >= 5 else { return nil }
-            return Mail(id: f[0], sender: f[1], subject: f[2], date: f[3], body: f[4].trimmingCharacters(in: .whitespacesAndNewlines), account: f.count > 5 ? f[5] : "")
+            return Mail(id: f[0], sender: f[1], subject: f[2], date: f[3], body: f[4].trimmingCharacters(in: .whitespacesAndNewlines),
+                        account: f.count > 5 ? f[5] : "", age: f.count > 6 ? Int(f[6].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0 : 0)
         }
-        // newest first
-        return (total, mails)
+        return (total, mails.sorted { $0.age < $1.age })      // newest first
     }
 
     /// An AppleScript string literal (quotes, backslashes and line breaks kept safe).
@@ -331,7 +369,7 @@ final class MailAgent {
                 if p.terminationStatus != 0 {
                     let msg = String(data: errData, encoding: .utf8) ?? ""
                     Task { @MainActor in appendAppLog("agents.log", "mail script failed: \(msg.prefix(300))") }
-                    cont.resume(returning: nil); return
+                    cont.resume(returning: "\u{15}" + msg); return
                 }
                 var s = String(data: data, encoding: .utf8) ?? ""
                 if s.hasSuffix("\n") { s.removeLast() }

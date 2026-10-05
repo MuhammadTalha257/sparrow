@@ -103,6 +103,31 @@ jobs:
           grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log | sort -u | head -80
           grep -q "BUILD SUCCEEDED" build.log
 
+      - name: Sign with Sparrow's own certificate (permissions survive updates)
+        env:
+          P12: ${{ secrets.MAC_SIGN_P12 }}
+          PASS: ${{ secrets.MAC_SIGN_PASSWORD }}
+        run: |
+          APP=mac/build/Release/Sparrow.app
+          if [ -z "$P12" ]; then echo "::warning::No MAC_SIGN_P12 secret: ad-hoc signed, so macOS asks for permissions again after each update."; exit 0; fi
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          KC="$RUNNER_TEMP/sparrow.keychain-db"
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p ci "$KC"
+          security import "$RUNNER_TEMP/sign.p12" -k "$KC" -P "$PASS" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          ID=$(security find-identity -p codesigning "$KC" | awk '/Sparrow Code Signing/ {print $2; exit}')
+          [ -n "$ID" ] || { security find-identity -p codesigning "$KC"; echo "::error::Sparrow signing identity not found"; exit 1; }
+          # inner code first, then the app itself (same entitlements as the build)
+          find "$APP/Contents" -type f \( -name '*.dylib' -o -name SparrowSpeech \) -print0 | xargs -0 -I{} codesign --force --sign "$ID" --timestamp=none "{}"
+          find "$APP/Contents" -type d \( -name '*.framework' -o -name '*.xpc' -o -name '*.appex' \) -prune -print0 | xargs -0 -I{} codesign --force --sign "$ID" --timestamp=none "{}"
+          codesign --force --sign "$ID" --timestamp=none --entitlements mac/Resources/Coucou.entitlements "$APP"
+          codesign --verify --strict "$APP" && echo "::notice::Signed with Sparrow's own certificate"
+          codesign -d -r- "$APP" 2>&1 | tail -1
+          rm -f "$RUNNER_TEMP/sign.p12"
+
       - name: Report build errors as an issue
         if: failure()
         env:
