@@ -13,6 +13,7 @@ import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from 
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountBird } from './bird.js';
+import * as maclink from './maclink.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
@@ -275,6 +276,16 @@ async function submit(text, fromVoice = false) {
   } else { addMsg('me', text); go('chat'); }
   mem.remember('chat', text);
 
+  // "lock my Mac", "turn off the laptop", "open Spotify on my Mac"… → your Mac at home does it
+  if (!files.length && !M && maclink.isForMac(text)) {
+    const wait = addMsg('bot', '💻 Sending to your Mac…', { cmd: true });
+    const r = await maclink.send(text);
+    { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); }
+    addMsg('bot', (r.ok ? '💻 ' : '⚠️ ') + r.text, { cmd: true });
+    birdMood(r.ok ? 'happy' : 'talk');
+    if (fromVoice || S().speak) speak(r.text);
+    return;
+  }
   if (!files.length) {
     const r = await handle(text);
     if (r) {
@@ -517,6 +528,7 @@ const LIVE_TOOLS = [
   { name: 'list_reminders', description: 'Current reminders, meetings and tasks with ids.' },
   { name: 'find_jobs', description: "Search jobs that fit the user's CV, plus LinkedIn and Indeed searches with the same filters.", parameters: { type: 'OBJECT', properties: { role: { type: 'STRING' }, location: { type: 'STRING' }, level: { type: 'STRING', description: 'internship | apprentice | entry | mid | senior | lead' } }, required: ['role'] } },
   { name: 'look_through_camera', description: 'Take a look through the camera to answer what the user is showing or asking about.', parameters: { type: 'OBJECT', properties: { camera: { type: 'STRING', description: 'front (default) or back' } } } },
+  { name: 'control_mac', description: "Do something on the user's Mac at home (it's linked): lock, sleep, shut down, restart, volume, play/pause music, open/quit apps or websites, battery, what's running, notes, reminders on the Mac. Write one clear English command, e.g. 'lock the screen', 'shut down mac', 'open Spotify', 'volume 30'.", parameters: { type: 'OBJECT', properties: { command: { type: 'STRING' } }, required: ['command'] } },
   { name: 'end_conversation', description: 'Call after a short goodbye when the user says thanks/bye/that is all.' },
 ];
 async function liveTool(name, a) {
@@ -532,6 +544,7 @@ async function liveTool(name, a) {
       try { liveSendImage(await cameraShot(/back|rear/.test(a.camera || '') ? 'environment' : 'user')); return { ok: true, result: 'A camera photo was just sent to you. Answer from what you see.' }; }
       catch { return { ok: false, result: 'The camera is not allowed. Allow it in the browser/phone settings.' }; }
     }
+    case 'control_mac': { const r = await maclink.send(a.command || ''); return { ok: r.ok, result: r.text }; }
     case 'end_conversation': return { ok: true, result: 'Ending after your goodbye.' };
   }
   return { ok: false, result: 'Unknown tool.' };
@@ -542,7 +555,7 @@ function livePrompt() {
 Now: ${new Date().toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).
 Their reminders, meetings and tasks (JSON with ids): ${JSON.stringify(window.Sparrow.listItems()).slice(0, 4000)}
 TALK: 1–2 short spoken sentences, no lists or emojis. Detect the language they speak and ALWAYS answer in that same language and style (Urdu, Roman Urdu/Hindi mix, Punjabi, Hindi, Arabic, Spanish, French, Brazilian Portuguese, Turkish, English…). Translate clearly when asked. They may interrupt you.
-ACT: call tools right away, even mid-sentence; do multi-step requests step by step. Reminders: use add_reminder with an exact ISO time worked out from now ("coming Monday at 10" = next Monday 10:00); to delete, pick the matching id (by day, time or words) — ask if two match. Use Google Search for facts, news, prices and "what is this", combining sources. For "what do you see / look at this" use look_through_camera. Jobs: find_jobs with role, place and level. Only say something is done if the tool says so.
+ACT: call tools right away, even mid-sentence; do multi-step requests step by step. Reminders: use add_reminder with an exact ISO time worked out from now ("coming Monday at 10" = next Monday 10:00); to delete, pick the matching id (by day, time or words) — ask if two match. Use Google Search for facts, news, prices and "what is this", combining sources. For "what do you see / look at this" use look_through_camera.${maclink.linked() && !M ? ' Their Mac at home is linked: anything about their Mac/laptop/computer ("lock my Mac", "turn off the laptop", "play music on my Mac") → control_mac.' : ''} Jobs: find_jobs with role, place and level. Only say something is done if the tool says so.
 END: when they say thanks / bye / that's all / khuda hafiz / shukriya, give a very short goodbye and call end_conversation.`;
 }
 let liveSparrow = null;
@@ -553,7 +566,7 @@ function startJarvis(firstText) {
   scr.hidden = false; scr.dataset.state = 'connecting'; status.textContent = label.connecting; cap.textContent = '';
   speechSynthesis?.cancel(); stopWake();
   startLive({
-    tools: LIVE_TOOLS, run: liveTool, prompt: livePrompt, firstText,
+    tools: maclink.linked() && !M ? LIVE_TOOLS : LIVE_TOOLS.filter(t => t.name !== 'control_mac'), run: liveTool, prompt: livePrompt, firstText,
     onState: (st, info) => { if (st === 'error') { status.textContent = info || 'Something went wrong.'; liveSparrow.react('surprised', 1500); return; } if (st === 'working' && scr.dataset.state !== 'working') liveSparrow.react('sparkle', 700); scr.dataset.state = st; status.textContent = label[st] || ''; },
     onLevel: v => orb.style.setProperty('--lv', v.toFixed(2)),
     onLine: (who, t) => { cap.textContent = t.slice(-160); },
@@ -1335,3 +1348,39 @@ if (M) {
   // Esc tucks the panel away (unless a sheet is open, then Esc closes the sheet first)
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('.sheet:not([hidden])')) M.post('hide'); });
 }   // the Mac app speaks with its own fast native voice engine
+
+// ---------------- Control my Mac (iPhone ↔ Mac link) ----------------
+function renderMacLink() {
+  const box = $('#macLinkBox'); if (!box) return;
+  const on = maclink.linked();
+  box.innerHTML = on
+    ? `<p class="small-text">✅ Linked to your Mac. Say or type things like “lock my Mac”, “turn off my Mac”, “open Spotify on my Mac”, “Mac volume 30”.</p>
+       <div class="mac-pad">${[['🔒', 'Lock', 'lock my mac'], ['😴', 'Sleep', 'sleep mac'], ['▶️', 'Play', 'play music on my mac'], ['⏸️', 'Pause', 'pause music on my mac'], ['🔉', 'Vol −', 'volume down on my mac'], ['🔊', 'Vol +', 'volume up on my mac'], ['⏻', 'Shut down', 'shut down mac'], ['✋', 'Cancel', 'cancel on my mac']].map(([i, l, c]) => `<button class="mac-key" data-mac="${c}"><span>${i}</span>${l}</button>`).join('')}</div>
+       <div class="row-2"><button class="btn ghost" id="macPing">📡 Test link</button><button class="btn ghost" id="macUnlink">Unlink</button></div>`
+    : `<p class="small-text">Use Sparrow on this phone to control your Mac from anywhere. On your Mac: Sparrow Settings → <b>iPhone</b> → switch on → <b>Show link code</b>. Then scan it here (or with the iPhone Camera).</p>
+       <button class="btn" id="macScan">📷 Scan Mac code</button>
+       <video id="macVideo" playsinline muted hidden style="width:100%;border-radius:14px;margin-top:8px"></video>
+       <label class="field"><span>…or paste the link</span><input id="macPaste" placeholder="https://…#link=…"></label>`;
+  box.querySelectorAll('[data-mac]').forEach(b => b.onclick = async () => {
+    if (b.dataset.mac === 'shut down mac' && !confirm('Shut down your Mac?')) return;
+    b.disabled = true; toast('💻 Sending…'); const r = await maclink.send(b.dataset.mac); b.disabled = false; toast((r.ok ? '💻 ' : '⚠️ ') + r.text, 5000);
+  });
+  $('#macPing')?.addEventListener('click', async () => { toast('📡 Checking your Mac…'); const r = await maclink.ping(); toast((r.ok ? '✅ ' : '⚠️ ') + r.text, 6000); });
+  $('#macUnlink')?.addEventListener('click', () => { maclink.unlink(); renderMacLink(); toast('Unlinked'); });
+  $('#macPaste')?.addEventListener('change', e => { if (maclink.takeLink(e.target.value)) { renderMacLink(); afterLink(); } else toast('That link doesn’t look right.'); });
+  $('#macScan')?.addEventListener('click', async () => {
+    const v = $('#macVideo'); v.hidden = false; const ctl = new AbortController(); setTimeout(() => ctl.abort(), 60000);
+    try { if (await maclink.scanLink(v, ctl.signal)) { renderMacLink(); afterLink(); } } catch { toast('Allow the camera to scan the code.'); }
+    v.hidden = true;
+  });
+}
+async function afterLink() {
+  toast('💗 Linked to your Mac — checking it…', 4000);
+  const r = await maclink.ping();
+  toast((r.ok ? '✅ ' : '⚠️ ') + r.text, 6000);
+}
+if (!M && maclink.takeLink(location.hash)) {
+  history.replaceState(null, '', location.pathname + location.search);   // the key never stays in the address bar
+  setTimeout(afterLink, 800);
+}
+document.addEventListener('toggle', e => { if (e.target.id === 'macLinkDetails' && e.target.open) renderMacLink(); }, true);

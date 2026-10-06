@@ -637,3 +637,10 @@ html, html[data-theme] { --bird1: #FFC2D3; --bird2: #F27BA0; --cap: #E0507E; --b
 @keyframes birdShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 @keyframes birdPop { 0% { opacity: 0; transform: translateY(6px) scale(.6); } 20% { opacity: 1; transform: translateY(0) scale(1.1); } 100% { opacity: 0; transform: translateY(-26px) scale(1); } }
 .live-orb #liveBird { width: 120px; height: 104px; position: relative; z-index: 2; }
+
+/* Control my Mac */
+html.mac-host .no-mac { display: none; }
+.mac-pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+.mac-key { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 4px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(245,143,168,.12); color: inherit; font-size: 11px; font-weight: 600; }
+.mac-key span { font-size: 20px; }
+.mac-key:active { transform: scale(.95); background: rgba(245,143,168,.28); }

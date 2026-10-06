@@ -111,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                name: .openFullSettings, object: nil)
         // Voice, greeting, weather and notification reading
         Assistant.start()
+        PhoneLink.shared.startIfEnabled()
         WebHub.shared.start()
         NativeSpeech.shared.start()
         HoldToTalk.start()

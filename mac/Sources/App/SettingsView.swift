@@ -185,6 +185,11 @@ struct SettingsView: View {
                 HealthSettingsView()
                 }
 
+                if tab == .iphone {
+                // MARK: Control this Mac from the iPhone
+                PhoneLinkSettingsView()
+                }
+
                 if !statusMessage.isEmpty {
                     Text(statusMessage)
                         .font(.system(size: 12))
@@ -293,7 +298,7 @@ struct ShortcutRecorderButton: View {
 // MARK: - Settings tabs (friendlier than one long page)
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, routine, voice, ai, apps, health
+    case general, routine, voice, ai, apps, health, iphone
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -303,6 +308,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ai:        return "AI"
         case .apps:      return "Apps"
         case .health:    return "Health"
+        case .iphone:    return "iPhone"
         }
     }
     var icon: String {
@@ -313,6 +319,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ai:        return "sparkles"
         case .apps:      return "square.grid.2x2"
         case .health:    return "heart.fill"
+        case .iphone:    return "iphone"
         }
     }
 }

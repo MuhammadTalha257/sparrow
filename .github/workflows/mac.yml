@@ -20,7 +20,7 @@ jobs:
       - name: Copy the Sparrow web app
         run: |
           mkdir -p mac/Resources/web
-          cp index.html style.css app.js brain.js store.js ai.js i18n.js prayer.js memory.js tools.js sync.js neuralvoice.js jobs.js live.js mascot.js bird.js manifest.webmanifest mac/Resources/web/
+          cp index.html style.css app.js brain.js store.js ai.js i18n.js prayer.js memory.js tools.js sync.js neuralvoice.js jobs.js live.js mascot.js bird.js maclink.js manifest.webmanifest mac/Resources/web/
           cp -R lib icons mascots mac/Resources/web/
 
       - name: Build the natural voice engine (sherpa-onnx)
