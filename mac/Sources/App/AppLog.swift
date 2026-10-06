@@ -47,3 +47,10 @@ func appendAppLog(_ fileName: String, _ message: String,
         try? fm.setAttributes([.posixPermissions: 0o600 as NSNumber], ofItemAtPath: logFile.path)
     }
 }
+
+/// Where Sparrow keeps its own files (dropped files' inbox, memory…).
+enum SparrowPaths {
+    static var supportDir: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Sparrow")
+    }
+}

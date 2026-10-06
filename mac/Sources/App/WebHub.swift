@@ -217,13 +217,8 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             if let v = o["voiceName"] as? String { UserDefaults.standard.set(v, forKey: "voiceName") }
             if let g = o["gender"] as? String { UserDefaults.standard.set(g, forKey: AssistantPrefs.voiceGender) }
             if let h = o["handsFree"] as? Bool { UserDefaults.standard.set(h, forKey: "handsFree") }
-            if let st = o["studio"] as? Bool { UserDefaults.standard.set(st, forKey: "studioVoice"); if st { StudioVoice.shared.start() } }
         case "studio":
-            switch o["action"] as? String {
-            case "install": StudioVoice.shared.install()
-            case "start": StudioVoice.shared.start()
-            default: reply(id, ["installed": StudioVoice.shared.isInstalled, "running": StudioVoice.shared.isRunning])
-            }
+            reply(id, ["installed": false, "running": false])      // the old Studio voice was replaced by Jarvis mode
         case "locales":
             reply(id, VoiceEngine.supportedListenLocales)
         case "log":
@@ -246,6 +241,9 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             save(name: o["name"] as? String ?? "Sparrow file", base64: o["base64"] as? String ?? "", id: id)
         case "http":
             http(url: o["url"] as? String ?? "", method: o["method"] as? String ?? "POST", headers: o["headers"] as? [String: String] ?? [:], body: o["body"] as? String ?? "", id: id)
+        case "health":
+            // water / coffee / medicine time → the sparrow flies in carrying it
+            PetController.shared.deliver(kind: o["kind"] as? String ?? "water", text: o["text"] as? String ?? "Time for a break")
         case "complete":
             // The job agent's AI fallback: uses the keys saved in Sparrow's own settings.
             let prompt = o["prompt"] as? String ?? ""

@@ -59,7 +59,7 @@ enum FileDropHandler {
         UploadSequenceEngine.shared.performDrop(uploadDuration: dur)
 
         // Copy to inbox in background — update state when done
-        let inbox = HookServer.supportDir.appendingPathComponent("inbox")
+        let inbox = SparrowPaths.supportDir.appendingPathComponent("inbox")
         Task.detached {
             try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
             let dest = inbox.appendingPathComponent(name)

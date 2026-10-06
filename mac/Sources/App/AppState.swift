@@ -313,13 +313,13 @@ final class AppState: ObservableObject {
     /// Load integration pills respecting activeIntegrations. VS Code always loads. Safe to call multiple times.
     func loadIntegrationTasks() {
         for task in AgentTask.integrationAgents + QuickItems.tasks() {
-            let shouldLoad = (task.id == "integration_claude" && showVSCode) || activeIntegrations.contains(task.id)
+            let shouldLoad = task.id.hasPrefix("shortcut_") && activeIntegrations.contains(task.id)
             let loaded = tasks.contains(where: { $0.id == task.id })
             if shouldLoad && !loaded { tasks.append(task) }
             if !shouldLoad && loaded { tasks.removeAll { $0.id == task.id } }
         }
         if focusId == nil || !tasks.contains(where: { $0.id == focusId }) {
-            focusId = showVSCode ? "integration_claude" : tasks.first?.id
+            focusId = tasks.first?.id
         }
         syncMode()
     }

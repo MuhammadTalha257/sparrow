@@ -16,6 +16,8 @@ extension Notification.Name {
 
 @MainActor
 final class PetModel: ObservableObject {
+    /// The pink sparrow's face and head direction (shared with its click reactions).
+    let sprite = SparrowSpriteModel()
     @Published var bubble: String?
     @Published var flying = false
     @Published var hovering = false
@@ -93,10 +95,10 @@ final class PetController {
         UserDefaults.standard.set(f.origin.y, forKey: "petY")
     }
 
-    func show() {
+    func show(greeting: Bool = true) {
         let p = panel ?? makePanel()
         panel = p
-        UserDefaults.standard.set(true, forKey: "petVisible")
+        if greeting { UserDefaults.standard.set(true, forKey: "petVisible") }
         let target = homeFrame()
         guard !p.isVisible else { p.setFrame(target, display: true); return }
         // Fly in from the top-left, flapping, and land on the spot
@@ -117,14 +119,16 @@ final class PetController {
                 let m = PetController.shared.model
                 m.flying = false
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
-                let name = AssistantPrefs.displayName
-                m.say("Hi\(name.isEmpty ? "" : " \(name)")! Tap me to talk. Drag me anywhere. 🐦", for: 5)
+                if m.sprite.prop == nil {
+                    let name = AssistantPrefs.displayName
+                    m.say("Hi\(name.isEmpty ? "" : " \(name)")! Tap me to talk. Drag me anywhere. 🐦", for: 5)
+                }
             }
         })
     }
 
-    func hide() {
-        UserDefaults.standard.set(false, forKey: "petVisible")
+    func hide(remember: Bool = true) {
+        if remember { UserDefaults.standard.set(false, forKey: "petVisible") }
         guard let p = panel, p.isVisible else { return }
         model.flying = true
         let f = p.frame
@@ -140,6 +144,34 @@ final class PetController {
                 PetController.shared.model.flying = false
             }
         })
+    }
+
+    /// Water / coffee / medicine time: the sparrow flies in carrying it, says so, and flies off again
+    /// afterwards if it wasn't out on the desktop already.
+    func deliver(kind: String, text: String) {
+        let props = ["water": "waterbottle.fill", "coffee": "cup.and.saucer.fill", "meds": "pills.fill"]
+        let wasShown = isShown
+        if wasShown {
+            // already out: hop and show it
+            model.sprite.react(8, for: 1.2)
+        } else {
+            show(greeting: false)
+        }
+        model.sprite.prop = props[kind] ?? "drop.fill"
+        DispatchQueue.main.asyncAfter(deadline: .now() + (wasShown ? 0.1 : 1.3)) {
+            MainActor.assumeIsolated {
+                let m = PetController.shared.model
+                m.say(text + (kind == "water" ? " 💧" : kind == "coffee" ? " ☕" : " 💊"), for: 9)
+                m.sprite.react(1, for: 1.2)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 11) {
+            MainActor.assumeIsolated {
+                let me = PetController.shared
+                me.model.sprite.prop = nil
+                if !wasShown, !UserDefaults.standard.bool(forKey: "petVisible") { me.hide(remember: false) }
+            }
+        }
     }
 
     func moveBy(dx: CGFloat, dy: CGFloat) {
@@ -203,26 +235,23 @@ struct PetView: View {
                 // little perch shadow
                 Ellipse().fill(Color.black.opacity(model.flying ? 0 : 0.22))
                     .frame(width: 70, height: 10).blur(radius: 3).offset(y: 44)
-                TimelineView(.animation) { tl in
-                    Canvas { ctx, size in
-                        let now = tl.date.timeIntervalSinceReferenceDate
-                        let dt = min(0.05, now - engine.lastTime)
-                        let mouse = NSEvent.mouseLocation
-                        if let f = NSApp.windows.first(where: { $0.contentView is FirstMouseHostingView<PetView> })?.frame {
-                            engine.lookX = tanh((mouse.x - f.midX) / 260)
-                            engine.lookY = -tanh(((f.minY + 70) - mouse.y) / 200)
+                if SparrowSprites.shared.available {
+                    SparrowSpriteView(model: model.sprite, size: 118, deadZone: 60,
+                                      lively: model.flying || (voice.isListening && voice.status == "Listening…") || voice.level > 0.08)
+                        .rotationEffect(.degrees(model.flying ? -8 : 0))
+                        .allowsHitTesting(false)
+                        .frame(width: 124, height: 110)
+                } else {
+                    TimelineView(.animation) { tl in
+                        Canvas { ctx, size in
+                            let now = tl.date.timeIntervalSinceReferenceDate
+                            let dt = min(0.05, now - engine.lastTime)
+                            engine.update(dt: dt)
+                            engine.draw(context: ctx, size: size)
                         }
-                        engine.update(dt: dt)
-                        // Wings: flap fast while flying or listening, tucked otherwise
-                        if model.flying { engine.hands = 0.65 + 0.35 * CGFloat(sin(now * 38)) }
-                        else if voice.isListening && voice.status == "Listening…" { engine.hands = 0.35 + 0.25 * CGFloat(sin(now * 18)) }
-                        else if engine.hands > 0.01 && now > engine.waveUntil { engine.hands *= 0.85 }
-                        engine.drawHandsBehind(context: ctx, size: size)
-                        engine.draw(context: ctx, size: size)
-                        engine.drawHandsAndExtras(context: ctx, size: size)
                     }
+                    .frame(width: 124, height: 110)
                 }
-                .frame(width: 124, height: 110)
                 PetDragArea { petClicked() }
                     .frame(width: 96, height: 84)
             }
@@ -258,7 +287,7 @@ struct PetView: View {
     }
 
     private func petClicked() {
-        NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
+        model.sprite.boop()
         VoiceEngine.shared.listenOnce()
     }
 
