@@ -634,8 +634,9 @@ enum Assistant {
                                "Sound back", "Searching", "Locking", "Dark mode", "Light mode", "Select an area"]
             NotificationCenter.default.post(name: .petSay, object: reply)
             if actionWords.contains(where: { reply.hasPrefix($0) }), !reply.contains(". ") {
-                SoundEngine.shared.play("approve")          // quick chirp = done
+                SoundEngine.shared.play("approve")          // quick chirp = done…
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
+                VoiceEngine.shared.speak(reply)              // …and always say it, so you know it heard you
             } else {
                 // Information (time, battery, problems…) is spoken and shown.
                 state.noteMessage = reply
@@ -670,6 +671,10 @@ enum Assistant {
                 say(await SmartPlanner.shared.run(plan)); return
             }
             if !short, let reply = await WebHub.shared.ask(text) { say(reply); return }
+            if !NetStatus.shared.online, text.split(separator: " ").count > 1 {
+                say("I'm offline right now, so I can't look that up. I can still open apps, play music, control your Mac, and set reminders and notes.")
+                return
+            }
             // Too short or garbled to be a real question, or no AI to ask: a warm "say that again".
             let hasAI = await AIService.shared.resolveProvider(state: state) != nil
             if text.split(separator: " ").count <= 1 || !hasAI {

@@ -1,6 +1,6 @@
 // Sparrow offline cache: always tries the network first (so updates arrive), falls back to the cache offline.
-const VERSION = 'sparrow-v10';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'brain.js', 'store.js', 'ai.js', 'i18n.js', 'prayer.js', 'memory.js', 'tools.js', 'sync.js', 'jobs.js', 'live.js',
+const VERSION = 'sparrow-v11';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'brain.js', 'store.js', 'ai.js', 'i18n.js', 'prayer.js', 'memory.js', 'tools.js', 'sync.js', 'jobs.js', 'live.js', 'mascot.js', 'mascots/sparrow-directions.webp', 'mascots/sparrow-reactions.webp',
   'lib/chrono.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

@@ -37,10 +37,11 @@ jobs:
         run: |
           mkdir -p _site
           cp -r index.html get.html *.js *.css manifest.webmanifest lib icons _site/
+          [ -d mascots ] && cp -r mascots _site/ || true
           # the test copy lives at /test/ so new features can be tried on a phone before they reach everyone
           if [ -f _test/index.html ]; then
             mkdir -p _site/test
-            (cd _test && cp -r index.html *.js *.css manifest.webmanifest lib icons ../_site/test/)
+            (cd _test && cp -r index.html *.js *.css manifest.webmanifest lib icons ../_site/test/ && { [ -d mascots ] && cp -r mascots ../_site/test/ || true; })
           fi
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3

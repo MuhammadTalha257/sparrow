@@ -14,10 +14,15 @@ export const DEFAULT_SETTINGS = {
   keys: { gemini: '', openai: '', claude: '', grok: '', deepseek: '', mistral: '', groq: '', openrouter: '', perplexity: '' },
   models: {},
   lastBriefDay: '', morningOn: true, morningTime: '08:30', nightOn: true, nightTime: '21:30', lead: 5, lastMorning: '', lastNight: '',
-  theme: 'sunset', lang: 'en', simple: false,
+  theme: 'blossom', lang: 'en', simple: false,
   wake: true, micButton: true, conversation: true, musicApp: 'spotify',
   prayer: { on: false, method: 'Auto', asr: 'Hanafi', before: 10, speak: true },
-  health: { water: false, waterEvery: 2, meds: false, medName: 'medicine', medTimes: '09:00, 21:00' },
+  // Water, coffee and medicine reminders: every N minutes or at set times, only between start and end.
+  health: {
+    water: { on: false, mode: 'every', every: 120, times: '', start: '09:00', end: '22:00' },
+    coffee: { on: false, mode: 'times', every: 240, times: '10:00, 15:00', start: '08:00', end: '18:00' },
+    meds: { on: false, mode: 'times', every: 480, times: '09:00, 21:00', start: '07:00', end: '23:00', name: 'medicine' },
+  },
   business: { name: '', address: '', currency: '£', invoiceNo: 1, quoteNo: 1 },
   memory: { on: true, keepCopies: true, days: 0, recentFiles: false },
   snippets: [],
@@ -27,7 +32,14 @@ export const DEFAULT_SETTINGS = {
 function mergeSettings(saved) {
   const s = Object.assign({}, DEFAULT_SETTINGS, saved || {});
   if (!s.lookV3) { s.theme = 'sunset'; s.lookV3 = true; }
-  for (const k of ['keys', 'prayer', 'business', 'memory', 'health']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
+  if (!s.lookV4) { if (!s.theme || s.theme === 'sunset') s.theme = 'blossom'; s.lookV4 = true; }   // the pink sparrow look
+  for (const k of ['keys', 'prayer', 'business', 'memory']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
+  // health: one object per reminder kind (older versions stored water/meds as simple switches)
+  const oh = (saved || {}).health || {};
+  s.health = {};
+  for (const k of ['water', 'coffee', 'meds']) s.health[k] = Object.assign({}, DEFAULT_SETTINGS.health[k], typeof oh[k] === 'object' ? oh[k] : {});
+  if (typeof oh.water === 'boolean') { s.health.water.on = oh.water; s.health.water.every = Math.round((+oh.waterEvery || 2) * 60); }
+  if (typeof oh.meds === 'boolean') { s.health.meds.on = oh.meds; s.health.meds.name = oh.medName || 'medicine'; s.health.meds.times = oh.medTimes || s.health.meds.times; }
   if (!s.memCopiesV1) { s.memory.keepCopies = true; s.memory.on = true; s.memCopiesV1 = true; }   // remember files (with a copy) by default
   if (!s.prayerAutoV1) { if (s.prayer.method === 'Karachi') s.prayer.method = 'Auto'; s.prayerAutoV1 = true; }   // times follow your location
   return s;

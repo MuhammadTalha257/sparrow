@@ -12,6 +12,7 @@ import {
 import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
+import { mountMascot } from './mascot.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
@@ -426,8 +427,10 @@ function openUrl(url) {
 
 // ---------------- the sparrow ----------------
 const bird = $('#bird');
+// The pink sparrow: looks at your pointer, reacts when tapped (and tapping still means "talk").
+const sparrow = mountMascot(bird, { onTap: () => listen() });
 function setBird(cls, on) { bird.classList.toggle(cls, on); }
-function birdMood(m) { if (m === 'happy') { bird.classList.remove('happy'); void bird.offsetWidth; bird.classList.add('happy'); setTimeout(() => bird.classList.remove('happy'), 1100); } }
+function birdMood(m) { if (m === 'happy') { bird.classList.remove('happy'); void bird.offsetWidth; bird.classList.add('happy'); setTimeout(() => bird.classList.remove('happy'), 1100); sparrow.react(['delighted', 'heart', 'sparkle'][Math.floor(Math.random() * 3)], 1000); } }
 function tone(pairs, vol = .08) {
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -537,18 +540,20 @@ TALK: 1–2 short spoken sentences, no lists or emojis. Detect the language they
 ACT: call tools right away, even mid-sentence; do multi-step requests step by step. Reminders: use add_reminder with an exact ISO time worked out from now ("coming Monday at 10" = next Monday 10:00); to delete, pick the matching id (by day, time or words) — ask if two match. Use Google Search for facts, news, prices and "what is this", combining sources. For "what do you see / look at this" use look_through_camera. Jobs: find_jobs with role, place and level. Only say something is done if the tool says so.
 END: when they say thanks / bye / that's all / khuda hafiz / shukriya, give a very short goodbye and call end_conversation.`;
 }
+let liveSparrow = null;
 function startJarvis(firstText) {
   const scr = $('#liveScreen'), status = $('#liveStatus'), cap = $('#liveCaption'), orb = $('#liveOrb');
+  liveSparrow = liveSparrow || mountMascot($('#liveBird'), {});
   const label = { connecting: 'Connecting…', listening: 'Listening…', speaking: 'Speaking…', working: 'On it…' };
   scr.hidden = false; scr.dataset.state = 'connecting'; status.textContent = label.connecting; cap.textContent = '';
   speechSynthesis?.cancel(); stopWake();
   startLive({
     tools: LIVE_TOOLS, run: liveTool, prompt: livePrompt, firstText,
-    onState: (st, info) => { if (st === 'error') { status.textContent = info || 'Something went wrong.'; return; } scr.dataset.state = st; status.textContent = label[st] || ''; },
+    onState: (st, info) => { if (st === 'error') { status.textContent = info || 'Something went wrong.'; liveSparrow.react('surprised', 1500); return; } if (st === 'working' && scr.dataset.state !== 'working') liveSparrow.react('sparkle', 700); scr.dataset.state = st; status.textContent = label[st] || ''; },
     onLevel: v => orb.style.setProperty('--lv', v.toFixed(2)),
     onLine: (who, t) => { cap.textContent = t.slice(-160); },
     onTurn: (u, a) => { if (u) addMsg('me', u, { cmd: true }); if (a) addMsg('bot', a, { src: 'Live' }); },
-    onEnd: why => { setTimeout(() => { scr.hidden = true; }, why === 'no-mic' || why === 'no-model' || why === 'timeout' ? 3500 : 250); setTimeout(startWake, 900); },
+    onEnd: why => { if (why === 'goodbye') liveSparrow.react('heart', 900); setTimeout(() => { scr.hidden = true; }, why === 'no-mic' || why === 'no-model' || why === 'timeout' ? 3500 : 250); setTimeout(startWake, 900); },
   });
 }
 $('#liveEnd').onclick = () => stopLive('tap');
@@ -584,7 +589,7 @@ function listen(quiet = false) {
 }
 $('#micBtn').onclick = () => listen();
 $('#micHeroBtn').onclick = () => listen();
-$('#birdWrap').onclick = () => listen();
+
 
 // Hands-free on phones/browsers: listen for "Sparrow …" while the app is open.
 function startWake() {
@@ -698,30 +703,70 @@ function checkHabits() {
     chime(); showAlert('💧 ' + msg, 'Tap ＋ on the Home screen to log it'); speakSoon(`${who()}${msg}.`);
   }
 }
-// Water and medicine reminders (Settings → Health)
+// Water, coffee and medicine reminders (Settings → Water, coffee & medicine)
+const HEALTH = {
+  water: { icon: '💧', title: 'Water', say: n => `${n}time for a glass of water.`, show: 'Time for a glass of water', sub: 'Stay fresh!' },
+  coffee: { icon: '☕', title: 'Coffee', say: n => `${n}coffee time! Take a little break.`, show: 'Coffee time', sub: 'A little break ☕' },
+  meds: { icon: '💊', title: 'Medicine', say: (n, h) => `${n}it's time to take your ${h.name || 'medicine'}.`, show: h => `Time to take your ${h.name || 'medicine'}`, sub: '' },
+};
+const INTERVALS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360];
+const intervalText = m => m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)}½ h` : `${m / 60} hour${m > 60 ? 's' : ''}`;
 function checkHealth() {
-  const h = S().health; if (!h) return;
-  const now = new Date(), hour = now.getHours();
-  if (h.water) {
-    const every = (+h.waterEvery || 2) * 3600e3;
-    if (!h.lastWater) { h.lastWater = Date.now(); store.save(); }
-    else if (hour >= 9 && hour < 22 && Date.now() - h.lastWater >= every) {
-      h.lastWater = Date.now(); store.save();
-      chime(); showAlert('💧 Time for a glass of water', 'Stay fresh!'); speakSoon(`${who()}time for a glass of water.`);
-    }
-  }
-  if (h.meds) {
-    const fired = S().medFired || {};
-    for (const tm of String(h.medTimes || '').split(/[,\s]+/).filter(Boolean)) {
-      const [hh, mm] = tm.split(':').map(Number); if (isNaN(hh)) continue;
-      const at = new Date(now); at.setHours(hh, mm || 0, 0, 0);
-      const key = dayKey() + tm;
-      if (!fired[key] && now >= at && now - at < 15 * 60000) {
-        fired[key] = 1; S().medFired = Object.fromEntries(Object.entries(fired).slice(-10)); store.save();
-        chime(); showAlert(`💊 Time to take your ${h.medName || 'medicine'}`, tm); speakSoon(`${who()}it's time to take your ${h.medName || 'medicine'}.`);
+  const all = S().health; if (!all) return;
+  const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+  for (const kind of Object.keys(HEALTH)) {
+    const h = all[kind]; if (!h?.on) continue;
+    const from = minsOf(h.start || '00:00'), to = minsOf(h.end || '23:59');
+    if (mins < from || mins >= to) continue;
+    let due = false;
+    if (h.mode === 'every') {
+      const every = Math.max(1, +h.every || 120) * 60000;
+      if (!h.last) { h.last = Date.now(); store.save(); continue; }        // starts counting from now
+      due = Date.now() - h.last >= every;
+    } else {
+      const fired = S().healthFired || {};
+      for (const tm of String(h.times || '').split(/[,\s]+/).filter(Boolean)) {
+        const at = minsOf(tm), key = dayKey() + kind + tm;
+        if (!fired[key] && mins >= at && mins - at < 15) { fired[key] = 1; S().healthFired = Object.fromEntries(Object.entries(fired).slice(-30)); due = true; }
       }
     }
+    if (!due) continue;
+    h.last = Date.now(); store.save();
+    const def = HEALTH[kind], shown = typeof def.show === 'function' ? def.show(h) : def.show;
+    if (M) M.post('health', { kind, text: shown });      // the Mac: the pet sparrow flies in carrying it
+    chime(); showAlert(`${def.icon} ${shown}`, def.sub); speakSoon(def.say(who(), h));
   }
+}
+function renderHealthSettings(hl) {
+  $('#healthList').innerHTML = Object.entries(HEALTH).map(([k, d]) => {
+    const h = hl[k] || {};
+    return `<div class="hl-card" data-hk="${k}">
+      <label class="row hl-top"><input type="checkbox" data-f="on" ${h.on ? 'checked' : ''}> <span class="hl-ic">${d.icon}</span> <b>${d.title}</b></label>
+      <div class="hl-body">
+        ${k === 'meds' ? `<label class="field"><span>Name</span><input data-f="name" value="${esc(h.name || 'medicine')}"></label>` : ''}
+        <div class="seg small hl-mode"><button data-mode="every" class="${h.mode === 'every' ? 'on' : ''}">Every…</button><button data-mode="times" class="${h.mode !== 'every' ? 'on' : ''}">At set times</button></div>
+        <label class="field hl-every" ${h.mode === 'every' ? '' : 'hidden'}><span>Every</span><select data-f="every">${INTERVALS.map(m => `<option value="${m}" ${+h.every === m ? 'selected' : ''}>${intervalText(m)}</option>`).join('')}</select></label>
+        <label class="field hl-times" ${h.mode === 'every' ? 'hidden' : ''}><span>Times (24h)</span><input data-f="times" value="${esc(h.times || '')}" placeholder="09:00, 13:00, 18:00"></label>
+        <div class="row-2"><label class="field"><span>From</span><input type="time" data-f="start" value="${h.start || '09:00'}"></label><label class="field"><span>Until</span><input type="time" data-f="end" value="${h.end || '22:00'}"></label></div>
+      </div></div>`;
+  }).join('');
+  $$('#healthList .hl-mode button').forEach(b => b.onclick = e => {
+    e.preventDefault(); const card = b.closest('.hl-card');
+    card.querySelectorAll('.hl-mode button').forEach(x => x.classList.toggle('on', x === b));
+    card.querySelector('.hl-every').hidden = b.dataset.mode !== 'every'; card.querySelector('.hl-times').hidden = b.dataset.mode === 'every';
+  });
+}
+function readHealthSettings(old) {
+  const out = { ...old };
+  $$('#healthList .hl-card').forEach(card => {
+    const k = card.dataset.hk, f = n => card.querySelector(`[data-f="${n}"]`);
+    const mode = card.querySelector('.hl-mode button.on')?.dataset.mode || 'every';
+    const next = { ...(old[k] || {}), on: f('on').checked, mode, every: +f('every').value, times: f('times').value.trim(), start: f('start').value || '09:00', end: f('end').value || '22:00' };
+    if (k === 'meds') next.name = f('name').value.trim() || 'medicine';
+    if (next.mode !== old[k]?.mode || next.every !== old[k]?.every || !next.on) delete next.last;
+    out[k] = next;
+  });
+  return out;
 }
 const minsOf = hm => { const [h, m] = (hm || '0:0').split(':').map(Number); return h * 60 + m; };
 async function checkDaily() {
@@ -1046,8 +1091,7 @@ function fillSettings() {
   $('#rMorningOn').checked = s.morningOn; $('#rMorning').value = s.morningTime; $('#rNightOn').checked = s.nightOn; $('#rNight').value = s.nightTime; $('#rLead').value = String(s.lead);
   $('#pMethod').innerHTML = Object.entries(METHODS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
   const hl = s.health || {};
-  $('#hWater').checked = !!hl.water; $('#hWaterEvery').value = String(hl.waterEvery || 2);
-  $('#hMeds').checked = !!hl.meds; $('#hMedName').value = hl.medName || 'medicine'; $('#hMedTimes').value = hl.medTimes || '09:00, 21:00';
+  renderHealthSettings(hl);
   $('#pOn').checked = s.prayer.on; $('#pMethod').value = s.prayer.method; $('#pAsr').value = s.prayer.asr; $('#pBefore').value = String(s.prayer.before); $('#pSpeak').checked = s.prayer.speak;
   $('#sProvider').innerHTML = `<option value="auto">Automatic (free first)</option>${D ? '<option value="ollama">Ollama on this computer</option>' : '<option value="local">Free AI on this device</option>'}` + PROVIDER_ORDER.map(p => `<option value="${p}">${PROVIDERS[p].name}</option>`).join('');
   $('#sProvider').value = s.provider || 'auto';
@@ -1074,9 +1118,7 @@ function saveSettings() {
   s.speak = $('#sSpeak').checked; s.wake = $('#sWake').checked; s.conversation = $('#sConv').checked; s.micButton = $('#sMic').checked;
   s.liveMode = $('#sLive').checked; s.liveVoice = $('#sLiveVoice').value;
   s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30'; s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
-  s.health = { ...(s.health || {}), water: $('#hWater').checked, waterEvery: +$('#hWaterEvery').value, meds: $('#hMeds').checked,
-    medName: $('#hMedName').value.trim() || 'medicine', medTimes: $('#hMedTimes').value.trim() };
-  if (!s.health.water) delete s.health.lastWater;
+  s.health = readHealthSettings(s.health || {});
   s.prayer = { ...s.prayer, on: $('#pOn').checked, method: $('#pMethod').value, asr: $('#pAsr').value, before: +$('#pBefore').value, speak: $('#pSpeak').checked };
   s.provider = $('#sProvider').value; s.model = $('#sModel').value; if (D) s.ollamaModel = $('#sOllama').value;
   $$('#keyFields [data-key]').forEach(i => s.keys[i.dataset.key] = i.value.trim());
@@ -1249,6 +1291,10 @@ window.Sparrow = {
     activeDocs = [rec.id];
     return rec.id;
   },
+  // Water / coffee / medicine reminders (the Mac's Settings window edits these).
+  getHealth: () => JSON.parse(JSON.stringify(S().health || {})),
+  setHealth: h => { const old = S().health || {}; for (const k of ['water', 'coffee', 'meds']) if (h?.[k]) { const n = { ...old[k], ...h[k] }; if (n.mode !== old[k]?.mode || n.every !== old[k]?.every || !n.on) delete n.last; old[k] = n; } S().health = old; store.save(); return true; },
+  testHealth: kind => { const def = HEALTH[kind]; if (!def) return false; const h = S().health[kind] || {}; const shown = typeof def.show === 'function' ? def.show(h) : def.show; M?.post('health', { kind, text: shown }); speak(def.say(who(), h)); return true; },
   // Sparrow's live voice reads and changes your real list (never guesses).
   listItems: () => store.items.filter(i => !i.done && ['reminder', 'task', 'meeting'].includes(i.type))
     .sort((a, b) => new Date(a.when || 8e15) - new Date(b.when || 8e15))

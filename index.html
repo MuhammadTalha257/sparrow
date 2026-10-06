@@ -41,28 +41,7 @@
   <section class="view active" id="view-home">
     <div class="hero card">
       <div class="bird-wrap" id="birdWrap" title="Tap to talk">
-        <svg class="bird" id="bird" viewBox="0 0 200 170" aria-hidden="true">
-          <defs>
-            <linearGradient id="gBody" x1="0.8" y1="0" x2="0.2" y2="1"><stop offset="0" class="b1"/><stop offset="1" class="b2"/></linearGradient>
-            <clipPath id="bodyClip"><ellipse cx="100" cy="92" rx="66" ry="56"/></clipPath>
-          </defs>
-          <g class="feet"><path d="M88 146 v10 m-5 0 h10 M112 146 v10 m-5 0 h10" class="feet-s" stroke-width="3.5" stroke-linecap="round" fill="none"/></g>
-          <g class="tail"><path d="M150 104 Q176 82 190 62 Q196 74 194 86 Q182 104 162 122 Z" class="cap-f"/></g>
-          <g class="body-g">
-            <ellipse cx="100" cy="92" rx="66" ry="56" fill="url(#gBody)"/>
-            <g clip-path="url(#bodyClip)">
-              <ellipse cx="100" cy="128" rx="44" ry="40" class="belly-f"/>
-              <ellipse cx="100" cy="40" rx="64" ry="34" class="cap-f"/>
-            </g>
-            <g class="eyes">
-              <g transform="translate(80 90)"><g class="eye"><rect x="-7.5" y="-10" width="15" height="20" rx="7.5" fill="#1A1412"/><circle cx="2.5" cy="-4.5" r="3.2" fill="#fff"/></g></g>
-              <g transform="translate(120 90)"><g class="eye"><rect x="-7.5" y="-10" width="15" height="20" rx="7.5" fill="#1A1412"/><circle cx="2.5" cy="-4.5" r="3.2" fill="#fff"/></g></g>
-            </g>
-            <path class="beak beak-f" d="M91 104 Q100 98 109 104 L100 118 Z"/>
-            <ellipse cx="62" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".28"/><ellipse cx="138" cy="108" rx="10" ry="6" fill="#FF8A8A" opacity=".28"/>
-          </g>
-          <g class="wing"><path d="M40 98 Q62 92 76 108 Q70 128 46 132 Q30 124 40 98 Z" class="wing-f"/></g>
-        </svg>
+        <div class="bird" id="bird"></div>
         <div class="pulse" id="pulse"></div>
       </div>
       <div class="hero-text">
@@ -186,7 +165,7 @@
 
 <!-- Settings -->
 <div class="live-screen" id="liveScreen" hidden>
-  <div class="live-orb" id="liveOrb"><div class="live-ring"></div><div class="live-ring r2"></div><img src="icons/icon-192.png" alt=""></div>
+  <div class="live-orb" id="liveOrb"><div class="live-ring"></div><div class="live-ring r2"></div><div id="liveBird"></div></div>
   <div class="live-status" id="liveStatus">Connecting…</div>
   <div class="live-caption" id="liveCaption"></div>
   <div class="live-btns"><button class="live-btn" id="liveCam" title="Show Sparrow">📷</button><button class="live-btn end" id="liveEnd" title="End">✕</button></div>
@@ -203,6 +182,8 @@
       <button data-th="midnight"><i style="background:#C6F432;outline:3px solid #0B0F1A"></i>Midnight</button>
       <button data-th="pop"><i style="background:#FFE14D;outline:2px solid #111"></i>Pop</button>
       <button data-th="sage"><i style="background:#2E7D5B"></i>Sage</button>
+      <button data-th="blossom"><i style="background:linear-gradient(135deg,#FFB6C8,#EF7598)"></i>Blossom</button>
+      <button data-th="petal"><i style="background:#E0607E;outline:3px solid #FFF1F4"></i>Petal</button>
       <button data-th="sunset"><i style="background:#F28A3C"></i>Sunset</button>
     </div></div>
     <label class="row"><input type="checkbox" id="sSimple"> 🔠 Simple mode — big text, fewer buttons, slower voice</label>
@@ -244,13 +225,9 @@
       <select id="rLead"><option value="0">Only on time</option><option value="1">1 minute before</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option></select></label>
   </details>
 
-  <details><summary>💧 Health reminders</summary>
-    <label class="row"><input type="checkbox" id="hWater"> Remind me to drink water</label>
-    <label class="field"><span>Every</span><select id="hWaterEvery"><option value="1">1 hour</option><option value="1.5">1½ hours</option><option value="2">2 hours</option><option value="3">3 hours</option></select></label>
-    <label class="row"><input type="checkbox" id="hMeds"> Remind me to take medicine</label>
-    <label class="field"><span>Medicine name</span><input id="hMedName" placeholder="medicine"></label>
-    <label class="field"><span>Times (24h)</span><input id="hMedTimes" placeholder="09:00, 21:00"></label>
-    <p class="small-text">Or just say “remind me to drink water every 2 hours”.</p>
+  <details><summary>💧 Water, coffee &amp; medicine</summary>
+    <div id="healthList"></div>
+    <p class="small-text">When it's time, the sparrow flies in with your water bottle, coffee cup or pills. You can also say “remind me to drink water every 30 minutes”.</p>
   </details>
 
   <details><summary>🕌 Prayer times</summary>

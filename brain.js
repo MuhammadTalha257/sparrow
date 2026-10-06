@@ -385,15 +385,33 @@ export async function handle(input) {
     if (/^(job agent|jobs?|job search|my jobs|open jobs?|career|naukri)$/.test(t)) return { reply: 'Opening your job agent…', action: 'jobs-open' };
   }
 
-  // ----- health reminders -----
-  m = t.match(/^(turn on|start|enable|switch on|on karo)?\s*(the )?(water|drink water|paani|pani) reminders?(?: every (\d+(?:\.\d+)?) hours?)?\s*(on)?$|^remind me to drink water(?: every (\d+(?:\.\d+)?) hours?)?$/);
-  if (m) { const h = store.settings.health; h.water = true; h.waterEvery = +(m[4] || m[6]) || h.waterEvery || 2; delete h.lastWater; store.save();
-    return { reply: `💧 Done — I'll remind you to drink water every ${h.waterEvery} hour${h.waterEvery > 1 ? 's' : ''} (9am to 10pm).` }; }
-  if (/^(turn off|stop|disable|switch off)\s+(the )?(water|paani|pani) reminders?$|^(water|paani) reminders? (off|band karo)$/.test(t)) { store.settings.health.water = false; store.save(); return { reply: 'Water reminders are off.' }; }
-  m = t.match(/^(?:turn on|start|enable)?\s*(?:the )?(?:medicine|meds|medication|dawai|dawa) reminders?(?: at (.+))?$/);
-  if (m) { const h = store.settings.health; h.meds = true; if (m[1]) h.medTimes = m[1].replace(/\band\b/g, ','); store.save();
-    return { reply: `💊 Medicine reminders are on (${h.medTimes}). Change the times in Settings → Health reminders.` }; }
-  if (/^(turn off|stop|disable)\s+(the )?(medicine|meds|dawai) reminders?$/.test(t)) { store.settings.health.meds = false; store.save(); return { reply: 'Medicine reminders are off.' }; }
+  // ----- health reminders (water, coffee, medicine) -----
+  {
+    const KIND = { water: /\b(water|drink water|paani|pani)\b/, coffee: /\b(coffee|chai|tea|caffeine)\b/, meds: /\b(medicine|medicines|meds|medication|tablets?|pills?|dawai|dawa)\b/ };
+    const NAME = { water: '💧 water', coffee: '☕ coffee', meds: '💊 medicine' };
+    const kind = Object.keys(KIND).find(k => KIND[k].test(t));
+    const isRem = /\breminders?\b|\bremind me\b|\breminder\b|\byaad\b/.test(t);
+    if (kind && isRem && /\b(turn off|stop|disable|switch off|no more|band karo|off)\b/.test(t)) {
+      store.settings.health[kind].on = false; store.save(); return { reply: `${NAME[kind]} reminders are off.` };
+    }
+    // repeating only when it sounds repeating — "remind me to take medicine at 9pm" stays a normal one-off reminder
+    const recurring = /\bevery\b|\bhar\b|\bdaily\b|\breminders\b|^(?:turn on|start|enable|switch on)\b/.test(t);
+    if (kind && (isRem || /^(?:turn on|start|enable|switch on)\b/.test(t)) && recurring) {
+      const h = store.settings.health[kind];
+      const ev = t.match(/\bevery\s+(\d+(?:\.\d+)?|an?|one|half an?)\s*(min(?:ute)?s?|h(?:ou)?rs?)\b/) || t.match(/\bhar\s+(\d+)\s*(minute|ghante|ghanta)\b/);
+      const at = t.match(/\bat\s+(.+)$/);
+      if (ev) {
+        const n = /half/.test(ev[1]) ? 0.5 : /^(a|an|one)$/.test(ev[1]) ? 1 : +ev[1];
+        h.mode = 'every'; h.every = Math.max(1, Math.round(/^m/.test(ev[2]) || ev[2] === 'minute' ? n : n * 60));
+      } else if (at) {
+        const times = at[1].split(/\s*(?:,|and|&|aur)\s*/).map(x => { const d = chrono.parseDate(x); return d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null; }).filter(Boolean);
+        if (times.length) { h.mode = 'times'; h.times = times.join(', '); }
+      }
+      h.on = true; delete h.last; store.save();
+      const when = h.mode === 'every' ? `every ${h.every >= 60 && h.every % 60 === 0 ? (h.every / 60) + ' hour' + (h.every > 60 ? 's' : '') : h.every + ' minutes'}` : `at ${h.times}`;
+      return { reply: `${NAME[kind]} reminders are on — ${when}, between ${h.start} and ${h.end}. The sparrow will bring it to you. Change it in Settings → Health.` };
+    }
+  }
   if (/^(turn on|start|enable|show)\s+(the )?(prayer|namaz|salah) (times|reminders?|alerts?)$/.test(t)) { store.settings.prayer.on = true; store.save(); return { reply: '🕌 Prayer times are on. They follow your location automatically.', action: 'refresh' }; }
 
   // ----- snooze -----
