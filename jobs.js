@@ -126,7 +126,26 @@ async function srcJobicy(q) {
   const tag = q.split(/\s+/).find(w => w.length > 2) || q;
   const j = await getJSON(`https://jobicy.com/api/v2/remote-jobs?count=25&tag=${encodeURIComponent(tag)}`);
   return (j.jobs || []).map(r => ({ title: strip(r.jobTitle), company: r.companyName, location: 'Remote' + (r.jobGeo ? ' · ' + r.jobGeo : ''), url: r.url,
-    desc: strip(r.jobExcerpt || r.jobDescription).slice(0, 1500), salary: '', posted: r.pubDate, source: 'Jobicy' }));
+    desc: strip(r.jobExcerpt || r.jobDescription).slice(0, 1500), salary: '', posted: r.pubDate, source: 'Jobicy',
+    level: { junior: 'entry', entry: 'entry', midweight: 'mid', mid: 'mid', senior: 'senior', manager: 'lead', director: 'lead' }[String(r.jobLevel || '').toLowerCase().split(/[\s-]/)[0]] || '' }));
+}
+// The Muse: free, filters by level for real (internship, entry, mid, senior, management) and by city.
+const COUNTRY_NAME = { gb: 'United Kingdom', us: 'United States', pk: 'Pakistan', in: 'India', ae: 'United Arab Emirates', ca: 'Canada', au: 'Australia', de: 'Germany', fr: 'France', nl: 'Netherlands', ie: 'Ireland', sa: 'Saudi Arabia' };
+async function srcMuse(q, where, level) {
+  const lv = { internship: ['Internship'], apprentice: ['Internship', 'Entry Level'], entry: ['Entry Level'], mid: ['Mid Level'], senior: ['Senior Level'], lead: ['management'] }[level] || [];
+  const CITY_CC = { london: 'gb', manchester: 'gb', birmingham: 'gb', leeds: 'gb', glasgow: 'gb', edinburgh: 'gb', bristol: 'gb', liverpool: 'gb', cambridge: 'gb', oxford: 'gb',
+    lahore: 'pk', karachi: 'pk', islamabad: 'pk', rawalpindi: 'pk', dubai: 'ae', 'abu dhabi': 'ae', riyadh: 'sa', 'new york': 'us', 'san francisco': 'us', toronto: 'ca', sydney: 'au', berlin: 'de', dublin: 'ie' };
+  const cc = CITY_CC[(where || '').toLowerCase().trim()] || COUNTRY();
+  const city = where && !/remote/i.test(where) ? (where.includes(',') ? where : where.replace(/\b\w/g, c => c.toUpperCase()) + ', ' + (COUNTRY_NAME[cc] || 'United Kingdom')) : '';
+  const params = p => ['page=' + p, ...lv.map(l => 'level=' + encodeURIComponent(l)), city ? 'location=' + encodeURIComponent(city) : '', /remote/i.test(where || '') ? 'location=' + encodeURIComponent('Flexible / Remote') : ''].filter(Boolean).join('&');
+  const pages = await Promise.all([0, 1, 2].map(p => getJSON('https://www.themuse.com/api/public/jobs?' + params(p)).catch(() => ({ results: [] }))));
+  const words = q.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['jobs', 'job', 'the', 'and'].includes(w));
+  return pages.flatMap(j => j.results || []).filter(r => {
+    const hay = (r.name + ' ' + (r.categories || []).map(c => c.name).join(' ')).toLowerCase();
+    return !words.length || words.some(w => hay.includes(w));
+  }).slice(0, 25).map(r => ({ title: r.name, company: r.company?.name || '', location: (r.locations || []).map(l => l.name).join(' · ') || where, url: r.refs?.landing_page,
+    desc: strip(r.contents).slice(0, 1500), salary: '', posted: r.publication_date, source: 'The Muse',
+    level: { internship: 'internship', 'entry level': 'entry', 'mid level': 'mid', 'senior level': 'senior', management: 'lead' }[String(r.levels?.[0]?.name || '').toLowerCase()] || '' }));
 }
 async function srcArbeitnow(q, where) {
   const j = await getJSON('https://www.arbeitnow.com/api/job-board-api');
@@ -158,10 +177,19 @@ const RANK = { internship: 0, apprentice: 0, entry: 1, mid: 2, senior: 3, lead: 
 /** Keeps jobs that fit the wanted level (titles without a level word stay — most ads don't say). */
 function fitsLevel(job, level) {
   if (!level) return true;
-  const l = levelOf(job.title); if (!l) return true;
-  if (level === 'apprentice') return l === 'apprentice' || l === 'internship' || l === 'entry';
-  if (level === 'internship') return l === 'internship' || l === 'apprentice';
-  return Math.abs(RANK[l] - RANK[level]) <= 1;
+  const title = (job.title || '').toLowerCase(), text = title + ' ' + (job.desc || '').toLowerCase().slice(0, 1500);
+  const l = job.level || levelOf(job.title);
+  const years = +(text.match(/\b(\d{1,2})\s*\+?\s*(?:years|yrs)/) || [])[1] || 0;
+  if (['internship', 'apprentice', 'entry'].includes(level)) {
+    if (/\b(senior|sr\.?|lead|principal|staff|head of|manager|director|architect|vp)\b/.test(title) || years >= 4) return false;
+    if (level === 'apprentice') return l ? ['apprentice', 'internship', 'entry'].includes(l) : /\b(apprentice|trainee|junior|graduate|entry|level 3|level 4)\b/.test(text);
+    if (level === 'internship') return l ? ['internship', 'apprentice'].includes(l) : /\b(intern|internship|placement|graduate|student)\b/.test(text);
+    return l ? ['entry', 'apprentice', 'internship'].includes(l) || (l === 'mid' && years <= 2) : years <= 2;
+  }
+  if (level === 'mid') return l ? l === 'mid' || (l === 'senior' && years <= 5) || (l === 'entry' && years >= 2) : !/\b(junior|graduate|intern|apprentice|principal|head of|director)\b/.test(title);
+  if (level === 'senior') return l ? l === 'senior' || l === 'lead' : !/\b(junior|jr\.?|graduate|intern|internship|apprentice|trainee|entry)\b/.test(title) && (years >= 4 || /\b(senior|sr\.?|lead|principal|staff)\b/.test(title));
+  if (level === 'lead') return l ? l === 'lead' || l === 'senior' : /\b(lead|principal|staff|head of|manager|director|architect)\b/.test(title);
+  return true;
 }
 
 export function searchLinks(q, where, level = data.level || '') {
@@ -188,7 +216,10 @@ export async function searchJobs(q, where = '', level = null) {
   where = (where || '').trim();
   data.level = level;
   if (!q) return { ok: false, reply: 'What kind of job? Try "find React developer jobs in London" — or send me your CV and I’ll work it out.' };
-  const sources = [srcAdzuna(q, where), srcReed(q, where), srcJooble(q, where), srcRemotive(q), srcJobicy(q), srcArbeitnow(q, where)];
+  const word = { internship: 'intern', apprentice: 'apprentice', entry: 'junior', senior: 'senior', lead: 'lead' }[level] || '';
+  const kq = word ? word + ' ' + q : q;
+  data.results = [];
+  const sources = [srcAdzuna(kq, where), srcReed(kq, where), srcJooble(kq, where), srcMuse(q, where, level), srcRemotive(word && level !== 'apprentice' ? kq : q), srcJobicy(q), srcArbeitnow(q, where)];
   const settled = await Promise.allSettled(sources.map(s => withTimeout(s)));
   let jobs = settled.flatMap(r => r.status === 'fulfilled' ? r.value : []).filter(j => j.title && j.url && fitsLevel(j, level));
   const seen = new Set();
@@ -197,7 +228,13 @@ export async function searchJobs(q, where = '', level = null) {
   if (where) jobs.sort((a, b) => (b.location || '').toLowerCase().includes(where.toLowerCase()) - (a.location || '').toLowerCase().includes(where.toLowerCase()));
   jobs = jobs.slice(0, 30);
   data.query = q; data.where = where;
-  if (!jobs.length) { data.results = []; save(); return { ok: true, reply: `I couldn't fetch listings for "${q}" right now. I've added LinkedIn and Indeed searches for you to open instead.` }; }
+  if (!jobs.length) {
+    data.results = []; save();
+    const lvName = level ? (LEVELS.find(l => l[0] === level)?.[1] || '').toLowerCase() + ' ' : '';
+    return { ok: true, reply: level
+      ? `I couldn't find ${lvName}${q} jobs${where ? ' in ' + where : ''} on the free job boards right now. Tap LinkedIn or Indeed below — they're already filtered to ${lvName.trim()}${where ? ' in ' + where : ''}.${!data.keys.reedKey && !data.keys.adzunaId ? ' Adding a free Reed or Adzuna key (Sources tab) gives far more local results.' : ''}`
+      : `I couldn't fetch listings for "${q}" right now. I've added LinkedIn and Indeed searches for you to open instead.` };
+  }
   jobs = await rank(jobs);
   data.results = jobs.map((j, i) => ({ ...j, id: 'j' + Date.now().toString(36) + i })); save();
   const top = data.results.slice(0, 3).map((j, i) => `${i + 1}. ${j.title} at ${j.company}${j.score != null ? ` (${j.score}% match)` : ''}`).join('; ');
@@ -380,7 +417,7 @@ function jobCard(j, i) {
   const applied = data.applied.some(a => a.url === j.url);
   const sc = j.score == null ? '' : `<div class="jb-match ${j.score >= 75 ? 'hi' : j.score >= 50 ? 'mid' : 'lo'}">${j.score}%</div>`;
   return `<div class="jb-card" data-id="${j.id}">
-    <div class="jb-top">${sc}<div class="jb-tt"><div class="jb-t">${i + 1}. ${esc(j.title)}</div><div class="jb-sub">${esc(j.company)} · ${esc(j.location || '')}${j.salary ? ' · ' + esc(j.salary) : ''}</div></div></div>
+    <div class="jb-top">${sc}<div class="jb-tt"><div class="jb-t">${i + 1}. ${esc(j.title)}</div><div class="jb-sub">${esc(j.company)} · ${esc(j.location || '')}${j.salary ? ' · ' + esc(j.salary) : ''}${(j.level || levelOf(j.title)) ? ' · ' + esc(LEVELS.find(l => l[0] === (j.level || levelOf(j.title)))?.[1] || '') : ''}</div></div></div>
     ${j.why ? `<div class="jb-why">${esc(j.why)}</div>` : ''}
     ${j.kit ? kitHTML(j) : ''}
     <div class="jb-acts">

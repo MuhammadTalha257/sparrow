@@ -336,6 +336,18 @@ final class VoiceEngine: NSObject, ObservableObject {
         }
     }
 
+    /// Normal (non-live) listening for one command — used when the live voice can't start.
+    func listenOffline() {
+        SoundEngine.shared.play("question")
+        NotificationCenter.default.post(name: .hookReveal, object: nil)
+        requestPermissions { ok in
+            guard ok else { return }
+            self.oneShot = true
+            self.startRecognition()
+            self.status = "Listening…"
+        }
+    }
+
     /// Mic button: listen for one command, no wake word needed.
     func listenOnce() {
         // The mic button always wins: stop talking and listen right now.
@@ -723,21 +735,28 @@ final class Briefing {
         }
     }
 
+    /// "Tuesday 6 Oct · morning" — Sparrow says hello at most once per part of the day, even after restarts.
+    private static func slot(_ d: Date = Date()) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d) + " " + period(d)
+    }
+    private var greetedThisPart: Bool { UserDefaults.standard.string(forKey: "greetSlot") == Self.slot() }
+
     private func maybeGreet() {
         guard UserDefaults.standard.bool(forKey: AssistantPrefs.greetEnabled) else { return }
-        let p = Self.period()
-        // Greet once per part of the day, or after 3 hours away.
-        guard p != lastPeriod || Date().timeIntervalSince(lastGreet) > 3 * 3600 else { return }
+        // Once per morning / afternoon / evening — never again after lunch or a short break, never at night.
+        guard !greetedThisPart, Self.period() != "night" else { return }
+        appendAppLog("voice.log", "greeting (\(Self.slot()))")
         Task { await greet() }
     }
 
-    /// Called by the morning briefing so the wake greeting doesn't repeat it.
-    func markGreeted() { lastGreet = Date(); lastPeriod = Self.period() }
-    /// True if Sparrow already said hello (with the day's plan) in the last 20 minutes.
-    var greetedRecently: Bool { Date().timeIntervalSince(lastGreet) < 20 * 60 }
+    /// Called by the morning briefing so the wake greeting doesn't repeat it (and the other way round).
+    func markGreeted() { lastGreet = Date(); lastPeriod = Self.period(); UserDefaults.standard.set(Self.slot(), forKey: "greetSlot") }
+    /// True if Sparrow already said hello in this part of the day.
+    var greetedRecently: Bool { greetedThisPart || Date().timeIntervalSince(lastGreet) < 20 * 60 }
 
     func greet() async {
-        lastGreet = Date(); lastPeriod = Self.period()
+        markGreeted()
         let text = await composeGreeting()
         // One-time tip if the Mac only has robotic voices.
         if VoiceEngine.onlyBasicVoices && !UserDefaults.standard.bool(forKey: "voiceTipShown") {

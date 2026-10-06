@@ -58,8 +58,9 @@ final class LiveSession: NSObject {
         return k
     }
     /// Jarvis mode is on (default), there's internet and a Gemini key.
+    private var disabledUntil = Date.distantPast
     var usable: Bool {
-        (UserDefaults.standard.object(forKey: "liveMode") as? Bool ?? true) && NetStatus.shared.online && key != nil
+        (UserDefaults.standard.object(forKey: "liveMode") as? Bool ?? true) && NetStatus.shared.online && key != nil && Date() > disabledUntil
     }
 
     // MARK: Start / stop
@@ -82,7 +83,11 @@ final class LiveSession: NSObject {
         NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
         let preferred = UserDefaults.standard.string(forKey: "liveModel") ?? ""
         let order = (preferred.isEmpty ? [] : [preferred]) + Self.models.filter { $0 != preferred }
-        attempts = order.flatMap { [($0, true), ($0, false)] }
+        let searchOK = UserDefaults.standard.object(forKey: "liveSearchOK") as? Bool
+        attempts = order.flatMap { m -> [(String, Bool)] in
+            if m == preferred, let ok = searchOK { return ok ? [(m, true), (m, false)] : [(m, false)] }
+            return [(m, true), (m, false)]
+        }
         attempt = 0
         appendAppLog("voice.log", "live: start (\(text ?? "just the name"))")
         Task { await self.connect(key: key) }
@@ -126,6 +131,7 @@ final class LiveSession: NSObject {
         let t = firstText
         stop("fallback: \(why)")
         if let t, !t.isEmpty { Task { await Assistant.run(t, spoken: true) } }
+        else { VoiceEngine.shared.listenOffline() }
     }
 
     // MARK: Connection
@@ -276,6 +282,7 @@ final class LiveSession: NSObject {
         ready = true
         let (model, search) = attempts[attempt]
         UserDefaults.standard.set(model, forKey: "liveModel")
+        UserDefaults.standard.set(search, forKey: "liveSearchOK")
         appendAppLog("voice.log", "live: connected \(model)\(search ? " + search" : "") in \(String(format: "%.1f", Date().timeIntervalSince(startedAt)))s")
         startAudio()
         if let img = firstImage { firstImage = nil; sendImage(img) }
@@ -347,12 +354,28 @@ final class LiveSession: NSObject {
 
     // MARK: Audio in/out (one engine, with echo cancellation so Sparrow doesn't hear itself)
 
+    /// Some Macs (or mic/speaker combinations) refuse Apple's echo cancellation — remembered so it isn't tried again.
+    private static var echoBroken = UserDefaults.standard.bool(forKey: "liveEchoBroken")
+
     private func startAudio() {
+        if !Self.echoBroken, startEngine(echo: true) { return }
+        if !Self.echoBroken {
+            Self.echoBroken = true
+            UserDefaults.standard.set(true, forKey: "liveEchoBroken")
+            appendAppLog("voice.log", "live: echo cancellation unavailable on this Mac — using plain audio")
+        }
+        if startEngine(echo: false) { return }
+        audioFailed()
+    }
+
+    /// Starts mic + speaker. false = couldn't (everything is cleaned up again).
+    private func startEngine(echo: Bool) -> Bool {
         let e = AVAudioEngine()
         let p = AVAudioPlayerNode()
         let input = e.inputNode
-        do { try input.setVoiceProcessingEnabled(true); echoCancel = true } catch { echoCancel = false }
-        if echoCancel {
+        echoCancel = false
+        if echo {
+            do { try input.setVoiceProcessingEnabled(true); echoCancel = true } catch { return false }
             // Don't make the rest of the Mac's sound quiet while we talk.
             input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
         }
@@ -360,19 +383,36 @@ final class LiveSession: NSObject {
         e.connect(p, to: e.mainMixerNode, format: outFormat)
         let hw = input.outputFormat(forBus: 0)
         guard hw.sampleRate > 0, hw.channelCount > 0 else {
-            appendAppLog("voice.log", "live: no microphone"); stop("no mic"); return
+            appendAppLog("voice.log", "live: no microphone format (echo \(echo))")
+            if echo { try? input.setVoiceProcessingEnabled(false) }
+            return false
         }
         wire.set(ws)
         wire.setMuted(false)
         Self.installMicTap(input, format: hw, wire: wire)
-        do { try e.start() } catch {
-            appendAppLog("voice.log", "live: audio start failed \(error.localizedDescription)")
-            stop("audio failed"); return
+        do {
+            e.prepare()
+            try e.start()
+        } catch {
+            appendAppLog("voice.log", "live: audio start failed (echo \(echo)) \(error.localizedDescription)")
+            input.removeTap(onBus: 0)
+            e.stop()
+            if echo { try? input.setVoiceProcessingEnabled(false) }
+            wire.set(nil)
+            return false
         }
         p.volume = 1; e.mainMixerNode.outputVolume = 1
         p.play()
         engine = e; player = p
         appendAppLog("voice.log", "live: audio on (echo cancellation \(echoCancel ? "on" : "off"), mic \(Int(hw.sampleRate)) Hz × \(hw.channelCount))")
+        return true
+    }
+
+    /// The live voice can't use the audio right now → the normal voice answers instead (never silence).
+    private func audioFailed() {
+        disabledUntil = Date().addingTimeInterval(10 * 60)
+        appendAppLog("voice.log", "live: audio unavailable — normal voice for the next 10 minutes")
+        fallback("audio")
     }
 
     private func stopAudio() {
