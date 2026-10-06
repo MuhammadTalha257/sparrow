@@ -2,7 +2,7 @@ name: Publish website (GitHub Pages)
 
 on:
   push:
-    branches: [main]
+    branches: [main, test]
     paths-ignore: ["android/**", "desktop/**", "website/**", ".github/workflows/android.yml", ".github/workflows/desktop.yml"]
   workflow_dispatch: {}
 
@@ -23,6 +23,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/checkout@v4
+        with:
+          ref: test
+          path: _test
+        continue-on-error: true
       - uses: actions/configure-pages@v5
         with:
           enablement: true
@@ -30,6 +37,11 @@ jobs:
         run: |
           mkdir -p _site
           cp -r index.html get.html *.js *.css manifest.webmanifest lib icons _site/
+          # the test copy lives at /test/ so new features can be tried on a phone before they reach everyone
+          if [ -f _test/index.html ]; then
+            mkdir -p _site/test
+            (cd _test && cp -r index.html *.js *.css manifest.webmanifest lib icons ../_site/test/)
+          fi
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

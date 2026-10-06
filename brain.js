@@ -371,8 +371,8 @@ export async function handle(input) {
     let j;
     if (/^((analy[sz]e|review|check|read|score|rate|improve|look at) (my |the )?(cv|resume|résumé|c\.v\.?)|(meri |mera )?(cv|resume) (check|dekho|analy[sz]e|review) ?(karo|kar do|kr do)?|how good is my (cv|resume))$/.test(t))
       return { reply: 'Reading your CV…', action: 'cv-analyse' };
-    if ((j = t.match(/^(?:find|search(?: for)?|look for|show|get|search me|find me)(?: me)?(?: some| new| the latest| latest)? (.+?) (?:jobs?|roles?|vacanc(?:y|ies)|positions?|openings?)(?: (?:in|near|around|at|for) (.+))?$/)) && !/\b(my|file|files)\b/.test(j[1]))
-      return { reply: 'Looking for jobs…', action: 'jobs-search', q: j[1], where: j[2] || '' };
+    if ((j = t.match(/^(?:find|search(?: for)?|look for|show|get|search me|find me)(?: me)?(?: some| new| the latest| latest)? (.+?) (jobs?|roles?|vacanc(?:y|ies)|positions?|openings?|apprenticeships?|internships?)(?: (?:in|near|around|at|for) (.+))?$/)) && !/\b(my|file|files)\b/.test(j[1]))
+      return { reply: 'Looking for jobs…', action: 'jobs-search', q: j[1] + (/^(apprentice|intern)/.test(j[2]) ? ' ' + j[2] : ''), where: j[3] || '' };
     if ((j = t.match(/^(?:find|search(?: for)?|look for|show|get)(?: me)?(?: some| new)? (?:jobs?|work|vacancies)(?: for me)?(?: (?:in|near|around) (.+))?$/)))
       return { reply: 'Looking for jobs that fit you…', action: 'jobs-search', q: '', where: j[1] || '' };
     if ((j = t.match(/^(?:(.+?) (?:mein|me|main|vich) )?(.+?) (?:ki|ke|di|de) (?:jobs?|naukri|naukriyan) (?:dhoondo|dhundo|talash karo|dikhao|search karo)$/)))

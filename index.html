@@ -185,6 +185,12 @@
 <div class="sheet-bg" id="sheetBg" hidden></div>
 
 <!-- Settings -->
+<div class="live-screen" id="liveScreen" hidden>
+  <div class="live-orb" id="liveOrb"><div class="live-ring"></div><div class="live-ring r2"></div><img src="icons/icon-192.png" alt=""></div>
+  <div class="live-status" id="liveStatus">Connecting…</div>
+  <div class="live-caption" id="liveCaption"></div>
+  <div class="live-btns"><button class="live-btn" id="liveCam" title="Show Sparrow">📷</button><button class="live-btn end" id="liveEnd" title="End">✕</button></div>
+</div>
 <div class="sheet" id="sheet" hidden>
   <div class="grab"></div>
   <div class="sheet-head"><h2 data-i18n="settings">Settings</h2><button class="pill-btn solid" id="closeSheet" data-i18n="done">Done</button></div>
@@ -222,6 +228,8 @@
     <label class="row"><input type="checkbox" id="sWake"> Talk without pressing anything — just say “Sparrow…”</label>
     <label class="row" id="handsFreeRow"><input type="checkbox" id="sHandsFree"> 🎧 Hands-free: act on clear requests (“play some music”, “open Chrome”) even without saying “Sparrow”</label>
     <label class="row"><input type="checkbox" id="sConv"> Keep listening after Sparrow answers (conversation)</label>
+    <label class="row mac-hide"><input type="checkbox" id="sLive"> Jarvis conversation: tap the mic once, then just talk (natural voice, any language — needs a Gemini key)</label>
+    <label class="field mac-hide"><span>Jarvis voice</span><select id="sLiveVoice"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Orus</option><option>Fenrir</option></select></label>
     <label class="row"><input type="checkbox" id="sMic"> Show the mic button</label>
     <p class="small-text" id="wakeNote"></p>
     <button class="btn ghost" id="testVoice">🔊 Test voice</button>

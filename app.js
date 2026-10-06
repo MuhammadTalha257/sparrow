@@ -12,6 +12,7 @@ import {
 import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
+import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -499,10 +500,66 @@ function afterSpeech() {
   setTimeout(() => { if (window.SparrowVoice) window.SparrowVoice.startCommand(); else listen(true); }, 300);
 }
 
+// ---------------- Jarvis: live conversation (iPhone, Android, Windows, browser) ----------------
+const LIVE_TOOLS = [
+  { name: 'run_command', description: "Do something with Sparrow in plain English: 'open WhatsApp', 'play music', 'remind me…', 'what's on today', 'weather', 'prayer times', 'note buy milk', 'search google for X', 'open youtube.com', 'focus 25 minutes', 'add task…'.", parameters: { type: 'OBJECT', properties: { command: { type: 'STRING' } }, required: ['command'] } },
+  { name: 'add_reminder', description: 'Create a reminder/task/meeting at an exact time.', parameters: { type: 'OBJECT', properties: { title: { type: 'STRING' }, when: { type: 'STRING', description: 'ISO local date-time, e.g. 2026-10-12T10:00:00' }, kind: { type: 'STRING', description: 'reminder | task | meeting' }, repeat: { type: 'STRING', description: 'daily | weekdays | weekly | monthly (optional)' } }, required: ['title', 'when'] } },
+  { name: 'delete_reminder', description: 'Delete an item by id (from the list in your instructions).', parameters: { type: 'OBJECT', properties: { id: { type: 'STRING' } }, required: ['id'] } },
+  { name: 'complete_task', description: 'Mark an item done by id.', parameters: { type: 'OBJECT', properties: { id: { type: 'STRING' } }, required: ['id'] } },
+  { name: 'list_reminders', description: 'Current reminders, meetings and tasks with ids.' },
+  { name: 'find_jobs', description: "Search jobs that fit the user's CV, plus LinkedIn and Indeed searches with the same filters.", parameters: { type: 'OBJECT', properties: { role: { type: 'STRING' }, location: { type: 'STRING' }, level: { type: 'STRING', description: 'internship | apprentice | entry | mid | senior | lead' } }, required: ['role'] } },
+  { name: 'look_through_camera', description: 'Take a look through the camera to answer what the user is showing or asking about.', parameters: { type: 'OBJECT', properties: { camera: { type: 'STRING', description: 'front (default) or back' } } } },
+  { name: 'end_conversation', description: 'Call after a short goodbye when the user says thanks/bye/that is all.' },
+];
+async function liveTool(name, a) {
+  const res = r => r ? { ok: true, result: typeof r === 'string' ? r : JSON.stringify(r) } : { ok: false, result: 'Sparrow could not do that.' };
+  switch (name) {
+    case 'run_command': return res(await voiceAsk(a.command || ''));
+    case 'add_reminder': return res(window.Sparrow.addReminder(a.title, a.when, a.kind || 'reminder', a.repeat || ''));
+    case 'delete_reminder': { const t = window.Sparrow.removeItem(a.id); return t ? { ok: true, result: 'Deleted: ' + t } : { ok: false, result: 'No item with that id.' }; }
+    case 'complete_task': { const t = window.Sparrow.completeItem(a.id); return t ? { ok: true, result: 'Done: ' + t } : { ok: false, result: 'No item with that id.' }; }
+    case 'list_reminders': return res(window.Sparrow.listItems());
+    case 'find_jobs': return res(await voiceAsk(`find ${a.level ? a.level + ' ' : ''}${a.role} jobs${a.location ? ' in ' + a.location : ''}`));
+    case 'look_through_camera': {
+      try { liveSendImage(await cameraShot(/back|rear/.test(a.camera || '') ? 'environment' : 'user')); return { ok: true, result: 'A camera photo was just sent to you. Answer from what you see.' }; }
+      catch { return { ok: false, result: 'The camera is not allowed. Allow it in the browser/phone settings.' }; }
+    }
+    case 'end_conversation': return { ok: true, result: 'Ending after your goodbye.' };
+  }
+  return { ok: false, result: 'Unknown tool.' };
+}
+function livePrompt() {
+  const name = S().name || '';
+  return `You are Sparrow, ${name ? name + "'s" : "the user's"} personal assistant — like JARVIS: calm, quick, warm, a little witty. Live voice conversation on their ${isIOS ? 'iPhone' : isAndroid ? 'Android phone' : D ? 'computer' : 'device'}.
+Now: ${new Date().toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).
+Their reminders, meetings and tasks (JSON with ids): ${JSON.stringify(window.Sparrow.listItems()).slice(0, 4000)}
+TALK: 1–2 short spoken sentences, no lists or emojis. Detect the language they speak and ALWAYS answer in that same language and style (Urdu, Roman Urdu/Hindi mix, Punjabi, Hindi, Arabic, Spanish, French, Brazilian Portuguese, Turkish, English…). Translate clearly when asked. They may interrupt you.
+ACT: call tools right away, even mid-sentence; do multi-step requests step by step. Reminders: use add_reminder with an exact ISO time worked out from now ("coming Monday at 10" = next Monday 10:00); to delete, pick the matching id (by day, time or words) — ask if two match. Use Google Search for facts, news, prices and "what is this", combining sources. For "what do you see / look at this" use look_through_camera. Jobs: find_jobs with role, place and level. Only say something is done if the tool says so.
+END: when they say thanks / bye / that's all / khuda hafiz / shukriya, give a very short goodbye and call end_conversation.`;
+}
+function startJarvis(firstText) {
+  const scr = $('#liveScreen'), status = $('#liveStatus'), cap = $('#liveCaption'), orb = $('#liveOrb');
+  const label = { connecting: 'Connecting…', listening: 'Listening…', speaking: 'Speaking…', working: 'On it…' };
+  scr.hidden = false; scr.dataset.state = 'connecting'; status.textContent = label.connecting; cap.textContent = '';
+  speechSynthesis?.cancel(); stopWake();
+  startLive({
+    tools: LIVE_TOOLS, run: liveTool, prompt: livePrompt, firstText,
+    onState: (st, info) => { if (st === 'error') { status.textContent = info || 'Something went wrong.'; return; } scr.dataset.state = st; status.textContent = label[st] || ''; },
+    onLevel: v => orb.style.setProperty('--lv', v.toFixed(2)),
+    onLine: (who, t) => { cap.textContent = t.slice(-160); },
+    onTurn: (u, a) => { if (u) addMsg('me', u, { cmd: true }); if (a) addMsg('bot', a, { src: 'Live' }); },
+    onEnd: why => { setTimeout(() => { scr.hidden = true; }, why === 'no-mic' || why === 'no-model' || why === 'timeout' ? 3500 : 250); setTimeout(startWake, 900); },
+  });
+}
+$('#liveEnd').onclick = () => stopLive('tap');
+$('#liveCam').onclick = async () => { try { liveSendImage(await cameraShot('environment')); toast('Sparrow is looking 👀'); } catch { toast('Allow the camera for Sparrow.'); } };
+
 // ---------------- voice in ----------------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false, wakeRec = null;
 function listen(quiet = false) {
+  if (liveActive()) { stopLive('tap'); return; }
+  if (liveUsable()) { startJarvis(); return; }
   if (N) { N.listen(); return; }
   if (M) { M.post('listen'); return; }
   if (window.SparrowVoice) { window.SparrowVoice.toggle(); return; }
@@ -976,6 +1033,7 @@ function fillSettings() {
   $('#sLang').innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}">${v}</option>`).join(''); $('#sLang').value = s.lang;
   $$('#sTheme button').forEach(b => b.classList.toggle('on', b.dataset.th === s.theme));
   $('#sSimple').checked = s.simple; $('#sSpeak').checked = s.speak; $('#sWake').checked = s.wake; $('#sConv').checked = s.conversation; $('#sMic').checked = s.micButton !== false;
+  $('#sLive').checked = s.liveMode !== false; $('#sLiveVoice').value = s.liveVoice || 'Kore';
   $$('#sGender button').forEach(b => b.classList.toggle('on', b.dataset.g === s.gender));
   $('#sVoiceName').innerHTML = '<option value="">Automatic</option>' + Object.entries(nv.KOKORO_VOICES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
   $('#sVoiceName').value = s.voiceName || ''; $('#sNeural').checked = s.neural !== false; $('#sHandsFree').checked = s.handsFree === true; $('#handsFreeRow').hidden = !M;
@@ -1014,6 +1072,7 @@ function saveSettings() {
   s.voiceName = $('#sVoiceName').value; s.neural = $('#sNeural').checked; s.handsFree = $('#sHandsFree').checked;
   if (M) { s.listen = $('#sListen').value; s.studio = $('#sStudio').checked; }
   s.speak = $('#sSpeak').checked; s.wake = $('#sWake').checked; s.conversation = $('#sConv').checked; s.micButton = $('#sMic').checked;
+  s.liveMode = $('#sLive').checked; s.liveVoice = $('#sLiveVoice').value;
   s.morningOn = $('#rMorningOn').checked; s.morningTime = $('#rMorning').value || '08:30'; s.nightOn = $('#rNightOn').checked; s.nightTime = $('#rNight').value || '21:30'; s.lead = +$('#rLead').value;
   s.health = { ...(s.health || {}), water: $('#hWater').checked, waterEvery: +$('#hWaterEvery').value, meds: $('#hMeds').checked,
     medName: $('#hMedName').value.trim() || 'medicine', medTimes: $('#hMedTimes').value.trim() };

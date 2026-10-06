@@ -138,26 +138,59 @@ async function srcArbeitnow(q, where) {
     posted: r.created_at ? new Date(r.created_at * 1000).toISOString() : '', source: 'Arbeitnow' }));
 }
 
-export function searchLinks(q, where) {
+// ---------------------------------------------------------------- job levels
+export const LEVELS = [['', 'Any level'], ['internship', 'Internship'], ['apprentice', 'Apprenticeship'], ['entry', 'Entry / junior'], ['mid', 'Mid level'], ['senior', 'Senior'], ['lead', 'Lead / manager']];
+const LEVEL_WORDS = [
+  ['internship', /\b(intern(?:ship)?s?|placements?|work experience)\b/],
+  ['apprentice', /\b(apprentice(?:ship)?s?|trainees?)\b/],
+  ['entry', /\b(entry[ -]level|entry|junior|jr\.?|graduate|grad|fresher|beginner)\b/],
+  ['mid', /\b(mid[ -]?level|mid|intermediate|experienced)\b/],
+  ['senior', /\b(senior|sr\.?|expert)\b/],
+  ['lead', /\b(lead|principal|staff|head of|manager|director)\b/],
+];
+/** "senior react developer" → { q: 'react developer', level: 'senior' } */
+export function splitLevel(q) {
+  for (const [lv, re] of LEVEL_WORDS) if (re.test(q.toLowerCase())) return { q: q.toLowerCase().replace(re, ' ').replace(/\s+(level|role)\b/, '').replace(/\s+/g, ' ').trim(), level: lv };
+  return { q, level: '' };
+}
+function levelOf(title) { const t = (title || '').toLowerCase(); for (const [lv, re] of LEVEL_WORDS) if (re.test(t)) return lv; return ''; }
+const RANK = { internship: 0, apprentice: 0, entry: 1, mid: 2, senior: 3, lead: 4 };
+/** Keeps jobs that fit the wanted level (titles without a level word stay — most ads don't say). */
+function fitsLevel(job, level) {
+  if (!level) return true;
+  const l = levelOf(job.title); if (!l) return true;
+  if (level === 'apprentice') return l === 'apprentice' || l === 'internship' || l === 'entry';
+  if (level === 'internship') return l === 'internship' || l === 'apprentice';
+  return Math.abs(RANK[l] - RANK[level]) <= 1;
+}
+
+export function searchLinks(q, where, level = data.level || '') {
   const cc = COUNTRY();
+  const li = { internship: 1, apprentice: 1, entry: 2, mid: 3, senior: 4, lead: 5 }[level];
+  const ind = { internship: 'ENTRY_LEVEL', apprentice: 'ENTRY_LEVEL', entry: 'ENTRY_LEVEL', mid: 'MID_LEVEL', senior: 'SENIOR_LEVEL', lead: 'SENIOR_LEVEL' }[level];
+  const qWord = level === 'apprentice' ? q + ' apprentice' : level === 'internship' ? q + ' internship' : q;
   const indeed = { gb: 'uk.indeed.com', us: 'www.indeed.com', pk: 'pk.indeed.com', in: 'in.indeed.com', ae: 'ae.indeed.com', ca: 'ca.indeed.com', au: 'au.indeed.com', sa: 'sa.indeed.com' }[cc] || 'www.indeed.com';
   const e = encodeURIComponent;
   return [
-    ['LinkedIn', `https://www.linkedin.com/jobs/search/?keywords=${e(q)}${where ? '&location=' + e(where) : ''}`],
-    ['Indeed', `https://${indeed}/jobs?q=${e(q)}${where ? '&l=' + e(where) : ''}`],
-    ['Google Jobs', `https://www.google.com/search?q=${e(q + ' jobs' + (where ? ' in ' + where : ''))}&ibp=htl;jobs`],
-    ...(cc === 'pk' ? [['Rozee.pk', `https://www.rozee.pk/job/jsearch/q/${e(q)}`]] : []),
+    ['LinkedIn', `https://www.linkedin.com/jobs/search/?keywords=${e(qWord)}${where ? '&location=' + e(where) : ''}${li ? '&f_E=' + li : ''}&sortBy=R`],
+    ['Indeed', `https://${indeed}/jobs?q=${e(qWord)}${where ? '&l=' + e(where) : ''}${ind ? '&sc=' + e(`0kf:explvl(${ind});`) : ''}`],
+    ['Google Jobs', `https://www.google.com/search?q=${e((level ? (LEVELS.find(l => l[0] === level)?.[1].split(' ')[0] || '') + ' ' : '') + q + ' jobs' + (where ? ' in ' + where : ''))}&ibp=htl;jobs`],
+    ...(cc === 'gb' && level === 'apprentice' ? [['GOV.UK apprenticeships', `https://www.findapprenticeship.service.gov.uk/apprenticeships?searchTerm=${e(q)}${where ? '&location=' + e(where) : ''}`]] : []),
+    ...(cc === 'pk' ? [['Rozee.pk', `https://www.rozee.pk/job/jsearch/q/${e(qWord)}`]] : []),
   ];
 }
 
-export async function searchJobs(q, where = '') {
+export async function searchJobs(q, where = '', level = null) {
   const p = data.profile;
-  q = (q || '').trim() || p?.searchQuery || p?.bestRoles?.[0]?.title || '';
+  const sp = splitLevel((q || '').trim());
+  level = level ?? (sp.level || data.level || '');
+  q = sp.q || p?.searchQuery || p?.bestRoles?.[0]?.title || '';
   where = (where || '').trim();
+  data.level = level;
   if (!q) return { ok: false, reply: 'What kind of job? Try "find React developer jobs in London" — or send me your CV and I’ll work it out.' };
   const sources = [srcAdzuna(q, where), srcReed(q, where), srcJooble(q, where), srcRemotive(q), srcJobicy(q), srcArbeitnow(q, where)];
   const settled = await Promise.allSettled(sources.map(s => withTimeout(s)));
-  let jobs = settled.flatMap(r => r.status === 'fulfilled' ? r.value : []).filter(j => j.title && j.url);
+  let jobs = settled.flatMap(r => r.status === 'fulfilled' ? r.value : []).filter(j => j.title && j.url && fitsLevel(j, level));
   const seen = new Set();
   jobs = jobs.filter(j => { const k = (j.title + '|' + j.company).toLowerCase().replace(/\W+/g, ''); if (seen.has(k)) return false; seen.add(k); return true; });
   // Jobs in the place you asked for come before remote ones.
@@ -168,7 +201,8 @@ export async function searchJobs(q, where = '') {
   jobs = await rank(jobs);
   data.results = jobs.map((j, i) => ({ ...j, id: 'j' + Date.now().toString(36) + i })); save();
   const top = data.results.slice(0, 3).map((j, i) => `${i + 1}. ${j.title} at ${j.company}${j.score != null ? ` (${j.score}% match)` : ''}`).join('; ');
-  return { ok: true, reply: `I found ${data.results.length} ${q} jobs${where ? ' around ' + where : ''}. Best matches: ${top}. Say "tailor my CV for job 1" or "apply to job 1".` };
+  const lvName = level ? (LEVELS.find(l => l[0] === level)?.[1] || '').toLowerCase() + ' ' : '';
+  return { ok: true, reply: `I found ${data.results.length} ${lvName}${q} jobs${where ? ' around ' + where : ''}. I've also lined up LinkedIn and Indeed searches with the same filters. Best matches: ${top}. Say "tailor my CV for job 1" or "apply to job 1".` };
 }
 
 /** Scores each job against your CV (AI if available, keyword overlap otherwise). */
@@ -184,7 +218,7 @@ async function rank(jobs) {
   try {
     const list = jobs.map((j, i) => `[${i}] ${j.title} | ${j.company} | ${j.location}\n${(j.desc || '').slice(0, 320)}`).join('\n\n');
     const out = parseJSON(await ai(`Candidate: ${p.headline}. ${p.years ? p.years + ' years experience. ' : ''}Skills: ${(p.skills || []).join(', ')}. Location: ${p.location || 'unknown'}.
-Score how well the candidate fits each job (0-100, be realistic: seniority, must-have skills, location/visa) with ONE short reason (max 14 words) mentioning the key match or gap.
+${data.level ? `They want ${LEVELS.find(l => l[0] === data.level)?.[1]} roles — score jobs at a different level lower.\n` : ''}Score how well the candidate fits each job (0-100, be realistic: seniority, must-have skills, location/visa) with ONE short reason (max 14 words) mentioning the key match or gap.
 Reply ONLY with JSON: [{"i":0,"score":0,"why":""}, ...] covering every job.
 
 Jobs:
@@ -311,7 +345,7 @@ function render() {
   if (tab === 'applied') el.innerHTML = appliedHTML();
   if (tab === 'setup') el.innerHTML = setupHTML();
   el.onclick = onClick; el.onchange = onChange;
-  const f = el.querySelector('#jbSearch'); if (f) f.onsubmit = async e => { e.preventDefault(); const q = f.q.value.trim(), w = f.w.value.trim(); busy(`Looking for ${q || 'jobs'}${w ? ' in ' + w : ''} and ranking them against your CV…`); const r = await searchJobs(q, w); render(); if (!r.ok) say(r.reply); };
+  const f = el.querySelector('#jbSearch'); if (f) f.onsubmit = async e => { e.preventDefault(); const q = f.q.value.trim(), w = f.w.value.trim(); busy(`Looking for ${q || 'jobs'}${w ? ' in ' + w : ''} and ranking them against your CV…`); const r = await searchJobs(q, w, f.lv.value); render(); if (!r.ok) say(r.reply); };
 }
 
 const list = (arr, cls = '') => (arr || []).length ? `<ul class="jb-list ${cls}">${arr.map(x => `<li>${esc(typeof x === 'string' ? x : x.title + (x.why ? ' — ' + x.why : ''))}</li>`).join('')}</ul>` : '';
@@ -335,7 +369,8 @@ function profileHTML() {
 function jobsHTML() {
   const p = data.profile, q = data.query || p?.searchQuery || '', w = data.where || '';
   const links = q ? searchLinks(q, w) : [];
-  return `<form id="jbSearch" class="jb-search"><input name="q" placeholder="Job, e.g. React developer" value="${esc(q)}"><input name="w" placeholder="Where? (optional)" value="${esc(w)}"><button class="pill-btn solid">Search</button></form>
+  return `<form id="jbSearch" class="jb-search"><input name="q" placeholder="Job, e.g. React developer" value="${esc(q)}"><input name="w" placeholder="Where? (optional)" value="${esc(w)}">
+    <select name="lv" class="jb-level">${LEVELS.map(([v, n]) => `<option value="${v}" ${v === (data.level || '') ? 'selected' : ''}>${n}</option>`).join('')}</select><button class="pill-btn solid">Search</button></form>
     ${!p ? `<p class="small-text">Tip: <a href="#" data-ja="tab-profile">add your CV</a> and I'll rank every job by how well it fits you.</p>` : ''}
     ${links.length ? `<div class="jb-chips"><span class="small-text">Also search on</span>${links.map(([n, u]) => `<button class="chip" data-ja="open" data-u="${esc(u)}">${esc(n)} ↗</button>`).join('')}</div>` : ''}
     ${data.results.length ? data.results.map((j, i) => jobCard(j, i)).join('') : `<div class="jb-empty"><p>${q ? 'Search to see jobs here.' : 'Type a role above, or say “Sparrow, find React jobs in London”.'}</p></div>`}`;
