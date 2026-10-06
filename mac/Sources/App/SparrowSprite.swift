@@ -112,7 +112,8 @@ final class SparrowSpriteModel: ObservableObject {
 }
 
 /// Reports where it sits on screen, so the head can turn toward the mouse.
-final class SpriteAnchor: @unchecked Sendable {
+@MainActor
+final class SpriteAnchor {
     weak var view: NSView?
     var screenCenter: CGPoint? {
         guard let v = view, let w = v.window else { return nil }
