@@ -126,13 +126,14 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         guard let w = window, NSEvent.pressedMouseButtons & 1 == 1 else { return }
         let start = NSEvent.mouseLocation, origin = w.frame.origin
         dragTimer?.invalidate()
-        dragTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { t in
+        dragTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
             MainActor.assumeIsolated {
-                guard let w = WebHub.shared.window else { t.invalidate(); return }
+                let hub = WebHub.shared
+                guard let w = hub.window else { hub.dragTimer?.invalidate(); return }
                 let m = NSEvent.mouseLocation
                 w.setFrameOrigin(NSPoint(x: origin.x + m.x - start.x, y: origin.y + m.y - start.y))
                 if NSEvent.pressedMouseButtons & 1 == 0 {
-                    t.invalidate()
+                    hub.dragTimer?.invalidate(); hub.dragTimer = nil
                     UserDefaults.standard.set(NSStringFromRect(w.frame), forKey: "moreFrame")
                 }
             }
