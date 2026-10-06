@@ -135,6 +135,9 @@ final class LiveSession: NSObject {
         connectGen += 1
         let gen = connectGen
         let (model, search) = attempts[attempt]
+        // Everything for the first message is ready before the line opens, so setup goes out instantly.
+        let setup = await setupMessage(model: model, search: search)
+        guard active, gen == connectGen else { return }
         var c = URLComponents(string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")!
         c.queryItems = [URLQueryItem(name: "key", value: key)]
         let delegate = LiveSocketDelegate { code, reason in
@@ -146,7 +149,6 @@ final class LiveSession: NSObject {
         session = s; ws = task
         task.resume()
         receive(task, gen: gen)
-        let setup = await setupMessage(model: model, search: search)
         send(["setup": setup])
         appendAppLog("voice.log", "live: connecting \(model)\(search ? " + search" : "")")
     }
@@ -154,6 +156,7 @@ final class LiveSession: NSObject {
     private func socketClosed(gen: Int, code: Int, reason: String) {
         guard active, gen == connectGen else { return }
         appendAppLog("voice.log", "live: socket closed \(code) \(reason.prefix(200))")
+        connectGen += 1          // one close = one retry (the socket can report the same close twice)
         if !ready {
             // The model isn't available for this key (or didn't like a setting) → try the next one.
             attempt += 1
@@ -366,6 +369,7 @@ final class LiveSession: NSObject {
             appendAppLog("voice.log", "live: audio start failed \(error.localizedDescription)")
             stop("audio failed"); return
         }
+        p.volume = 1; e.mainMixerNode.outputVolume = 1
         p.play()
         engine = e; player = p
         appendAppLog("voice.log", "live: audio on (echo cancellation \(echoCancel ? "on" : "off"), mic \(Int(hw.sampleRate)) Hz × \(hw.channelCount))")
