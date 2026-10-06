@@ -159,6 +159,15 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         }
     }
 
+    /// Runs a snippet in the shared app (reminders, tasks…) and returns its value. `body` must `return` something.
+    func callJS(_ body: String, _ args: [String: Any] = [:]) async -> Any? {
+        start()
+        for _ in 0..<30 where !ready { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard ready, let wv = webView else { return nil }
+        do { return try await wv.callAsyncJavaScript(body, arguments: args, in: nil, contentWorld: .page) }
+        catch { appendAppLog("web.log", "callJS failed: \(error.localizedDescription)"); return nil }
+    }
+
     /// A value from the job agent's CV profile ("email", "phone", "cover letter"…), for "Sparrow, type my email".
     func jobField(_ name: String) async -> String? {
         start()

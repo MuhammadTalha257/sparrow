@@ -63,7 +63,8 @@ export async function ollamaModels() {
 
 function systemPrompt(extra = '') {
   const s = store.settings;
-  const langNote = s.lang && s.lang !== 'en' ? ` Reply in ${{ ur: 'Urdu', hi: 'Hindi', pa: 'Punjabi (Shahmukhi script)', ar: 'Arabic' }[s.lang]} unless the user writes in English. If the user writes Roman Urdu/Hindi/Punjabi (Latin letters), reply the same way.` : '';
+  // Always answer in the language (and script) the person used: Urdu, Roman Urdu, Hindi, Punjabi, Spanish, French, Portuguese…
+  const langNote = ` Detect the language of the user's latest message and reply in that SAME language and script: Urdu script → Urdu script; Roman Urdu ("kia kar rahe ho") → Roman Urdu; Hindi → Hindi; Punjabi → Punjabi; Spanish, French, Brazilian Portuguese, Arabic, Turkish → the same; English → English. If they mix languages, mix the same way.${s.lang && s.lang !== 'en' ? ` If unsure, use ${{ ur: 'Urdu', hi: 'Hindi', pa: 'Punjabi', ar: 'Arabic' }[s.lang] || 'English'}.` : ''} If asked to translate, give the translation clearly.`;
   return `You are Sparrow, a friendly, smart little assistant on the user's ${window.SparrowDesktop ? 'computer' : 'phone'}.${s.name ? ` The user's name is ${s.name}.` : ''}${langNote}
 Be clear and concise (2–6 sentences unless asked for more). Plain text, no markdown symbols like ** or ##.
 It is now ${new Date().toLocaleString()}. ${daySummary(new Date(), true)}

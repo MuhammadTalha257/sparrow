@@ -68,6 +68,7 @@ targets:
         NSSupportsAutomaticGraphicsSwitching: YES
         NSAppleEventsUsageDescription: "Sparrow controls apps you ask it to, like Spotify, Music, Mail and your terminal."
         NSAccessibilityUsageDescription: "Sparrow reads the title of the active window so you can ask about it."
+        NSCameraUsageDescription: "Sparrow looks through the camera only when you ask, like 'Sparrow, what do you see?' or 'take a photo'."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.sparrowai.Sparrow

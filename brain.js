@@ -33,6 +33,7 @@ const hi = () => store.settings.name ? `, ${store.settings.name}` : '';
 
 // ---------- dates ----------
 function parseWhen(text) {
+  text = text.replace(/\b(?:coming|upcoming)\s+(?=(?:mon|tues|wednes|thurs|fri|satur|sun)day|week|month)/gi, 'next ');
   const r = chrono.parse(text, new Date(), { forwardDate: true });
   if (!r.length) return { date: null, rest: text, hasTime: false };
   const p = r[0];
@@ -41,7 +42,7 @@ function parseWhen(text) {
   if (!hasTime) date.setHours(9, 0, 0, 0);   // a day with no time → 9 am
   // "at 5" with no am/pm: people mean 5 pm, not 5 in the morning
   else if (!p.start.isCertain('meridiem') && date.getHours() >= 1 && date.getHours() <= 6 && !/\b(am|a\.m|morning)\b/i.test(text)) date.setHours(date.getHours() + 12);
-  const rest = (text.slice(0, p.index) + ' ' + text.slice(p.index + p.text.length)).replace(/\s+/g, ' ').trim();
+  const rest = (text.slice(0, p.index) + ' ' + text.slice(p.index + p.text.length)).replace(/\s+/g, ' ').replace(/\s+(?:on|at|for|by|this|next)$/i, '').trim();
   return { date, rest, hasTime };
 }
 /** A date range from words like "last month", "on 12 September", "yesterday", "this week". */
@@ -474,8 +475,9 @@ export async function handle(input) {
   }
 
   // ----- meetings / appointments -----
-  if (/\b(meeting|meet|call with|appointment|interview|lunch with|dinner with|catch ?up|zoom|teams call|doctor|dentist|client|session with|class with)\b/.test(t) ||
-      /^(schedule|book|set up|arrange)\b/.test(t)) {
+  if (!/^(cancel|delete|remove|clear|move|reschedule|change|what|which|how many|list|show|my)\b/.test(t) &&
+      (/\b(meeting|meet|call with|appointment|interview|lunch with|dinner with|catch ?up|zoom|teams call|doctor|dentist|client|session with|class with)\b/.test(t) ||
+      /^(schedule|book|set up|arrange)\b/.test(t))) {
     const rep = parseRepeat(o);
     const { date, rest } = parseWhen(rep ? rep.rest : o);
     if (date) {
@@ -585,19 +587,32 @@ export async function handle(input) {
     return { reply: results.length ? `I found ${results.length} thing${results.length > 1 ? 's' : ''}${range ? ' from ' + new Date(range[0]).toLocaleDateString([], { day: 'numeric', month: 'short' }) + (range[1] - range[0] > 86400e3 + 1 ? ' – ' + new Date(range[1] - 1).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '') : ''}:` : "I don't remember anything like that. I only remember what passed through Sparrow.", results };
   }
 
+  // ----- list reminders / tasks / meetings -----
+  if (/^(?:how many|what|which|list|show|read|tell me)(?: are)?(?: all)?(?: of)?(?: my| the)? (reminders?|tasks?|meetings?|appointments?)(?: (?:do|have|did) (?:i|you)(?: got| have| set)?)?(?: (?:i|you) have)?(?: are there)?(?: (?:in|on) (?:your|my|the) list)?(?: (?:set|left|today|now))?$|^(?:my|meri|mere) (reminders?|tasks?|meetings?)(?: (?:kya|kitne|kitni) (?:hain|hai))?$/.test(t)) {
+    const want = /task/.test(t) ? ['task'] : /meeting|appointment/.test(t) ? ['meeting'] : ['reminder', 'meeting'];
+    const list = store.items.filter(i => want.includes(i.type) && !i.done).sort((a, b) => new Date(a.when || 8e15) - new Date(b.when || 8e15));
+    const noun = want[0] === 'task' ? 'task' : want.length === 1 ? 'meeting' : 'reminder';
+    if (!list.length) return { reply: `You have no ${noun}s right now.` };
+    return { reply: `You have ${list.length} ${noun}${list.length > 1 ? 's' : ''}: ` + list.slice(0, 8).map((i, n) => `${n + 1}. ${i.title}${i.when ? ' — ' + whenText(i.when) : ''}`).join('; ') + (list.length > 8 ? '…' : '.') };
+  }
+
   // ----- done / delete -----
   m = t.match(/^(?:done|completed?|finish(?:ed)?|mark|tick(?: off)?|i (?:did|finished))\s+(.+?)(?:\s+(?:as\s+)?(?:done|complete))?$/);
   if (m) {
-    const it = fuzzy(m[1], store.items.filter(i => !i.done && ['task', 'reminder', 'meeting'].includes(i.type)));
+    const it = findItem(m[1], store.items.filter(i => !i.done && ['task', 'reminder', 'meeting'].includes(i.type)));
     if (it) { store.update(it.id, { done: true, doneAt: new Date().toISOString() }); mem.remember('done', it.title); return { reply: `Nice! ✔️ "${it.title}" done.` }; }
     const h = findHabit(m[1]); if (h) { const c = bumpHabit(h); return { reply: `👍 ${h.title}: ${c}/${h.target} today.` }; }
     return { reply: `I couldn't find "${m[1]}" in your list.` };
   }
-  m = t.match(/^(?:delete|remove|cancel)\s+(?:the\s+|my\s+)?(.+)$/);
+  m = t.match(/^(?:delete|remove|cancel|clear)\s+(?:all\s+)?(?:the\s+|my\s+)?(.+)$/) || t.match(/^(.+?)\s+(?:delete|remove|cancel|hata|khatam)\s*(?:karo|kar do|kr do|do)?$/);
   if (m) {
-    const it = fuzzy(m[1].replace(/\s+(meeting|reminder|task|note|habit|customer)$/, ''), store.items.filter(i => i.type !== 'timer'));
-    if (it) { store.remove(it.id); return { reply: `🗑️ Removed "${it.title}".` }; }
-    return { reply: `I couldn't find "${m[1]}".` };
+    const kind = (m[1].match(/\b(meeting|reminder|task|note|habit|customer)s?\b/) || [])[1];
+    const pool = store.items.filter(i => i.type !== 'timer' && !i.done && (!kind || i.type === kind || (kind === 'reminder' && i.type === 'meeting')));
+    if (/^all\b|\ball (my )?(reminders|tasks|meetings)\b/.test(t)) return { reply: `To be safe I delete one at a time. Which one? ${pool.slice(0, 5).map(i => `"${i.title}"`).join(', ')}` };
+    const it = findItem(m[1], pool.length ? pool : store.items.filter(i => i.type !== 'timer'));
+    if (it) { store.remove(it.id); return { reply: `🗑️ Removed "${it.title}"${it.when ? ' (' + whenText(it.when) + ')' : ''}.` }; }
+    const left = pool.filter(i => i.when).slice(0, 4).map(i => `"${i.title}" ${whenText(i.when)}`).join('; ');
+    return { reply: `I couldn't find that one.${left ? ' You have: ' + left + '.' : ''}` };
   }
 
   // ----- music -----
@@ -729,6 +744,33 @@ export async function handle(input) {
     return { reply: `Today is ${new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}.` };
 
   return null;
+}
+
+/** Finds the item someone means by title words, day or time: "coming Monday reminder", "3pm meeting", "the dentist one". */
+export function findItem(phrase, list) {
+  if (!list.length) return null;
+  const raw = phrase.toLowerCase().replace(/\b(coming|upcoming)\b/g, 'next');
+  const filler = /\b(reminders?|tasks?|meetings?|appointments?|events?|the|my|one|for|on|at|about|that|this|next|wala|wali|ka|ki|ko)\b/g;
+  let words = raw.replace(filler, ' ').replace(/\s+/g, ' ').trim();
+  let pool = list;
+  const r = chrono.parse(raw, new Date(), { forwardDate: true });
+  if (r.length) {
+    const at = r[0].start.date(), d0 = new Date(at); d0.setHours(0, 0, 0, 0);
+    const d1 = new Date(d0.getTime() + 86400e3);
+    const same = list.filter(i => i.when && new Date(i.when) >= d0 && new Date(i.when) < d1);
+    if (same.length) {
+      if (r[0].start.isCertain('hour') && same.length > 1) {
+        const near = same.find(i => Math.abs(new Date(i.when) - at) <= 45 * 60e3); if (near) return near;
+      }
+      pool = same;
+      for (const w of r[0].text.toLowerCase().split(/\s+/)) words = words.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b'), ' ');
+      words = words.replace(/\s+/g, ' ').trim();
+    }
+  }
+  const ord = { first: 0, second: 1, third: 2, last: -1, latest: -1 }[words];
+  if (ord !== undefined) { const sorted = [...pool].sort((a, b) => new Date(a.when || a.created) - new Date(b.when || b.created)); return sorted.at(ord); }
+  if (pool !== list && (pool.length === 1 || !words)) return pool[0];
+  return (words && fuzzy(words, pool)) || (pool !== list ? pool[0] : null) || fuzzy(phrase, list);
 }
 
 export function fuzzy(q, list) {

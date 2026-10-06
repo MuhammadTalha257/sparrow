@@ -294,9 +294,8 @@ final class Routine {
         text += " " + (await Planner.shared.spokenPlan())
         text += " Have a lovely day!"
         Briefing.shared.markGreeted()
-        let state = AppState.shared
-        state.noteMessage = text
-        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+        // Spoken only — no words on screen (the sparrow just looks happy while it talks).
+        NotificationCenter.default.post(name: .hookReveal, object: nil)
         NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
         SoundEngine.shared.play("greet")
         VoiceEngine.shared.speak(text)
@@ -323,8 +322,7 @@ final class Routine {
         SoundEngine.shared.play("chime")
         NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
         if open.isEmpty {
-            AppState.shared.noteMessage = text
-            NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+            NotificationCenter.default.post(name: .hookReveal, object: nil)
         } else {
             CheckInWindow.shared.show()
         }

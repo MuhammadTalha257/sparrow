@@ -1190,6 +1190,19 @@ window.Sparrow = {
     activeDocs = [rec.id];
     return rec.id;
   },
+  // Sparrow's live voice reads and changes your real list (never guesses).
+  listItems: () => store.items.filter(i => !i.done && ['reminder', 'task', 'meeting'].includes(i.type))
+    .sort((a, b) => new Date(a.when || 8e15) - new Date(b.when || 8e15))
+    .map(i => ({ id: i.id, kind: i.type, title: i.title, when: i.when ? new Date(i.when).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null, repeat: i.repeat ? repeatText(i.repeat) : null })),
+  addReminder: (title, when, kind = 'reminder', rep = '') => {
+    const d = new Date(when); if (!title || isNaN(d)) return { ok: false, error: 'bad title or time' };
+    const rule = { daily: { freq: 'daily' }, weekdays: { freq: 'weekly', days: [1, 2, 3, 4, 5] }, weekly: { freq: 'weekly', days: [d.getDay()] }, monthly: { freq: 'monthly' } }[rep] || null;
+    const it = store.add({ type: ['task', 'meeting'].includes(kind) ? kind : 'reminder', title, when: d.toISOString(), repeat: rule });
+    mem.remember(it.type, title, '', { when: it.when }); renderAll();
+    return { ok: true, id: it.id, title, when: whenText(it.when) };
+  },
+  removeItem: id => { const it = store.items.find(i => i.id === id); if (!it) return null; store.remove(id); renderAll(); return it.title; },
+  completeItem: id => { const it = store.items.find(i => i.id === id); if (!it) return null; store.update(id, { done: true, doneAt: new Date().toISOString() }); mem.remember('done', it.title); renderAll(); return it.title; },
   // "Sparrow, type my email" (Mac): the value comes from your CV profile / latest cover letter.
   jobField: name => jobs.field(name),
   submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); }, newChat,

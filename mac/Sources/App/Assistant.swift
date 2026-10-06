@@ -81,7 +81,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     fileprivate func watchdog() {
         guard UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord),
-              !isListening, !speaking, !oneShot,
+              !isListening, !speaking, !oneShot, !LiveSession.shared.active,
               Date().timeIntervalSince(lastAttempt) > 3.5 else { return }
         let speechOK = SFSpeechRecognizer.authorizationStatus() == .authorized
         let micOK = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
@@ -101,11 +101,25 @@ final class VoiceEngine: NSObject, ObservableObject {
         startRecognition()
     }
 
+    /// A live conversation owns the microphone and speaker while it runs.
+    func suspendForLive() {
+        stopSpeaking(); speaking = false; resumeAfterSpeech = false; listenAfterSpeech = false
+        stopRecognition()
+        status = "Listening…"
+    }
+    func resumeAfterLive() {
+        status = ""
+        oneShot = false
+        if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { MainActor.assumeIsolated { VoiceEngine.shared.startRecognition() } }
+        }
+    }
+
     func restartIfWanted(after delay: TimeInterval) {
-        guard UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord), !speaking else { return }
+        guard UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord), !speaking, !LiveSession.shared.active else { return }
         pauseRecognition()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { VoiceEngine.shared.startRecognition() }
+            if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord), !LiveSession.shared.active { VoiceEngine.shared.startRecognition() }
         }
     }
 
@@ -299,6 +313,8 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     func pushToTalkDown() {
         guard !pushToTalk else { return }
+        if LiveSession.shared.active { return }          // already talking: just speak
+        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
         pushToTalk = true
         SoundEngine.shared.play("question")
@@ -324,6 +340,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     func listenOnce() {
         // The mic button always wins: stop talking and listen right now.
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
+        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
         requestPermissions { ok in
             guard ok else { return }
             self.oneShot = true
@@ -544,6 +561,12 @@ final class VoiceEngine: NSObject, ObservableObject {
             } else if !said.isEmpty {
                 appendAppLog("voice.log", "not for me (no \"Sparrow\"): \(said)")
             }
+            return
+        }
+        // Jarvis mode: one continuous conversation (any language, interruptible) until "thanks" / "bye".
+        if LiveSession.shared.usable, !meetingMode {
+            appendAppLog("voice.log", "live conversation: \(command.isEmpty ? "(name only)" : command)")
+            LiveSession.shared.start(text: command.isEmpty ? nil : command)
             return
         }
         if command.isEmpty {
@@ -976,6 +999,9 @@ struct AssistantSettings: View {
     @AppStorage(AssistantPrefs.voiceRate) private var rate = 0.5
     @AppStorage(AssistantPrefs.speakReplies) private var speakReplies = true
     @AppStorage(AssistantPrefs.wakeWord) private var wakeWord = false
+    @AppStorage("liveMode") private var liveMode = true
+    @AppStorage("liveVoice") private var liveVoice = "Kore"
+    @AppStorage("liveIdleSeconds") private var liveIdle = 20.0
     @AppStorage(AssistantPrefs.greetEnabled) private var greet = true
     @AppStorage(AssistantPrefs.greetWeather) private var greetWeather = true
     @AppStorage(AssistantPrefs.userName) private var name = ""
@@ -1033,6 +1059,22 @@ struct AssistantSettings: View {
                     Toggle("Listen for \"Sparrow…\" (say \"Sparrow, open Chrome\")", isOn: $wakeWord)
                         .onChange(of: wakeWord) { _, on in VoiceEngine.shared.setWakeWord(on) }
                     Toggle("Speak answers out loud when I talk to Sparrow", isOn: $speakReplies)
+                    Divider()
+                    Toggle("Jarvis conversation — say “Sparrow” once, then just talk until “thanks” or “bye”", isOn: $liveMode)
+                    if liveMode {
+                        Picker("Conversation voice", selection: $liveVoice) {
+                            ForEach(["Kore", "Aoede", "Leda", "Zephyr", "Puck", "Charon", "Orus", "Fenrir"], id: \.self) { Text($0).tag($0) }
+                        }.frame(maxWidth: 260)
+                        HStack {
+                            Text("End when quiet for")
+                            Slider(value: $liveIdle, in: 8...60, step: 2).frame(maxWidth: 160)
+                            Text("\(Int(liveIdle)) s").monospacedDigit()
+                        }.font(.system(size: 11))
+                        Text(KeychainStore.shared.get("gemini-api-key")?.isEmpty == false
+                             ? "Natural voice in any language (it answers in the language you speak), you can interrupt it, and it does things while you talk. Uses your Gemini key and the internet; offline, Sparrow uses its built-in voice."
+                             : "Add a free Gemini key in Settings → AI to turn this on. Until then Sparrow uses its built-in voice.")
+                            .font(.system(size: 11)).foregroundColor(.secondary)
+                    }
                     if !voice.status.isEmpty {
                         HStack(spacing: 6) {
                             Circle().fill(voice.isListening ? Color.green : Color.orange).frame(width: 7, height: 7)

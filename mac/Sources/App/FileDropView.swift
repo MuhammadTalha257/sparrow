@@ -69,6 +69,12 @@ enum FileDropHandler {
                     state.droppedFile = DroppedFile(url: dest, name: name)
                     state.promptContext = .file(name: name, fileURL: dest)
                     WebHub.shared.rememberFile(dest)       // keep it in Sparrow's memory
+                    // A picture → Sparrow looks at it and tells you what it is (searching the web if useful).
+                    let ext = dest.pathExtension.lowercased()
+                    if ["jpg", "jpeg", "png", "heic", "webp", "gif", "tiff", "bmp"].contains(ext), LiveSession.shared.usable,
+                       let raw = try? Data(contentsOf: dest), let jpeg = ImageShrink.jpeg(raw, maxSide: 1280) {
+                        LiveSession.shared.start(text: "I'm showing you a picture (\(name)). Tell me what it is in one or two sentences, and search the web if that helps identify it.", image: jpeg)
+                    }
                 }
             }
         }

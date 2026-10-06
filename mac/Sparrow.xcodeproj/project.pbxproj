@@ -10,6 +10,8 @@
 		7E77366681351C1D17AF60A0 /* MeetingNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E09494230512EF3241740F36 /* MeetingNotes.swift */; };
 		68CE94D17A2B6DA61FCEEC80 /* MeetingNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E09494230512EF3241740F36 /* MeetingNotes.swift */; };
 		C07E53BDAC5D497CF979CCBE /* SmartPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71055F0E5D33857DB26A3635 /* SmartPlanner.swift */; };
+		0BC07A6C61B0D278B2189061 /* LiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89CBF823F723D8E86288AB /* LiveSession.swift */; };
+		2B0E1B1399E8949DA8905A93 /* LiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89CBF823F723D8E86288AB /* LiveSession.swift */; };
 		159E9C7CB57BA4D1F32B6E5F /* WhatsAppAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727C958363811479852448FF /* WhatsAppAgent.swift */; };
 		D54CC8651AE59E921AE931ED /* WhatsAppAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 727C958363811479852448FF /* WhatsAppAgent.swift */; };
 		5928D57313A745CD1D82973A /* MailAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1ED5EDA63B0412CD52234A /* MailAgent.swift */; };
@@ -123,6 +125,7 @@
 		E09494230512EF3241740F36 /* MeetingNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingNotes.swift; sourceTree = "<group>"; };
 		8D1ED5EDA63B0412CD52234A /* MailAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailAgent.swift; sourceTree = "<group>"; };
 		727C958363811479852448FF /* WhatsAppAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsAppAgent.swift; sourceTree = "<group>"; };
+		FA89CBF823F723D8E86288AB /* LiveSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSession.swift; sourceTree = "<group>"; };
 		71055F0E5D33857DB26A3635 /* SmartPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPlanner.swift; sourceTree = "<group>"; };
 		C705035F81568D3A64CB2907 /* NetStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetStatus.swift; sourceTree = "<group>"; };
 		5CBBF5A6891B36387EE6D8CA /* MemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryStore.swift; sourceTree = "<group>"; };
@@ -192,6 +195,7 @@
 				A83D5410BD030B243ADDCFF4 /* ClaudeService.swift */,
 				E09494230512EF3241740F36 /* MeetingNotes.swift */,
 				71055F0E5D33857DB26A3635 /* SmartPlanner.swift */,
+				FA89CBF823F723D8E86288AB /* LiveSession.swift */,
 				727C958363811479852448FF /* WhatsAppAgent.swift */,
 				8D1ED5EDA63B0412CD52234A /* MailAgent.swift */,
 				C705035F81568D3A64CB2907 /* NetStatus.swift */,
@@ -393,6 +397,7 @@
 				2DEB459FBD0BA3CEAAA5FDE9 /* ClaudeService.swift in Sources */,
 				68CE94D17A2B6DA61FCEEC80 /* MeetingNotes.swift in Sources */,
 				C36B064F9F1187AF1D810E74 /* SmartPlanner.swift in Sources */,
+				0BC07A6C61B0D278B2189061 /* LiveSession.swift in Sources */,
 				159E9C7CB57BA4D1F32B6E5F /* WhatsAppAgent.swift in Sources */,
 				5928D57313A745CD1D82973A /* MailAgent.swift in Sources */,
 				7A51D4595B97D84CFFB4215B /* NetStatus.swift in Sources */,
@@ -450,6 +455,7 @@
 				0329E76BA4A8FEEA8A6D76E7 /* ClaudeService.swift in Sources */,
 				7E77366681351C1D17AF60A0 /* MeetingNotes.swift in Sources */,
 				C07E53BDAC5D497CF979CCBE /* SmartPlanner.swift in Sources */,
+				2B0E1B1399E8949DA8905A93 /* LiveSession.swift in Sources */,
 				D54CC8651AE59E921AE931ED /* WhatsAppAgent.swift in Sources */,
 				80A55571D1A38A4C23AF237A /* MailAgent.swift in Sources */,
 				16CF2A91F191A8DB00D4A4FF /* NetStatus.swift in Sources */,
