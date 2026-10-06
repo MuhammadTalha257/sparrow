@@ -612,3 +612,9 @@ html.mac-host .tabs button span, html.mac-host .tabs .lbl { font-size: 11px; }
 .hl-card:has([data-f="on"]:not(:checked)) .hl-body { display: none; }
 .row-2 { display: flex; gap: 10px; } .row-2 .field { flex: 1; }
 .field input[type="time"] { width: 100%; padding: 11px 12px; border-radius: 14px; background: var(--input); border: var(--bw) solid var(--line); color: var(--text); }
+
+/* Mac panel: a little grab handle to drag it anywhere */
+.grab { display: none; }
+html.mac-host .grab { display: block; position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 42px; height: 5px; border-radius: 3px; background: var(--accent, #F58FA8); opacity: .45; cursor: grab; }
+html.mac-host .top { cursor: grab; user-select: none; -webkit-user-select: none; }
+html.mac-host .top:active { cursor: grabbing; }

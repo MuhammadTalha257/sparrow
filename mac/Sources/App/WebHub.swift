@@ -75,7 +75,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         webView = wv
         wv.load(URLRequest(url: URL(string: "app://sparrow/index.html")!))
         // A window that stays alive (hidden) so the page keeps running.
-        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 580),
+        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 540),
                         styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         w.title = "Sparrow"
@@ -85,8 +85,10 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         w.isReleasedWhenClosed = false
         w.hidesOnDeactivate = false
         w.level = .floating
-        w.backgroundColor = NSColor(red: 0.08, green: 0.05, blue: 0.03, alpha: 1)
-        w.contentMinSize = NSSize(width: 360, height: 440)
+        w.contentMinSize = NSSize(width: 340, height: 420)
+        w.isOpaque = false
+        w.backgroundColor = NSColor(red: 0.105, green: 0.055, blue: 0.075, alpha: 0.97)   // Blossom rose
+        if let v = w.contentView?.superview { v.wantsLayer = true; v.layer?.cornerRadius = 18; v.layer?.masksToBounds = true }
         w.contentView = wv
         w.delegate = self
         window = w
@@ -96,7 +98,11 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
     func show(tab: String? = nil) {
         start()
         guard let w = window else { return }
-        if !w.isVisible, let screen = NSScreen.main {
+        if !w.isVisible, let saved = UserDefaults.standard.string(forKey: "moreFrame").map(NSRectFromString),
+           saved.width > 0, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(saved.insetBy(dx: 40, dy: 40)) }) {
+            // Opens where you last dragged it
+            w.setFrame(saved, display: false)
+        } else if !w.isVisible, let screen = NSScreen.main {
             // Opens right under the island, never covering the whole screen
             let vf = screen.visibleFrame
             var x = vf.midX - w.frame.width / 2
@@ -112,6 +118,28 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         if let tab { run("window.Sparrow && window.Sparrow.go && window.Sparrow.go('\(tab)')") }
+    }
+
+    /// Drag the panel by its top bar (the web page swallows normal window drags).
+    private var dragTimer: Timer?
+    private func dragPanel() {
+        guard let w = window, NSEvent.pressedMouseButtons & 1 == 1 else { return }
+        let start = NSEvent.mouseLocation, origin = w.frame.origin
+        dragTimer?.invalidate()
+        dragTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { t in
+            MainActor.assumeIsolated {
+                guard let w = WebHub.shared.window else { t.invalidate(); return }
+                let m = NSEvent.mouseLocation
+                w.setFrameOrigin(NSPoint(x: origin.x + m.x - start.x, y: origin.y + m.y - start.y))
+                if NSEvent.pressedMouseButtons & 1 == 0 {
+                    t.invalidate()
+                    UserDefaults.standard.set(NSStringFromRect(w.frame), forKey: "moreFrame")
+                }
+            }
+        }
+    }
+    func windowDidEndLiveResize(_ notification: Notification) {
+        if let w = window { UserDefaults.standard.set(NSStringFromRect(w.frame), forKey: "moreFrame") }
     }
 
     func run(_ js: String) { webView?.evaluateJavaScript(js, completionHandler: nil) }
@@ -241,6 +269,8 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             save(name: o["name"] as? String ?? "Sparrow file", base64: o["base64"] as? String ?? "", id: id)
         case "http":
             http(url: o["url"] as? String ?? "", method: o["method"] as? String ?? "POST", headers: o["headers"] as? [String: String] ?? [:], body: o["body"] as? String ?? "", id: id)
+        case "dragWindow":
+            dragPanel()
         case "health":
             // water / coffee / medicine time → the sparrow flies in carrying it
             PetController.shared.deliver(kind: o["kind"] as? String ?? "water", text: o["text"] as? String ?? "Time for a break")

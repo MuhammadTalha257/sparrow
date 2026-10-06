@@ -28,6 +28,11 @@ const dayKey = () => new Date().toDateString();
 if (N) document.documentElement.classList.add('android-app');
 if (D) document.documentElement.classList.add('desktop');
 if (M) document.documentElement.classList.add('mac-host');
+// On the Mac the panel is dragged by its top bar (grab handle + greeting area).
+if (M) document.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || !e.target.closest('.top, .grab') || e.target.closest('button, input, select, textarea, a')) return;
+  M.post('dragWindow');
+});
 
 // ---------------- look: theme, language, simple mode ----------------
 function applyLook() {

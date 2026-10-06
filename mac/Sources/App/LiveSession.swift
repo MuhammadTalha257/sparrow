@@ -258,8 +258,9 @@ final class LiveSession: NSObject {
         - Reminders: add_reminder with an exact ISO date-time you work out from "now" (e.g. "coming Monday at 10" = the next Monday 10:00). To delete or finish one, pick the matching id from the list above (match by day, time or words — "the Monday one" = the one due next Monday); if two match, ask which.
         - Email (their Mail app): check_email, read_latest_email, read_email_from. To reply: draft_email_reply, read the draft to them, ask "Shall I send it?" and only call send_email after a clear yes. Never send without a yes.
         - WhatsApp: check_whatsapp; whatsapp_draft then send_whatsapp only after a clear yes.
-        - Eyes: look_through_camera when they ask what you see / how they look / what they're holding; look_at_screen for "what's on my screen", "read this", "what is this" about something on screen; take_photo to take a picture. After the image arrives, answer from what you actually see.
-        - Facts, news, prices, "what is this" → use Google Search; combine several sources and say where it's from in a few words.
+        - Eyes: "what is this", "what am I holding", "what do you see", "look at this", "how do I look", "yeh kya hai" → look_through_camera (they are showing something to the camera). "What's on my screen", "read this page", "what is this error/window" → look_at_screen. take_photo to take a picture. After the image arrives, name the thing plainly first, then one useful detail (brand, what it's for, any text on it). If the picture is too dark or blurry, say so and ask them to hold it closer.
+        - Writing: make_note to write and save a note in Notes (compose the full text yourself from what they said — e.g. "make notes on today's meeting: …" or "write a shopping list: milk, eggs"); type_text to type into whatever they're working in.
+        - Facts, news, prices → use Google Search; combine several sources and say where it's from in a few words.
         - Jobs: find_jobs (role, location, level: internship/apprentice, entry, mid, senior, lead). It searches job boards, ranks by their CV and adds LinkedIn and Indeed searches with the same filters.
         - Never pretend: only say something is done if the tool result says so. If a tool fails, say so simply and offer another way.
 
@@ -550,6 +551,10 @@ enum LiveTools {
         fn("take_photo", "Take a photo with the camera, save it to Pictures and show it."),
         fn("find_jobs", "Search jobs matching the user's CV.", ["role": str("Job title or skill, e.g. 'react developer'."), "location": str("City or 'remote'."),
                                                                   "level": str("internship | apprentice | entry | mid | senior | lead (optional)")], required: ["role"]),
+        fn("make_note", "Create and save a note in Apple Notes with a title and the full text (write the text out properly — lists, paragraphs). Use for 'make a note', 'write this down', 'save notes about…'.",
+           ["title": str("Short title."), "text": str("The full note text. Use new lines for lists.")], required: ["title", "text"]),
+        fn("type_text", "Type text into the app the user is working in (the box or document they last clicked). Use for 'type …', 'write … here', 'likho'.",
+           ["text": str("Exactly what to type.")], required: ["text"]),
         fn("end_conversation", "Call when the user says goodbye/thanks/that's all, after your short goodbye."),
     ]
 
@@ -616,6 +621,10 @@ enum LiveTools {
             let level = s("level"), loc = s("location")
             let q = "find \(level.isEmpty ? "" : level + " ")\(s("role")) jobs\(loc.isEmpty ? "" : " in " + loc)"
             return ok(await WebHub.shared.ask(q))
+        case "make_note":
+            return ok(await Writer.makeNote(title: s("title"), text: s("text")))
+        case "type_text":
+            return ok(await Writer.type(s("text")))
         case "end_conversation":
             return ["ok": true, "result": "Ending after your goodbye."]
         default:
@@ -711,5 +720,43 @@ enum ImageShrink {
         ctx.draw(img, in: CGRect(x: 0, y: 0, width: nw, height: nh))
         guard let small = ctx.makeImage() else { return nil }
         return NSBitmapImageRep(cgImage: small).representation(using: .jpeg, properties: [.compressionFactor: 0.72])
+    }
+}
+
+
+// MARK: - Writing: save a note in Notes, or type into the front app
+
+@MainActor
+enum Writer {
+    private static func html(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    static func makeNote(title: String, text: String) async -> String? {
+        let t = title.isEmpty ? "Note" : title
+        let lines = text.components(separatedBy: .newlines).map { $0.isEmpty ? "<div><br></div>" : "<div>\(html($0))</div>" }
+        let body = "<h1>\(html(t))</h1>" + lines.joined()
+        let script = """
+        tell application "Notes"
+          set n to make new note with properties {body:\(MailAgent.q(body))}
+          activate
+          show n
+        end tell
+        return "ok"
+        """
+        guard await MailAgent.osa(script) != nil else { return nil }
+        return "Saved a note called “\(t)” in Notes."
+    }
+
+    static func type(_ text: String) async -> String? {
+        guard !text.isEmpty else { return nil }
+        if let front = AppState.shared.lastExternalApp { front.activate(options: []) }
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        let pb = NSPasteboard.general, old = pb.string(forType: .string)
+        pb.clearContents(); pb.setString(text, forType: .string)
+        _ = CommandEngine.shared.runAppleScript("tell application \"System Events\" to keystroke \"v\" using command down")
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        if let old { pb.clearContents(); pb.setString(old, forType: .string) }
+        return "Typed it."
     }
 }

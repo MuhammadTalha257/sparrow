@@ -54,6 +54,9 @@ jobs:
           cp "$K"/*.onnx "$K/voices.bin" "$K/tokens.txt" "$OUT/kokoro/"
           [ -f "$K/lexicon-us-en.txt" ] && cp "$K/lexicon-us-en.txt" "$OUT/kokoro/"
           cp -R "$K/espeak-ng-data" "$OUT/kokoro/"
+          # Sparrow's Kokoro voices are all English: keep only the English pronunciation dictionary
+          find "$OUT/kokoro/espeak-ng-data" -maxdepth 1 -name '*_dict' ! -name 'en_dict' -delete
+          du -sh "$OUT/kokoro/espeak-ng-data"
           # Urdu / Roman Urdu / Hindi / Punjabi: MMS (int8)
           gh release download voices-native -p 'vits-mms-*.tar.bz2' -D dl --repo "$GITHUB_REPOSITORY" || fail "native MMS voices missing"
           for f in dl/vits-mms-*.tar.bz2; do
