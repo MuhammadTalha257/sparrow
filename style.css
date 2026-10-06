@@ -618,3 +618,22 @@ html.mac-host .tabs button span, html.mac-host .tabs .lbl { font-size: 11px; }
 html.mac-host .grab { display: block; position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 42px; height: 5px; border-radius: 3px; background: var(--accent, #F58FA8); opacity: .45; cursor: grab; }
 html.mac-host .top { cursor: grab; user-select: none; -webkit-user-select: none; }
 html.mac-host .top:active { cursor: grabbing; }
+
+/* The original sparrow, pink & white, on every theme */
+html, html[data-theme] { --bird1: #FFC2D3; --bird2: #F27BA0; --cap: #E0507E; --belly: #FFFFFF; --wing: #E8608C; --beak: #F9A830; --feet: #F2A0B8; }
+.bird .bird-svg { width: 100%; height: 100%; overflow: visible; display: block; }
+.bird .look, .bird .eyes { transition: transform .18s ease-out; transform-box: view-box; transform-origin: 100px 120px; }
+.bird .brows { opacity: 0; transition: opacity .15s; }
+.bird { position: relative; }
+.bird.r-hop .body-g { animation: hop .45s ease-out 2; }
+.bird.r-surprised .eye { transform: scale(1.25); }
+.bird.r-dizzy .bird-svg { animation: birdDizzy .6s linear 2; }
+.bird.r-angry .brows { opacity: 1; }
+.bird.r-angry .bird-svg { animation: birdShake .12s linear 6; }
+.bird.r-angry .b1 { stop-color: #FF8FA0; } .bird.r-angry .b2 { stop-color: #E03A55; }
+.bird.r-sleepy .eye { transform: scaleY(.15); }
+.bird-pop { position: absolute; top: -6px; right: 4px; font-size: 22px; pointer-events: none; animation: birdPop 1.1s ease-out forwards; }
+@keyframes birdDizzy { to { transform: rotate(360deg); } }
+@keyframes birdShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+@keyframes birdPop { 0% { opacity: 0; transform: translateY(6px) scale(.6); } 20% { opacity: 1; transform: translateY(0) scale(1.1); } 100% { opacity: 0; transform: translateY(-26px) scale(1); } }
+.live-orb #liveBird { width: 120px; height: 104px; position: relative; z-index: 2; }

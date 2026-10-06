@@ -12,7 +12,7 @@ import {
 import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
-import { mountMascot } from './mascot.js';
+import { mountBird } from './bird.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
@@ -433,7 +433,7 @@ function openUrl(url) {
 // ---------------- the sparrow ----------------
 const bird = $('#bird');
 // The pink sparrow: looks at your pointer, reacts when tapped (and tapping still means "talk").
-const sparrow = mountMascot(bird, { onTap: () => listen() });
+const sparrow = mountBird(bird, { onTap: () => listen() });
 function setBird(cls, on) { bird.classList.toggle(cls, on); }
 function birdMood(m) { if (m === 'happy') { bird.classList.remove('happy'); void bird.offsetWidth; bird.classList.add('happy'); setTimeout(() => bird.classList.remove('happy'), 1100); sparrow.react(['delighted', 'heart', 'sparkle'][Math.floor(Math.random() * 3)], 1000); } }
 function tone(pairs, vol = .08) {
@@ -548,7 +548,7 @@ END: when they say thanks / bye / that's all / khuda hafiz / shukriya, give a ve
 let liveSparrow = null;
 function startJarvis(firstText) {
   const scr = $('#liveScreen'), status = $('#liveStatus'), cap = $('#liveCaption'), orb = $('#liveOrb');
-  liveSparrow = liveSparrow || mountMascot($('#liveBird'), {});
+  liveSparrow = liveSparrow || mountBird($('#liveBird'), {});
   const label = { connecting: 'Connecting…', listening: 'Listening…', speaking: 'Speaking…', working: 'On it…' };
   scr.hidden = false; scr.dataset.state = 'connecting'; status.textContent = label.connecting; cap.textContent = '';
   speechSynthesis?.cancel(); stopWake();

@@ -107,9 +107,12 @@ final class VoiceEngine: NSObject, ObservableObject {
         stopRecognition()
         status = "Listening…"
     }
+    private var liveEndedAt = Date.distantPast
     func resumeAfterLive() {
         status = ""
         oneShot = false
+        listenAfterSpeech = false; resumeAfterSpeech = false
+        liveEndedAt = Date()
         if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { MainActor.assumeIsolated { VoiceEngine.shared.startRecognition() } }
         }
@@ -265,8 +268,11 @@ final class VoiceEngine: NSObject, ObservableObject {
         if listenAfterSpeech {
             listenAfterSpeech = false
             resumeAfterSpeech = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { VoiceEngine.shared.listenOnce() } }
-            return
+            // (not right after a live conversation ended — then it's back to "Sparrow…" listening)
+            if Date().timeIntervalSince(liveEndedAt) > 4, !LiveSession.shared.active {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { VoiceEngine.shared.listenOnce() } }
+                return
+            }
         }
         if resumeAfterSpeech {
             resumeAfterSpeech = false
@@ -447,6 +453,20 @@ final class VoiceEngine: NSObject, ObservableObject {
             Task { @MainActor in VoiceEngine.shared.onPartial(text, ended: ended, gen: gen) }
         }
         appendAppLog("voice.log", "listening started (gen \(gen), oneShot \(oneShot), onDevice \(req.requiresOnDeviceRecognition))")
+        // Listening for one command but nothing comes (or the recogniser silently stalls)?
+        // After 9 s go back to "Sparrow…" listening — never get stuck deaf.
+        if oneShot && !pushToTalk {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+                MainActor.assumeIsolated {
+                    let me = VoiceEngine.shared
+                    guard me.generation == gen, me.oneShot, !me.pushToTalk, me.heard.isEmpty else { return }
+                    appendAppLog("voice.log", "one-shot: nothing heard in 9s — back to \"Sparrow…\" listening")
+                    me.oneShot = false
+                    me.status = ""
+                    if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { me.startRecognition() } else { me.stopRecognition() }
+                }
+            }
+        }
         // Apple limits one recognition task to about a minute — refresh it regularly.
         restartTimer?.invalidate()
         restartTimer = Timer.scheduledTimer(withTimeInterval: 50, repeats: false) { _ in
@@ -523,6 +543,11 @@ final class VoiceEngine: NSObject, ObservableObject {
             if let r = lower.range(of: wake, options: .backwards) {
                 return String(lower[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
             }
+        }
+        // Just the name, misheard on-device ("Pero", "Paro", "Porn", "Barrow"…): a single word that sounds like it.
+        let words = lower.split(whereSeparator: { " ,.!?".contains($0) })
+        if words.count == 1, words[0].range(of: #"^(s|sh|b)?p[aeiou]+r+[aeiou]*(w|ow|n|ne|ns|o)?s?$|^(sp|b)?[aeo]r+o(w|ws)?$|^pharaoh$"#, options: .regularExpression) != nil {
+            return ""
         }
         // Close mis-hearings at the very start: "spare open chrome", "sparo, play music"…
         if let r = lower.range(of: #"^(hey |ok |hi )?sp[aeio]r+[oe]w?s?\b[, ]*"#, options: .regularExpression) {

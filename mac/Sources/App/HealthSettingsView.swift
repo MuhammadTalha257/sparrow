@@ -45,9 +45,7 @@ struct HealthSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                if SparrowSprites.shared.available {
-                    Image(decorative: SparrowSprites.shared.reactions[8], scale: 1).resizable().frame(width: 54, height: 54)
-                }
+                LittleSparrow(color: nil, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Little reminders").font(.system(size: 15, weight: .bold, design: .rounded))
                     Text("When it's time, Sparrow flies in carrying your water, coffee or pills.")

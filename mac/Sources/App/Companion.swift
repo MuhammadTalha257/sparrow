@@ -16,8 +16,11 @@ extension Notification.Name {
 
 @MainActor
 final class PetModel: ObservableObject {
-    /// The pink sparrow's face and head direction (shared with its click reactions).
-    let sprite = SparrowSpriteModel()
+    /// Something the sparrow carries (SF Symbol): water bottle, coffee cup, pills.
+    @Published var prop: String?
+    /// Water / coffee / medicine waiting for "Take" or "Later".
+    @Published var asking: (kind: String, text: String)?
+    @Published var angry = false
     @Published var bubble: String?
     @Published var flying = false
     @Published var hovering = false
@@ -44,7 +47,7 @@ final class PetController {
     static let shared = PetController()
     let model = PetModel()
     private var panel: NSPanel?
-    private let size = NSSize(width: 230, height: 230)
+    private let size = NSSize(width: 230, height: 262)
 
     var isShown: Bool { panel?.isVisible == true }
 
@@ -119,7 +122,7 @@ final class PetController {
                 let m = PetController.shared.model
                 m.flying = false
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
-                if m.sprite.prop == nil {
+                if m.prop == nil {
                     let name = AssistantPrefs.displayName
                     m.say("Hi\(name.isEmpty ? "" : " \(name)")! Tap me to talk. Drag me anywhere. 🐦", for: 5)
                 }
@@ -146,30 +149,57 @@ final class PetController {
         })
     }
 
-    /// Water / coffee / medicine time: the sparrow flies in carrying it, says so, and flies off again
-    /// afterwards if it wasn't out on the desktop already.
+    /// Water / coffee / medicine time: the sparrow flies in carrying it and asks "Take" or "Later".
+    /// Take → happy, flies back. Later → cross, flies back, and asks again in 10 minutes.
+    private var wasShownBeforeAsk = false
+    private var askTimeout: DispatchWorkItem?
     func deliver(kind: String, text: String) {
         let props = ["water": "waterbottle.fill", "coffee": "cup.and.saucer.fill", "meds": "pills.fill"]
-        let wasShown = isShown
-        if wasShown {
-            // already out: hop and show it
-            model.sprite.react(8, for: 1.2)
-        } else {
-            show(greeting: false)
-        }
-        model.sprite.prop = props[kind] ?? "drop.fill"
-        DispatchQueue.main.asyncAfter(deadline: .now() + (wasShown ? 0.1 : 1.3)) {
+        if model.asking == nil { wasShownBeforeAsk = isShown }
+        if isShown { NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy) }
+        else { show(greeting: false) }
+        model.angry = false
+        model.prop = props[kind] ?? "drop.fill"
+        model.asking = (kind, text)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (wasShownBeforeAsk ? 0.1 : 1.3)) {
             MainActor.assumeIsolated {
                 let m = PetController.shared.model
-                m.say(text + (kind == "water" ? " 💧" : kind == "coffee" ? " ☕" : " 💊"), for: 9)
-                m.sprite.react(1, for: 1.2)
+                m.say(text + (kind == "water" ? " 💧" : kind == "coffee" ? " ☕" : " 💊"), for: 60)
+                NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.love)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 11) {
+        // Nobody answered in 2 minutes → treat it as "later", quietly.
+        askTimeout?.cancel()
+        let w = DispatchWorkItem { MainActor.assumeIsolated { PetController.shared.answer(take: false, quiet: true) } }
+        askTimeout = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: w)
+    }
+
+    func answer(take: Bool, quiet: Bool = false) {
+        guard let ask = model.asking else { return }
+        askTimeout?.cancel()
+        model.asking = nil
+        if take {
+            NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.love)
+            SoundEngine.shared.play("approve")
+            model.say(ask.kind == "meds" ? "Well done! 💗" : ask.kind == "coffee" ? "Enjoy your coffee! ☕💗" : "Yay! Stay fresh 💗", for: 2)
+        } else {
+            if !quiet {
+                model.angry = true
+                NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.annoyed)
+                model.say("Hmph! 😤 I'll ask again in 10 minutes.", for: 2.2)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 600) {
+                MainActor.assumeIsolated { PetController.shared.deliver(kind: ask.kind, text: ask.text) }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (quiet ? 0 : 1.8)) {
             MainActor.assumeIsolated {
                 let me = PetController.shared
-                me.model.sprite.prop = nil
-                if !wasShown, !UserDefaults.standard.bool(forKey: "petVisible") { me.hide(remember: false) }
+                guard me.model.asking == nil else { return }
+                me.model.prop = nil
+                me.model.angry = false
+                if !me.wasShownBeforeAsk { me.hide(remember: false) }
             }
         }
     }
@@ -211,6 +241,8 @@ struct PetView: View {
     @ObservedObject var model: PetModel
     @ObservedObject private var voice = VoiceEngine.shared
     @StateObject private var engine = BotEngine()
+    @State private var clicks = 0
+    @State private var lastClick = Date.distantPast
 
     var body: some View {
         VStack(spacing: 6) {
@@ -235,22 +267,37 @@ struct PetView: View {
                 // little perch shadow
                 Ellipse().fill(Color.black.opacity(model.flying ? 0 : 0.22))
                     .frame(width: 70, height: 10).blur(radius: 3).offset(y: 44)
-                if SparrowSprites.shared.available {
-                    SparrowSpriteView(model: model.sprite, size: 118, deadZone: 60,
-                                      lively: model.flying || (voice.isListening && voice.status == "Listening…") || voice.level > 0.08)
-                        .rotationEffect(.degrees(model.flying ? -8 : 0))
-                        .allowsHitTesting(false)
-                        .frame(width: 124, height: 110)
-                } else {
-                    TimelineView(.animation) { tl in
-                        Canvas { ctx, size in
-                            let now = tl.date.timeIntervalSinceReferenceDate
-                            let dt = min(0.05, now - engine.lastTime)
-                            engine.update(dt: dt)
-                            engine.draw(context: ctx, size: size)
+                TimelineView(.animation) { tl in
+                    Canvas { ctx, size in
+                        let now = tl.date.timeIntervalSinceReferenceDate
+                        let dt = min(0.05, now - engine.lastTime)
+                        let mouse = NSEvent.mouseLocation
+                        if let f = NSApp.windows.first(where: { $0.contentView is FirstMouseHostingView<PetView> })?.frame {
+                            engine.lookX = tanh((mouse.x - f.midX) / 260)
+                            engine.lookY = -tanh(((f.minY + 70) - mouse.y) / 200)
                         }
+                        engine.update(dt: dt)
+                        // Wings: flap fast while flying or listening, tucked otherwise
+                        if model.flying { engine.hands = 0.65 + 0.35 * CGFloat(sin(now * 38)) }
+                        else if voice.isListening && voice.status == "Listening…" { engine.hands = 0.35 + 0.25 * CGFloat(sin(now * 18)) }
+                        else if engine.hands > 0.01 && now > engine.waveUntil { engine.hands *= 0.85 }
+                        engine.drawHandsBehind(context: ctx, size: size)
+                        engine.draw(context: ctx, size: size)
+                        engine.drawHandsAndExtras(context: ctx, size: size)
                     }
-                    .frame(width: 124, height: 110)
+                }
+                .frame(width: 124, height: 110)
+                .colorMultiply(model.angry ? Color(red: 1, green: 0.62, blue: 0.62) : .white)
+                .modifier(Shake(amount: model.angry ? 4 : 0))
+                if let prop = model.prop {
+                    Image(systemName: prop)
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(prop.contains("water") ? Color(hex: "#4FA7FF") : prop.contains("cup") ? Color(hex: "#9A6A48") : Color(hex: "#F06A8A"))
+                        .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                        .rotationEffect(.degrees(-14))
+                        .offset(x: 46, y: 22)
+                        .transition(.scale.combined(with: .opacity))
+                        .allowsHitTesting(false)
                 }
                 PetDragArea { petClicked() }
                     .frame(width: 96, height: 84)
@@ -258,6 +305,22 @@ struct PetView: View {
             .frame(width: 140, height: 112)
             .onHover { model.hovering = $0 }
 
+            if model.asking != nil {
+                HStack(spacing: 8) {
+                    Button { PetController.shared.answer(take: true) } label: {
+                        Label("Take", systemImage: "checkmark").font(.system(size: 12, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(Color(hex: "#E2648A"))).foregroundColor(.white)
+                    }.buttonStyle(.plain)
+                    Button { PetController.shared.answer(take: false) } label: {
+                        Label("Later", systemImage: "clock").font(.system(size: 12, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(Color.white)).foregroundColor(Color(hex: "#C94A74"))
+                    }.buttonStyle(.plain)
+                }
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                .transition(.scale.combined(with: .opacity))
+            }
             // Quick actions on hover
             HStack(spacing: 6) {
                 petButton("mic.fill", "Talk") { petClicked() }
@@ -267,12 +330,14 @@ struct PetView: View {
                 }
                 petButton("xmark", "Hide") { PetController.shared.hide() }
             }
-            .opacity(model.hovering && !model.flying ? 1 : 0)
+            .opacity(model.hovering && !model.flying && model.asking == nil ? 1 : 0)
             .animation(.easeOut(duration: 0.15), value: model.hovering)
             .onHover { if $0 { model.hovering = true } }
         }
-        .frame(width: 230, height: 230)
+        .frame(width: 230, height: 262)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: bubbleText)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: model.prop)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: model.asking == nil)
         .onReceive(NotificationCenter.default.publisher(for: .triggerEmote)) { n in
             if let e = n.object as? BotEmote { engine.triggerEmote(e, silent: true) }
         }
@@ -287,8 +352,14 @@ struct PetView: View {
     }
 
     private func petClicked() {
-        model.sprite.boop()
-        VoiceEngine.shared.listenOnce()
+        // A little reaction on every click (four quick clicks = a bit cross), then listen.
+        let now = Date()
+        clicks = now.timeIntervalSince(lastClick) < 1.6 ? clicks + 1 : 1
+        lastClick = now
+        let e: BotEmote = clicks >= 4 ? .annoyed : [.love, .happy, .proud, .wink][(clicks - 1) % 4]
+        if clicks >= 4 { clicks = 0 }
+        NotificationCenter.default.post(name: .triggerEmote, object: e)
+        if model.asking == nil { VoiceEngine.shared.listenOnce() }
     }
 
     private func petButton(_ icon: String, _ help: String, action: @escaping () -> Void) -> some View {
@@ -693,5 +764,18 @@ struct TodayView: View {
             busy = false
             await model.refresh()
         }
+    }
+}
+
+
+/// A little side-to-side shake (the sparrow is cross).
+struct Shake: ViewModifier {
+    var amount: CGFloat
+    @State private var on = false
+    func body(content: Content) -> some View {
+        content
+            .offset(x: amount == 0 ? 0 : (on ? amount : -amount))
+            .animation(amount == 0 ? .default : .linear(duration: 0.07).repeatCount(12, autoreverses: true), value: on)
+            .onChange(of: amount) { _, v in on = v != 0 }
     }
 }

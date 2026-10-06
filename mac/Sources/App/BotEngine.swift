@@ -79,13 +79,13 @@ enum SparrowConst {
     static let eyeSp: CGFloat = 0.37
     static let eyeP: CGFloat  = -0.12
     // Sparrow plumage
-    static let baseTop    = CGColor(red: 0.851, green: 0.627, blue: 0.431, alpha: 1)  // #D9A06E warm tan
-    static let baseBottom = CGColor(red: 0.596, green: 0.392, blue: 0.247, alpha: 1)  // #98643F brown
-    static let cap        = CGColor(red: 0.420, green: 0.259, blue: 0.157, alpha: 1)  // #6B4228 crown
-    static let belly      = CGColor(red: 0.973, green: 0.925, blue: 0.851, alpha: 1)  // #F8ECD9 cream
+    static let baseTop    = CGColor(red: 1.000, green: 0.761, blue: 0.827, alpha: 1)  // #FFC2D3 soft pink
+    static let baseBottom = CGColor(red: 0.949, green: 0.482, blue: 0.627, alpha: 1)  // #F27BA0 pink
+    static let cap        = CGColor(red: 0.878, green: 0.314, blue: 0.494, alpha: 1)  // #E0507E rose crown
+    static let belly      = CGColor(red: 1.000, green: 1.000, blue: 1.000, alpha: 1)  // white
     static let beak       = CGColor(red: 0.976, green: 0.659, blue: 0.188, alpha: 1)  // #F9A830
     static let beakDark   = CGColor(red: 0.851, green: 0.475, blue: 0.067, alpha: 1)  // #D97911
-    static let wing       = CGColor(red: 0.478, green: 0.306, blue: 0.188, alpha: 1)  // #7A4E30
+    static let wing       = CGColor(red: 0.910, green: 0.376, blue: 0.549, alpha: 1)  // #E8608C
     static let ink        = CGColor(red: 0.102, green: 0.082, blue: 0.071, alpha: 1)  // #1A1412
     static let miniInk    = CGColor(red: 0.063, green: 0.075, blue: 0.102, alpha: 1)  // #10131A
 }

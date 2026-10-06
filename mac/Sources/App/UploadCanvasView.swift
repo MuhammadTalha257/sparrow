@@ -306,8 +306,8 @@ struct UploadCanvasView: View {
 
         // ── Body gradient ──────────────────────────────────────────
         let bodyGrad = Gradient(stops:[
-            .init(color: Color(hex:"#D9A06E"), location:0),
-            .init(color: Color(hex:"#98643F"), location:1)
+            .init(color: Color(hex:"#FFC2D3"), location:0),
+            .init(color: Color(hex:"#F27BA0"), location:1)
         ])
         c.fill(bp, with: .linearGradient(bodyGrad,
             startPoint:  CGPoint(x:  rx*0.7, y: -ry*0.9),
@@ -319,9 +319,9 @@ struct UploadCanvasView: View {
             pc.clip(to: bp)
             let capH = ry * 0.55
             pc.fill(Path(ellipseIn: CGRect(x: -rx*1.1, y: -ry - capH*0.6, width: rx*2.2, height: capH*1.6)),
-                    with: .color(Color(hex:"#6B4228")))
+                    with: .color(Color(hex:"#E0507E")))
             pc.fill(Path(ellipseIn: CGRect(x: -rx*0.62, y: ry*0.18, width: rx*1.24, height: ry*1.3)),
-                    with: .color(Color(hex:"#F8ECD9").opacity(0.92)))
+                    with: .color(Color(hex:"#FFFFFF").opacity(0.92)))
         }
 
         // ── Edge shadow ────────────────────────────────────────────

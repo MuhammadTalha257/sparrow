@@ -10,22 +10,7 @@ struct BotCanvasView: View {
     @StateObject private var engine = BotEngine()
     @ObservedObject private var voice = VoiceEngine.shared
 
-    @StateObject private var sprite = SparrowSpriteModel()
-
-    var body: some View {
-        // The pink sparrow everywhere — except the file-drop "mailbox" animation, which is drawn.
-        if SparrowSprites.shared.available, state.view != .upload, state.view != .uploading, state.mode != .hidden {
-            GeometryReader { g in
-                SparrowSpriteView(model: sprite, size: min(g.size.width, g.size.height - particleOverhang),
-                                  deadZone: 40, lively: voice.level > 0.08 || voice.status.hasPrefix("Listening"))
-                    .frame(width: g.size.width, height: g.size.height, alignment: .bottom)
-                    .allowsHitTesting(false)          // the island watches clicks itself and sends a "slap"
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .triggerSlap)) { _ in sprite.boop() }
-        } else {
-            drawnBird
-        }
-    }
+    var body: some View { drawnBird }
 
     private var drawnBird: some View {
         TimelineView(.animation(paused: state.mode == .hidden)) { timeline in
