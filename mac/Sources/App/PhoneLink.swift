@@ -24,7 +24,7 @@ final class PhoneLink: ObservableObject {
     @Published private(set) var recent: [String] = []
 
     static let relay = "https://ntfy.sh"
-    static let webApp = "https://lisansystems.com/sparrow/"
+    static let webApp = "https://muhammadtalha257.github.io/sparrow/test/"
 
     private var streamTask: Task<Void, Never>?
     private var awake: NSObjectProtocol?
