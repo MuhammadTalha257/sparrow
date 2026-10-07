@@ -95,7 +95,7 @@ final class LocalAISetup: ObservableObject {
         if await serverUp() { return }
         if let app = installedApp {
             step = "Starting the free AI…"
-            NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+            NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
             return
         }
         step = "Downloading the free AI engine (Ollama, about 200 MB)…"
@@ -110,7 +110,7 @@ final class LocalAISetup: ObservableObject {
         try? FileManager.default.removeItem(at: zip)
         guard ok, let app = installedApp else { throw Self.err("Couldn't install Ollama. You can install it yourself from ollama.com, then press the button again.") }
         step = "Starting the free AI…"
-        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
     }
 
     private func serverUp() async -> Bool {

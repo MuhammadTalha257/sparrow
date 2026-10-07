@@ -130,12 +130,16 @@ struct SpriteAnchorReader: NSViewRepresentable {
     final class PassThroughView: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
 }
 
+/// What Zuffi is doing right now — drives the little animations (listening waves, thinking sparkles…).
+enum SpriteMood: Equatable { case idle, listening, thinking, speaking, walking }
+
 struct SparrowSpriteView: View {
     @ObservedObject var model: SparrowSpriteModel
     var size: CGFloat
     var deadZone: CGFloat = 50
     /// Gentle bob while Zuffi talks or listens.
     var lively: Bool = false
+    var mood: SpriteMood = .idle
     var onTap: (() -> Void)? = nil
 
     @State private var anchor = SpriteAnchor()

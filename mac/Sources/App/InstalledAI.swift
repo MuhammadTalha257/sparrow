@@ -124,7 +124,7 @@ enum InstalledAI {
         let web = ["claude-app": "https://claude.ai/new", "chatgpt-app": "https://chatgpt.com", "copilot-app": "https://copilot.microsoft.com", "gemini-app": "https://gemini.google.com/app"]
         let name = names[appID] ?? "the app"
         if let tool = detect().first(where: { $0.id == appID }) {
-            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: tool.path), configuration: NSWorkspace.OpenConfiguration())
+            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: tool.path), configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
             try? await Task.sleep(nanoseconds: 2_200_000_000)
             guard !question.isEmpty else { return "Opening \(name)." }
             guard AXIsProcessTrusted() else { return "Opened \(name). Allow Zuffi under Accessibility so I can type your question for you." }
