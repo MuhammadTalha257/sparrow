@@ -180,6 +180,11 @@ struct SettingsView: View {
                 AssistantSettings(parts: [.apps])
                 }
 
+                if tab == .screen {
+                // MARK: Eyes + hands on the screen
+                ScreenSettingsView()
+                }
+
                 if tab == .health {
                 // MARK: Water, coffee & medicine
                 HealthSettingsView()
@@ -298,7 +303,7 @@ struct ShortcutRecorderButton: View {
 // MARK: - Settings tabs (friendlier than one long page)
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, routine, voice, ai, apps, health, iphone
+    case general, routine, voice, ai, apps, screen, health, iphone
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -307,6 +312,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .voice:     return "Voice"
         case .ai:        return "AI"
         case .apps:      return "Apps"
+        case .screen:    return "Screen"
         case .health:    return "Health"
         case .iphone:    return "iPhone"
         }
@@ -318,6 +324,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .voice:     return "waveform"
         case .ai:        return "sparkles"
         case .apps:      return "square.grid.2x2"
+        case .screen:    return "cursorarrow.click.2"
         case .health:    return "heart.fill"
         case .iphone:    return "iphone"
         }

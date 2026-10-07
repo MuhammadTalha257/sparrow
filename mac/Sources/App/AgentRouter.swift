@@ -23,6 +23,7 @@ final class AgentRouter {
 
     /// Handles a request if any agent can. nil = nobody could (the caller asks the AI instead).
     func handle(_ raw: String) async -> String? {
+        if let r = await screen(raw) { return r }
         // Email first: a reply like "tell him yes and thanks" must not be split into steps.
         if WhatsAppAgent.shared.claims(raw), let r = await WhatsAppAgent.shared.handle(raw) { return r }
         if MailAgent.shared.claims(raw), let r = await MailAgent.shared.handle(raw) { return r }
@@ -40,6 +41,36 @@ final class AgentRouter {
             }
         }
         return anyDone ? replies.joined(separator: " ") : nil
+    }
+
+    /// The screen agent: answers to its questions, "stop", "what's on my screen?", "on screen, …".
+    private func screen(_ raw: String) async -> String? {
+        let t = raw.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " .!?,"))
+        let agent = ScreenAgent.shared
+        if agent.awaitingConfirmation {
+            if t.range(of: #"^(yes|yeah|yep|yup|ok|okay|sure|go ahead|do it|haan|han|ji|jee|theek hai|kar do|yes do it|confirm)"#, options: .regularExpression) != nil {
+                agent.confirm(true); return "Okay, doing it."
+            }
+            if t.range(of: #"^(no|nope|don'?t|do not|cancel|stop|nahi|nahin|mat karo|ruko)"#, options: .regularExpression) != nil {
+                agent.confirm(false); return "Okay, I won't."
+            }
+        }
+        if agent.running, t.range(of: #"^(stop|stop it|cancel|that'?s enough|enough|ruk jao|ruko|bas|band karo)$"#, options: .regularExpression) != nil {
+            agent.stop(); return "Stopping."
+        }
+        guard t.contains("screen") || t.hasPrefix("click ") || t.hasPrefix("scroll ") else { return nil }
+        // Do something: "on screen, …", "use my screen to …", "click the Sign in button", "scroll down"
+        let doPrefix = #"^(?:on (?:my |the )?(?:mac )?screen[,:]?\s+|use (?:my |the )?screen (?:to|and)\s+|(?:control|use) (?:my |the )?(?:mac|computer|screen) (?:to|and)\s+|screen (?:pe|par)\s+)"#
+        if let r = t.range(of: doPrefix, options: .regularExpression) {
+            let task = String(raw.dropFirst(t.distance(from: t.startIndex, to: r.upperBound))).trimmingCharacters(in: .whitespaces)
+            if !task.isEmpty { return await agent.run(task) }
+        }
+        if t.range(of: #"^(click|double click|right click|scroll)"#, options: .regularExpression) != nil { return await agent.run(raw) }
+        // Look: "what's on my screen", "read my screen", "check what you see on my screen", "screen pe kya hai"
+        if t.range(of: #"(what|see|check|read|look|describe|tell me|explain|kya|dekho|batao|summari[sz]e|translate)"#, options: .regularExpression) != nil {
+            return await agent.describe(raw)
+        }
+        return nil
     }
 
     private func single(_ raw: String) async -> String? {

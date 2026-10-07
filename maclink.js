@@ -69,7 +69,8 @@ async function exchange(t, text, waitMs) {
   return { ok: false, text: "Your Mac didn't answer. Make sure it's on and awake, online, with Sparrow open and Settings → iPhone switched on." };
 }
 
-export const send = text => exchange('cmd', text, 45000);
+// Screen tasks (clicking and typing on the Mac) can take a couple of minutes.
+export const send = text => exchange('cmd', text, /\b(screen|click|scroll)\b/i.test(text) ? 180000 : 45000);
 export const ping = () => exchange('ping', '', 15000);
 
 /** Is this meant for the Mac? ("lock my mac", "turn off the laptop", "mac pe spotify chalao", "on my computer…") */

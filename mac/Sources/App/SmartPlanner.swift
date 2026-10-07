@@ -34,6 +34,7 @@ final class SmartPlanner {
     check my emails · read the email from <name> · reply to <name> saying <what to tell them> · send · cancel
     analyse my cv · find <role> jobs in <place> · find jobs for me · tailor my cv for job <n> · apply to job <n> · my job applications · type my email|phone|name|linkedin|cover letter
     check whatsapp · whatsapp <name> saying <text> · reply to <name> on whatsapp saying <text>
+    what's on my screen · on screen, <any task to do by clicking and typing in an app or website, with all details>
     """
 
     private func systemPrompt() -> String {

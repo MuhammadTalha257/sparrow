@@ -258,6 +258,7 @@ final class LiveSession: NSObject {
         - Reminders: add_reminder with an exact ISO date-time you work out from "now" (e.g. "coming Monday at 10" = the next Monday 10:00). To delete or finish one, pick the matching id from the list above (match by day, time or words — "the Monday one" = the one due next Monday); if two match, ask which.
         - Email (their Mail app): check_email, read_latest_email, read_email_from. To reply: draft_email_reply, read the draft to them, ask "Shall I send it?" and only call send_email after a clear yes. Never send without a yes.
         - WhatsApp: check_whatsapp; whatsapp_draft then send_whatsapp only after a clear yes.
+        - Hands: operate_screen does anything on the screen step by step (it can see, click, type and scroll in any app or website) — use it when no other tool fits, e.g. "play the latest X on YouTube", "fill this form", "click Sign in". If it returns a question ("Shall I click Send?"), ask the user and pass their answer with screen_answer. "stop" while it works → stop_screen.
         - Eyes: "what is this", "what am I holding", "what do you see", "look at this", "how do I look", "yeh kya hai" → look_through_camera (they are showing something to the camera). "What's on my screen", "read this page", "what is this error/window" → look_at_screen. take_photo to take a picture. After the image arrives, name the thing plainly first, then one useful detail (brand, what it's for, any text on it). If the picture is too dark or blurry, say so and ask them to hold it closer.
         - Writing: make_note to write and save a note in Notes (compose the full text yourself from what they said — e.g. "make notes on today's meeting: …" or "write a shopping list: milk, eggs"); type_text to type into whatever they're working in.
         - Facts, news, prices → use Google Search; combine several sources and say where it's from in a few words.
@@ -551,6 +552,10 @@ enum LiveTools {
         fn("take_photo", "Take a photo with the camera, save it to Pictures and show it."),
         fn("find_jobs", "Search jobs matching the user's CV.", ["role": str("Job title or skill, e.g. 'react developer'."), "location": str("City or 'remote'."),
                                                                   "level": str("internship | apprentice | entry | mid | senior | lead (optional)")], required: ["role"]),
+        fn("operate_screen", "Use the Mac's screen, mouse and keyboard to do a task in any app or website (clicking, typing, scrolling) — for things the other tools can't do, e.g. 'play the latest Arijit Singh song on YouTube', 'fill in this form with my details', 'find the cheapest flight on this page'. Sparrow sees the screen, acts step by step and asks the user before anything risky. Returns the result or a question for the user.",
+           ["task": str("The whole task in plain English, with all details the user gave.")], required: ["task"]),
+        fn("screen_answer", "The screen agent asked the user to confirm a risky step (send, buy, delete…). Pass their answer.", ["yes": ["type": "BOOLEAN", "description": "true if the user agreed"]], required: ["yes"]),
+        fn("stop_screen", "Stop the screen agent right away (the user said stop / take over)."),
         fn("make_note", "Create and save a note in Apple Notes with a title and the full text (write the text out properly — lists, paragraphs). Use for 'make a note', 'write this down', 'save notes about…'.",
            ["title": str("Short title."), "text": str("The full note text. Use new lines for lists.")], required: ["title", "text"]),
         fn("type_text", "Type text into the app the user is working in (the box or document they last clicked). Use for 'type …', 'write … here', 'likho'.",
@@ -612,7 +617,7 @@ enum LiveTools {
             }
             return ["ok": true, "result": "A photo from the camera was just sent to you as an image. Answer from what you see in it."]
         case "look_at_screen":
-            guard let jpeg = await ScreenSnap.capture() else {
+            guard let jpeg = await ScreenGrab.main()?.jpeg else {
                 return ["ok": false, "result": "I couldn't see the screen. Allow Sparrow under System Settings → Privacy & Security → Screen & System Audio Recording."]
             }
             LiveSession.shared.sendImage(jpeg)
@@ -621,6 +626,15 @@ enum LiveTools {
             let level = s("level"), loc = s("location")
             let q = "find \(level.isEmpty ? "" : level + " ")\(s("role")) jobs\(loc.isEmpty ? "" : " in " + loc)"
             return ok(await WebHub.shared.ask(q))
+        case "operate_screen":
+            return ok(await ScreenAgent.shared.run(s("task")))
+        case "screen_answer":
+            guard ScreenAgent.shared.awaitingConfirmation else { return ["ok": false, "result": "Nothing is waiting for an answer."] }
+            let yes = a["yes"] as? Bool ?? false
+            ScreenAgent.shared.confirm(yes)
+            return ["ok": true, "result": yes ? "Confirmed — continuing." : "Cancelled."]
+        case "stop_screen":
+            ScreenAgent.shared.stop(); return ["ok": true, "result": "Stopped."]
         case "make_note":
             return ok(await Writer.makeNote(title: s("title"), text: s("text")))
         case "type_text":
@@ -685,25 +699,6 @@ final class CameraSnap: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Send
 }
 
 // MARK: - Screen: one screenshot, on request
-
-enum ScreenSnap {
-    static func capture() async -> Data? {
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first else { return nil }
-            let filter = SCContentFilter(display: display, excludingWindows: [])
-            let cfg = SCStreamConfiguration()
-            let scale = min(1.0, 1600.0 / Double(max(display.width, display.height)))
-            cfg.width = Int(Double(display.width) * scale * 2)
-            cfg.height = Int(Double(display.height) * scale * 2)
-            let img = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
-            return ImageShrink.jpeg(img, maxSide: 1600)
-        } catch {
-            appendAppLog("voice.log", "screen capture failed: \(error.localizedDescription)")
-            return nil
-        }
-    }
-}
 
 enum ImageShrink {
     static func jpeg(_ data: Data, maxSide: CGFloat) -> Data? {

@@ -12,8 +12,10 @@
 		C07E53BDAC5D497CF979CCBE /* SmartPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71055F0E5D33857DB26A3635 /* SmartPlanner.swift */; };
 		6D15CCCB033D62D4186745F7 /* HealthSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E29F781B3752D5E125F95E /* HealthSettingsView.swift */; };
 		7E572EEBD4D11E75E1151CEC /* PhoneLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97D330FAF5BD94A22EAA4AD1 /* PhoneLink.swift */; };
+		679D07CD7A63DF433D3A40A3 /* ScreenAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */; };
 		EAD634B20DDEFE624E6EED6B /* HealthSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E29F781B3752D5E125F95E /* HealthSettingsView.swift */; };
 		BF6032E05D9F2A032063962A /* PhoneLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97D330FAF5BD94A22EAA4AD1 /* PhoneLink.swift */; };
+		7FCD6C311D82B57466309C9B /* ScreenAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */; };
 		2D3AF78DCCDF91C75694D4F6 /* SparrowSprite.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10880C30B417627900CDFBF /* SparrowSprite.swift */; };
 		4AABC4FB27EE7F4E4928FA0C /* SparrowSprite.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10880C30B417627900CDFBF /* SparrowSprite.swift */; };
 		0BC07A6C61B0D278B2189061 /* LiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA89CBF823F723D8E86288AB /* LiveSession.swift */; };
@@ -115,6 +117,7 @@
 		E10880C30B417627900CDFBF /* SparrowSprite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparrowSprite.swift; sourceTree = "<group>"; };
 		D4E29F781B3752D5E125F95E /* HealthSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSettingsView.swift; sourceTree = "<group>"; };
 		97D330FAF5BD94A22EAA4AD1 /* PhoneLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneLink.swift; sourceTree = "<group>"; };
+		753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenAgent.swift; sourceTree = "<group>"; };
 		71055F0E5D33857DB26A3635 /* SmartPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPlanner.swift; sourceTree = "<group>"; };
 		C705035F81568D3A64CB2907 /* NetStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetStatus.swift; sourceTree = "<group>"; };
 		5CBBF5A6891B36387EE6D8CA /* MemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryStore.swift; sourceTree = "<group>"; };
@@ -175,6 +178,7 @@
 				71055F0E5D33857DB26A3635 /* SmartPlanner.swift */,
 				D4E29F781B3752D5E125F95E /* HealthSettingsView.swift */,
 				97D330FAF5BD94A22EAA4AD1 /* PhoneLink.swift */,
+				753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */,
 				E10880C30B417627900CDFBF /* SparrowSprite.swift */,
 				FA89CBF823F723D8E86288AB /* LiveSession.swift */,
 				727C958363811479852448FF /* WhatsAppAgent.swift */,
@@ -370,6 +374,7 @@
 				C36B064F9F1187AF1D810E74 /* SmartPlanner.swift in Sources */,
 				6D15CCCB033D62D4186745F7 /* HealthSettingsView.swift in Sources */,
 				7E572EEBD4D11E75E1151CEC /* PhoneLink.swift in Sources */,
+				679D07CD7A63DF433D3A40A3 /* ScreenAgent.swift in Sources */,
 				2D3AF78DCCDF91C75694D4F6 /* SparrowSprite.swift in Sources */,
 				0BC07A6C61B0D278B2189061 /* LiveSession.swift in Sources */,
 				159E9C7CB57BA4D1F32B6E5F /* WhatsAppAgent.swift in Sources */,
@@ -421,6 +426,7 @@
 				C07E53BDAC5D497CF979CCBE /* SmartPlanner.swift in Sources */,
 				EAD634B20DDEFE624E6EED6B /* HealthSettingsView.swift in Sources */,
 				BF6032E05D9F2A032063962A /* PhoneLink.swift in Sources */,
+				7FCD6C311D82B57466309C9B /* ScreenAgent.swift in Sources */,
 				4AABC4FB27EE7F4E4928FA0C /* SparrowSprite.swift in Sources */,
 				2B0E1B1399E8949DA8905A93 /* LiveSession.swift in Sources */,
 				D54CC8651AE59E921AE931ED /* WhatsAppAgent.swift in Sources */,
