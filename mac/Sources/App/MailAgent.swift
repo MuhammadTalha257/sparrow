@@ -2,9 +2,9 @@ import Foundation
 import AppKit
 
 // =====================================================================
-// MARK: - Mail agent: Sparrow reads and answers your email
+// MARK: - Mail agent: Zuffi reads and answers your email
 // Works with every account added to the Mac's Mail app (Gmail, Outlook,
-// iCloud, Yahoo…) — System Settings → Internet Accounts. Sparrow never sees
+// iCloud, Yahoo…) — System Settings → Internet Accounts. Zuffi never sees
 // a password; it simply asks Mail.
 //   "any new emails?"                     → who wrote and what they want
 //   "read the email from Ahmed"           → reads it out
@@ -118,7 +118,7 @@ final class MailAgent {
         guard let r = res, !Self.failed(r) else { return Self.problem(res) }
         guard let mail = Self.parseList(r).1.first else { return "Your inbox looks empty. Is your account switched on in Mail?" }
         if show {
-            // "open latest mail": it appears on screen in Mail, and Sparrow tells you what it's about.
+            // "open latest mail": it appears on screen in Mail, and Zuffi tells you what it's about.
             _ = await Self.osa("""
             tell application "Mail"
               activate
@@ -169,7 +169,7 @@ final class MailAgent {
     }
 
     private func present(_ d: Draft) -> String {
-        // The draft is shown on the island and read out; Sparrow then listens for "send", "change…" or "cancel".
+        // The draft is shown on the island and read out; Zuffi then listens for "send", "change…" or "cancel".
         VoiceEngine.shared.listenAfterSpeech = true
         return "Here's my reply to \(d.mail.name): \"\(d.body)\". Say send, tell me what to change, or cancel."
     }
@@ -194,7 +194,7 @@ final class MailAgent {
         return "Sent! \(d.mail.name) will have your reply in a moment."
     }
 
-    /// Writes the reply: the fast AI drafts it in the sender's language and a warm, natural tone; offline, Sparrow tidies your words.
+    /// Writes the reply: the fast AI drafts it in the sender's language and a warm, natural tone; offline, Zuffi tidies your words.
     private func compose(for mail: Mail, instruction: String, previous: String?) async -> String {
         let me = AssistantPrefs.displayName
         if SmartPlanner.shared.isAvailable {
@@ -239,11 +239,11 @@ final class MailAgent {
     private static func problem(_ s: String?) -> String {
         let e = s.map { failed($0) ? String($0.dropFirst()) : "" } ?? ""
         if e.contains("-1743") || e.lowercased().contains("not authori") || e.lowercased().contains("not allowed") {
-            return "Sparrow isn't allowed to use Mail yet. Open System Settings → Privacy & Security → Automation → Sparrow and switch on Mail."
+            return "Zuffi isn't allowed to use Mail yet. Open System Settings → Privacy & Security → Automation → Zuffi and switch on Mail."
         }
         return mailProblem
     }
-    private static let mailProblem = "I couldn't reach Mail. Add your email in System Settings → Internet Accounts, open Mail once, and allow Sparrow to use Mail when your Mac asks."
+    private static let mailProblem = "I couldn't reach Mail. Add your email in System Settings → Internet Accounts, open Mail once, and allow Zuffi to use Mail when your Mac asks."
 
     // MARK: Words
 
@@ -302,7 +302,7 @@ final class MailAgent {
           set out to out & (id of m) & \(FS) & (sender of m) & \(FS) & (subject of m) & \(FS) & ((date received of m) as string) & \(FS) & c & \(FS) & acc & \(FS) & age & \(RS)
     """
 
-    /// The newest `limit` inbox messages matching `filter` (Mail doesn't promise any order, so Sparrow sorts by date itself).
+    /// The newest `limit` inbox messages matching `filter` (Mail doesn't promise any order, so Zuffi sorts by date itself).
     private static func newestScript(_ filter: String, limit: Int, total: String = "0") -> String {
         """
         tell application "Mail"

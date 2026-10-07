@@ -1,6 +1,6 @@
 import AppKit
 
-/// Hold the right ⌥ Option key anywhere, speak, let go — Sparrow acts on it.
+/// Hold the right ⌥ Option key anywhere, speak, let go — Zuffi acts on it.
 @MainActor
 enum HoldToTalk {
     private static var monitors: [Any] = []

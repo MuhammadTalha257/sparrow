@@ -1,4 +1,4 @@
-// Sparrow's AI. Free options first: Ollama on your computer, or a small model that runs on the phone.
+// Zuffi's AI. Free options first: Ollama on your computer, or a small model that runs on the phone.
 // Or your own key for Claude, ChatGPT, Gemini, Grok, DeepSeek, Mistral, Groq, OpenRouter or Perplexity.
 import { store } from './store.js';
 import { daySummary, fmtTime } from './brain.js';
@@ -65,7 +65,7 @@ function systemPrompt(extra = '') {
   const s = store.settings;
   // Always answer in the language (and script) the person used: Urdu, Roman Urdu, Hindi, Punjabi, Spanish, French, Portuguese…
   const langNote = ` Detect the language of the user's latest message and reply in that SAME language and script: Urdu script → Urdu script; Roman Urdu ("kia kar rahe ho") → Roman Urdu; Hindi → Hindi; Punjabi → Punjabi; Spanish, French, Brazilian Portuguese, Arabic, Turkish → the same; English → English. If they mix languages, mix the same way.${s.lang && s.lang !== 'en' ? ` If unsure, use ${{ ur: 'Urdu', hi: 'Hindi', pa: 'Punjabi', ar: 'Arabic' }[s.lang] || 'English'}.` : ''} If asked to translate, give the translation clearly.`;
-  return `You are Sparrow, a friendly, smart little assistant on the user's ${window.SparrowDesktop ? 'computer' : 'phone'}.${s.name ? ` The user's name is ${s.name}.` : ''}${langNote}
+  return `You are Zuffi, a friendly, smart little assistant on the user's ${window.SparrowDesktop ? 'computer' : 'phone'}.${s.name ? ` The user's name is ${s.name}.` : ''}${langNote}
 Be clear and concise (2–6 sentences unless asked for more). Plain text, no markdown symbols like ** or ##.
 It is now ${new Date().toLocaleString()}. ${daySummary(new Date(), true)}
 Today's items: ${store.onDay(new Date()).map(i => `${i.title} at ${fmtTime(i.when)}`).join('; ') || 'none'}.
@@ -135,7 +135,7 @@ async function callProvider(p, key, messages, maxTokens = 1200) {
       { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' });
     return (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
   }
-  const extra = p === 'openrouter' ? { 'HTTP-Referer': 'https://lisansystems.com', 'X-Title': 'Sparrow' } : {};
+  const extra = p === 'openrouter' ? { 'HTTP-Referer': 'https://lisansystems.com', 'X-Title': 'Zuffi' } : {};
   const j = await post(PROVIDERS[p].url, { model, messages, temperature: 0.6 }, { Authorization: 'Bearer ' + key, ...extra });
   return j.choices?.[0]?.message?.content?.trim() || '';
 }
@@ -157,7 +157,7 @@ async function order() {
  */
 export async function ask(question, onToken, opts = {}) {
   const extra = opts.context ? `\n\nUse this information from the user's files to answer. If the answer isn't there, say so.\n<files>\n${opts.context}\n</files>` : '';
-  // opts.system replaces Sparrow's chatty persona (used for structured jobs: CV analysis, cover letters, JSON).
+  // opts.system replaces Zuffi's chatty persona (used for structured jobs: CV analysis, cover letters, JSON).
   const messages = [{ role: 'system', content: opts.system ? opts.system + extra : systemPrompt(extra) }, ...(opts.noHistory ? [] : history()), { role: 'user', content: question }];
   const tried = [];
   for (const p of await order()) {

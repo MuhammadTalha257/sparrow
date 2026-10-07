@@ -1,4 +1,4 @@
-// Sparrow's built-in brain: understands everyday requests instantly, offline, with no AI or key.
+// Zuffi's built-in brain: understands everyday requests instantly, offline, with no AI or key.
 import * as chrono from './lib/chrono.js';
 import { store } from './store.js';
 import { t as tr, normalizeCommand } from './i18n.js';
@@ -169,11 +169,11 @@ export function icsFor(item) {
   const alarm = item.type === 'meeting' ? `-PT${Math.max(5, +store.settings.lead || 10)}M` : 'PT0M';
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sparrow//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT', `UID:${item.id}@sparrow`, `DTSTAMP:${icsDate(new Date())}`, `DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`,
-    `SUMMARY:${icsEsc(item.title)}`, rrule(item.repeat), 'DESCRIPTION:Added by Sparrow 🐦',
+    `SUMMARY:${icsEsc(item.title)}`, rrule(item.repeat), 'DESCRIPTION:Added by Zuffi 🐦',
     'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(item.title)}`, `TRIGGER:${alarm}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR',
   ].filter(Boolean).join('\r\n');
 }
-/** A month of prayer times as calendar events, so an iPhone alerts even when Sparrow is closed. */
+/** A month of prayer times as calendar events, so an iPhone alerts even when Zuffi is closed. */
 export function prayerICS(lat, lon, days = 30) {
   const p = store.settings.prayer, lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sparrow//EN'];
   for (let i = 0; i < days; i++) {
@@ -189,7 +189,7 @@ export function prayerICS(lat, lon, days = 30) {
 export function googleCalUrl(item) {
   const start = new Date(item.when);
   const end = new Date(start.getTime() + (item.type === 'meeting' ? 60 : 15) * 60000);
-  const p = new URLSearchParams({ action: 'TEMPLATE', text: item.title, dates: `${icsDate(start)}/${icsDate(end)}`, details: 'Added by Sparrow 🐦' });
+  const p = new URLSearchParams({ action: 'TEMPLATE', text: item.title, dates: `${icsDate(start)}/${icsDate(end)}`, details: 'Added by Zuffi 🐦' });
   if (item.repeat) p.set('recur', rrule(item.repeat));
   return 'https://calendar.google.com/calendar/render?' + p.toString();
 }
@@ -602,7 +602,7 @@ export async function handle(input) {
     const q = t.replace(/\b(which|what|file|files|pdfs?|documents?|docs?|did|i|you|send|sent|give|gave|share|shared|upload|uploaded|attach|attached|to|on|in|the|me|my|last|this|week|month|year|today|yesterday|show|memory|history|do|ask|save|from|about|of|a)\b/g, ' ')
       .replace(/\b\d{1,2}(st|nd|rd|th)?\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\b|\b(mon|tues|wed|thurs|fri|sat|sun)\w*\b/g, ' ').trim();
     const results = await mem.search({ q, from: range?.[0] || 0, to: range?.[1] || Infinity, kinds });
-    return { reply: results.length ? `I found ${results.length} thing${results.length > 1 ? 's' : ''}${range ? ' from ' + new Date(range[0]).toLocaleDateString([], { day: 'numeric', month: 'short' }) + (range[1] - range[0] > 86400e3 + 1 ? ' – ' + new Date(range[1] - 1).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '') : ''}:` : "I don't remember anything like that. I only remember what passed through Sparrow.", results };
+    return { reply: results.length ? `I found ${results.length} thing${results.length > 1 ? 's' : ''}${range ? ' from ' + new Date(range[0]).toLocaleDateString([], { day: 'numeric', month: 'short' }) + (range[1] - range[0] > 86400e3 + 1 ? ' – ' + new Date(range[1] - 1).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '') : ''}:` : "I don't remember anything like that. I only remember what passed through Zuffi.", results };
   }
 
   // ----- list reminders / tasks / meetings -----
@@ -649,7 +649,7 @@ export async function handle(input) {
   if (/^(read|check|what('?s| is)) (my )?(latest|last|new(est)?) (email|mail|message)/.test(t)) {
     if (D?.platform() === 'mac') {
       const r = await D.mail('latest');
-      if (r?.error) return { reply: "I couldn't read Mail. Open the Mail app once, then allow Sparrow under System Settings → Privacy & Security → Automation." };
+      if (r?.error) return { reply: "I couldn't read Mail. Open the Mail app once, then allow Zuffi under System Settings → Privacy & Security → Automation." };
       return { reply: `📧 From ${r.from}\nSubject: ${r.subject}\n${r.body.slice(0, 500)}${r.body.length > 500 ? '…' : ''}\n\nSay "reply saying …" or "draft a reply".`, action: 'email', email: r };
     }
     return { reply: 'On this device I can write emails for you, but I can’t read your inbox. Say "email Ali about the invoice".' };

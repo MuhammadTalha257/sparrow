@@ -1,4 +1,4 @@
-// Sparrow for Mac and Windows — one friendly panel that drops down from the top of
+// Zuffi for Mac and Windows — one friendly panel that drops down from the top of
 // the screen, a tiny bar that stays there, and a menu-bar / tray icon. It keeps running
 // in the background so reminders, the morning briefing and the check-in always happen.
 const { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, globalShortcut, protocol, net, nativeImage,
@@ -43,7 +43,7 @@ const ps = script => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-C
 const detached = (cmd, args) => { try { spawn(cmd, args, { detached: true, windowsHide: true, stdio: 'ignore' }).unref(); } catch {} };
 
 // ---------- windows ----------
-// The Sparrow island: one see-through window across the top of the screen. Only the island itself
+// The Zuffi island: one see-through window across the top of the screen. Only the island itself
 // catches the mouse; everything else clicks straight through to your apps.
 let expanded = false;
 function islandBounds() {
@@ -58,7 +58,7 @@ function createPanel() {
   panel = new BrowserWindow({
     ...islandBounds(), show: false, frame: false, transparent: true, backgroundColor: '#00000000', resizable: false, movable: false,
     minimizable: false, maximizable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true, fullscreenable: false,
-    roundedCorners: false, enableLargerThanScreen: true, title: 'Sparrow', icon: path.join(WWW, 'icons', 'icon-512.png'),
+    roundedCorners: false, enableLargerThanScreen: true, title: 'Zuffi', icon: path.join(WWW, 'icons', 'icon-512.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false,
       backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', spellcheck: false,
@@ -85,15 +85,15 @@ ipcMain.on('mouse-inside', (_e, inside) => panel && panel.setIgnoreMouseEvents(!
 function createTray() {
   let img = nativeImage.createFromPath(path.join(WWW, 'icons', 'icon-192.png')).resize({ width: isMac ? 18 : 16, height: isMac ? 18 : 16 });
   tray = new Tray(img);
-  tray.setToolTip('Sparrow');
+  tray.setToolTip('Zuffi');
   const menu = () => Menu.buildFromTemplate([
-    { label: 'Open Sparrow', accelerator: 'CommandOrControl+Shift+Space', click: showPanel },
-    { label: 'Talk to Sparrow', click: () => { showPanel(); toPanel('command', 'listen'); } },
+    { label: 'Open Zuffi', accelerator: 'CommandOrControl+Shift+Space', click: showPanel },
+    { label: 'Talk to Zuffi', click: () => { showPanel(); toPanel('command', 'listen'); } },
     { type: 'separator' },
     { label: 'Show the island when closed', type: 'checkbox', checked: settings.pill, click: i => setSetting('pill', i.checked) },
     { label: isMac ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: settings.login, click: i => setSetting('login', i.checked) },
     { type: 'separator' },
-    { label: 'Quit Sparrow', click: () => { quitting = true; app.quit(); } },
+    { label: 'Quit Zuffi', click: () => { quitting = true; app.quit(); } },
   ]);
   tray.setContextMenu(menu());
   if (!isMac) tray.on('click', togglePanel);

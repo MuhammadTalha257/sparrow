@@ -144,8 +144,8 @@ jobs:
       - name: Make the download (.dmg)
         run: |
           du -sh mac/build/Release/Sparrow.app/Contents/Resources/speech
-          mkdir -p dmg && cp -R mac/build/Release/Sparrow.app dmg/ && ln -s /Applications dmg/Applications
-          hdiutil create -volname "Sparrow" -srcfolder dmg -ov -format UDZO Sparrow.dmg
+          mkdir -p dmg && cp -R mac/build/Release/Sparrow.app dmg/Zuffi.app && ln -s /Applications dmg/Applications
+          hdiutil create -volname "Zuffi" -srcfolder dmg -ov -format UDZO Zuffi.dmg && cp Zuffi.dmg Sparrow.dmg
           ls -lh Sparrow.dmg
 
       - name: Close the build-errors issue
@@ -163,11 +163,13 @@ jobs:
           name: Sparrow for Mac (test copy)
           prerelease: true
           make_latest: false
-          files: Sparrow.dmg
+          files: |
+            Zuffi.dmg
+            Sparrow.dmg
           body: |
             **Test copy** — try it before it becomes the main download.
             1. Quit Sparrow (menu bar icon → Quit).
-            2. Download `Sparrow.dmg`, open it, drag **Sparrow** onto **Applications** and choose **Replace**.
+            2. Download `Sparrow.dmg`, open it, drag **Zuffi** onto **Applications** and choose **Replace**.
             3. Open it; if macOS blocks it: System Settings → Privacy & Security → **Open Anyway**.
 
       - name: Publish download
@@ -177,7 +179,9 @@ jobs:
           tag_name: mac-latest
           name: Sparrow for Mac
           make_latest: false
-          files: Sparrow.dmg
+          files: |
+            Zuffi.dmg
+            Sparrow.dmg
           body: |
             **Install Sparrow on your Mac**
             1. Download `Sparrow.dmg` and open it.

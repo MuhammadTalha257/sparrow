@@ -2,10 +2,10 @@ import Foundation
 import AppKit
 
 // =====================================================================
-// MARK: - Smart planner: talk to Sparrow like a person
+// MARK: - Smart planner: talk to Zuffi like a person
 // When the instant built-in rules don't recognise a request, a fast AI (Groq — free, ~0.3 s;
 // or Gemini / ChatGPT) turns whatever you said — any wording, English, Urdu, Hindi, Roman Urdu,
-// several things at once — into Sparrow's own commands. Sparrow runs them and answers naturally.
+// several things at once — into Zuffi's own commands. Zuffi runs them and answers naturally.
 // =====================================================================
 
 @MainActor
@@ -42,8 +42,8 @@ final class SmartPlanner {
         let name = AssistantPrefs.displayName
         let app = AppState.shared.lastExternalApp?.localizedName ?? "unknown"
         return """
-        You are Sparrow, a warm, quick assistant living on the user's Mac. Now: \(f.string(from: Date())). User: \(name.isEmpty ? "unknown" : name). Front app: \(app).
-        Turn what the user said (any language: English, Urdu, Hindi, Punjabi, Roman Urdu, mixed) into Sparrow commands, in order.
+        You are Zuffi, a warm, quick assistant living on the user's Mac. Now: \(f.string(from: Date())). User: \(name.isEmpty ? "unknown" : name). Front app: \(app).
+        Turn what the user said (any language: English, Urdu, Hindi, Punjabi, Roman Urdu, mixed) into Zuffi commands, in order.
         Write every command in ENGLISH using exactly these forms:
         \(Self.commands)
         Rules:
@@ -132,7 +132,7 @@ final class SmartPlanner {
         return nil
     }
 
-    /// Runs a plan: every command through Sparrow's own agents, then one natural answer.
+    /// Runs a plan: every command through Zuffi's own agents, then one natural answer.
     func run(_ plan: Plan) async -> String {
         var results: [String] = []
         for (i, c) in plan.commands.enumerated() {

@@ -34,8 +34,8 @@ final class Planner {
         return await Self.askReminders()
     }
 
-    private let noCalendar = "I need access to Calendar: System Settings → Privacy & Security → Calendars → Sparrow."
-    private let noReminders = "I need access to Reminders: System Settings → Privacy & Security → Reminders → Sparrow."
+    private let noCalendar = "I need access to Calendar: System Settings → Privacy & Security → Calendars → Zuffi."
+    private let noReminders = "I need access to Reminders: System Settings → Privacy & Security → Reminders → Zuffi."
 
     // MARK: Date understanding (Apple's built-in detector — offline)
 
@@ -160,7 +160,7 @@ final class Planner {
             if CommandEngine.shared.runAppleScript("tell application \"Notes\" to make new note with properties {body:\"\(esc)\"}") != nil {
                 return "📝 Saved in your Notes app."
             }
-            return "I couldn't reach Notes. Allow Sparrow under System Settings → Privacy & Security → Automation."
+            return "I couldn't reach Notes. Allow Zuffi under System Settings → Privacy & Security → Automation."
         }
 
         // Tasks → Reminders without a time
@@ -215,7 +215,7 @@ final class Planner {
         e.endDate = start.addingTimeInterval(3600)
         e.calendar = s.defaultCalendarForNewEvents
         e.addAlarm(EKAlarm(relativeOffset: -600))
-        e.notes = "Added by Sparrow 🐦"
+        e.notes = "Added by Zuffi 🐦"
         do { try s.save(e, span: .thisEvent, commit: true); return true } catch { return false }
     }
 

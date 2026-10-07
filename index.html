@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<title>Sparrow</title>
-<meta name="description" content="Sparrow — your friendly little helper for meetings, tasks, reminders, files and more.">
+<title>Zuffi</title>
+<meta name="description" content="Zuffi — your friendly little helper for meetings, tasks, reminders, files and more.">
 <meta name="theme-color" content="#EEF4FB">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Sparrow">
+<meta name="apple-mobile-web-app-title" content="Zuffi">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -109,7 +109,7 @@
       <button data-k="done,task,reminder,meeting">Plans</button><button data-k="quote,invoice,expense,timer,customer">Business</button>
     </div>
     <div id="memList"></div>
-    <p class="hint">Sparrow remembers only what passes through Sparrow, on this device. Pause or wipe it in Settings → Memory.</p>
+    <p class="hint">Zuffi remembers only what passes through Zuffi, on this device. Pause or wipe it in Settings → Memory.</p>
   </section>
 
   <!-- TOOLS -->
@@ -144,7 +144,7 @@
   </button>
   <input type="file" id="fileInput" multiple hidden>
   <div class="attached" id="attached" hidden></div>
-  <input id="askInput" data-i18n-ph="ask" placeholder="Ask Sparrow… e.g. remind me to call mum at 6pm" enterkeyhint="send">
+  <input id="askInput" data-i18n-ph="ask" placeholder="Ask Zuffi… e.g. remind me to call mum at 6pm" enterkeyhint="send">
   <button type="button" class="mic" id="micBtn" aria-label="Talk">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
   </button>
@@ -152,7 +152,7 @@
     <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 12 20 4l-4 16-4-7-8-1Z"/></svg>
   </button>
 </form>
-<div class="listen-hint" id="listenHint" hidden>Say “Sparrow…” any time</div>
+<div class="listen-hint" id="listenHint" hidden>Say “Zuffi…” any time</div>
 
 <nav class="tabs">
   <button data-v="home" class="on"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span data-i18n="home">Home</span></button>
@@ -169,7 +169,7 @@
   <div class="live-orb" id="liveOrb"><div class="live-ring"></div><div class="live-ring r2"></div><div id="liveBird"></div></div>
   <div class="live-status" id="liveStatus">Connecting…</div>
   <div class="live-caption" id="liveCaption"></div>
-  <div class="live-btns"><button class="live-btn" id="liveCam" title="Show Sparrow">📷</button><button class="live-btn end" id="liveEnd" title="End">✕</button></div>
+  <div class="live-btns"><button class="live-btn" id="liveCam" title="Show Zuffi">📷</button><button class="live-btn end" id="liveEnd" title="End">✕</button></div>
 </div>
 <div class="sheet" id="sheet" hidden>
   <div class="grab"></div>
@@ -192,7 +192,7 @@
   </details>
 
   <details><summary>🗣️ Voice</summary>
-    <div class="field"><span>Sparrow's voice</span><div class="seg small" id="sGender"><button data-g="female">Female</button><button data-g="male">Male</button></div></div>
+    <div class="field"><span>Zuffi's voice</span><div class="seg small" id="sGender"><button data-g="female">Female</button><button data-g="male">Male</button></div></div>
     <label class="field"><span>Voice</span><select id="sVoiceName"></select></label>
     <label class="row"><input type="checkbox" id="sNeural"> ✨ Natural voice (built in, works offline). Speaks Urdu, Hindi and Punjabi too</label>
     <div id="macVoice" hidden>
@@ -207,9 +207,9 @@
       <button class="btn ghost" id="studioInstall" hidden>⬇️ Install Studio voice</button>
     </div>
     <label class="row"><input type="checkbox" id="sSpeak"> Speak answers out loud</label>
-    <label class="row"><input type="checkbox" id="sWake"> Talk without pressing anything — just say “Sparrow…”</label>
-    <label class="row" id="handsFreeRow"><input type="checkbox" id="sHandsFree"> 🎧 Hands-free: act on clear requests (“play some music”, “open Chrome”) even without saying “Sparrow”</label>
-    <label class="row"><input type="checkbox" id="sConv"> Keep listening after Sparrow answers (conversation)</label>
+    <label class="row"><input type="checkbox" id="sWake"> Talk without pressing anything — just say “Zuffi…”</label>
+    <label class="row" id="handsFreeRow"><input type="checkbox" id="sHandsFree"> 🎧 Hands-free: act on clear requests (“play some music”, “open Chrome”) even without saying “Zuffi”</label>
+    <label class="row"><input type="checkbox" id="sConv"> Keep listening after Zuffi answers (conversation)</label>
     <label class="row mac-hide"><input type="checkbox" id="sLive"> Jarvis conversation: tap the mic once, then just talk (natural voice, any language — needs a Gemini key)</label>
     <label class="field mac-hide"><span>Jarvis voice</span><select id="sLiveVoice"><option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option><option>Puck</option><option>Charon</option><option>Orus</option><option>Fenrir</option></select></label>
     <label class="row"><input type="checkbox" id="sMic"> Show the mic button</label>
@@ -245,7 +245,7 @@
   </details>
 
   <details><summary>✨ AI</summary>
-    <p class="small-text">Everyday commands work without any AI. For open questions, Sparrow uses the first one that's available.</p>
+    <p class="small-text">Everyday commands work without any AI. For open questions, Zuffi uses the first one that's available.</p>
     <label class="field"><span>Preferred AI</span><select id="sProvider"></select></label>
     <div id="ollamaBox" class="desktop-only">
       <label class="field"><span>Ollama model on this computer (free)</span><select id="sOllama"><option value="">Automatic</option></select></label>
@@ -270,8 +270,8 @@
   </details>
 
   <details><summary>🧠 Memory</summary>
-    <label class="row"><input type="checkbox" id="mOn"> Remember what I do with Sparrow (on this device only)</label>
-    <label class="row"><input type="checkbox" id="mCopies"> Keep a copy of files I give Sparrow</label>
+    <label class="row"><input type="checkbox" id="mOn"> Remember what I do with Zuffi (on this device only)</label>
+    <label class="row"><input type="checkbox" id="mCopies"> Keep a copy of files I give Zuffi</label>
     <label class="row desktop-only"><input type="checkbox" id="mRecent"> Also look at files I worked on recently (this computer)</label>
     <label class="field"><span>Forget things older than</span><select id="mDays"><option value="0">Keep forever</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></label>
     <div class="row-btns"><button class="btn ghost" id="mExport">Export memory</button><button class="btn danger" id="mWipe">Forget everything</button></div>
@@ -280,7 +280,7 @@
   <div id="androidSection" hidden>
     <details><summary>🤖 Android powers</summary>
       <label class="row"><input type="checkbox" id="aBubble"> 🐦 Floating sparrow over other apps</label>
-      <label class="row"><input type="checkbox" id="aWake"> 🗣️ Listen for “Sparrow…” hands-free (offline)</label>
+      <label class="row"><input type="checkbox" id="aWake"> 🗣️ Listen for “Zuffi…” hands-free (offline)</label>
       <label class="row"><input type="checkbox" id="aNotif"> 🔔 Read new notifications out loud</label>
       <p class="small-text" id="aNote"></p>
     </details>
@@ -291,7 +291,7 @@
     <p class="small-text">Everything is saved only on this device.</p>
     <div class="row-btns"><button class="btn ghost" id="exportBtn">Export backup</button><button class="btn danger" id="clearBtn">Delete everything</button></div>
   </details>
-  <p class="small-text center">Sparrow · made with 🧡 · <a href="https://lisansystems.com" target="_blank" rel="noopener">lisansystems.com</a></p>
+  <p class="small-text center">Zuffi · made with 🧡 · <a href="https://lisansystems.com" target="_blank" rel="noopener">lisansystems.com</a></p>
 </div>
 
 <!-- Evening check-in -->

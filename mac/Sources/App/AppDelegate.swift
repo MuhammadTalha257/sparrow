@@ -21,16 +21,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenuBarItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem?.button else { return }
-        button.image = NSImage(named: "MenuBarIcon") ?? NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Sparrow")
+        button.image = NSImage(named: "MenuBarIcon") ?? NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Zuffi")
         button.image?.size = NSSize(width: 24, height: 18)
-        button.image?.accessibilityDescription = "Sparrow"
+        button.image?.accessibilityDescription = "Zuffi"
         button.image?.isTemplate = true
 
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open Sparrow", action: #selector(openIsland), keyEquivalent: "")
+        menu.addItem(withTitle: "Open Zuffi", action: #selector(openIsland), keyEquivalent: "")
         menu.addItem(withTitle: "Today — meetings & tasks…", action: #selector(openToday), keyEquivalent: "t")
         menu.addItem(withTitle: "More — habits, prayer, memory, invoices, tools…", action: #selector(openMore), keyEquivalent: "m")
-        let pet = NSMenuItem(title: "Show Sparrow on screen", action: #selector(togglePet), keyEquivalent: "p")
+        let pet = NSMenuItem(title: "Show Zuffi on screen", action: #selector(togglePet), keyEquivalent: "p")
         pet.tag = 42
         menu.addItem(pet)
         menu.addItem(.separator())
@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updatePetMenuTitle() {
-        statusItem?.menu?.item(withTag: 42)?.title = PetController.shared.isShown ? "Hide Sparrow from screen" : "Show Sparrow on screen"
+        statusItem?.menu?.item(withTag: 42)?.title = PetController.shared.isShown ? "Hide Zuffi from screen" : "Show Zuffi on screen"
     }
 
     private var settingsWindow: NSWindow?
@@ -73,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 720),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable],
                            backing: .buffered, defer: false)
-        win.title = "Settings — Sparrow"
+        win.title = "Settings — Zuffi"
         let host = NSHostingView(rootView: SettingsView())
         host.sizingOptions = [.minSize]
         win.contentView = host
@@ -106,12 +106,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         islandController = IslandWindowController()
         islandController?.showWindow(nil)
         islandController?.fsm.launch()
-        // Developer-service monitors only run when you've connected them (keeps Sparrow light).
+        // Developer-service monitors only run when you've connected them (keeps Zuffi light).
         NotificationCenter.default.addObserver(self, selector: #selector(openSettings),
                                                name: .openFullSettings, object: nil)
         // Voice, greeting, weather and notification reading
         Assistant.start()
         PhoneLink.shared.startIfEnabled()
+        SetupWizard.shared.showIfFirstRun()
         WebHub.shared.start()
         NativeSpeech.shared.start()
         HoldToTalk.start()

@@ -290,7 +290,7 @@ struct UploadCanvasView: View {
         cCtx.draw(btn2, at: CGPoint(x:350, y:126), anchor: .center)
     }
 
-    // MARK: - Sparrow body (eyes, beak, mouth)
+    // MARK: - Zuffi body (eyes, beak, mouth)
 
     private func drawMochi(ctx: inout GraphicsContext, f: USFrame) {
         let R  = f.d / 2 / 1.04
@@ -313,7 +313,7 @@ struct UploadCanvasView: View {
             startPoint:  CGPoint(x:  rx*0.7, y: -ry*0.9),
             endPoint:    CGPoint(x: -rx*0.8, y:  ry*0.9)))
 
-        // ── Sparrow plumage: dark crown + cream belly ─────────────
+        // ── Zuffi plumage: dark crown + cream belly ─────────────
         do {
             var pc = c
             pc.clip(to: bp)

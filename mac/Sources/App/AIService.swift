@@ -9,7 +9,7 @@ import FoundationModels
 // MARK: - Providers
 
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
-    case auto, claude, openai, gemini, groq, ollama, apple
+    case auto, claude, openai, gemini, groq, ollama, apple, claudeCode, codex
     var id: String { rawValue }
 
     var label: String {
@@ -21,6 +21,8 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .groq:   return "Groq (fast, free)"
         case .ollama: return "Ollama (local)"
         case .apple:  return "Apple (on-device)"
+        case .claudeCode: return "My Claude (Claude Code)"
+        case .codex:  return "My ChatGPT (Codex)"
         }
     }
 
@@ -33,6 +35,8 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .groq:   return "bolt.fill"
         case .ollama: return "desktopcomputer"
         case .apple:  return "apple.logo"
+        case .claudeCode: return "terminal.fill"
+        case .codex:  return "terminal"
         }
     }
 
@@ -64,7 +68,7 @@ final class AIService {
     private var lastContextKey: String?
 
     static let systemPrompt = """
-    You are Sparrow, a friendly, smart AI assistant that lives at the top of the user's computer screen. \
+    You are Zuffi, a friendly, smart AI assistant that lives at the top of the user's computer screen. \
     Help with anything: questions, writing, summaries, translations, code, ideas and everyday tasks. \
     Reply in the user's language. Be clear and concise unless the user asks for detail. \
     Use plain text with line breaks, no markdown symbols like ** or ##.
@@ -104,7 +108,7 @@ final class AIService {
             finish(reply, state: state, emote: .happy)
             return
         }
-        // 1b) Everything else Sparrow can do offline (habits, prayer times, memory, invoices, time, expenses…).
+        // 1b) Everything else Zuffi can do offline (habits, prayer times, memory, invoices, time, expenses…).
         if context == nil, let reply = await WebHub.shared.ask(query) {
             finish(reply, state: state, emote: .happy)
             return
@@ -173,8 +177,21 @@ final class AIService {
         case .groq:   return try await callGroq(state: state)
         case .ollama: return try await callOllama(state: state)
         case .apple:  return try await callApple()
+        case .claudeCode, .codex:
+            guard let tool = p == .claudeCode ? InstalledAI.claudeCode : InstalledAI.codex else {
+                throw NSError(domain: "Zuffi", code: 0, userInfo: [NSLocalizedDescriptionKey: "\(p.label) isn't installed on this Mac."])
+            }
+            return try await InstalledAI.ask(tool, prompt: cliPrompt())
         default:      return ""
         }
+    }
+
+    /// One prompt for a command-line AI: Zuffi's instructions, any document, and the recent conversation.
+    private func cliPrompt() -> String {
+        var t = "You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n"
+        if let d = document { t += "\nDocument the user shared:\n\(d.prefix(20_000))\n" }
+        for m in history.suffix(12) { t += "\n\(m.role == "assistant" ? "Zuffi" : "User"): \(m.text)" }
+        return t + "\nZuffi:"
     }
 
     /// The chosen provider, then every other one that is ready (keys first, then on-device).
@@ -203,6 +220,9 @@ final class AIService {
         for p in [AIProvider.claude, .groq, .openai, .gemini] {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { return p }
         }
+        // The subscription you already pay for (Claude Code / Codex), if installed.
+        if InstalledAI.claudeCode != nil { return .claudeCode }
+        if InstalledAI.codex != nil { return .codex }
         if Self.appleModelAvailable { return .apple }
         let local = await Self.ollamaModels()
         if !local.isEmpty { return .ollama }
@@ -285,14 +305,14 @@ final class AIService {
             if let e = json["error"] as? [String: Any], let m = e["message"] as? String { msg = m }
             else if let m = json["error"] as? String { msg = m }
             if code == 401 || code == 403 { msg += " — check the API key in Settings." }
-            throw NSError(domain: "Sparrow", code: code, userInfo: [NSLocalizedDescriptionKey: msg])
+            throw NSError(domain: "Zuffi", code: code, userInfo: [NSLocalizedDescriptionKey: msg])
         }
         return json
     }
 
     private func key(_ p: AIProvider) throws -> String {
         guard let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty else {
-            throw NSError(domain: "Sparrow", code: 0,
+            throw NSError(domain: "Zuffi", code: 0,
                           userInfo: [NSLocalizedDescriptionKey: "No API key yet. Add it in Settings → AI models."])
         }
         return v
@@ -356,7 +376,7 @@ final class AIService {
         return text
     }
 
-    // MARK: Model discovery (so Sparrow keeps working when providers retire models)
+    // MARK: Model discovery (so Zuffi keeps working when providers retire models)
 
     static func isModelProblem(_ error: Error) -> Bool {
         let m = error.localizedDescription.lowercased()
@@ -398,7 +418,7 @@ final class AIService {
             if let m = pool.filter({ $0.contains("flash") }).max(by: { version($0) < version($1) }) { return m }
             if let m = pool.max(by: { version($0) < version($1) }) { return m }
         }
-        throw NSError(domain: "Sparrow", code: 404, userInfo: [NSLocalizedDescriptionKey: "No Gemini model is available for this key."])
+        throw NSError(domain: "Zuffi", code: 404, userInfo: [NSLocalizedDescriptionKey: "No Gemini model is available for this key."])
     }
 
     // MARK: Google Gemini
@@ -463,7 +483,7 @@ final class AIService {
         if model.isEmpty {
             let installed = await Self.ollamaModels()
             guard let first = installed.first else {
-                throw NSError(domain: "Sparrow", code: 0, userInfo: [NSLocalizedDescriptionKey:
+                throw NSError(domain: "Zuffi", code: 0, userInfo: [NSLocalizedDescriptionKey:
                     "Ollama isn't running or has no models. Open Ollama, or pick another AI in Settings."])
             }
             model = first
@@ -498,17 +518,17 @@ final class AIService {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *), Self.appleModelAvailable {
             let session = LanguageModelSession(instructions: fullSystemPrompt)
-            let transcript = history.suffix(12).map { ($0.role == "user" ? "User: " : "Sparrow: ") + $0.text }
+            let transcript = history.suffix(12).map { ($0.role == "user" ? "User: " : "Zuffi: ") + $0.text }
                 .joined(separator: "\n\n")
             let response = try await session.respond(to: transcript + "\n\nSparrow:")
             return response.content
         }
         #endif
-        throw NSError(domain: "Sparrow", code: 0, userInfo: [NSLocalizedDescriptionKey:
+        throw NSError(domain: "Zuffi", code: 0, userInfo: [NSLocalizedDescriptionKey:
             "Apple's on-device model needs a Mac with Apple silicon (M1 or newer) and Apple Intelligence turned on."])
     }
 
-    private static let badResponse = NSError(domain: "Sparrow", code: 0,
+    private static let badResponse = NSError(domain: "Zuffi", code: 0,
                                              userInfo: [NSLocalizedDescriptionKey: "Unexpected answer from the AI."])
 }
 
@@ -561,8 +581,10 @@ struct AIModelsSettings: View {
                 Picker("Use", selection: $state.aiProvider) {
                     ForEach(AIProvider.allCases) { p in Text(p.label).tag(p.rawValue) }
                 }
-                Text("Auto picks the first one that's set up: Claude, Groq, ChatGPT, Gemini, Apple, then Ollama — and if one fails, Sparrow quietly tries the next. Models are picked automatically. Opening apps, music and volume always work, even with nothing set up.")
+                Text("Auto picks the first one that's set up: Claude, Groq, ChatGPT, Gemini, Apple, then Ollama — and if one fails, Zuffi quietly tries the next. Models are picked automatically. Opening apps, music and volume always work, even with nothing set up.")
                     .font(.system(size: 11)).foregroundColor(.secondary)
+
+                InstalledAIView(state: state)
 
                 Divider()
                 Text("ChatGPT (OpenAI)").font(.system(size: 12, weight: .semibold))

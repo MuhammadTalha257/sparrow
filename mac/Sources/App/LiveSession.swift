@@ -5,14 +5,14 @@ import ScreenCaptureKit
 
 // =====================================================================
 // MARK: - Live conversation ("Jarvis mode")
-// Say "Sparrow…" once and just talk. Sparrow listens and answers in one
+// Say "Zuffi…" once and just talk. Zuffi listens and answers in one
 // continuous conversation — no name needed again — until you say
 // "thank you", "bye" or go quiet. It hears and speaks in one step
 // (Gemini Live, native audio): fast, natural, any language (it answers
 // in the language you speak), you can interrupt it, and it acts while you
-// talk by calling Sparrow's own agents (apps, Mac control, reminders, email,
+// talk by calling Zuffi's own agents (apps, Mac control, reminders, email,
 // WhatsApp, jobs, camera, screen, web search).
-// Needs internet and a Gemini key (Settings → AI). Without them Sparrow
+// Needs internet and a Gemini key (Settings → AI). Without them Zuffi
 // uses its offline voice as before.
 // =====================================================================
 
@@ -46,6 +46,11 @@ final class LiveSession: NSObject {
     private var lastActivity = Date()
     private var endAfterTurn = false
     private var pendingTools = 0
+
+    // For Zuffi's face (the bunny reads these ~20×/s).
+    var speakingNow: Bool { active && Date() < playingUntil }
+    var workingNow: Bool { active && pendingTools > 0 }
+    var listeningNow: Bool { active && ready && !speakingNow && pendingTools == 0 }
     private var ticker: Timer?
     private var startedAt = Date()
 
@@ -65,8 +70,9 @@ final class LiveSession: NSObject {
 
     // MARK: Start / stop
 
-    /// Starts a conversation. `text` = what was already said with "Sparrow, …" (answered straight away).
+    /// Starts a conversation. `text` = what was already said with "Zuffi, …" (answered straight away).
     func start(text: String? = nil, image: Data? = nil) {
+        guard VoiceEngine.micOn else { VoiceEngine.shared.speak("Your mic is off. Turn it on with the mic button and I'll listen."); return }
         if active {
             if let image { sendImage(image) }
             if let text, !text.isEmpty { sendText(text) }
@@ -97,7 +103,7 @@ final class LiveSession: NSObject {
         }
     }
 
-    /// Ends the conversation and goes back to listening for "Sparrow…".
+    /// Ends the conversation and goes back to listening for "Zuffi…".
     func stop(_ why: String) {
         guard active else { return }
         active = false; ready = false
@@ -213,7 +219,7 @@ final class LiveSession: NSObject {
         send(["realtimeInput": ["video": ["data": jpeg.base64EncodedString(), "mimeType": "image/jpeg"]]])
     }
 
-    // MARK: The setup: who Sparrow is, how it talks, what it can do
+    // MARK: The setup: who Zuffi is, how it talks, what it can do
 
     private func setupMessage(model: String, search: Bool) async -> [String: Any] {
         var gen: [String: Any] = [
@@ -242,7 +248,7 @@ final class LiveSession: NSObject {
         let items = await WebHub.shared.callJS("return window.Sparrow.listItems ? JSON.stringify(window.Sparrow.listItems()) : '[]'") as? String ?? "[]"
         let front = AppState.shared.lastExternalApp?.localizedName ?? "unknown"
         return """
-        You are Sparrow, \(name.isEmpty ? "the user's" : name + "'s") personal assistant living on their Mac — like JARVIS: calm, quick, warm, a little witty, always useful. You have a team of agents (tools) that do real things on this Mac.
+        You are Zuffi, \(name.isEmpty ? "the user's" : name + "'s") personal assistant living on their Mac — like JARVIS: calm, quick, warm, a little witty, always useful. You have a team of agents (tools) that do real things on this Mac.
         Now: \(f.string(from: Date())) (\(tz)). Front app: \(front).
         Their reminders, meetings and tasks (JSON, id = what tools need): \(items.prefix(4000))
 
@@ -270,7 +276,7 @@ final class LiveSession: NSObject {
         """
     }
 
-    // MARK: Messages from Sparrow's voice brain
+    // MARK: Messages from Zuffi's voice brain
 
     private func handle(_ data: Data) {
         guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -332,7 +338,7 @@ final class LiveSession: NSObject {
         }
     }
 
-    // MARK: Tools (Sparrow's agents)
+    // MARK: Tools (Zuffi's agents)
 
     private func toolCalls(_ calls: [[String: Any]]) {
         lastActivity = Date()
@@ -354,7 +360,7 @@ final class LiveSession: NSObject {
         }
     }
 
-    // MARK: Audio in/out (one engine, with echo cancellation so Sparrow doesn't hear itself)
+    // MARK: Audio in/out (one engine, with echo cancellation so Zuffi doesn't hear itself)
 
     /// Some Macs (or mic/speaker combinations) refuse Apple's echo cancellation — remembered so it isn't tried again.
     private static var echoBroken = UserDefaults.standard.bool(forKey: "liveEchoBroken")
@@ -445,7 +451,7 @@ final class LiveSession: NSObject {
         playingUntil = max(playingUntil, Date()).addingTimeInterval(dur)
         lastActivity = Date()
         VoiceEngine.shared.noteLevel(peak * 0.35)
-        // Without echo cancellation, don't send the mic while Sparrow talks (it would hear itself).
+        // Without echo cancellation, don't send the mic while Zuffi talks (it would hear itself).
         if !echoCancel {
             wire.setMuted(true)
             let until = playingUntil
@@ -518,7 +524,7 @@ final class LiveSocketDelegate: NSObject, URLSessionWebSocketDelegate, @unchecke
     }
 }
 
-// MARK: - What Sparrow's voice brain can ask the agents to do
+// MARK: - What Zuffi's voice brain can ask the agents to do
 
 @MainActor
 enum LiveTools {
@@ -530,7 +536,7 @@ enum LiveTools {
     private static let str: (String) -> [String: Any] = { ["type": "STRING", "description": $0] }
 
     static let declarations: [[String: Any]] = [
-        fn("run_command", "Do something on the Mac with Sparrow's agents. Write one clear English command, e.g. 'open Spotify', 'play music', 'volume 40', 'turn off wifi', 'open Notes and create a note titled hello', 'search google for Norbert Wiener', 'open x.com', 'what's the weather', 'prayer times', 'start meeting notes', 'lock screen', 'put Safari on the left and Notes on the right'.",
+        fn("run_command", "Do something on the Mac with Zuffi's agents. Write one clear English command, e.g. 'open Spotify', 'play music', 'volume 40', 'turn off wifi', 'open Notes and create a note titled hello', 'search google for Norbert Wiener', 'open x.com', 'what's the weather', 'prayer times', 'start meeting notes', 'lock screen', 'put Safari on the left and Notes on the right'.",
            ["command": str("The command in plain English.")], required: ["command"]),
         fn("add_reminder", "Create a reminder, task or meeting at an exact time.",
            ["title": str("What to remind about, short."), "when": str("ISO 8601 local date-time, e.g. 2026-10-12T10:00:00"),
@@ -552,7 +558,7 @@ enum LiveTools {
         fn("take_photo", "Take a photo with the camera, save it to Pictures and show it."),
         fn("find_jobs", "Search jobs matching the user's CV.", ["role": str("Job title or skill, e.g. 'react developer'."), "location": str("City or 'remote'."),
                                                                   "level": str("internship | apprentice | entry | mid | senior | lead (optional)")], required: ["role"]),
-        fn("operate_screen", "Use the Mac's screen, mouse and keyboard to do a task in any app or website (clicking, typing, scrolling) — for things the other tools can't do, e.g. 'play the latest Arijit Singh song on YouTube', 'fill in this form with my details', 'find the cheapest flight on this page'. Sparrow sees the screen, acts step by step and asks the user before anything risky. Returns the result or a question for the user.",
+        fn("operate_screen", "Use the Mac's screen, mouse and keyboard to do a task in any app or website (clicking, typing, scrolling) — for things the other tools can't do, e.g. 'play the latest Arijit Singh song on YouTube', 'fill in this form with my details', 'find the cheapest flight on this page'. Zuffi sees the screen, acts step by step and asks the user before anything risky. Returns the result or a question for the user.",
            ["task": str("The whole task in plain English, with all details the user gave.")], required: ["task"]),
         fn("screen_answer", "The screen agent asked the user to confirm a risky step (send, buy, delete…). Pass their answer.", ["yes": ["type": "BOOLEAN", "description": "true if the user agreed"]], required: ["yes"]),
         fn("stop_screen", "Stop the screen agent right away (the user said stop / take over)."),
@@ -565,7 +571,7 @@ enum LiveTools {
 
     static func run(_ name: String, _ a: [String: Any]) async -> [String: Any] {
         func s(_ k: String) -> String { (a[k] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-        func ok(_ r: String?) -> [String: Any] { r.map { ["ok": true, "result": $0] } ?? ["ok": false, "result": "Sparrow couldn't do that."] }
+        func ok(_ r: String?) -> [String: Any] { r.map { ["ok": true, "result": $0] } ?? ["ok": false, "result": "Zuffi couldn't do that."] }
         defer { VoiceEngine.shared.listenAfterSpeech = false }    // agents may ask the offline voice to listen — not now
         switch name {
         case "run_command":
@@ -603,7 +609,7 @@ enum LiveTools {
             return ok(await WhatsAppAgent.shared.handle("send"))
         case "look_through_camera", "take_photo":
             guard let jpeg = await CameraSnap.capture() else {
-                return ["ok": false, "result": "I couldn't use the camera. Allow Sparrow under System Settings → Privacy & Security → Camera."]
+                return ["ok": false, "result": VoiceEngine.cameraOn ? "I couldn't use the camera. Allow Zuffi under System Settings → Privacy & Security → Camera." : "The camera is switched off in Zuffi. Ask the user to turn it on with the camera button."]
             }
             LiveSession.shared.sendImage(jpeg)
             if name == "take_photo" {
@@ -613,12 +619,12 @@ enum LiveTools {
                 let url = dir.appendingPathComponent("Photo \(f.string(from: Date())).jpg")
                 try? jpeg.write(to: url)
                 NSWorkspace.shared.open(url)
-                return ["ok": true, "result": "Photo taken and saved in Pictures → Sparrow. The image was also sent to you."]
+                return ["ok": true, "result": "Photo taken and saved in Pictures → Zuffi. The image was also sent to you."]
             }
             return ["ok": true, "result": "A photo from the camera was just sent to you as an image. Answer from what you see in it."]
         case "look_at_screen":
             guard let jpeg = await ScreenGrab.main()?.jpeg else {
-                return ["ok": false, "result": "I couldn't see the screen. Allow Sparrow under System Settings → Privacy & Security → Screen & System Audio Recording."]
+                return ["ok": false, "result": "I couldn't see the screen. Allow Zuffi under System Settings → Privacy & Security → Screen & System Audio Recording."]
             }
             LiveSession.shared.sendImage(jpeg)
             return ["ok": true, "result": "A screenshot was just sent to you as an image. Answer from what you see in it."]
@@ -654,6 +660,7 @@ final class CameraSnap: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Send
     private let session = AVCaptureSession()
 
     static func capture() async -> Data? {
+        guard await MainActor.run(body: { VoiceEngine.cameraOn }) else { return nil }
         let granted: Bool
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: granted = true

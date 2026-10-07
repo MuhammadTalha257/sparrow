@@ -695,98 +695,151 @@ struct MailView: View {
 
 struct PromptView: View {
     @ObservedObject var state: AppState
+    @ObservedObject private var voice = VoiceEngine.shared
     @State private var text: String = ""
     @FocusState private var focused: Bool
+    @State private var sentAt: Date?
+    @State private var lastMeta: String = ""
+    @State private var liked: Set<UUID> = []
+
+    private var thinking: Bool { state.stateOverride != nil }
+    private var listening: Bool { voice.status.hasPrefix("Listening") || LiveSession.shared.listeningNow }
 
     var body: some View {
-        ZStack(alignment: .leading) {
+        ZStack(alignment: .topLeading) {
             CardBackground(wash: .indigo)
 
-            VStack(alignment: .leading, spacing: 6) {
-                if let ctx = state.promptContext {
-                    ContextChip(context: ctx).padding(.top, 4)
-                }
-
-                if !state.chatHistory.isEmpty {
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(state.chatHistory) { msg in
-                                    ChatBubble(message: msg).id(msg.id)
-                                }
-                                if state.stateOverride != nil {
-                                    HStack { TypingDotsView(); Spacer(minLength: 32) }
-                                        .id("typing")
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .onChange(of: state.chatHistory.count) { _, _ in
-                            if let last = state.chatHistory.last {
-                                withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                            }
-                        }
-                        .onChange(of: state.stateOverride) { _, v in
-                            if v != nil { withAnimation { proxy.scrollTo("typing", anchor: .bottom) } }
-                        }
-                        .onAppear {
-                            if let last = state.chatHistory.last {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
-                    }
-                    .frame(maxHeight: .infinity)
-                } else {
-                    Spacer()
-                }
-
-                HStack(spacing: 6) {
-                    ProviderMenu(state: state)
-                    if !state.chatHistory.isEmpty || state.droppedFile != nil {
-                        Button { AppState.shared.newChat() } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "square.and.pencil").font(.system(size: 9, weight: .semibold))
-                                Text("New chat").font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundColor(.white.opacity(0.75))
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Start a fresh conversation (forgets the attached file)")
-                    }
-                    Spacer(minLength: 0)
-                    MicButton()
-                }
-
-                HStack(spacing: 8) {
-                    TextField(state.chatHistory.isEmpty ? "Ask anything, or say \"open Spotify\"…" : "Continue…", text: $text)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .focused($focused)
-                        .onSubmit { sendMessage() }
-
-                    Button(action: sendMessage) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(Color(hex: "#0B0C0E"))
-                    }
-                    .buttonStyle(SendButtonStyle())
-                    .disabled(text.isEmpty)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Color.white.opacity(0.07))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .simultaneousGesture(TapGesture().onEnded { focused = true })
+            VStack(alignment: .leading, spacing: 8) {
+                askBar
+                if let ctx = state.promptContext { ContextChip(context: ctx) }
+                if !state.chatHistory.isEmpty || thinking { conversation } else { Spacer(minLength: 0) }
             }
             .padding(.leading, 84)
-            .padding(.trailing, 16)
+            .padding(.trailing, 14)
             .padding(.top, 12)
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
         }
         .padding(.bottom, 10)
         .onAppear { focused = true }
+        .onChange(of: state.chatHistory.count) { _, _ in
+            if let start = sentAt, let last = state.chatHistory.last, last.role == .assistant {
+                let secs = max(0.1, Date().timeIntervalSince(start))
+                let tokens = Double(last.content.split(separator: " ").count) * 1.3
+                lastMeta = String(format: "%.0fs · %.0f t/s", secs, tokens / secs)
+                sentAt = nil
+            }
+        }
+    }
+
+    // MARK: The bar under the notch — like a little search field that becomes "Listening…" / "Sending…"
+
+    @ViewBuilder private var askBar: some View {
+        HStack(spacing: 8) {
+            if listening {
+                WaveBars().frame(width: 22, height: 14)
+                Text(voice.heard.isEmpty ? "Listening…" : "“\(voice.heard)”").font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                    .foregroundColor(.white.opacity(0.9))
+                Spacer(minLength: 0)
+                pillButton("stop.fill", tint: "#E5484D") { VoiceEngine.shared.stopSpeaking(); if LiveSession.shared.active { LiveSession.shared.stop("stopped") } }
+            } else if thinking {
+                TypingDotsView()
+                Text("Sending…").font(.system(size: 12.5, weight: .medium)).foregroundColor(.white.opacity(0.85))
+                Spacer(minLength: 0)
+            } else if voice.speaking, let last = state.chatHistory.last(where: { $0.role == .assistant }) {
+                Text(last.content).font(.system(size: 12.5)).lineLimit(1).foregroundColor(.white.opacity(0.85))
+                Spacer(minLength: 0)
+                Button { VoiceEngine.shared.stopSpeaking() } label: {
+                    Label("Stop", systemImage: "stop.fill").font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(Color(hex: "#E5484D"))).foregroundColor(.white)
+                }.buttonStyle(.plain)
+            } else {
+                Image(systemName: "square.grid.2x2").font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.5))
+                TextField(state.chatHistory.isEmpty ? "Ask me anything or /" : "Ask a follow-up or /", text: $text)
+                    .textFieldStyle(.plain).font(.system(size: 13)).focused($focused)
+                    .onSubmit { sendMessage() }
+                if !text.isEmpty {
+                    Button(action: sendMessage) {
+                        Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#2A1520"))
+                    }.buttonStyle(SendButtonStyle())
+                }
+            }
+            MicCamToggles()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(Capsule().fill(Color.white.opacity(0.08)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        .simultaneousGesture(TapGesture().onEnded { focused = true })
+    }
+
+    // MARK: The conversation card
+
+    private var conversation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button { AppState.shared.newChat() } label: { Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)) }
+                    .buttonStyle(.plain).help("New chat")
+                Text("Conversation").font(.system(size: 13, weight: .bold, design: .rounded))
+                Spacer()
+                ProviderMenu(state: state)
+                if let last = state.chatHistory.last(where: { $0.role == .assistant }) {
+                    Button { liked.insert(last.id) } label: { Image(systemName: liked.contains(last.id) ? "hand.thumbsup.fill" : "hand.thumbsup").font(.system(size: 11)) }
+                        .buttonStyle(.plain).help("Good answer")
+                }
+                Button { NotificationCenter.default.post(name: .hookExpand, object: IslandView.prompt); WebHub.shared.show(tab: "chat") } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 10, weight: .bold))
+                }.buttonStyle(.plain).help("Open the full chat")
+            }
+            .foregroundColor(.white.opacity(0.85))
+
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(state.chatHistory) { msg in
+                            ChatBubble(message: msg).id(msg.id)
+                            if msg.role == .assistant, msg.id == state.chatHistory.last?.id, !thinking {
+                                HStack(spacing: 6) {
+                                    if !lastMeta.isEmpty {
+                                        Label(lastMeta, systemImage: "clock").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.45))
+                                    }
+                                    Spacer()
+                                    Button("Listen again") { VoiceEngine.shared.speak(msg.content) }
+                                        .buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundColor(Color(hex: "#F58FA8"))
+                                }
+                            }
+                        }
+                        if thinking {
+                            HStack(spacing: 6) {
+                                Image(systemName: "text.book.closed").font(.system(size: 10)).foregroundColor(.white.opacity(0.55))
+                                ShimmeringText("Reading your message…")
+                                Spacer(minLength: 0)
+                            }
+                            .id("typing")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .onChange(of: state.chatHistory.count) { _, _ in
+                    if let last = state.chatHistory.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                }
+                .onChange(of: state.stateOverride) { _, v in
+                    if v != nil { withAnimation { proxy.scrollTo("typing", anchor: .bottom) } }
+                }
+                .onAppear { if let last = state.chatHistory.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(LinearGradient(colors: [Color(hex: "#3A1B27"), Color(hex: "#1E0F16")], startPoint: .top, endPoint: .bottom)))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
+    }
+
+    private func pillButton(_ icon: String, tint: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                .frame(width: 22, height: 22).background(Circle().fill(Color(hex: tint)))
+        }.buttonStyle(.plain)
     }
 
     private func sendMessage() {
@@ -794,6 +847,7 @@ struct PromptView: View {
         guard !query.isEmpty else { return }
         text = ""
         focused = false
+        sentAt = Date()
         state.chatHistory.append(ChatMessage(role: .user, content: query))
         state.stateOverride = .thinking
         Task {
@@ -803,6 +857,47 @@ struct PromptView: View {
     }
 }
 
+/// Mic and camera switches. On by default; they stay off only if you turn them off.
+struct MicCamToggles: View {
+    @ObservedObject private var voice = VoiceEngine.shared
+    var body: some View {
+        HStack(spacing: 6) {
+            toggle(VoiceEngine.micOn ? "mic.fill" : "mic.slash.fill", on: VoiceEngine.micOn,
+                   help: VoiceEngine.micOn ? "Mic is on — click to turn it off" : "Mic is off — click to turn it on") {
+                VoiceEngine.shared.setMic(!VoiceEngine.micOn)
+            }
+            toggle(VoiceEngine.cameraOn ? "video.fill" : "video.slash.fill", on: VoiceEngine.cameraOn,
+                   help: VoiceEngine.cameraOn ? "Camera is allowed — click to turn it off" : "Camera is off — click to allow it") {
+                VoiceEngine.shared.setCamera(!VoiceEngine.cameraOn)
+            }
+        }
+    }
+    private func toggle(_ icon: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(on ? .white.opacity(0.85) : Color(hex: "#E5484D"))
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(on ? Color.white.opacity(0.10) : Color(hex: "#E5484D").opacity(0.18)))
+        }
+        .buttonStyle(.plain).help(help)
+    }
+}
+
+/// Little animated bars while Zuffi listens.
+struct WaveBars: View {
+    @ObservedObject private var voice = VoiceEngine.shared
+    @State private var t = 0.0
+    private let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<5, id: \.self) { i in
+                Capsule().fill(Color(hex: "#F58FA8"))
+                    .frame(width: 2.5, height: 4 + CGFloat(abs(sin(t * 3 + Double(i)))) * (6 + CGFloat(voice.level) * 24))
+            }
+        }
+        .onReceive(timer) { _ in t += 0.08 }
+    }
+}
 
 struct ChatBubble: View {
     let message: ChatMessage
@@ -813,17 +908,15 @@ struct ChatBubble: View {
                 Spacer(minLength: 32)
                 Text(message.content)
                     .font(.system(size: 12.5))
-                    .foregroundColor(Color(hex: "#F7EEE3"))
+                    .foregroundColor(Color(hex: "#3A1B27"))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(LinearGradient(colors: [Color(hex: "#F9A830").opacity(0.30), Color(hex: "#E8743B").opacity(0.22)],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "#FBE3EB")))
             } else {
                 Text(message.content)
                     .font(.system(size: 12.5))
-                    .foregroundColor(Color(hex: "#C9BBAB"))
+                    .foregroundColor(.white.opacity(0.88))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 Spacer(minLength: 8)
@@ -1214,7 +1307,7 @@ struct AgentPill: View {
     var body: some View {
         Button(action: { onTap() }) {
             ZStack(alignment: .topTrailing) {
-                // Sparrow tile: real app icon (shortcuts) or a little bird (integrations)
+                // Zuffi tile: real app icon (shortcuts) or a little bird (integrations)
                 HStack(spacing: 7) {
                     if let icon = QuickItems.icon(for: task.id) {
                         Image(nsImage: icon)

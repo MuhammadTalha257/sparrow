@@ -3,7 +3,7 @@ import AppKit
 import Contacts
 
 // =====================================================================
-// MARK: - Sparrow's agent team
+// MARK: - Zuffi's agent team
 // One router, several specialists. Everything runs on this Mac, offline,
 // in milliseconds — no AI model needed for everyday jobs:
 //   "open Spotify and play music, then open Notes and save this"
@@ -17,13 +17,14 @@ import Contacts
 final class AgentRouter {
     static let shared = AgentRouter()
 
-    /// Which inbox Sparrow last talked about, so "reply to Ahmed…" goes to the right app.
+    /// Which inbox Zuffi last talked about, so "reply to Ahmed…" goes to the right app.
     enum Channel { case none, mail, whatsapp }
     static var lastChannel: Channel = .none
 
     /// Handles a request if any agent can. nil = nobody could (the caller asks the AI instead).
     func handle(_ raw: String) async -> String? {
         if let r = await screen(raw) { return r }
+        if let r = await askChatApp(raw) { return r }
         // Email first: a reply like "tell him yes and thanks" must not be split into steps.
         if WhatsAppAgent.shared.claims(raw), let r = await WhatsAppAgent.shared.handle(raw) { return r }
         if MailAgent.shared.claims(raw), let r = await MailAgent.shared.handle(raw) { return r }
@@ -41,6 +42,20 @@ final class AgentRouter {
             }
         }
         return anyDone ? replies.joined(separator: " ") : nil
+    }
+
+    /// "ask ChatGPT …", "ask Claude …", "Copilot se poocho …" → the user's own chat app gets the question.
+    private func askChatApp(_ raw: String) async -> String? {
+        let pattern = #"^(?:ask|open|use)\s+(chat ?gpt|claude|copilot|gemini)(?:\s+(?:app))?(?:\s*[,:]?\s*(?:and\s+)?(?:ask\s+)?(?:it\s+|him\s+)?(?:about\s+)?)?(.*)$"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let m = re.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
+              let a = Range(m.range(at: 1), in: raw) else { return nil }
+        let which = raw[a].lowercased().replacingOccurrences(of: " ", with: "")
+        let q = Range(m.range(at: 2), in: raw).map { String(raw[$0]).trimmingCharacters(in: .whitespaces) } ?? ""
+        // "open Claude" with nothing to ask is just opening an app — leave it to the normal opener.
+        if q.isEmpty, raw.lowercased().hasPrefix("open") { return nil }
+        let id = ["chatgpt": "chatgpt-app", "claude": "claude-app", "copilot": "copilot-app", "gemini": "gemini-app"][which] ?? "chatgpt-app"
+        return await InstalledAI.handOff(appID: id, question: q)
     }
 
     /// The screen agent: answers to its questions, "stop", "what's on my screen?", "on screen, …".
@@ -153,7 +168,7 @@ final class AgentRouter {
         return steps.count > 1 && isAction(steps[0]) ? steps : [raw]
     }
 
-    /// Hands-free: is this clearly something to do (so Sparrow acts without hearing its name first)?
+    /// Hands-free: is this clearly something to do (so Zuffi acts without hearing its name first)?
     func isClearRequest(_ s: String) -> Bool {
         let base = Translit.toCommand(s)
         if MacControl.shared.matches(s) || MacControl.shared.matches(base) { return true }
@@ -261,7 +276,7 @@ enum Translit {
 final class ContactsAgent {
     static let shared = ContactsAgent()
     nonisolated(unsafe) private static let store = CNContactStore()
-    private let noAccess = "I need access to Contacts: System Settings → Privacy & Security → Contacts → Sparrow."
+    private let noAccess = "I need access to Contacts: System Settings → Privacy & Security → Contacts → Zuffi."
 
     nonisolated private static func askAccess() async -> Bool {
         await withCheckedContinuation { c in store.requestAccess(for: .contacts) { ok, _ in c.resume(returning: ok) } }
@@ -382,7 +397,7 @@ final class NotesAgent {
                                    options: .regularExpression) != nil
             || low == "save this note" || low == "note this" || low == "note that"
         guard isSaveThis else { return nil }
-        // "this" = the text you copied, or else Sparrow's last answer.
+        // "this" = the text you copied, or else Zuffi's last answer.
         var body = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let copiedAt = UserDefaults.standard.integer(forKey: "lastPasteboardSeen")
         if body.isEmpty || NSPasteboard.general.changeCount == copiedAt,
@@ -396,7 +411,7 @@ final class NotesAgent {
         if CommandEngine.shared.runAppleScript("tell application \"Notes\" to make new note with properties {body:\"\(esc)\"}") != nil {
             return "📝 Saved in your Notes."
         }
-        return "I couldn't reach Notes. Allow Sparrow under System Settings → Privacy & Security → Automation."
+        return "I couldn't reach Notes. Allow Zuffi under System Settings → Privacy & Security → Automation."
     }
 }
 

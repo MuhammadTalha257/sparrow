@@ -148,7 +148,7 @@ final class MacControl {
             MainActor.assumeIsolated {
                 MacControl.shared.pending = nil
                 if CommandEngine.shared.runAppleScript(script) == nil {
-                    AppState.shared.noteMessage = "I need permission to control System Events: System Settings → Privacy & Security → Automation → Sparrow."
+                    AppState.shared.noteMessage = "I need permission to control System Events: System Settings → Privacy & Security → Automation → Zuffi."
                     NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
                 }
             }
@@ -216,7 +216,7 @@ final class MacControl {
             """
             if CommandEngine.shared.runAppleScript(script) != nil { done.append("\(proc) \(side)") }
         }
-        if done.isEmpty { return "I need Accessibility permission to move windows: System Settings → Privacy & Security → Accessibility → Sparrow." }
+        if done.isEmpty { return "I need Accessibility permission to move windows: System Settings → Privacy & Security → Accessibility → Zuffi." }
         return "Done: " + done.joined(separator: ", ") + "."
     }
 

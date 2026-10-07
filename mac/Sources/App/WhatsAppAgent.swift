@@ -7,10 +7,10 @@ import ApplicationServices
 //   "any new WhatsApp messages?"                → how many, and who (from WhatsApp's own chat list)
 //   "WhatsApp Ahmed saying I'm on my way"        → a draft, shown + read out
 //   "reply to Ahmed on WhatsApp: see you at 6"   → same
-//   "send" → Sparrow opens the chat with the text and presses Enter · "change it…" · "cancel"
-// WhatsApp has no official Mac API, so Sparrow uses what the Mac offers: the
+//   "send" → Zuffi opens the chat with the text and presses Enter · "change it…" · "cancel"
+// WhatsApp has no official Mac API, so Zuffi uses what the Mac offers: the
 // whatsapp:// link to open a chat with text, and Accessibility (the same
-// permission Sparrow uses for typing) to read the chat list and press Send.
+// permission Zuffi uses for typing) to read the chat list and press Send.
 // Nothing is ever sent without "send".
 // =====================================================================
 
@@ -39,7 +39,7 @@ final class WhatsAppAgent {
         let t = Self.clean(raw)
         if draft != nil, Self.isSend(t) || Self.isCancel(t) || Self.isChange(t) != nil { return true }
         if t.range(of: Self.checkRE, options: .regularExpression) != nil { return true }
-        // "WhatsApp Ahmed saying…", "message Ahmed on WhatsApp…", or a reply right after Sparrow read out WhatsApp chats
+        // "WhatsApp Ahmed saying…", "message Ahmed on WhatsApp…", or a reply right after Zuffi read out WhatsApp chats
         if t.range(of: Self.sendRE, options: .regularExpression) != nil {
             return Self.mentionsWA(t) || (AgentRouter.lastChannel == .whatsapp && t.hasPrefix("reply"))
         }
@@ -69,9 +69,9 @@ final class WhatsAppAgent {
             return "WhatsApp isn't open. Say \"open WhatsApp\" and ask me again."
         }
         guard AXIsProcessTrusted() else {
-            // Shows macOS's own prompt (and adds Sparrow to the list if it isn't there).
+            // Shows macOS's own prompt (and adds Zuffi to the list if it isn't there).
             _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-            return "macOS hasn't given me Accessibility yet. In System Settings → Privacy & Security → Accessibility, select Sparrow, press the minus button to remove it, then quit and reopen Sparrow and allow it again. After an update macOS keeps the old switch, which no longer counts."
+            return "macOS hasn't given me Accessibility yet. In System Settings → Privacy & Security → Accessibility, select Zuffi, press the minus button to remove it, then quit and reopen Zuffi and allow it again. After an update macOS keeps the old switch, which no longer counts."
         }
         let badge = await Self.dockBadge()
         let rows = await Self.unreadRows()

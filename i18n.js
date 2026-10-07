@@ -9,7 +9,7 @@ const RTL = new Set(['ur', 'ar', 'pa']);
 const T = {
   en: {
     home: 'Home', chat: 'Chat', plan: 'Plan', memory: 'Memory', tools: 'Tools', settings: 'Settings', today: 'Today', seeAll: 'See all',
-    quick: 'Quick', aiApps: 'AI apps', myDay: 'My day', talk: 'Talk', upNext: 'UP NEXT', checkIn: 'Check-in', ask: 'Ask Sparrow… e.g. remind me to call mum at 6pm',
+    quick: 'Quick', aiApps: 'AI apps', myDay: 'My day', talk: 'Talk', upNext: 'UP NEXT', checkIn: 'Check-in', ask: 'Ask Zuffi… e.g. remind me to call mum at 6pm',
     tasks: 'Tasks', meetings: 'Meetings', reminders: 'Reminders', notes: 'Notes', customers: 'Customers', money: 'Money', habits: 'Habits',
     prayer: 'Prayer times', nextPrayer: 'Next prayer', done: 'Done', later: 'Later', snooze: 'Snooze 10 min', search: 'Search your memory…',
     morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening', night: 'Hello', noTasks: 'No tasks today', clear: 'Your day is clear',

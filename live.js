@@ -1,5 +1,5 @@
 // Jarvis mode for the web app (iPhone, Android, Windows, any modern browser).
-// Tap the mic once and just talk: Sparrow hears and answers in one step (Gemini Live, native audio),
+// Tap the mic once and just talk: Zuffi hears and answers in one step (Gemini Live, native audio),
 // in the language you speak, you can interrupt it, and it does things while you talk.
 // Needs internet and a Gemini key (Settings → AI). The Mac app has its own native version.
 import { store } from './store.js';
@@ -36,7 +36,7 @@ export async function startLive(opts) {
   // The microphone is asked for inside the tap (iPhone needs that), before the network.
   try {
     s.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-  } catch { end('no-mic'); opts.onState?.('error', 'Allow the microphone for Sparrow, then try again.'); return; }
+  } catch { end('no-mic'); opts.onState?.('error', 'Allow the microphone for Zuffi, then try again.'); return; }
   const prompt = await opts.prompt();
 
   const connect = () => {

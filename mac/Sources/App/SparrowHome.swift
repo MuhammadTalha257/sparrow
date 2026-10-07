@@ -2,14 +2,14 @@ import SwiftUI
 import AppKit
 
 // =====================================================================
-// MARK: - Sparrow home: glass cards, a glowing sparrow, and app tiles
+// MARK: - Zuffi home: glass cards, a glowing sparrow, and app tiles
 // with little sparrows dressed in each app's colours.
 // =====================================================================
 
 
-// MARK: - The orb: Sparrow's own living light, behind the sparrow in the middle
+// MARK: - The orb: Zuffi's own living light, behind the sparrow in the middle
 /// Soft ribbons of warm light circling a dark glass core. Calm when idle, it swells and
-/// flows faster when you talk to Sparrow (it follows your voice) or while Sparrow is speaking.
+/// flows faster when you talk to Zuffi (it follows your voice) or while Zuffi is speaking.
 struct SparrowOrb: View {
     @ObservedObject private var voice = VoiceEngine.shared
     var size: CGFloat = 112
@@ -116,7 +116,7 @@ struct SparrowAppGrid: View {
     }
 }
 
-/// The left-hand side: hello, what Sparrow is doing, and two quick buttons.
+/// The left-hand side: hello, what Zuffi is doing, and two quick buttons.
 struct SparrowContextCard: View {
     @ObservedObject var state: AppState
     @ObservedObject private var voice = VoiceEngine.shared
@@ -129,7 +129,7 @@ struct SparrowContextCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(listening ? "I'm listening…" : (voice.heard.isEmpty ? "Hi! Say “Sparrow…”" : "“\(voice.heard)”"))
+            Text(listening ? "I'm listening…" : (voice.heard.isEmpty ? "Hi! Say “Zuffi…”" : "“\(voice.heard)”"))
                 .font(.system(size: 14.5, weight: .heavy, design: .rounded))
                 .foregroundColor(.white)
                 .lineLimit(2)
@@ -245,7 +245,7 @@ extension View {
     }
 }
 
-// MARK: - Opening hello: the sparrow flies in (Sparrow says hello out loud — no text)
+// MARK: - Opening hello: the sparrow flies in (Zuffi says hello out loud — no text)
 
 struct SparrowGreetingView: View {
     @ObservedObject var state: AppState
@@ -277,7 +277,7 @@ struct SparrowGreetingView: View {
 }
 
 
-// MARK: - Hide Sparrow into a little bubble (✕), click the bubble to bring it back
+// MARK: - Hide Zuffi into a little bubble (✕), click the bubble to bring it back
 
 @MainActor
 final class SparrowBubble {
@@ -362,7 +362,7 @@ private struct BubbleView: View {
         .frame(width: 64, height: 64)
         .contentShape(Circle())
         .onHover { hovered = $0 }
-        .help("Click to bring Sparrow back · drag to move")
+        .help("Click to bring Zuffi back · drag to move")
         .gesture(DragGesture(minimumDistance: 0).onChanged { _ in onDrag() }.onEnded { _ in onEnd() })
     }
 }

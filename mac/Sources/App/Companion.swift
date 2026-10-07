@@ -16,6 +16,7 @@ extension Notification.Name {
 
 @MainActor
 final class PetModel: ObservableObject {
+    let sprite = SparrowSpriteModel()
     /// Something the sparrow carries (SF Symbol): water bottle, coffee cup, pills.
     @Published var prop: String?
     /// Water / coffee / medicine waiting for "Take" or "Later".
@@ -154,25 +155,8 @@ final class PetController {
     private var wasShownBeforeAsk = false
     private var askTimeout: DispatchWorkItem?
     func deliver(kind: String, text: String) {
-        let props = ["water": "waterbottle.fill", "coffee": "cup.and.saucer.fill", "meds": "pills.fill"]
-        if model.asking == nil { wasShownBeforeAsk = isShown }
-        if isShown { NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy) }
-        else { show(greeting: false) }
-        model.angry = false
-        model.prop = props[kind] ?? "drop.fill"
-        model.asking = (kind, text)
-        DispatchQueue.main.asyncAfter(deadline: .now() + (wasShownBeforeAsk ? 0.1 : 1.3)) {
-            MainActor.assumeIsolated {
-                let m = PetController.shared.model
-                m.say(text + (kind == "water" ? " 💧" : kind == "coffee" ? " ☕" : " 💊"), for: 60)
-                NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.love)
-            }
-        }
-        // Nobody answered in 2 minutes → treat it as "later", quietly.
-        askTimeout?.cancel()
-        let w = DispatchWorkItem { MainActor.assumeIsolated { PetController.shared.answer(take: false, quiet: true) } }
-        askTimeout = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: w)
+        // Water / coffee / medicine: Zuffi walks across the screen carrying it.
+        ZuffiWalk.shared.arrive(kind: kind, title: text)
     }
 
     func answer(take: Bool, quiet: Bool = false) {
@@ -267,23 +251,30 @@ struct PetView: View {
                 // little perch shadow
                 Ellipse().fill(Color.black.opacity(model.flying ? 0 : 0.22))
                     .frame(width: 70, height: 10).blur(radius: 3).offset(y: 44)
-                TimelineView(.animation) { tl in
-                    Canvas { ctx, size in
-                        let now = tl.date.timeIntervalSinceReferenceDate
-                        let dt = min(0.05, now - engine.lastTime)
-                        let mouse = NSEvent.mouseLocation
-                        if let f = NSApp.windows.first(where: { $0.contentView is FirstMouseHostingView<PetView> })?.frame {
-                            engine.lookX = tanh((mouse.x - f.midX) / 260)
-                            engine.lookY = -tanh(((f.minY + 70) - mouse.y) / 200)
+                Group {
+                    if SparrowSprites.shared.available {
+                        SparrowSpriteView(model: model.sprite, size: 118, deadZone: 60, mood: BotCanvasView.mood(voice, AppState.shared))
+                            .allowsHitTesting(false)
+                    } else {
+                    TimelineView(.animation) { tl in
+                        Canvas { ctx, size in
+                            let now = tl.date.timeIntervalSinceReferenceDate
+                            let dt = min(0.05, now - engine.lastTime)
+                            let mouse = NSEvent.mouseLocation
+                            if let f = NSApp.windows.first(where: { $0.contentView is FirstMouseHostingView<PetView> })?.frame {
+                                engine.lookX = tanh((mouse.x - f.midX) / 260)
+                                engine.lookY = -tanh(((f.minY + 70) - mouse.y) / 200)
+                            }
+                            engine.update(dt: dt)
+                            // Wings: flap fast while flying or listening, tucked otherwise
+                            if model.flying { engine.hands = 0.65 + 0.35 * CGFloat(sin(now * 38)) }
+                            else if voice.isListening && voice.status == "Listening…" { engine.hands = 0.35 + 0.25 * CGFloat(sin(now * 18)) }
+                            else if engine.hands > 0.01 && now > engine.waveUntil { engine.hands *= 0.85 }
+                            engine.drawHandsBehind(context: ctx, size: size)
+                            engine.draw(context: ctx, size: size)
+                            engine.drawHandsAndExtras(context: ctx, size: size)
                         }
-                        engine.update(dt: dt)
-                        // Wings: flap fast while flying or listening, tucked otherwise
-                        if model.flying { engine.hands = 0.65 + 0.35 * CGFloat(sin(now * 38)) }
-                        else if voice.isListening && voice.status == "Listening…" { engine.hands = 0.35 + 0.25 * CGFloat(sin(now * 18)) }
-                        else if engine.hands > 0.01 && now > engine.waveUntil { engine.hands *= 0.85 }
-                        engine.drawHandsBehind(context: ctx, size: size)
-                        engine.draw(context: ctx, size: size)
-                        engine.drawHandsAndExtras(context: ctx, size: size)
+                    }
                     }
                 }
                 .frame(width: 124, height: 110)
@@ -359,6 +350,7 @@ struct PetView: View {
         let e: BotEmote = clicks >= 4 ? .annoyed : [.love, .happy, .proud, .wink][(clicks - 1) % 4]
         if clicks >= 4 { clicks = 0 }
         NotificationCenter.default.post(name: .triggerEmote, object: e)
+        model.sprite.boop()
         if model.asking == nil { VoiceEngine.shared.listenOnce() }
     }
 
@@ -479,7 +471,7 @@ final class TodayWindow {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
-        w.title = "Today — Sparrow"
+        w.title = "Today — Zuffi"
         w.titlebarAppearsTransparent = true
         w.isReleasedWhenClosed = false
         w.contentMinSize = NSSize(width: 380, height: 420)
@@ -559,7 +551,7 @@ struct TodayView: View {
 
             if !model.access.calendar || !model.access.reminders {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Sparrow needs permission to show your Calendar and Reminders.")
+                    Text("Zuffi needs permission to show your Calendar and Reminders.")
                         .font(.system(size: 12.5))
                     Button("Open Privacy settings") {
                         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
@@ -617,7 +609,7 @@ struct TodayView: View {
         let dueToday = model.tasks.filter { t in t.due.map { cal.isDateInToday($0) || $0 < Date() } ?? false }
         return Group {
             if model.events.isEmpty && dueToday.isEmpty {
-                empty("Nothing planned today 🌤️", "Type above, or say “Sparrow, meeting with Ali at 3pm”.")
+                empty("Nothing planned today 🌤️", "Type above, or say “Zuffi, meeting with Ali at 3pm”.")
             }
             if !model.events.isEmpty { sectionTitle("Meetings") }
             ForEach(model.events) { e in eventRow(e, showDay: false) }

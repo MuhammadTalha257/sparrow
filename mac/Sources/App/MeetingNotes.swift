@@ -1,8 +1,8 @@
 import Foundation
 import AppKit
 
-/// "Sparrow, start meeting notes" … "Sparrow, stop meeting notes":
-/// Sparrow writes down everything said, then saves tidy notes (summary, decisions, action items)
+/// "Zuffi, start meeting notes" … "Zuffi, stop meeting notes":
+/// Zuffi writes down everything said, then saves tidy notes (summary, decisions, action items)
 /// to Apple Notes and to its memory.
 @MainActor
 final class MeetingNotes {
@@ -12,11 +12,11 @@ final class MeetingNotes {
     private var lines: [String] = []
 
     func start() -> String {
-        guard !active else { return "I'm already taking notes. Say “Sparrow, stop meeting notes” when you're done." }
+        guard !active else { return "I'm already taking notes. Say “Zuffi, stop meeting notes” when you're done." }
         active = true; started = Date(); lines = []
         VoiceEngine.shared.meetingMode = true
         appendAppLog("voice.log", "meeting notes started")
-        return "Taking meeting notes now. Say “Sparrow, stop meeting notes” when you're done."
+        return "Taking meeting notes now. Say “Zuffi, stop meeting notes” when you're done."
     }
 
     func add(_ text: String) {
@@ -26,7 +26,7 @@ final class MeetingNotes {
     }
 
     func stop() async -> String {
-        guard active else { return "I wasn't taking notes. Say “Sparrow, start meeting notes” to begin." }
+        guard active else { return "I wasn't taking notes. Say “Zuffi, start meeting notes” to begin." }
         active = false
         VoiceEngine.shared.meetingMode = false
         let transcript = lines.joined(separator: "\n")
@@ -40,11 +40,11 @@ final class MeetingNotes {
         let html = "<h2>\(esc(title))</h2>" + body.split(separator: "\n", omittingEmptySubsequences: false).map { "<div>\(esc(String($0)))</div>" }.joined()
         let script = "tell application \"Notes\" to make new note with properties {name:\"\(asq(title))\", body:\"\(asq(html))\"}"
         let saved = CommandEngine.shared.runAppleScript(script) != nil
-        // Sparrow's memory (searchable later: "what did we decide in the meeting on Monday?")
+        // Zuffi's memory (searchable later: "what did we decide in the meeting on Monday?")
         WebHub.shared.run("window.Sparrow && window.Sparrow.rememberNote && window.Sparrow.rememberNote(\(json(title)), \(json(body)))")
         let points = summary.split(separator: "\n").filter { $0.hasPrefix("•") || $0.hasPrefix("-") }.count
         return saved ? "Done — \(mins) minute meeting saved to Notes\(points > 0 ? " with \(points) key points" : "")."
-                     : "I saved the notes in my memory. Allow Sparrow to use Notes (System Settings → Privacy & Security → Automation) to save them there too."
+                     : "I saved the notes in my memory. Allow Zuffi to use Notes (System Settings → Privacy & Security → Automation) to save them there too."
     }
 
     private func summarize(_ transcript: String) async -> String? {

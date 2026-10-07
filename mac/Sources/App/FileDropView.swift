@@ -68,8 +68,8 @@ enum FileDropHandler {
                 await MainActor.run {
                     state.droppedFile = DroppedFile(url: dest, name: name)
                     state.promptContext = .file(name: name, fileURL: dest)
-                    WebHub.shared.rememberFile(dest)       // keep it in Sparrow's memory
-                    // A picture → Sparrow looks at it and tells you what it is (searching the web if useful).
+                    WebHub.shared.rememberFile(dest)       // keep it in Zuffi's memory
+                    // A picture → Zuffi looks at it and tells you what it is (searching the web if useful).
                     let ext = dest.pathExtension.lowercased()
                     if ["jpg", "jpeg", "png", "heic", "webp", "gif", "tiff", "bmp"].contains(ext), LiveSession.shared.usable,
                        let raw = try? Data(contentsOf: dest), let jpeg = ImageShrink.jpeg(raw, maxSide: 1280) {

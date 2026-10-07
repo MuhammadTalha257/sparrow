@@ -50,6 +50,13 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 18) {
 
                 if tab == .general {
+                // MARK: First-run setup (permissions, AI, free local AI)
+                HStack {
+                    Text("New here, or want to set up the free AI on this Mac?").font(.system(size: 12))
+                    Spacer()
+                    Button("Open the setup") { SetupWizard.shared.show() }
+                }
+
                 // MARK: Look & position
                 AppearanceSettings(state: state)
 
@@ -94,7 +101,7 @@ struct SettingsView: View {
                 // MARK: Hotkey
                 GroupBox("Hotkey") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Toggle("Ask Sparrow with a keyboard shortcut (opens the chat)", isOn: $state.hotkeyEnabled)
+                        Toggle("Ask Zuffi with a keyboard shortcut (opens the chat)", isOn: $state.hotkeyEnabled)
                         if state.hotkeyEnabled {
                             HStack(spacing: 8) {
                                 Text("Shortcut")
@@ -340,7 +347,7 @@ struct SettingsHeader: View {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable().frame(width: 34, height: 34)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Sparrow").font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text("Zuffi").font(.system(size: 17, weight: .bold, design: .rounded))
                     Text("Your little helper — set it up your way")
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 }

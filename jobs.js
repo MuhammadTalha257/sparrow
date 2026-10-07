@@ -1,5 +1,5 @@
-// Sparrow's job agent: reads your CV, finds jobs that fit, writes cover letters, helps you apply, and keeps track.
-// You always press Submit yourself — Sparrow never applies on your behalf, so your LinkedIn / Indeed accounts stay safe.
+// Zuffi's job agent: reads your CV, finds jobs that fit, writes cover letters, helps you apply, and keeps track.
+// You always press Submit yourself — Zuffi never applies on your behalf, so your LinkedIn / Indeed accounts stay safe.
 import { store } from './store.js';
 import { ask } from './ai.js';
 import * as mem from './memory.js';
@@ -25,7 +25,7 @@ const SYSTEM = 'You are a sharp, honest career coach and recruiter. Follow the o
 async function ai(prompt, { maxTokens = 1800 } = {}) {
   try { return (await ask(prompt, null, { noHistory: true, system: SYSTEM, maxTokens })).text; }
   catch (e) {
-    // In the Mac app the AI keys may live in Sparrow's own settings instead of this panel.
+    // In the Mac app the AI keys may live in Zuffi's own settings instead of this panel.
     if (M) { const t = await M.call('complete', { prompt: SYSTEM + '\n\n' + prompt }); if (t) return t; }
     throw e;
   }
@@ -74,7 +74,7 @@ export function isCV(rec) { return !!rec && looksLikeCV(rec); }
 
 export async function analyseCV(file) {
   file = file || await findCV();
-  if (!file?.text) return { ok: false, reply: 'Send me your CV first — drop the PDF or Word file here (or on the Sparrow island), then say "analyse my CV".' };
+  if (!file?.text) return { ok: false, reply: 'Send me your CV first — drop the PDF or Word file here (or on the Zuffi island), then say "analyse my CV".' };
   const prompt = `Analyse this CV and reply ONLY with JSON in exactly this shape:
 {"name":"","email":"","phone":"","location":"","linkedin":"","website":"","headline":"one line, e.g. Frontend Developer (React, TypeScript)","years":0,
 "skills":["top 15 hard skills"],"strengths":["4-6 specific strengths, citing the CV"],"gaps":["3-5 honest gaps or risks a recruiter would notice"],
@@ -324,7 +324,7 @@ export async function startApply(job) {
   if (!job) return { ok: false, reply: 'Which job? Search first, e.g. "find React jobs in London".' };
   if (job.kit?.coverLetter) { try { await navigator.clipboard.writeText(job.kit.coverLetter); } catch {} }
   ui.openUrl(job.url);
-  return { ok: true, reply: `Opening ${job.title} at ${job.company}. ${job.kit?.coverLetter ? 'Your cover letter is copied — paste it in. ' : ''}${M ? 'Click a box in the form and say "Sparrow, type my email" (or name, phone, LinkedIn, cover letter). ' : ''}When you've pressed Submit, tap "I applied" and I'll remind you to follow up.` };
+  return { ok: true, reply: `Opening ${job.title} at ${job.company}. ${job.kit?.coverLetter ? 'Your cover letter is copied — paste it in. ' : ''}${M ? 'Click a box in the form and say "Zuffi, type my email" (or name, phone, LinkedIn, cover letter). ' : ''}When you've pressed Submit, tap "I applied" and I'll remind you to follow up.` };
 }
 
 export function markApplied(job, days = 7) {
@@ -343,7 +343,7 @@ export function trackerSummary() {
   return `You've applied to ${data.applied.length} job${data.applied.length > 1 ? 's' : ''}: ${c('Interview')} interview${c('Interview') === 1 ? '' : 's'}, ${c('Offer')} offer${c('Offer') === 1 ? '' : 's'}. Latest: ${latest}.`;
 }
 
-/** Field values for "Sparrow, type my email" (Mac). */
+/** Field values for "Zuffi, type my email" (Mac). */
 export function field(name) {
   const p = data.profile || {}, n = String(name || '').toLowerCase();
   const job = data.results.find(j => j.kit) || data.applied.find(j => j.kit);
@@ -389,7 +389,7 @@ const list = (arr, cls = '') => (arr || []).length ? `<ul class="jb-list ${cls}"
 
 function profileHTML() {
   const p = data.profile;
-  if (!p) return `<div class="jb-empty"><div class="jb-big">📄</div><p><b>Start with your CV.</b> Sparrow reads it, tells you your strengths, gaps and best-fit roles, and uses it to find and rank jobs.</p>
+  if (!p) return `<div class="jb-empty"><div class="jb-big">📄</div><p><b>Start with your CV.</b> Zuffi reads it, tells you your strengths, gaps and best-fit roles, and uses it to find and rank jobs.</p>
     <button class="btn" data-ja="upload">Upload my CV (PDF or Word)</button><button class="btn ghost" data-ja="analyse">Use a CV I already sent</button></div>`;
   return `<div class="jb-hero"><div><div class="jb-name">${esc(p.name || 'Your profile')}</div><div class="jb-sub">${esc(p.headline || '')}${p.location ? ' · ' + esc(p.location) : ''}</div></div>
       ${p.score ? `<div class="jb-score" style="--v:${+p.score}"><b>${+p.score}</b><span>CV score</span></div>` : ''}</div>
@@ -410,7 +410,7 @@ function jobsHTML() {
     <select name="lv" class="jb-level">${LEVELS.map(([v, n]) => `<option value="${v}" ${v === (data.level || '') ? 'selected' : ''}>${n}</option>`).join('')}</select><button class="pill-btn solid">Search</button></form>
     ${!p ? `<p class="small-text">Tip: <a href="#" data-ja="tab-profile">add your CV</a> and I'll rank every job by how well it fits you.</p>` : ''}
     ${links.length ? `<div class="jb-chips"><span class="small-text">Also search on</span>${links.map(([n, u]) => `<button class="chip" data-ja="open" data-u="${esc(u)}">${esc(n)} ↗</button>`).join('')}</div>` : ''}
-    ${data.results.length ? data.results.map((j, i) => jobCard(j, i)).join('') : `<div class="jb-empty"><p>${q ? 'Search to see jobs here.' : 'Type a role above, or say “Sparrow, find React jobs in London”.'}</p></div>`}`;
+    ${data.results.length ? data.results.map((j, i) => jobCard(j, i)).join('') : `<div class="jb-empty"><p>${q ? 'Search to see jobs here.' : 'Type a role above, or say “Zuffi, find React jobs in London”.'}</p></div>`}`;
 }
 
 function jobCard(j, i) {
@@ -450,7 +450,7 @@ function appliedHTML() {
 
 function setupHTML() {
   const k = data.keys;
-  return `<p class="small-text">Sparrow already searches free remote-job boards. For local jobs (London, Lahore, Dubai…) add a free key — each takes a minute and costs nothing.</p>
+  return `<p class="small-text">Zuffi already searches free remote-job boards. For local jobs (London, Lahore, Dubai…) add a free key — each takes a minute and costs nothing.</p>
     <label class="field"><span>Country for local jobs</span><select id="jbCountry">${[['', 'Automatic'], ['gb', 'United Kingdom'], ['pk', 'Pakistan'], ['us', 'United States'], ['in', 'India'], ['ae', 'UAE'], ['sa', 'Saudi Arabia'], ['ca', 'Canada'], ['au', 'Australia'], ['de', 'Germany']].map(([v, n]) => `<option value="${v}" ${data.country === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     <h4>Adzuna <small>(UK, US, India, Europe…)</small></h4><p class="small-text">Free at developer.adzuna.com → “Register”. Paste your App ID and Key.</p>
     <label class="field"><span>App ID</span><input id="jkAdId" value="${esc(k.adzunaId || '')}"></label><label class="field"><span>App key</span><input id="jkAdKey" value="${esc(k.adzunaKey || '')}"></label>
@@ -459,7 +459,7 @@ function setupHTML() {
     <h4>Jooble <small>(70+ countries incl. Pakistan, UAE)</small></h4><p class="small-text">Free at jooble.org/api/about.</p>
     <label class="field"><span>API key</span><input id="jkJooble" value="${esc(k.joobleKey || '')}"></label>
     <button class="btn" data-ja="savekeys">Save</button>
-    <p class="small-text">LinkedIn and Indeed don’t allow apps to search or apply for you, so Sparrow opens their searches in your browser instead — you stay signed in and safe.</p>`;
+    <p class="small-text">LinkedIn and Indeed don’t allow apps to search or apply for you, so Zuffi opens their searches in your browser instead — you stay signed in and safe.</p>`;
 }
 
 async function onClick(e) {

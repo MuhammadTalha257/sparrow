@@ -10,7 +10,30 @@ struct BotCanvasView: View {
     @StateObject private var engine = BotEngine()
     @ObservedObject private var voice = VoiceEngine.shared
 
-    var body: some View { drawnBird }
+    @StateObject private var sprite = SparrowSpriteModel()
+
+    /// Zuffi's mood from what's happening: listening, thinking, speaking.
+    static func mood(_ voice: VoiceEngine, _ state: AppState) -> SpriteMood {
+        if voice.speaking || LiveSession.shared.speakingNow { return .speaking }
+        if voice.status.hasPrefix("Listening") || LiveSession.shared.listeningNow { return .listening }
+        if [.thinking, .working, .searching].contains(state.effectiveState) || LiveSession.shared.workingNow { return .thinking }
+        return .idle
+    }
+
+    var body: some View {
+        // The bunny everywhere — except the file-drop "mailbox" animation, which is drawn.
+        if SparrowSprites.shared.available, state.view != .upload, state.view != .uploading, state.mode != .hidden {
+            GeometryReader { g in
+                SparrowSpriteView(model: sprite, size: min(g.size.width, g.size.height - particleOverhang),
+                                  deadZone: 40, mood: Self.mood(voice, state))
+                    .frame(width: g.size.width, height: g.size.height, alignment: .bottom)
+                    .allowsHitTesting(false)          // the island watches clicks itself and sends a "slap"
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .triggerSlap)) { _ in sprite.boop() }
+        } else {
+            drawnBird
+        }
+    }
 
     private var drawnBird: some View {
         TimelineView(.animation(paused: state.mode == .hidden)) { timeline in
@@ -29,7 +52,7 @@ struct BotCanvasView: View {
                     engine.slotHTarget = 0
                     if engine.morph < 0.05 { engine.slotH = 0; engine.slotHVel = 0 }
                 }
-                // Always Sparrow's own colours (like the pet).
+                // Always Zuffi's own colours (like the pet).
                 engine.bodyColor = nil
                 engine.update(dt: dt)
                 // Wings, like the pet: fast while flying in, flapping while listening to you, tucked otherwise
@@ -183,7 +206,7 @@ extension CGColor {
 }
 
 
-/// When the sparrow is flying (e.g. arriving when Sparrow opens), its wings flap fast.
+/// When the sparrow is flying (e.g. arriving when Zuffi opens), its wings flap fast.
 enum SparrowFlight {
     nonisolated(unsafe) static var until: Double = 0
     static func fly(for seconds: Double) { until = Date().timeIntervalSinceReferenceDate + seconds }

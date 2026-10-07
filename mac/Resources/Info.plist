@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Sparrow</string>
+	<string>Zuffi</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Sparrow</string>
+	<string>Zuffi</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -23,27 +23,27 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAccessibilityUsageDescription</key>
-	<string>Sparrow reads the title of the active window so you can ask about it.</string>
+	<string>Zuffi reads the title of the active window so you can ask about it.</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Sparrow controls apps you ask it to, like Spotify, Music, Mail and your terminal.</string>
+	<string>Zuffi controls apps you ask it to, like Spotify, Music, Mail and your terminal.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>Sparrow uses your location to tell you the weather where you are.</string>
+	<string>Zuffi uses your location to tell you the weather where you are.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Sparrow uses your location to tell you the weather where you are.</string>
+	<string>Zuffi uses your location to tell you the weather where you are.</string>
 	<key>NSContactsUsageDescription</key>
-	<string>Sparrow saves and finds phone numbers when you ask, like "save this number as Ali".</string>
+	<string>Zuffi saves and finds phone numbers when you ask, like "save this number as Ali".</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Sparrow looks through the camera only when you ask, like "Sparrow, what do you see?" or "take a photo".</string>
+	<string>Zuffi looks through the camera only when you ask, like "Zuffi, what do you see?" or "take a photo".</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Sparrow listens when you hold the voice shortcut so you can talk to it.</string>
+	<string>Zuffi listens when you hold the voice shortcut so you can talk to it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Sparrow turns your voice into text on your Mac.</string>
+	<string>Zuffi turns your voice into text on your Mac.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Sparrow shows your next meetings in Today at a glance.</string>
+	<string>Zuffi shows your next meetings in Today at a glance.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Sparrow shows and adds your to-dos.</string>
+	<string>Zuffi shows and adds your to-dos.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Sparrow shows the battery of your AirPods and other Bluetooth devices.</string>
+	<string>Zuffi shows the battery of your AirPods and other Bluetooth devices.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

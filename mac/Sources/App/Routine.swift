@@ -519,7 +519,7 @@ struct RoutineSettings: View {
                 Toggle("Tell me my day every morning", isOn: $morningOn)
                 if morningOn {
                     DatePicker("At", selection: binding($morningTime), displayedComponents: .hourAndMinute)
-                    Text("Time, weather, meetings and today's tasks. If your Mac is asleep, Sparrow tells you when you open it.")
+                    Text("Time, weather, meetings and today's tasks. If your Mac is asleep, Zuffi tells you when you open it.")
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 }
                 Button("Play it now") { Task { await Routine.shared.morningBriefing() } }

@@ -48,7 +48,7 @@ func appendAppLog(_ fileName: String, _ message: String,
     }
 }
 
-/// Where Sparrow keeps its own files (dropped files' inbox, memory…).
+/// Where Zuffi keeps its own files (dropped files' inbox, memory…).
 enum SparrowPaths {
     static var supportDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Sparrow")

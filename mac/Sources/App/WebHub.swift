@@ -4,8 +4,8 @@ import WebKit
 import UniformTypeIdentifiers
 
 // =====================================================================
-// MARK: - Sparrow "More": every new feature, inside the Mac app
-// The shared Sparrow app (habits, prayer times, memory, quotes & invoices,
+// MARK: - Zuffi "More": every new feature, inside the Mac app
+// The shared Zuffi app (habits, prayer times, memory, quotes & invoices,
 // time tracking, PDF tools, sync…) runs in a web view that ships inside the
 // Mac app. The island still does the talking: Apple speech, Apple voices.
 // =====================================================================
@@ -78,7 +78,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 540),
                         styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
                         backing: .buffered, defer: false)
-        w.title = "Sparrow"
+        w.title = "Zuffi"
         w.titlebarAppearsTransparent = true
         w.titleVisibility = .hidden
         w.isMovableByWindowBackground = true
@@ -94,7 +94,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         window = w
     }
 
-    /// Opens the full Sparrow panel, optionally on a tab (home, chat, plan, memory, tools).
+    /// Opens the full Zuffi panel, optionally on a tab (home, chat, plan, memory, tools).
     func show(tab: String? = nil) {
         start()
         guard let w = window else { return }
@@ -160,7 +160,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
 
     var isReady: Bool { ready }
 
-    /// Saves a file you dropped on the island into Sparrow's memory (text for search + a copy).
+    /// Saves a file you dropped on the island into Zuffi's memory (text for search + a copy).
     func rememberFile(_ url: URL) {
         guard let data = try? Data(contentsOf: url), data.count < 30_000_000, let wv = webView else { return }
         let ext = url.pathExtension.lowercased()
@@ -176,7 +176,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         }
     }
 
-    /// Speaks with Sparrow's natural voices. true = speaking now (the end arrives as a "speaking" message).
+    /// Speaks with Zuffi's natural voices. true = speaking now (the end arrives as a "speaking" message).
     func say(_ text: String) async -> Bool {
         guard ready, let wv = webView else { return false }
         do {
@@ -197,7 +197,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         catch { appendAppLog("web.log", "callJS failed: \(error.localizedDescription)"); return nil }
     }
 
-    /// A value from the job agent's CV profile ("email", "phone", "cover letter"…), for "Sparrow, type my email".
+    /// A value from the job agent's CV profile ("email", "phone", "cover letter"…), for "Zuffi, type my email".
     func jobField(_ name: String) async -> String? {
         start()
         for _ in 0..<30 where !ready { try? await Task.sleep(nanoseconds: 100_000_000) }
@@ -267,16 +267,20 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         case "show":
             show(tab: o["tab"] as? String)
         case "save":
-            save(name: o["name"] as? String ?? "Sparrow file", base64: o["base64"] as? String ?? "", id: id)
+            save(name: o["name"] as? String ?? "Zuffi file", base64: o["base64"] as? String ?? "", id: id)
         case "http":
             http(url: o["url"] as? String ?? "", method: o["method"] as? String ?? "POST", headers: o["headers"] as? [String: String] ?? [:], body: o["body"] as? String ?? "", id: id)
         case "dragWindow":
             dragPanel()
+        case "reminder":
+            // a meeting / task / reminder is due → Zuffi walks across with a banner
+            ZuffiWalk.shared.arrive(kind: o["kind"] as? String ?? "reminder", title: o["title"] as? String ?? "Reminder",
+                                    sub: o["sub"] as? String ?? "", itemId: o["itemId"] as? String)
         case "health":
             // water / coffee / medicine time → the sparrow flies in carrying it
             PetController.shared.deliver(kind: o["kind"] as? String ?? "water", text: o["text"] as? String ?? "Time for a break")
         case "complete":
-            // The job agent's AI fallback: uses the keys saved in Sparrow's own settings.
+            // The job agent's AI fallback: uses the keys saved in Zuffi's own settings.
             let prompt = o["prompt"] as? String ?? ""
             Task { if let t = await SmartPlanner.shared.complete(prompt) { self.reply(id, t) } else { self.reply(id, NSNull()) } }
         case "location":

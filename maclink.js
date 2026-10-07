@@ -1,4 +1,4 @@
-// Control your Mac from Sparrow on the iPhone (or any phone/browser), from anywhere.
+// Control your Mac from Zuffi on the iPhone (or any phone/browser), from anywhere.
 // Messages go through the free ntfy.sh relay on a private random channel, end-to-end encrypted
 // (AES-GCM) with a key that only your Mac and this phone have — handed over once by a QR code.
 import { store } from './store.js';
@@ -44,7 +44,7 @@ async function open(s) {
 
 /** Sends to the Mac and waits for its answer. Resolves to the answer text, or a friendly "couldn't reach it". */
 async function exchange(t, text, waitMs) {
-  if (!linked()) return { ok: false, text: 'Link your Mac first: on the Mac, Sparrow Settings → iPhone → Show link code, then scan it.' };
+  if (!linked()) return { ok: false, text: 'Link your Mac first: on the Mac, Zuffi Settings → iPhone → Show link code, then scan it.' };
   const { topic } = store.settings.macLink;
   const id = crypto.randomUUID?.() || String(Date.now()) + Math.random();
   const since = Math.floor(Date.now() / 1000) - 2;
@@ -66,7 +66,7 @@ async function exchange(t, text, waitMs) {
       }
     } catch {}
   }
-  return { ok: false, text: "Your Mac didn't answer. Make sure it's on and awake, online, with Sparrow open and Settings → iPhone switched on." };
+  return { ok: false, text: "Your Mac didn't answer. Make sure it's on and awake, online, with Zuffi open and Settings → iPhone switched on." };
 }
 
 // Screen tasks (clicking and typing on the Mac) can take a couple of minutes.

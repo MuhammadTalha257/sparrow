@@ -53,7 +53,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     private var silenceTimer: Timer?
     private var restartTimer: Timer?
     private var oneShot = false          // mic button: no wake word needed
-    private var speaking = false
+    @Published private(set) var speaking = false
     private var resumeAfterSpeech = false
 
     private var failures = 0
@@ -70,7 +70,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { VoiceEngine.shared.restartIfWanted(after: 2) }
         }
-        // Watchdog: if "Sparrow…" listening should be on but isn't (startup race, mic busy,
+        // Watchdog: if "Zuffi…" listening should be on but isn't (startup race, mic busy,
         // recogniser not ready yet…), start it again. Cheap — runs every 4 seconds.
         Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in
             MainActor.assumeIsolated { VoiceEngine.shared.watchdog() }
@@ -80,7 +80,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     private var lastAttempt = Date.distantPast
 
     fileprivate func watchdog() {
-        guard UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord),
+        guard UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord), Self.micOn,
               !isListening, !speaking, !oneShot, !LiveSession.shared.active,
               Date().timeIntervalSince(lastAttempt) > 3.5 else { return }
         let speechOK = SFSpeechRecognizer.authorizationStatus() == .authorized
@@ -92,12 +92,12 @@ final class VoiceEngine: NSObject, ObservableObject {
                 lastAttempt = Date().addingTimeInterval(30)
                 setWakeWord(true)
             } else {
-                status = "Sparrow needs Microphone and Speech Recognition: System Settings → Privacy & Security."
+                status = "Zuffi needs Microphone and Speech Recognition: System Settings → Privacy & Security."
             }
             return
         }
         lastAttempt = Date()
-        appendAppLog("voice.log", "watchdog: starting \"Sparrow…\" listening")
+        appendAppLog("voice.log", "watchdog: starting \"Zuffi…\" listening")
         startRecognition()
     }
 
@@ -128,7 +128,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     // MARK: Languages
 
-    /// What Sparrow listens for. English (India) understands Roman Urdu / Hindi / Punjabi mixed with English best.
+    /// What Zuffi listens for. English (India) understands Roman Urdu / Hindi / Punjabi mixed with English best.
     static var listenLocaleID: String {
         let s = UserDefaults.standard.string(forKey: "listenLocale") ?? ""
         return s.isEmpty ? "en-US" : s
@@ -193,7 +193,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
-        // Sparrow's built-in natural voice (fast, native). Falls back to Apple's voice instantly if it can't.
+        // Zuffi's built-in natural voice (fast, native). Falls back to Apple's voice instantly if it can't.
         if UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true, NativeSpeech.shared.isAvailable {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
             speaking = true
@@ -257,10 +257,10 @@ final class VoiceEngine: NSObject, ObservableObject {
         return AVSpeechUtterance(string: text)
     }
 
-    /// Meeting notes: everything heard is written down (only "Sparrow, stop…" is treated as a command).
+    /// Meeting notes: everything heard is written down (only "Zuffi, stop…" is treated as a command).
     var meetingMode = false
 
-    /// Set before speaking a question; Sparrow listens again as soon as it finishes.
+    /// Set before speaking a question; Zuffi listens again as soon as it finishes.
     var listenAfterSpeech = false
 
     fileprivate func speechFinished() {
@@ -268,7 +268,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         if listenAfterSpeech {
             listenAfterSpeech = false
             resumeAfterSpeech = false
-            // (not right after a live conversation ended — then it's back to "Sparrow…" listening)
+            // (not right after a live conversation ended — then it's back to "Zuffi…" listening)
             if Date().timeIntervalSince(liveEndedAt) > 4, !LiveSession.shared.active {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { VoiceEngine.shared.listenOnce() } }
                 return
@@ -282,7 +282,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     // MARK: Listening
 
-    /// Always-on "Sparrow, …" listening (Settings toggle).
+    /// Always-on "Zuffi, …" listening (Settings toggle).
     func setWakeWord(_ on: Bool) {
         if on { requestPermissions { ok in if ok { self.startRecognition() } } }
         else { stopRecognition(); status = "" }
@@ -371,12 +371,12 @@ final class VoiceEngine: NSObject, ObservableObject {
         Self.askSpeechAuth { granted in
             Task { @MainActor in
                 guard granted else {
-                    self.status = "Allow Speech Recognition for Sparrow in System Settings → Privacy & Security."
+                    self.status = "Allow Speech Recognition for Zuffi in System Settings → Privacy & Security."
                     done(false); return
                 }
                 Self.askMicAuth { mic in
                     Task { @MainActor in
-                        if !mic { self.status = "Allow the Microphone for Sparrow in System Settings → Privacy & Security." }
+                        if !mic { self.status = "Allow the Microphone for Zuffi in System Settings → Privacy & Security." }
                         done(mic)
                     }
                 }
@@ -414,7 +414,26 @@ final class VoiceEngine: NSObject, ObservableObject {
         }
     }
 
+    /// The mic switch (on by default; stays off only when you turn it off).
+    static var micOn: Bool { UserDefaults.standard.object(forKey: "micOn") as? Bool ?? true }
+    static var cameraOn: Bool { UserDefaults.standard.object(forKey: "cameraOn") as? Bool ?? true }
+
+    func setMic(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: "micOn")
+        objectWillChange.send()
+        if on {
+            status = ""
+            if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { MainActor.assumeIsolated { VoiceEngine.shared.startRecognition() } } }
+        } else {
+            if LiveSession.shared.active { LiveSession.shared.stop("mic off") }
+            stopRecognition()
+            status = "Mic is off"
+        }
+    }
+    func setCamera(_ on: Bool) { UserDefaults.standard.set(on, forKey: "cameraOn"); objectWillChange.send() }
+
     fileprivate func startRecognition() {
+        guard Self.micOn else { status = "Mic is off — turn it on to talk to Zuffi"; return }
         guard !speaking else { resumeAfterSpeech = true; return }
         guard let recognizer, recognizer.isAvailable else {
             status = "Speech recognition isn't ready yet — retrying…"
@@ -424,11 +443,11 @@ final class VoiceEngine: NSObject, ObservableObject {
         pauseRecognition()
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        req.contextualStrings = ["Sparrow", "hey Sparrow", "Sparrow open", "open", "close", "Claude", "Spotify", "Chrome",
+        req.contextualStrings = ["Zuffi", "hey Zuffi", "Zuffi open", "Zuffi play", "open", "close", "Claude", "Spotify", "Chrome",
                                  "Safari", "WhatsApp", "Gmail", "YouTube", "Finder", "Visual Studio Code", "volume", "pause", "next song",
                                  "remind me", "meeting notes", "Wi-Fi", "Bluetooth", "shut down", "restart", "kholo", "chalao", "band karo",
                                  "yaad dilao", "gaana", "awaaz"]
-        // "Sparrow…" is listened for privately on this Mac. Once you're talking to Sparrow (after its name, the mic
+        // "Zuffi…" is listened for privately on this Mac. Once you're talking to Zuffi (after its name, the mic
         // button or the ⌥ key), Apple's sharper online recognition is used when there's internet.
         let sharp = (oneShot || pushToTalk) && NetStatus.shared.online && UserDefaults.standard.object(forKey: "sharpHearing") as? Bool ?? true
         if recognizer.supportsOnDeviceRecognition && !sharp { req.requiresOnDeviceRecognition = true }
@@ -444,7 +463,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             return
         }
         isListening = true
-        status = oneShot ? "Listening…" : "Say \"Sparrow…\" anytime"
+        status = oneShot ? "Listening…" : "Say \"Zuffi…\" anytime"
         failures = 0
         heard = ""
         generation += 1
@@ -454,13 +473,13 @@ final class VoiceEngine: NSObject, ObservableObject {
         }
         appendAppLog("voice.log", "listening started (gen \(gen), oneShot \(oneShot), onDevice \(req.requiresOnDeviceRecognition))")
         // Listening for one command but nothing comes (or the recogniser silently stalls)?
-        // After 9 s go back to "Sparrow…" listening — never get stuck deaf.
+        // After 9 s go back to "Zuffi…" listening — never get stuck deaf.
         if oneShot && !pushToTalk {
             DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
                 MainActor.assumeIsolated {
                     let me = VoiceEngine.shared
                     guard me.generation == gen, me.oneShot, !me.pushToTalk, me.heard.isEmpty else { return }
-                    appendAppLog("voice.log", "one-shot: nothing heard in 9s — back to \"Sparrow…\" listening")
+                    appendAppLog("voice.log", "one-shot: nothing heard in 9s — back to \"Zuffi…\" listening")
                     me.oneShot = false
                     me.status = ""
                     if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { me.startRecognition() } else { me.stopRecognition() }
@@ -519,7 +538,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         } else if oneShot, !heard.isEmpty {
             wait = complete(heard) ? 0.5 : 1.0
         } else if extractCommand(heard) == "" {
-            wait = 1.7   // just "Sparrow" — give a moment to say the rest in the same breath
+            wait = 1.7   // just "Zuffi" — give a moment to say the rest in the same breath
         }
         // Sounds unfinished ("open spotify and…", "phir…")? Keep listening a little longer.
         if heard.lowercased().range(of: #"\b(and|then|also|aur|phir|or|to|the|for|with|ke|ki|ka|start|begin|take|meeting|my)\s*$"#, options: .regularExpression) != nil {
@@ -538,7 +557,8 @@ final class VoiceEngine: NSObject, ObservableObject {
     /// wake word was said, nil if the wake word wasn't said at all.
     private func extractCommand(_ said: String) -> String? {
         let lower = said.lowercased()
-        for wake in ["sparrow's", "sparrows", "sparrow", "sparro", "sparo", "spero", "sperro", "spirrow", "sporrow", "spar row",
+        for wake in ["zuffi's", "zuffis", "zuffi", "zuffy", "zuffie", "zufi", "zoofi", "zoofy", "zoofee", "zu fi", "zoo fee", "zaffi", "zuphy", "ज़ुफ़ी", "زوفی",
+                     "sparrow's", "sparrows", "sparrow", "sparro", "sparo", "spero", "sperro", "spirrow", "sporrow", "spar row",
                      "spa row", "sparrowe", "hey barrow", "barrow", "sorrow", "سپیرو", "स्पैरो"] {
             if let r = lower.range(of: wake, options: .backwards) {
                 return String(lower[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
@@ -546,11 +566,11 @@ final class VoiceEngine: NSObject, ObservableObject {
         }
         // Just the name, misheard on-device ("Pero", "Paro", "Porn", "Barrow"…): a single word that sounds like it.
         let words = lower.split(whereSeparator: { " ,.!?".contains($0) })
-        if words.count == 1, words[0].range(of: #"^(s|sh|b)?p[aeiou]+r+[aeiou]*(w|ow|n|ne|ns|o)?s?$|^(sp|b)?[aeo]r+o(w|ws)?$|^pharaoh$"#, options: .regularExpression) != nil {
+        if words.count == 1, words[0].range(of: #"^(z|s|j)[uo]+f+(i|y|ie|ee|ey)s?$|^(s|sh|b)?p[aeiou]+r+[aeiou]*(w|ow|n|ne|ns|o)?s?$|^(sp|b)?[aeo]r+o(w|ws)?$|^pharaoh$"#, options: .regularExpression) != nil {
             return ""
         }
         // Close mis-hearings at the very start: "spare open chrome", "sparo, play music"…
-        if let r = lower.range(of: #"^(hey |ok |hi )?sp[aeio]r+[oe]w?s?\b[, ]*"#, options: .regularExpression) {
+        if let r = lower.range(of: #"^(hey |ok |hi )?(sp[aeio]r+[oe]w?s?|z[uo]+f+(i|y|ie|ee))\b[, ]*"#, options: .regularExpression) {
             return String(lower[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
         }
         return nil
@@ -584,19 +604,19 @@ final class VoiceEngine: NSObject, ObservableObject {
             command = extractCommand(said)
         }
         heard = ""
-        // Keep listening for "Sparrow…" afterwards if that's switched on; otherwise stop.
+        // Keep listening for "Zuffi…" afterwards if that's switched on; otherwise stop.
         if wasOneShot { oneShot = false }
         if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { startRecognition() }   // fresh transcript
         else if wasOneShot { stopRecognition(); status = "" }
 
         guard let command else {
-            // Hands-free: no need to say "Sparrow" first — act when it's clearly a request.
+            // Hands-free: no need to say "Zuffi" first — act when it's clearly a request.
             let handsFree = UserDefaults.standard.object(forKey: "handsFree") as? Bool ?? false
             if handsFree, !said.isEmpty, AgentRouter.shared.isClearRequest(said) {
                 appendAppLog("voice.log", "hands-free command: \(said)")
                 Task { await Assistant.run(said, spoken: true) }
             } else if !said.isEmpty {
-                appendAppLog("voice.log", "not for me (no \"Sparrow\"): \(said)")
+                appendAppLog("voice.log", "not for me (no \"Zuffi\"): \(said)")
             }
             return
         }
@@ -640,7 +660,7 @@ enum Assistant {
         "I didn't get that. Try something like \"open Spotify\" or \"play some music\".",
     ]
 
-    /// A warm "say that again" — then Sparrow listens straight away.
+    /// A warm "say that again" — then Zuffi listens straight away.
     static func askAgain() {
         let line = notUnderstood.randomElement()!
         AppState.shared.noteMessage = "🐦 " + line
@@ -679,7 +699,7 @@ enum Assistant {
                 VoiceEngine.shared.speak(reply)
             }
             let short = text.split(separator: " ").count <= 6
-            // Habits, prayer times, memory, invoices… (Sparrow's offline brain) — instant for short requests
+            // Habits, prayer times, memory, invoices… (Zuffi's offline brain) — instant for short requests
             if short, let reply = await WebHub.shared.ask(text) { say(reply); return }
             // Anything else, any language: the smart planner turns it into actions and answers like a person
             if let plan = await SmartPlanner.shared.plan(text) {
@@ -765,7 +785,7 @@ final class Briefing {
         }
     }
 
-    /// "Tuesday 6 Oct · morning" — Sparrow says hello at most once per part of the day, even after restarts.
+    /// "Tuesday 6 Oct · morning" — Zuffi says hello at most once per part of the day, even after restarts.
     private static func slot(_ d: Date = Date()) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         return f.string(from: d) + " " + period(d)
@@ -782,7 +802,7 @@ final class Briefing {
 
     /// Called by the morning briefing so the wake greeting doesn't repeat it (and the other way round).
     func markGreeted() { lastGreet = Date(); lastPeriod = Self.period(); UserDefaults.standard.set(Self.slot(), forKey: "greetSlot") }
-    /// True if Sparrow already said hello in this part of the day.
+    /// True if Zuffi already said hello in this part of the day.
     var greetedRecently: Bool { greetedThisPart || Date().timeIntervalSince(lastGreet) < 20 * 60 }
 
     func greet() async {
@@ -792,7 +812,7 @@ final class Briefing {
         if VoiceEngine.onlyBasicVoices && !UserDefaults.standard.bool(forKey: "voiceTipShown") {
             UserDefaults.standard.set(true, forKey: "voiceTipShown")
             DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
-                AppState.shared.noteMessage = "Tip: want me to sound more human? Settings → Voice → “Make Sparrow sound human”. It's free."
+                AppState.shared.noteMessage = "Tip: want me to sound more human? Settings → Voice → “Make Zuffi sound human”. It's free."
                 NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
             }
         }
@@ -878,7 +898,7 @@ enum Weather {
 
     private static func getJSON(_ url: URL) async -> [String: Any]? {
         var req = URLRequest(url: url, timeoutInterval: 6)
-        req.setValue("Sparrow", forHTTPHeaderField: "User-Agent")
+        req.setValue("Zuffi", forHTTPHeaderField: "User-Agent")
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -1080,11 +1100,11 @@ struct AssistantSettings: View {
                     HStack {
                         Text("Speed")
                         Slider(value: $rate, in: 0.35...0.62)
-                        Button("Test") { VoiceEngine.shared.speak("Hi\(AssistantPrefs.displayName.isEmpty ? "" : " \(AssistantPrefs.displayName)"), I'm Sparrow. How can I help?") }
+                        Button("Test") { VoiceEngine.shared.speak("Hi\(AssistantPrefs.displayName.isEmpty ? "" : " \(AssistantPrefs.displayName)"), I'm Zuffi. How can I help?") }
                     }
                     if VoiceEngine.onlyBasicVoices {
                         VStack(alignment: .leading, spacing: 6) {
-                            Label("Make Sparrow sound human (free, 2 minutes)", systemImage: "sparkles")
+                            Label("Make Zuffi sound human (free, 2 minutes)", systemImage: "sparkles")
                                 .font(.system(size: 12.5, weight: .bold))
                             Text("Your Mac only has the basic robotic voices. Download a natural one once — it then works offline:")
                                 .font(.system(size: 11))
@@ -1105,11 +1125,11 @@ struct AssistantSettings: View {
                     }
 
                     Divider()
-                    Toggle("Listen for \"Sparrow…\" (say \"Sparrow, open Chrome\")", isOn: $wakeWord)
+                    Toggle("Listen for \"Zuffi…\" (say \"Zuffi, open Chrome\")", isOn: $wakeWord)
                         .onChange(of: wakeWord) { _, on in VoiceEngine.shared.setWakeWord(on) }
-                    Toggle("Speak answers out loud when I talk to Sparrow", isOn: $speakReplies)
+                    Toggle("Speak answers out loud when I talk to Zuffi", isOn: $speakReplies)
                     Divider()
-                    Toggle("Jarvis conversation — say “Sparrow” once, then just talk until “thanks” or “bye”", isOn: $liveMode)
+                    Toggle("Jarvis conversation — say “Zuffi” once, then just talk until “thanks” or “bye”", isOn: $liveMode)
                     if liveMode {
                         Picker("Conversation voice", selection: $liveVoice) {
                             ForEach(["Kore", "Aoede", "Leda", "Zephyr", "Puck", "Charon", "Orus", "Fenrir"], id: \.self) { Text($0).tag($0) }
@@ -1120,8 +1140,8 @@ struct AssistantSettings: View {
                             Text("\(Int(liveIdle)) s").monospacedDigit()
                         }.font(.system(size: 11))
                         Text(KeychainStore.shared.get("gemini-api-key")?.isEmpty == false
-                             ? "Natural voice in any language (it answers in the language you speak), you can interrupt it, and it does things while you talk. Uses your Gemini key and the internet; offline, Sparrow uses its built-in voice."
-                             : "Add a free Gemini key in Settings → AI to turn this on. Until then Sparrow uses its built-in voice.")
+                             ? "Natural voice in any language (it answers in the language you speak), you can interrupt it, and it does things while you talk. Uses your Gemini key and the internet; offline, Zuffi uses its built-in voice."
+                             : "Add a free Gemini key in Settings → AI to turn this on. Until then Zuffi uses its built-in voice.")
                             .font(.system(size: 11)).foregroundColor(.secondary)
                     }
                     if !voice.status.isEmpty {
@@ -1171,7 +1191,7 @@ struct AssistantSettings: View {
                             }
                         }
                     }
-                    Text("Sparrow reads the notification banners that pop up on your screen. Nothing is sent anywhere.")
+                    Text("Zuffi reads the notification banners that pop up on your screen. Nothing is sent anywhere.")
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 }
                 .padding(6)
@@ -1179,7 +1199,7 @@ struct AssistantSettings: View {
             }
 
             if parts.contains(.apps) {
-            GroupBox("Apps Sparrow can open") {
+            GroupBox("Apps Zuffi can open") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Every app on your Mac works. Type or say \"open\" plus the app name.")
                         .font(.system(size: 11)).foregroundColor(.secondary)
@@ -1239,11 +1259,11 @@ struct MicButton: View {
                 .clipShape(Circle())
         }
         .buttonStyle(.plain)
-        .help("Talk to Sparrow")
+        .help("Talk to Zuffi")
     }
 }
 
-// MARK: - Appearance: glass look + where Sparrow sits
+// MARK: - Appearance: glass look + where Zuffi sits
 
 struct VisualEffectBlur: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
@@ -1282,24 +1302,24 @@ struct AppearanceSettings: View {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Glass look (see-through background)", isOn: $state.glassStyle)
                 HStack {
-                    Toggle("Show Sparrow on screen (a little pet you can drag anywhere)", isOn: Binding(
+                    Toggle("Show Zuffi on screen (a little pet you can drag anywhere)", isOn: Binding(
                         get: { PetController.shared.isShown },
                         set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
                 }
                 Button("Open Today — meetings & tasks") { TodayWindow.shared.show() }
-                Picker("Where Sparrow sits", selection: $position) {
+                Picker("Where Zuffi sits", selection: $position) {
                     ForEach(SparrowPosition.allCases) { Text($0.label).tag($0.rawValue) }
                 }
                 .onChange(of: position) { _, _ in UserDefaults.standard.removeObject(forKey: "islandOrigin") }
-                Text("Tip: drag the top bar of the island to put Sparrow anywhere you like.")
+                Text("Tip: drag the top bar of the island to put Zuffi anywhere you like.")
                     .font(.system(size: 11)).foregroundColor(.secondary)
                 if position != startPosition {
                     HStack {
-                        Text("Restart Sparrow to move it.").font(.system(size: 11)).foregroundColor(.orange)
+                        Text("Restart Zuffi to move it.").font(.system(size: 11)).foregroundColor(.orange)
                         Button("Restart now") { Self.relaunch() }
                     }
                 }
-                Text("Shortcut to ask Sparrow anything: \(hotkeyText). Turn it on under Hotkey below.")
+                Text("Shortcut to ask Zuffi anything: \(hotkeyText). Turn it on under Hotkey below.")
                     .font(.system(size: 11)).foregroundColor(.secondary)
             }
             .padding(6)

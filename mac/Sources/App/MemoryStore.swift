@@ -1,6 +1,6 @@
 import Foundation
 
-/// Sparrow's memory on disk (~/Library/Application Support/Sparrow/Memory): the timeline of what you did,
+/// Zuffi's memory on disk (~/Library/Application Support/Sparrow/Memory): the timeline of what you did,
 /// and the files you gave it (text for searching, plus a copy when kept). Shared by the island and "More".
 @MainActor
 final class MemoryStore {
@@ -32,7 +32,7 @@ final class MemoryStore {
         if let d = try? JSONSerialization.data(withJSONObject: files) { try? d.write(to: dir.appendingPathComponent("files.json"), options: .atomic) }
     }
 
-    /// Handles a request from the Sparrow web app. Returns a JSON-able value.
+    /// Handles a request from the Zuffi web app. Returns a JSON-able value.
     func handle(_ o: [String: Any]) -> Any {
         load()
         switch o["op"] as? String {

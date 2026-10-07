@@ -78,7 +78,7 @@ enum SparrowConst {
     static let eyeH: CGFloat  = 0.27
     static let eyeSp: CGFloat = 0.37
     static let eyeP: CGFloat  = -0.12
-    // Sparrow plumage
+    // Zuffi plumage
     static let baseTop    = CGColor(red: 1.000, green: 0.761, blue: 0.827, alpha: 1)  // #FFC2D3 soft pink
     static let baseBottom = CGColor(red: 0.949, green: 0.482, blue: 0.627, alpha: 1)  // #F27BA0 pink
     static let cap        = CGColor(red: 0.878, green: 0.314, blue: 0.494, alpha: 1)  // #E0507E rose crown
@@ -977,7 +977,7 @@ final class BotEngine: ObservableObject {
         }
     }
 
-    /// Sparrow tail feathers peeking out behind the body (lower right).
+    /// Zuffi tail feathers peeking out behind the body (lower right).
     private func drawTail(context: GraphicsContext, size: CGSize) {
         guard !isMini, morph < 0.3 else { return }
         let W = size.width, H = size.height
@@ -1142,7 +1142,7 @@ final class BotEngine: ObservableObject {
         }
     }
 
-    // MARK: - Sparrow details
+    // MARK: - Zuffi details
 
     private func drawPlumage(ctx: inout GraphicsContext, path: Path, rx: CGFloat, ry: CGFloat, R: CGFloat) {
         let fade = Double(1 - morph)

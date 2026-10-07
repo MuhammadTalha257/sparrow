@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - Settings → Health: water, coffee and medicine reminders
 // Each one: on/off, every N minutes or at set times, only between two times.
 // When one is due the pink sparrow flies in carrying a water bottle, a coffee
-// cup or pills, and says it. (The reminders live in Sparrow's shared app, so
+// cup or pills, and says it. (The reminders live in Zuffi's shared app, so
 // they work the same on iPhone and Windows.)
 // =====================================================================
 
@@ -48,7 +48,7 @@ struct HealthSettingsView: View {
                 LittleSparrow(color: nil, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Little reminders").font(.system(size: 15, weight: .bold, design: .rounded))
-                    Text("When it's time, Sparrow flies in carrying your water, coffee or pills.")
+                    Text("When it's time, Zuffi flies in carrying your water, coffee or pills.")
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 }
             }
@@ -58,7 +58,7 @@ struct HealthSettingsView: View {
                 ForEach(kinds, id: \.id) { k in card(k) }
                 HStack {
                     Button(saved ? "Saved ✓" : "Save") { save() }.buttonStyle(.borderedProminent).tint(Color(hex: "#E2648A"))
-                    Text("You can also say “Sparrow, remind me to drink water every 30 minutes”.")
+                    Text("You can also say “Zuffi, remind me to drink water every 30 minutes”.")
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 }
             }

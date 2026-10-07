@@ -493,8 +493,8 @@ struct IslandHeader: View {
         HStack(spacing: 0) {
             LittleSparrow(color: nil, size: 17)
                 .padding(.leading, 9)
-                .help("Drag to move Sparrow")
-            // Left: labelled tabs (Sparrow's own order)
+                .help("Drag to move Zuffi")
+            // Left: labelled tabs (Zuffi's own order)
             HStack(spacing: 3) {
                 TabButton(icon: "house.fill", label: "Home", view: .overview, state: state)
                 TabButton(icon: "sparkles", label: "Ask", view: .prompt, state: state, preAction: {
@@ -559,12 +559,12 @@ struct IslandHeader: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
-                .help("Hide Sparrow — click the little sparrow bubble to bring it back")
+                .help("Hide Zuffi — click the little sparrow bubble to bring it back")
             }
             .padding(.trailing, 6)
         }
         .frame(maxHeight: .infinity)
-        // Glass bar behind the header — drag it to move Sparrow anywhere.
+        // Glass bar behind the header — drag it to move Zuffi anywhere.
         .background(
             Capsule(style: .continuous)
                 .fill(LinearGradient(colors: [Color.white.opacity(0.12), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom))

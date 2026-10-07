@@ -279,7 +279,7 @@ final class CommandEngine {
             if ["music", "songs", "song", "some music", "my music", "something", "tunes"].contains(q) {
                 let app = wantsSpotify ? "Spotify" : wantsMusic ? "Music" : player
                 if runAppleScript("tell application \"\(app)\" to play") != nil { return "Playing music on \(app == "Music" ? "Apple Music" : app)." }
-                return "I couldn't control \(app). Allow Sparrow under System Settings → Privacy & Security → Automation."
+                return "I couldn't control \(app). Allow Zuffi under System Settings → Privacy & Security → Automation."
             }
             for a in ["some ", "a song by ", "songs by ", "music by "] where q.hasPrefix(a) { q = String(q.dropFirst(a.count)) }
             if player == "Spotify", let url = URL(string: "spotify:search:" + enc(q)) {
@@ -297,7 +297,7 @@ final class CommandEngine {
         ]
         for a in actions where a.words.contains(t) {
             if runAppleScript("tell application \"\(player)\" to \(a.script)") != nil { return a.reply }
-            return "I couldn't control \(player). Allow Sparrow under System Settings → Privacy & Security → Automation."
+            return "I couldn't control \(player). Allow Zuffi under System Settings → Privacy & Security → Automation."
         }
         if ["what's playing", "what is playing", "what song is this", "current song", "now playing"].contains(t) {
             let script = player == "Spotify"
@@ -378,7 +378,7 @@ final class CommandEngine {
             if runAppleScript("tell application \"System Events\" to tell appearance preferences to set dark mode to \(value)") != nil {
                 return value == "false" ? "Light mode on." : "Dark mode on."
             }
-            return "I need permission: System Settings → Privacy & Security → Automation → Sparrow → System Events."
+            return "I need permission: System Settings → Privacy & Security → Automation → Zuffi → System Events."
         }
         if ["show pet", "show sparrow", "come here", "fly out", "pet mode", "show yourself", "come out"].contains(t) {
             PetController.shared.show(); return "Here I am! 🐦"

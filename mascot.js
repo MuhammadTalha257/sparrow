@@ -28,7 +28,7 @@ function listen() {
 }
 
 /** Turns `host` into the sparrow. Returns { react(name, ms), look(direction), el }. */
-export function mountMascot(host, { directions = 'mascots/sparrow-directions.webp', reactions = 'mascots/sparrow-reactions.webp', label = 'Sparrow', onTap } = {}) {
+export function mountMascot(host, { directions = 'mascots/zuffi-directions.webp', reactions = 'mascots/zuffi-reactions.webp', label = 'Zuffi', onTap } = {}) {
   host.classList.add('mascot');
   host.innerHTML = `<span class="mascot-squash"><span class="mascot-layer mascot-dir"></span><span class="mascot-layer mascot-react"></span></span>`;
   host.setAttribute('role', 'button'); host.setAttribute('aria-label', `Boop ${label}`); host.tabIndex = 0;

@@ -72,7 +72,7 @@ final class PhoneLink: ObservableObject {
         guard streamTask == nil else { return }
         log("on")
         // Keep the Mac from dozing off on its own while the iPhone may need it (the screen can still sleep).
-        awake = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled], reason: "Sparrow: iPhone can control this Mac")
+        awake = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled], reason: "Zuffi: iPhone can control this Mac")
         streamTask = Task { [weak self] in
             var delay: UInt64 = 2
             while !Task.isCancelled {
@@ -245,7 +245,7 @@ struct PhoneLinkSettingsView: View {
                 Image(systemName: "iphone.radiowaves.left.and.right").font(.system(size: 24)).foregroundColor(Color(hex: "#E2648A"))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Control this Mac from your iPhone").font(.system(size: 15, weight: .bold, design: .rounded))
-                    Text("Say or type “lock my Mac”, “play music”, “shut down the Mac”… in Sparrow on your iPhone, from anywhere.")
+                    Text("Say or type “lock my Mac”, “play music”, “shut down the Mac”… in Zuffi on your iPhone, from anywhere.")
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 }
             }
@@ -265,7 +265,7 @@ struct PhoneLinkSettingsView: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Link your iPhone (once)").font(.system(size: 13, weight: .semibold))
-                        Text("1. On your iPhone, open the Camera and point it at this code.\n2. Tap the link — Sparrow opens and says “Linked to your Mac”.\n3. If you use Sparrow from your Home Screen, open it there instead: Settings → Control my Mac → Scan code.")
+                        Text("1. On your iPhone, open the Camera and point it at this code.\n2. Tap the link — Zuffi opens and says “Linked to your Mac”.\n3. If you use Zuffi from your Home Screen, open it there instead: Settings → Control my Mac → Scan code.")
                             .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                         if showCode, let img = PhoneLink.qrImage(link.pairingURL) {
                             Image(nsImage: img).interpolation(.none).resizable().frame(width: 190, height: 190)
@@ -293,7 +293,7 @@ struct PhoneLinkSettingsView: View {
                     }
                 }
             }
-            Text("Your Mac needs to be on, awake and online, with Sparrow open. Messages pass through the free ntfy.sh relay, end-to-end encrypted — the relay can't read them.")
+            Text("Your Mac needs to be on, awake and online, with Zuffi open. Messages pass through the free ntfy.sh relay, end-to-end encrypted — the relay can't read them.")
                 .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

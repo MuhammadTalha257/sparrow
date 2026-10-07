@@ -25,8 +25,8 @@ final class SparrowSprites {
             let w = img.width / 3, h = img.height / 3
             return (0..<9).compactMap { i in img.cropping(to: CGRect(x: (i % 3) * w, y: (i / 3) * h, width: w, height: h)) }
         }
-        directions = cut("sparrow-directions.webp")
-        reactions = cut("sparrow-reactions.webp")
+        directions = cut("zuffi-directions.webp")
+        reactions = cut("zuffi-reactions.webp")
     }
     var available: Bool { directions.count == 9 && reactions.count == 9 }
 }
@@ -41,6 +41,8 @@ final class SparrowSpriteModel: ObservableObject {
     @Published var squash = CGSize(width: 1, height: 1)
     /// Something the sparrow carries (SF Symbol name): water bottle, coffee cup, pills.
     @Published var prop: String?
+    /// Facing while walking across the screen.
+    @Published var walkLeft = false
 
     private var sector = -1
     private var boops = 0
@@ -132,7 +134,7 @@ struct SparrowSpriteView: View {
     @ObservedObject var model: SparrowSpriteModel
     var size: CGFloat
     var deadZone: CGFloat = 50
-    /// Gentle bob while Sparrow talks or listens.
+    /// Gentle bob while Zuffi talks or listens.
     var lively: Bool = false
     var onTap: (() -> Void)? = nil
 
@@ -140,11 +142,42 @@ struct SparrowSpriteView: View {
     @State private var t = 0.0
     private let tick = Timer.publish(every: 1.0 / 20.0, on: .main, in: .common).autoconnect()
 
+    /// The frame to show: reactions win; then the mood's own frames; else where the mouse is.
+    private func frame(_ sprites: SparrowSprites) -> CGImage {
+        if let r = model.reaction { return sprites.reactions[r] }
+        switch mood {
+        case .thinking: return sprites.directions[Int(t * 1.6) % 2 == 0 ? 0 : 2]        // looks up-left, up-right… pondering
+        case .speaking: return Int(t * 7) % 3 == 0 ? sprites.reactions[8] : sprites.directions[4]   // little mouth movements
+        case .listening: return sprites.directions[4]
+        case .walking: return sprites.directions[model.walkLeft ? 3 : 5]
+        case .idle: return sprites.directions[model.direction]
+        }
+    }
+
     var body: some View {
         let sprites = SparrowSprites.shared
         ZStack {
+            if mood == .listening {
+                // sound waves around the bunny while it listens
+                ForEach(0..<3) { i in
+                    let p = (t * 0.8 + Double(i) / 3).truncatingRemainder(dividingBy: 1)
+                    Circle().stroke(Color(hex: "#F58FA8").opacity(0.55 * (1 - p)), lineWidth: 2)
+                        .frame(width: size * (0.55 + 0.6 * p), height: size * (0.55 + 0.6 * p))
+                }
+            }
+            if mood == .thinking {
+                // twinkling sparkles while it thinks
+                ForEach(0..<4) { i in
+                    let a = t * 1.3 + Double(i) * .pi / 2
+                    Image(systemName: i % 2 == 0 ? "sparkle" : "star.fill")
+                        .font(.system(size: size * (i % 2 == 0 ? 0.13 : 0.08)))
+                        .foregroundColor(Color(hex: i % 2 == 0 ? "#F7B32B" : "#F58FA8"))
+                        .opacity(0.5 + 0.5 * sin(t * 4 + Double(i)))
+                        .offset(x: cos(a) * size * 0.46, y: -size * 0.34 + sin(a) * size * 0.12)
+                }
+            }
             if sprites.available {
-                Image(decorative: model.reaction.map { sprites.reactions[$0] } ?? sprites.directions[model.direction], scale: 1)
+                Image(decorative: frame(sprites), scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .antialiased(true)
@@ -161,13 +194,14 @@ struct SparrowSpriteView: View {
             }
         }
         .scaleEffect(x: model.squash.width, y: model.squash.height, anchor: UnitPoint(x: 0.5, y: 0.78))
-        .offset(y: lively ? CGFloat(sin(t * 9)) * size * 0.015 : 0)
+        .offset(y: mood == .walking ? -abs(CGFloat(sin(t * 10))) * size * 0.06 : (lively || mood == .speaking) ? CGFloat(sin(t * 9)) * size * 0.015 : 0)
+        .rotationEffect(.degrees(mood == .walking ? sin(t * 10) * 4 : 0), anchor: .bottom)
         .background(SpriteAnchorReader(anchor: anchor))
         .contentShape(Rectangle())
         .onTapGesture { model.boop(); onTap?() }
         .onReceive(tick) { _ in
             t += 0.05
-            if let c = anchor.screenCenter { model.aim(center: c, mouse: NSEvent.mouseLocation, deadZone: deadZone) }
+            if mood == .idle, let c = anchor.screenCenter { model.aim(center: c, mouse: NSEvent.mouseLocation, deadZone: deadZone) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .triggerEmote)) { n in
             if let e = n.object as? BotEmote { model.show(e) }

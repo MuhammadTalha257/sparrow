@@ -1,4 +1,4 @@
-// Sparrow's private memory: a timeline of what you did with Sparrow, kept on this device only
+// Zuffi's private memory: a timeline of what you did with Zuffi, kept on this device only
 // (IndexedDB). Nothing is uploaded. You can pause it, forget items, or wipe it.
 import { store } from './store.js';
 
@@ -135,7 +135,7 @@ export async function fileText(file) {
   return '';
 }
 
-/** Save a file the person gave Sparrow. Returns the stored record (without the blob). */
+/** Save a file the person gave Zuffi. Returns the stored record (without the blob). */
 export async function addFile(file, keepCopy = store.settings.memory?.keepCopies) {
   const text = await fileText(file);
   const rec = { id: 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: file.name, type: file.type, size: file.size,

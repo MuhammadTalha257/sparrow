@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// Sparrow's built-in natural voice: the SparrowSpeech helper (sherpa-onnx engine) bundled in the app.
+/// Zuffi's built-in natural voice: the SparrowSpeech helper (sherpa-onnx engine) bundled in the app.
 /// English → Kokoro · Urdu / Roman Urdu / Hindi / Punjabi → MMS. Falls back to Apple's voice if anything goes wrong.
 @MainActor
 final class NativeSpeech {
@@ -22,7 +22,7 @@ final class NativeSpeech {
         "am_michael": (16, "Michael (calm, American)"), "bm_george": (26, "George (British)"), "bm_lewis": (27, "Lewis (British)"),
     ]
 
-    /// Things Sparrow says often — prepared in the background so they play instantly.
+    /// Things Zuffi says often — prepared in the background so they play instantly.
     static let common = ["Playing.", "Paused.", "Next song.", "Previous song.", "Muted.", "Sound back on.", "Done.",
                          "Opening Spotify.", "Opening Google Chrome.", "Opening Safari.", "Opening WhatsApp.", "Opening Notes.",
                          "Opening Finder.", "Opening Gmail in your browser.", "Opening YouTube in your browser.",

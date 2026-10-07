@@ -1,6 +1,6 @@
 {
-  "name": "Sparrow",
-  "short_name": "Sparrow",
+  "name": "Zuffi",
+  "short_name": "Zuffi",
   "description": "Your friendly little helper for meetings, tasks, reminders, files and more.",
   "start_url": "./",
   "scope": "./",

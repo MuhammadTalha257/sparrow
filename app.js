@@ -12,7 +12,7 @@ import {
 import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
-import { mountBird } from './bird.js';
+import { mountMascot as mountBird } from './mascot.js';
 import * as maclink from './maclink.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
@@ -135,7 +135,7 @@ function renderPlan() {
     habit: '"add habit drink water 8 times a day"', customer: '"add customer Ahmed Khan 07123 456789 ahmed@mail.com"',
   };
   $('#planList').innerHTML = list.length ? list.map(itemRow).join('') : `<div class="empty">Nothing here yet.<br>Say ${examples[planType]}</div>`;
-  $('#planHint').textContent = ['reminder', 'meeting'].includes(planType) ? (isIOS ? 'iPhone tip: tap 📅 so your iPhone rings even when Sparrow is closed.' : 'Tap 📅 to add it to your calendar too.')
+  $('#planHint').textContent = ['reminder', 'meeting'].includes(planType) ? (isIOS ? 'iPhone tip: tap 📅 so your iPhone rings even when Zuffi is closed.' : 'Tap 📅 to add it to your calendar too.')
     : planType === 'customer' ? 'Tap a customer to see their whole history.' : '';
 }
 function renderNext() {
@@ -228,7 +228,7 @@ function resultRows(m) {
 }
 function renderChat() {
   const box = $('#chat');
-  if (!store.chat.length) { box.innerHTML = `<div class="msg bot">Hi${S().name ? ' ' + esc(S().name) : ''}! I'm Sparrow 🐦\nAsk me anything, tell me what to remember, or drop a file with 📎 and ask about it.</div>`; return; }
+  if (!store.chat.length) { box.innerHTML = `<div class="msg bot">Hi${S().name ? ' ' + esc(S().name) : ''}! I'm Zuffi 🐦\nAsk me anything, tell me what to remember, or drop a file with 📎 and ask about it.</div>`; return; }
   box.innerHTML = store.chat.slice(-60).map(m => {
     let extra = '';
     if (m.itemId) { const it = store.items.find(x => x.id === m.itemId); if (it?.when) extra = `<div class="cal"><button class="chip" data-cal="${it.id}">📅 Add to calendar</button></div>`; }
@@ -243,7 +243,7 @@ $('#chat').onclick = async e => {
   if (b.dataset.cal) { const it = store.items.find(x => x.id === b.dataset.cal); if (it) addToCalendar(it); }
   if (b.dataset.open) { D?.openPath(b.dataset.open); mem.remember('opened', b.dataset.open.split(/[\\/]/).pop(), '', { path: b.dataset.open }); }
   if (b.dataset.reveal) D?.openPath(b.dataset.reveal, true);
-  if (b.dataset.file) { const f = await mem.getFile(b.dataset.file); if (f?.blob) tools.deliver(f.name, new Uint8Array(await f.blob.arrayBuffer()), f.type); else toast(f ? 'Sparrow remembered this file but didn’t keep a copy (turn on “Keep a copy” in Settings → Memory).' : 'That file is gone.', 5000); }
+  if (b.dataset.file) { const f = await mem.getFile(b.dataset.file); if (f?.blob) tools.deliver(f.name, new Uint8Array(await f.blob.arrayBuffer()), f.type); else toast(f ? 'Zuffi remembered this file but didn’t keep a copy (turn on “Keep a copy” in Settings → Memory).' : 'That file is gone.', 5000); }
   if (b.dataset.clip !== undefined) { const clips = await D.clips('get'); D.clips('copy', clips[+b.dataset.clip].text); toast('Copied'); }
   if (b.dataset.mailto) openUrl(b.dataset.mailto);
   if (b.dataset.copy !== undefined) { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied'); } catch {} }
@@ -316,7 +316,7 @@ async function submit(text, fromVoice = false) {
     replyKind = 'ai';
     addMsg('bot', res.text || '…', { src: res.source });
     if (fromVoice) window.SparrowIsland?.reply(res.text || '', false);
-    mem.remember('chat', 'Sparrow: ' + (res.text || '').slice(0, 200));
+    mem.remember('chat', 'Zuffi: ' + (res.text || '').slice(0, 200));
     if (fromVoice || S().speak) speak(res.text);
   } catch (e) {
     typing.remove();
@@ -403,7 +403,7 @@ async function runAction(r) {
         catch { body = body || 'Thank you for your email. I will get back to you shortly.'; }
       }
       const res = await D.mail('reply', body);
-      addMsg('bot', res?.ok ? `✉️ Your reply is ready in Mail — check it and press Send:\n\n${body}` : 'I couldn’t open Mail. Allow Sparrow under System Settings → Privacy & Security → Automation.');
+      addMsg('bot', res?.ok ? `✉️ Your reply is ready in Mail — check it and press Send:\n\n${body}` : 'I couldn’t open Mail. Allow Zuffi under System Settings → Privacy & Security → Automation.');
       return true;
     }
     case 'email-new': {
@@ -521,7 +521,7 @@ function afterSpeech() {
 
 // ---------------- Jarvis: live conversation (iPhone, Android, Windows, browser) ----------------
 const LIVE_TOOLS = [
-  { name: 'run_command', description: "Do something with Sparrow in plain English: 'open WhatsApp', 'play music', 'remind me…', 'what's on today', 'weather', 'prayer times', 'note buy milk', 'search google for X', 'open youtube.com', 'focus 25 minutes', 'add task…'.", parameters: { type: 'OBJECT', properties: { command: { type: 'STRING' } }, required: ['command'] } },
+  { name: 'run_command', description: "Do something with Zuffi in plain English: 'open WhatsApp', 'play music', 'remind me…', 'what's on today', 'weather', 'prayer times', 'note buy milk', 'search google for X', 'open youtube.com', 'focus 25 minutes', 'add task…'.", parameters: { type: 'OBJECT', properties: { command: { type: 'STRING' } }, required: ['command'] } },
   { name: 'add_reminder', description: 'Create a reminder/task/meeting at an exact time.', parameters: { type: 'OBJECT', properties: { title: { type: 'STRING' }, when: { type: 'STRING', description: 'ISO local date-time, e.g. 2026-10-12T10:00:00' }, kind: { type: 'STRING', description: 'reminder | task | meeting' }, repeat: { type: 'STRING', description: 'daily | weekdays | weekly | monthly (optional)' } }, required: ['title', 'when'] } },
   { name: 'delete_reminder', description: 'Delete an item by id (from the list in your instructions).', parameters: { type: 'OBJECT', properties: { id: { type: 'STRING' } }, required: ['id'] } },
   { name: 'complete_task', description: 'Mark an item done by id.', parameters: { type: 'OBJECT', properties: { id: { type: 'STRING' } }, required: ['id'] } },
@@ -532,7 +532,7 @@ const LIVE_TOOLS = [
   { name: 'end_conversation', description: 'Call after a short goodbye when the user says thanks/bye/that is all.' },
 ];
 async function liveTool(name, a) {
-  const res = r => r ? { ok: true, result: typeof r === 'string' ? r : JSON.stringify(r) } : { ok: false, result: 'Sparrow could not do that.' };
+  const res = r => r ? { ok: true, result: typeof r === 'string' ? r : JSON.stringify(r) } : { ok: false, result: 'Zuffi could not do that.' };
   switch (name) {
     case 'run_command': return res(await voiceAsk(a.command || ''));
     case 'add_reminder': return res(window.Sparrow.addReminder(a.title, a.when, a.kind || 'reminder', a.repeat || ''));
@@ -551,7 +551,7 @@ async function liveTool(name, a) {
 }
 function livePrompt() {
   const name = S().name || '';
-  return `You are Sparrow, ${name ? name + "'s" : "the user's"} personal assistant — like JARVIS: calm, quick, warm, a little witty. Live voice conversation on their ${isIOS ? 'iPhone' : isAndroid ? 'Android phone' : D ? 'computer' : 'device'}.
+  return `You are Zuffi, ${name ? name + "'s" : "the user's"} personal assistant — like JARVIS: calm, quick, warm, a little witty. Live voice conversation on their ${isIOS ? 'iPhone' : isAndroid ? 'Android phone' : D ? 'computer' : 'device'}.
 Now: ${new Date().toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).
 Their reminders, meetings and tasks (JSON with ids): ${JSON.stringify(window.Sparrow.listItems()).slice(0, 4000)}
 TALK: 1–2 short spoken sentences, no lists or emojis. Detect the language they speak and ALWAYS answer in that same language and style (Urdu, Roman Urdu/Hindi mix, Punjabi, Hindi, Arabic, Spanish, French, Brazilian Portuguese, Turkish, English…). Translate clearly when asked. They may interrupt you.
@@ -575,7 +575,7 @@ function startJarvis(firstText) {
   });
 }
 $('#liveEnd').onclick = () => stopLive('tap');
-$('#liveCam').onclick = async () => { try { liveSendImage(await cameraShot('environment')); toast('Sparrow is looking 👀'); } catch { toast('Allow the camera for Sparrow.'); } };
+$('#liveCam').onclick = async () => { try { liveSendImage(await cameraShot('environment')); toast('Zuffi is looking 👀'); } catch { toast('Allow the camera for Zuffi.'); } };
 
 // ---------------- voice in ----------------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -594,7 +594,7 @@ function listen(quiet = false) {
   let finalText = '';
   rec.onstart = () => { listening = true; $('#micBtn').classList.add('on'); $('#pulse').classList.add('on'); setBird('listening', true); chirp(); $('#askInput').placeholder = 'Listening…'; };
   rec.onresult = e => { let txt = ''; for (const r of e.results) txt += r[0].transcript; $('#askInput').value = txt; if (e.results[e.results.length - 1].isFinal) finalText = txt; };
-  rec.onerror = e => { if (e.error === 'not-allowed' && !quiet) toast('Allow the microphone for Sparrow in your settings.'); };
+  rec.onerror = e => { if (e.error === 'not-allowed' && !quiet) toast('Allow the microphone for Zuffi in your settings.'); };
   rec.onend = () => {
     listening = false; $('#micBtn').classList.remove('on'); $('#pulse').classList.remove('on'); setBird('listening', false);
     applyI18n();
@@ -609,7 +609,7 @@ $('#micBtn').onclick = () => listen();
 $('#micHeroBtn').onclick = () => listen();
 
 
-// Hands-free on phones/browsers: listen for "Sparrow …" while the app is open.
+// Hands-free on phones/browsers: listen for "Zuffi …" while the app is open.
 function startWake() {
   if (N || D || M || !SR || !S().wake || wakeRec || listening || document.hidden) return;
   try {
@@ -645,12 +645,15 @@ async function notify(msg, tag) {
   try {
     if (Notification?.permission === 'granted') {
       const reg = await navigator.serviceWorker?.getRegistration();
-      reg ? reg.showNotification('Sparrow', { body: msg, icon: 'icons/icon-192.png', tag }) : new Notification('Sparrow', { body: msg });
+      reg ? reg.showNotification('Zuffi', { body: msg, icon: 'icons/icon-192.png', tag }) : new Notification('Zuffi', { body: msg });
     }
   } catch {}
 }
 function showAlert(title, sub, itemId) {
-  if (M) M.post('note', { title, sub: sub || '' });
+  // On the Mac, a reminder or meeting brings Zuffi walking across the screen with a banner.
+  const item = itemId && store.items.find(i => i.id === itemId);
+  if (M && item) M.post('reminder', { itemId, kind: item.type || 'reminder', title: item.title || title, sub: sub || '' });
+  else if (M) M.post('note', { title, sub: sub || '' });
   window.SparrowIsland?.peek(title, sub || '', 9000);
   $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
   $('#alert').hidden = false;
@@ -882,7 +885,7 @@ async function renderMemory() {
 $('#memList').onclick = async e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.mdel) { await mem.forget(+b.dataset.mdel); renderMemory(); }
-  if (b.dataset.mfile) { const f = await mem.getFile(b.dataset.mfile); if (f?.blob) tools.deliver(f.name, new Uint8Array(await f.blob.arrayBuffer()), f.type); else toast('Sparrow didn’t keep a copy of this file. Turn on “Keep a copy” in Settings → Memory.', 5000); }
+  if (b.dataset.mfile) { const f = await mem.getFile(b.dataset.mfile); if (f?.blob) tools.deliver(f.name, new Uint8Array(await f.blob.arrayBuffer()), f.type); else toast('Zuffi didn’t keep a copy of this file. Turn on “Keep a copy” in Settings → Memory.', 5000); }
   if (b.dataset.mask) { activeDocs = [b.dataset.mask]; go('chat'); $('#askInput').placeholder = 'Ask about this file…'; $('#askInput').focus(); }
 };
 
@@ -1071,7 +1074,7 @@ function openSync() {
   body.querySelector('#syShow').onclick = async () => {
     const codes = await sync.qrCodes(await sync.bundle($('#syMem').checked));
     let i = 0; const area = body.querySelector('#syArea');
-    const show = () => { area.innerHTML = `<div class="qr-box">${codes[i]}</div><p class="small-text center">${codes.length > 1 ? `Code ${i + 1} of ${codes.length} — keep it in view, it changes by itself` : 'Scan this with Sparrow on your other device (Tools → Sync → Scan)'}</p>`; i = (i + 1) % codes.length; };
+    const show = () => { area.innerHTML = `<div class="qr-box">${codes[i]}</div><p class="small-text center">${codes.length > 1 ? `Code ${i + 1} of ${codes.length} — keep it in view, it changes by itself` : 'Scan this with Zuffi on your other device (Tools → Sync → Scan)'}</p>`; i = (i + 1) % codes.length; };
     clearInterval(cycle); show(); if (codes.length > 1) cycle = setInterval(show, 900);
   };
   body.querySelector('#syScan').onclick = async () => {
@@ -1085,7 +1088,7 @@ function openSync() {
     } catch (e) { if (e.message !== 'cancelled') area.innerHTML = `<p class="small-text">⚠️ ${esc(e.message)} — allow the camera, or use a sync file.</p>`; }
   };
   body.querySelector('#syFile').onclick = async () => tools.deliver(`sparrow-sync-${new Date().toISOString().slice(0, 10)}.sparrow`, new TextEncoder().encode(await sync.bundle($('#syMem').checked)), 'application/octet-stream');
-  body.querySelector('#syOpen').onclick = async () => { const [f] = await pickFiles('', false); if (!f) return; try { const r = await sync.applyBundle((await f.text()).trim()); toast(`✅ Synced: ${r.added} new, ${r.changed} updated`); renderAll(); } catch { toast('That isn’t a Sparrow sync file.'); } };
+  body.querySelector('#syOpen').onclick = async () => { const [f] = await pickFiles('', false); if (!f) return; try { const r = await sync.applyBundle((await f.text()).trim()); toast(`✅ Synced: ${r.added} new, ${r.changed} updated`); renderAll(); } catch { toast('That isn’t a Zuffi sync file.'); } };
 }
 
 // ---------------- settings ----------------
@@ -1105,7 +1108,7 @@ function fillSettings() {
     $('#sListen').value = s.listen || ''; $('#sStudio').checked = !!s.studio;
     M.call('studio', {}).then(st => { $('#studioNote').textContent = st?.installed ? (st.running ? '✅ Studio voice is installed and running.' : '✅ Installed — it starts when you switch it on.') : 'Not installed. It downloads about 4 GB once (OmniVoice), then works offline.'; $('#studioInstall').hidden = !!st?.installed; });
   }
-  $('#wakeNote').textContent = N ? 'On Android, also switch on “Listen for Sparrow” under Android powers.' : D ? 'Works offline on this computer.' : isIOS ? 'On iPhone, Sparrow listens while the app is open. Apple doesn’t allow listening in the background.' : 'Sparrow listens while the app is open.';
+  $('#wakeNote').textContent = N ? 'On Android, also switch on “Listen for Zuffi” under Android powers.' : D ? 'Works offline on this computer.' : isIOS ? 'On iPhone, Zuffi listens while the app is open. Apple doesn’t allow listening in the background.' : 'Zuffi listens while the app is open.';
   $('#rMorningOn').checked = s.morningOn; $('#rMorning').value = s.morningTime; $('#rNightOn').checked = s.nightOn; $('#rNight').value = s.nightTime; $('#rLead').value = String(s.lead);
   $('#pMethod').innerHTML = Object.entries(METHODS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
   const hl = s.health || {};
@@ -1155,12 +1158,12 @@ $$('#sGender button').forEach(b => b.onclick = () => { S().gender = b.dataset.g;
 $('#studioInstall').onclick = () => { M?.post('studio', { action: 'install' }); toast('A Terminal window opens and installs the Studio voice — keep it open until it says ✅.', 7000); };
 $('#sVoiceName').onchange = e => { S().voiceName = e.target.value; store.save(); sendVoicePrefs(); };
 $('#sLang').addEventListener('change', () => { store.save(); sendVoicePrefs(); });
-$('#testVoice').onclick = () => speak(S().lang === 'ur' ? 'السلام علیکم! میں سپیرو ہوں۔ آپ کی کیا مدد کروں؟' : S().lang === 'hi' ? 'नमस्ते! मैं स्पैरो हूँ। बताइए, मैं क्या मदद करूँ?' : S().lang === 'pa' ? 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਸਪੈਰੋ ਹਾਂ। ਦੱਸੋ, ਮੈਂ ਕੀ ਮਦਦ ਕਰਾਂ?' : `Hi${S().name ? ' ' + S().name : ''}! I'm Sparrow. Ready when you are.`);
+$('#testVoice').onclick = () => speak(S().lang === 'ur' ? 'السلام علیکم! میں سپیرو ہوں۔ آپ کی کیا مدد کروں؟' : S().lang === 'hi' ? 'नमस्ते! मैं स्पैरो हूँ। बताइए, मैं क्या मदद करूँ?' : S().lang === 'pa' ? 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਸਪੈਰੋ ਹਾਂ। ਦੱਸੋ, ਮੈਂ ਕੀ ਮਦਦ ਕਰਾਂ?' : `Hi${S().name ? ' ' + S().name : ''}! I'm Zuffi. Ready when you are.`);
 $('#pCalendar').onclick = async () => { const l = await getLocation(); if (!l) return toast('I need your location or city first.'); downloadICS(prayerICS(l.lat, l.lon, 30), 'Prayer times'); };
 $('#exportBtn').onclick = () => tools.deliver('sparrow-backup.json', new TextEncoder().encode(JSON.stringify({ items: store.items, settings: { ...S(), keys: undefined } }, null, 2)), 'application/json');
 $('#clearBtn').onclick = () => { if (confirm('Delete all your tasks, meetings, reminders, notes and chat?')) { store.clearAll(); renderChat(); toast('Everything deleted'); } };
 $('#mExport').onclick = async () => tools.deliver('sparrow-memory.json', new TextEncoder().encode(JSON.stringify(await mem.exportMemory())), 'application/json');
-$('#mWipe').onclick = async () => { if (confirm('Forget everything Sparrow remembers (files and history)?')) { await mem.forgetAll(); toast('Memory wiped'); renderMemory(); } };
+$('#mWipe').onclick = async () => { if (confirm('Forget everything Zuffi remembers (files and history)?')) { await mem.forgetAll(); toast('Memory wiped'); renderMemory(); } };
 
 async function refreshAiStatus() {
   if (D) return;
@@ -1190,9 +1193,9 @@ function installHint() {
   if (N || D) return;
   if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
   const el = $('#installHint'); el.hidden = false;
-  el.innerHTML = isIOS ? '📲 <b>Install Sparrow:</b> tap <b>Share</b> in Safari, then <b>“Add to Home Screen”</b>.'
+  el.innerHTML = isIOS ? '📲 <b>Install Zuffi:</b> tap <b>Share</b> in Safari, then <b>“Add to Home Screen”</b>.'
     : isAndroid ? '📲 <b>Get the full Android app</b> (floating sparrow, hands-free voice, alarms): <a href="https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk">download Sparrow.apk</a>'
-    : '💻 <b>Get Sparrow for your computer</b> — hands-free “Sparrow…”, files, clipboard and more: <a href="get.html">download for Mac or Windows</a>';
+    : '💻 <b>Get Zuffi for your computer</b> — hands-free “Zuffi…”, files, clipboard and more: <a href="get.html">download for Mac or Windows</a>';
 }
 
 // ---------------- Android app ----------------
@@ -1213,12 +1216,12 @@ function refreshAndroid() {
   let st = {}; try { st = JSON.parse(N.status()); } catch {}
   $('#aWake').checked = !!st.wakeWord; $('#aBubble').checked = !!st.bubble; $('#aNotif').checked = !!st.readNotifs;
   const notes = [];
-  if (st.bubble && !st.overlay) notes.push('Allow "Display over other apps" for Sparrow to show the floating bird.');
-  if (st.readNotifs && !st.notifAccess) notes.push('Allow "Notification access" for Sparrow to read notifications.');
-  if (st.wakeWord && !st.mic) notes.push('Allow the microphone so Sparrow can hear you.');
+  if (st.bubble && !st.overlay) notes.push('Allow "Display over other apps" for Zuffi to show the floating bird.');
+  if (st.readNotifs && !st.notifAccess) notes.push('Allow "Notification access" for Zuffi to read notifications.');
+  if (st.wakeWord && !st.mic) notes.push('Allow the microphone so Zuffi can hear you.');
   $('#aNote').textContent = notes.join(' ');
 }
-/** Android rings these with real alarms, even when Sparrow is closed. */
+/** Android rings these with real alarms, even when Zuffi is closed. */
 function syncAlarms() {
   if (!N) return;
   const s = S(), w = s.name ? s.name + ', ' : '', lead = (+s.lead || 0) * 60000, list = [];
@@ -1278,7 +1281,7 @@ setInterval(() => { renderHeader(); renderNext(); }, 60000);
 setInterval(() => { renderWeather(); renderPrayer(); }, 30 * 60000);
 const pre = new URLSearchParams(location.search).get('ask');
 if (pre) { $('#askInput').value = pre; $('#askInput').focus(); }
-// Questions the Mac island passes on (spoken or typed there). Returns the reply to speak, or null if Sparrow's brain can't do it.
+// Questions the Mac island passes on (spoken or typed there). Returns the reply to speak, or null if Zuffi's brain can't do it.
 async function voiceAsk(text) {
   text = String(text || '').trim(); if (!text) return null;
   const r = await handle(text).catch(() => null);
@@ -1313,7 +1316,7 @@ window.Sparrow = {
   getHealth: () => JSON.parse(JSON.stringify(S().health || {})),
   setHealth: h => { const old = S().health || {}; for (const k of ['water', 'coffee', 'meds']) if (h?.[k]) { const n = { ...old[k], ...h[k] }; if (n.mode !== old[k]?.mode || n.every !== old[k]?.every || !n.on) delete n.last; old[k] = n; } S().health = old; store.save(); return true; },
   testHealth: kind => { const def = HEALTH[kind]; if (!def) return false; const h = S().health[kind] || {}; const shown = typeof def.show === 'function' ? def.show(h) : def.show; M?.post('health', { kind, text: shown }); speak(def.say(who(), h)); return true; },
-  // Sparrow's live voice reads and changes your real list (never guesses).
+  // Zuffi's live voice reads and changes your real list (never guesses).
   listItems: () => store.items.filter(i => !i.done && ['reminder', 'task', 'meeting'].includes(i.type))
     .sort((a, b) => new Date(a.when || 8e15) - new Date(b.when || 8e15))
     .map(i => ({ id: i.id, kind: i.type, title: i.title, when: i.when ? new Date(i.when).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null, repeat: i.repeat ? repeatText(i.repeat) : null })),
@@ -1325,8 +1328,9 @@ window.Sparrow = {
     return { ok: true, id: it.id, title, when: whenText(it.when) };
   },
   removeItem: id => { const it = store.items.find(i => i.id === id); if (!it) return null; store.remove(id); renderAll(); return it.title; },
+  snoozeItem: (id, mins = 10) => { const it = store.items.find(i => i.id === id); if (!it) return null; store.update(id, { snoozeUntil: Date.now() + mins * 60000, snoozed: false, done: false }); renderAll(); return it.title; },
   completeItem: id => { const it = store.items.find(i => i.id === id); if (!it) return null; store.update(id, { done: true, doneAt: new Date().toISOString() }); mem.remember('done', it.title); renderAll(); return it.title; },
-  // "Sparrow, type my email" (Mac): the value comes from your CV profile / latest cover letter.
+  // "Zuffi, type my email" (Mac): the value comes from your CV profile / latest cover letter.
   jobField: name => jobs.field(name),
   submit, speak, toast, openTool, store, voiceAsk, go: v => { if (v) go(v); }, newChat,
   // Island chats go to History too, so they can be continued here.
@@ -1357,7 +1361,7 @@ function renderMacLink() {
     ? `<p class="small-text">✅ Linked to your Mac. Say or type things like “lock my Mac”, “turn off my Mac”, “open Spotify on my Mac”, “Mac volume 30”.</p>
        <div class="mac-pad">${[['🔒', 'Lock', 'lock my mac'], ['😴', 'Sleep', 'sleep mac'], ['▶️', 'Play', 'play music on my mac'], ['⏸️', 'Pause', 'pause music on my mac'], ['🔉', 'Vol −', 'volume down on my mac'], ['🔊', 'Vol +', 'volume up on my mac'], ['⏻', 'Shut down', 'shut down mac'], ['✋', 'Cancel', 'cancel on my mac']].map(([i, l, c]) => `<button class="mac-key" data-mac="${c}"><span>${i}</span>${l}</button>`).join('')}</div>
        <div class="row-2"><button class="btn ghost" id="macPing">📡 Test link</button><button class="btn ghost" id="macUnlink">Unlink</button></div>`
-    : `<p class="small-text">Use Sparrow on this phone to control your Mac from anywhere. On your Mac: Sparrow Settings → <b>iPhone</b> → switch on → <b>Show link code</b>. Then scan it here (or with the iPhone Camera).</p>
+    : `<p class="small-text">Use Zuffi on this phone to control your Mac from anywhere. On your Mac: Zuffi Settings → <b>iPhone</b> → switch on → <b>Show link code</b>. Then scan it here (or with the iPhone Camera).</p>
        <button class="btn" id="macScan">📷 Scan Mac code</button>
        <video id="macVideo" playsinline muted hidden style="width:100%;border-radius:14px;margin-top:8px"></video>
        <label class="field"><span>…or paste the link</span><input id="macPaste" placeholder="https://…#link=…"></label>`;

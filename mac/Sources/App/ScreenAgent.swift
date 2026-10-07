@@ -4,17 +4,17 @@ import CoreGraphics
 import SwiftUI
 
 // =====================================================================
-// MARK: - Screen agent: Sparrow's eyes and hands
+// MARK: - Screen agent: Zuffi's eyes and hands
 //
-// "Sparrow, on screen, find the latest Arijit Singh song on YouTube and play it"
-//   1. Eyes  — a picture of the main screen (ScreenCaptureKit; Sparrow's own windows left out)
+// "Zuffi, on screen, find the latest Arijit Singh song on YouTube and play it"
+//   1. Eyes  — a picture of the main screen (ScreenCaptureKit; Zuffi's own windows left out)
 //   2. Brain — the AI looks at it and picks ONE next step (click here, type this, press ⌘L…)
 //   3. Hands — the Mac does it (CGEvent mouse + keyboard)
-//   …and again, until the task is done. A pink glow shows while Sparrow is in control;
+//   …and again, until the task is done. A pink glow shows while Zuffi is in control;
 //   Esc (or "stop") ends it at once. Anything that sends, buys, pays, posts or deletes
 //   stops and asks you first. Passwords, codes and CAPTCHAs are always handed back to you.
 //
-// Written for Sparrow (inspired by how open agents such as nanoMuse and UI-TARS work: the
+// Written for Zuffi (inspired by how open agents such as nanoMuse and UI-TARS work: the
 // screenshot → model → action loop, ScreenCaptureKit for the picture, CGEvent for the hands).
 // =====================================================================
 
@@ -50,8 +50,8 @@ final class ScreenAgent {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
-    private static let seeHelp = "I need permission to see your screen: System Settings → Privacy & Security → Screen & System Audio Recording → switch on Sparrow (if it's already on, switch it off and on again — macOS forgets it after an update). Then quit and reopen Sparrow."
-    private static let actHelp = "I need permission to use the mouse and keyboard: System Settings → Privacy & Security → Accessibility → switch on Sparrow (off and on again after an update)."
+    private static let seeHelp = "I need permission to see your screen: System Settings → Privacy & Security → Screen & System Audio Recording → switch on Zuffi (if it's already on, switch it off and on again — macOS forgets it after an update). Then quit and reopen Zuffi."
+    private static let actHelp = "I need permission to use the mouse and keyboard: System Settings → Privacy & Security → Accessibility → switch on Zuffi (off and on again after an update)."
 
     // MARK: Look (no actions)
 
@@ -216,7 +216,7 @@ final class ScreenAgent {
         }
     }
 
-    // Esc anywhere stops Sparrow (except the Esc Sparrow presses itself).
+    // Esc anywhere stops Zuffi (except the Esc Zuffi presses itself).
     private func startEscWatch() {
         stopEscWatch()
         escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { e in
@@ -243,7 +243,7 @@ struct ScreenShot {
 }
 
 enum ScreenGrab {
-    /// The main display, without Sparrow's own windows (island, pet, glow).
+    /// The main display, without Zuffi's own windows (island, pet, glow).
     static func main() async -> ScreenShot? {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -394,7 +394,7 @@ enum ScreenBrain {
     static var ready: Bool { geminiKey != nil || claudeKey != nil }
 
     static let rules = """
-    You are Sparrow, operating the user's Mac to finish their task. Every turn you get a fresh screenshot of the main screen.
+    You are Zuffi, operating the user's Mac to finish their task. Every turn you get a fresh screenshot of the main screen.
     Coordinates: x and y from 0 to 1000 across the width and down the height of the screenshot (0,0 = top-left). Point at the CENTRE of the thing to click.
     Reply with ONE next action as JSON:
       {"say": "short label of what you're doing, e.g. 'Click the search box'", "action": one of
@@ -406,7 +406,7 @@ enum ScreenBrain {
        "x": …, "y": …, "risky": true/false}
     Rules:
     - Prefer the fastest reliable way: open_app / open_url / keyboard shortcuts (cmd+l for a browser address bar, cmd+f to find) over hunting for icons.
-    - "risky": true for anything that sends, posts, buys, pays, books, deletes, submits a form, changes account settings or can't be undone. Sparrow asks the user first.
+    - "risky": true for anything that sends, posts, buys, pays, books, deletes, submits a form, changes account settings or can't be undone. Zuffi asks the user first.
     - Never type passwords, card numbers, one-time codes or answer CAPTCHAs: use "ask" so the user does it. Decline non-essential cookies.
     - If something didn't work, try another way; don't repeat the same action again and again.
     - Use "done" as soon as the task is finished, or to answer a question about the screen.
@@ -488,7 +488,7 @@ enum ScreenBrain {
     }
 }
 
-// MARK: - The pink glow while Sparrow is in control (click-through; never in its own screenshots)
+// MARK: - The pink glow while Zuffi is in control (click-through; never in its own screenshots)
 
 @MainActor
 final class GlowModel: ObservableObject { @Published var text = "" }
@@ -557,18 +557,18 @@ struct ScreenSettingsView: View {
             HStack(spacing: 10) {
                 Image(systemName: "cursorarrow.click.2").font(.system(size: 24)).foregroundColor(Color(hex: "#E2648A"))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sparrow can see and use your screen").font(.system(size: 15, weight: .bold, design: .rounded))
-                    Text("Say “Sparrow, what's on my screen?” or “Sparrow, on screen, find the latest Arijit Singh song on YouTube and play it”. A pink glow shows while Sparrow is in control — press Esc or say “stop” to take over.")
+                    Text("Zuffi can see and use your screen").font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text("Say “Zuffi, what's on my screen?” or “Zuffi, on screen, find the latest Arijit Singh song on YouTube and play it”. A pink glow shows while Zuffi is in control — press Esc or say “stop” to take over.")
                         .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    row("Screen Recording", "so Sparrow can see the screen", see) { ScreenAgent.askToSee() }
+                    row("Screen Recording", "so Zuffi can see the screen", see) { ScreenAgent.askToSee() }
                     Divider()
-                    row("Accessibility", "so Sparrow can click and type", act) { ScreenAgent.askToAct() }
+                    row("Accessibility", "so Zuffi can click and type", act) { ScreenAgent.askToAct() }
                     if !see || !act {
-                        Text("After every Sparrow update macOS may forget these: switch Sparrow off and on again in that list, then reopen Sparrow.")
+                        Text("After every Zuffi update macOS may forget these: switch Zuffi off and on again in that list, then reopen Zuffi.")
                             .font(.system(size: 10)).foregroundColor(.orange).fixedSize(horizontal: false, vertical: true)
                     }
                 }.padding(6)
@@ -581,7 +581,7 @@ struct ScreenSettingsView: View {
                 Spacer()
             }
             if !result.isEmpty { Text(result).font(.system(size: 12)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-            Text("Sparrow always asks before sending, buying, paying, posting or deleting, and hands passwords, codes and CAPTCHAs back to you. Screenshots go only to the AI you chose (Gemini, or Claude if there's no Gemini key) and are not saved.")
+            Text("Zuffi always asks before sending, buying, paying, posting or deleting, and hands passwords, codes and CAPTCHAs back to you. Screenshots go only to the AI you chose (Gemini, or Claude if there's no Gemini key) and are not saved.")
                 .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .onReceive(timer) { _ in see = ScreenAgent.canSee; act = ScreenAgent.canAct }
