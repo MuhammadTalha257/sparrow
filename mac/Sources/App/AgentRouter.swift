@@ -48,10 +48,10 @@ final class AgentRouter {
         let t = raw.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " .!?,"))
         let agent = ScreenAgent.shared
         if agent.awaitingConfirmation {
-            if t.range(of: #"^(yes|yeah|yep|yup|ok|okay|sure|go ahead|do it|haan|han|ji|jee|theek hai|kar do|yes do it|confirm)"#, options: .regularExpression) != nil {
+            if t.range(of: #"^(yes|yeah|yep|yup|ok|okay|sure|go ahead|do it|haan|han|ji|jee|theek hai|kar do|yes do it|confirm)\b"#, options: .regularExpression) != nil {
                 agent.confirm(true); return "Okay, doing it."
             }
-            if t.range(of: #"^(no|nope|don'?t|do not|cancel|stop|nahi|nahin|mat karo|ruko)"#, options: .regularExpression) != nil {
+            if t.range(of: #"^(no|nope|don'?t|do not|cancel|stop|nahi|nahin|mat karo|ruko)\b"#, options: .regularExpression) != nil {
                 agent.confirm(false); return "Okay, I won't."
             }
         }
@@ -65,9 +65,9 @@ final class AgentRouter {
             let task = String(raw.dropFirst(t.distance(from: t.startIndex, to: r.upperBound))).trimmingCharacters(in: .whitespaces)
             if !task.isEmpty { return await agent.run(task) }
         }
-        if t.range(of: #"^(click|double click|right click|scroll)"#, options: .regularExpression) != nil { return await agent.run(raw) }
+        if t.range(of: #"^(click|double click|right click|scroll)\b"#, options: .regularExpression) != nil { return await agent.run(raw) }
         // Look: "what's on my screen", "read my screen", "check what you see on my screen", "screen pe kya hai"
-        if t.range(of: #"(what|see|check|read|look|describe|tell me|explain|kya|dekho|batao|summari[sz]e|translate)"#, options: .regularExpression) != nil {
+        if t.range(of: #"\b(what|see|check|read|look|describe|tell me|explain|kya|dekho|batao|summari[sz]e|translate)\b"#, options: .regularExpression) != nil {
             return await agent.describe(raw)
         }
         return nil
