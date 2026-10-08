@@ -213,36 +213,26 @@ enum SparrowFlight {
 }
 
 /// A little sparrow (same character as the big one) in any colour — used on app tiles and the header.
+/// The little Zuffi logo (bunny face) used in the header, app tiles and cards.
 struct LittleSparrow: View {
     let color: String?
     var size: CGFloat = 26
-    @StateObject private var engine: BotEngine
+    @State private var bump = false
 
     init(color: String?, size: CGFloat = 26) {
         self.color = color
         self.size = size
-        _engine = StateObject(wrappedValue: {
-            let e = BotEngine()
-            e.isMini = true
-            e.bodyColor = color.flatMap { cgColorFromHex($0) }
-            return e
-        }())
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
-            Canvas { context, sz in
-                let now = timeline.date.timeIntervalSinceReferenceDate
-                engine.update(dt: min(0.05, now - engine.lastTime))
-                engine.draw(context: context, size: sz)
+        let sprites = SparrowSprites.shared
+        ZuffiFace(frame: sprites.available ? sprites.directions[4] : nil, size: size * 1.25)
+            .frame(width: size, height: size)
+            .scaleEffect(bump ? 1.2 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.5), value: bump)
+            .onReceive(NotificationCenter.default.publisher(for: .littleSparrowReact)) { n in
+                if (n.object as? String) == color { bump = true; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { bump = false } }
             }
-        }
-        .frame(width: size / 0.6, height: size / 0.6)
-        .frame(width: size, height: size)
-        .onAppear { engine.setState(.idle, force: true); engine.setPermanentEmote(.happy) }
-        .onReceive(NotificationCenter.default.publisher(for: .littleSparrowReact)) { n in
-            if (n.object as? String) == color { engine.triggerEmote(.love) }
-        }
     }
 }
 

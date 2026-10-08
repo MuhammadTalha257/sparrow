@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem?.button else { return }
         button.image = NSImage(named: "MenuBarIcon") ?? NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Zuffi")
-        button.image?.size = NSSize(width: 24, height: 18)
+        button.image?.size = NSSize(width: 18, height: 18)
         button.image?.accessibilityDescription = "Zuffi"
         button.image?.isTemplate = true
 
