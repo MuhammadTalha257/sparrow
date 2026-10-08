@@ -203,18 +203,18 @@ struct WalkView: View {
             ZStack(alignment: .bottom) {
                 Ellipse().fill(Color.black.opacity(0.18)).frame(width: 74, height: 10).blur(radius: 3).offset(y: 3)
                 Group {
-                    if model.sprite.reaction != nil || !ZuffiBodyArt.shared.available {
-                        // a big reaction face when you answer
-                        SparrowSpriteView(model: model.sprite, size: 130, mood: .idle)
+                    if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
+                        // the whole bunny: walks in on its feet, waves when you say yes
+                        ZuffiWalker(height: 168, walking: model.walking, facingLeft: model.sprite.walkLeft,
+                                    pose: model.answered && !model.cross ? .wave : .stand)
                     } else {
-                        // the whole bunny, walking on its feet
-                        ZuffiWalker(height: 168, walking: model.walking, facingLeft: model.sprite.walkLeft)
+                        SparrowSpriteView(model: model.sprite, size: 130, mood: model.walking ? .walking : .idle)
                     }
                 }
                 .colorMultiply(model.cross ? Color(red: 1, green: 0.7, blue: 0.7) : .white)
                 .modifier(Shake(amount: model.cross ? 4 : 0))
                 .allowsHitTesting(false)
-                if let prop = model.sprite.prop, model.sprite.reaction == nil {
+                if let prop = model.sprite.prop, !model.answered {
                     Image(systemName: prop).font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(prop.contains("water") ? Color(hex: "#4FA7FF") : prop.contains("cup") ? Color(hex: "#9A6A48") : Color(hex: "#F06A8A"))
                         .shadow(color: .black.opacity(0.25), radius: 2, y: 1)

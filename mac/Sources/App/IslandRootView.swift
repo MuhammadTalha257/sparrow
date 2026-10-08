@@ -35,7 +35,7 @@ struct IslandContainer: View {
     private var chatPromptHeight: CGFloat {
         let base: CGFloat = 240
         let perMsg: CGFloat = 40
-        return min(300, base + CGFloat(state.chatHistory.count) * perMsg)
+        _ = base; _ = perMsg; return IslandConst.chatHeight
     }
 
     /// Pixels the content must be pushed down to clear the concave ear transparent area.
@@ -108,7 +108,7 @@ struct IslandContainer: View {
                 } else {
                     IslandContentView(state: state)
                         .frame(width: islandWidth, height: islandHeight - earOffset)
-                        .background(Group { if state.mode == .expanded { ZuffiAnimatedBackground(base: .clear).opacity(0.5) } })
+                        .background(Group { if state.mode == .expanded && !IslandConst.isPortrait(state.view) { ZuffiAnimatedBackground(base: .clear).opacity(0.5) } })
                         .offset(y: earOffset)
                         .clipShape(IslandShape(width: islandWidth, height: islandHeight,
                                               cornerRadius: cornerRadius, topRadius: islandTopRadius))
@@ -124,7 +124,7 @@ struct IslandContainer: View {
                 // retain the panel's full height for particles and hands.
                 .mask(alignment: .topLeading) {
                     Rectangle().frame(width: islandWidth,
-                                      height: state.mode == .expanded ? 320 : islandHeight)
+                                      height: state.mode == .expanded ? 500 : islandHeight)
                 }
                 .opacity(uploadActive || greetingActive ? 0 : 1)
                 .animation(.easeInOut(duration: 0.25), value: uploadActive || greetingActive)
@@ -452,8 +452,9 @@ struct IslandContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             IslandHeader(state: state)
-                .frame(height: 34)
-                .opacity(state.view == .confused ? 0 : 1)
+                .frame(height: IslandConst.isPortrait(state.view) ? 0 : 34)
+                .opacity(state.view == .confused || IslandConst.isPortrait(state.view) ? 0 : 1)
+                .allowsHitTesting(!IslandConst.isPortrait(state.view))
                 .animation(.easeInOut(duration: 0.2), value: state.view == .confused)
 
             ZStack {
@@ -462,7 +463,7 @@ struct IslandContentView: View {
                     // Views that fill available height instead of the fixed 98pt content frame:
                     // chat (prompt) is always flexible; mail is flexible only when active so
                     // it doesn't push the ZStack taller when inactive.
-                    let isTall = v == .prompt || ((v == .mail || v == .agents || v == .history || v == .overview || v == .empty) && active)
+                    let isTall = v == .prompt || ((v == .mail || IslandConst.isPortrait(v)) && active)
                     let anim: Animation = active
                         ? .spring(response: 0.4, dampingFraction: 0.8).delay(0.16)
                         : .easeIn(duration: 0.16)
@@ -477,10 +478,10 @@ struct IslandContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, IslandConst.isPortrait(state.view) ? 0 : 10)
         }
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.top, IslandConst.isPortrait(state.view) ? 0 : 8)
+        .padding(.bottom, IslandConst.isPortrait(state.view) ? 0 : 10)
         .foregroundColor(Color(hex: "#FBF3E9"))
     }
 }

@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let screen = IslandWindowController.notchScreen() ?? NSScreen.main ?? win.screen
         guard let screen else { win.center(); return }
         let visible = screen.visibleFrame
-        let islandBottom = screen.frame.maxY - 320 - 12   // island panel height + margin
+        let islandBottom = screen.frame.maxY - 500 - 12   // island panel height + margin
         let top = min(visible.maxY, islandBottom)
         var frame = win.frame
         frame.size.height = min(frame.height, max(top - visible.minY - 12, win.minSize.height))
@@ -119,7 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         BackgroundKeeper.start()
         // Agents (Claude Code / Codex / GitHub) and the glowing notch edge
         AgentHub.shared.start()
+        VoiceboxVoice.shared.startWatching()
         EdgeGlow.shared.start()
+        // Old "Sparrow" permission entries → fresh "Zuffi" ones (once)
+        if SetupWizard.done { Task { await ScreenAgent.migrateFromSparrowOnce() } }
         // The bunny pops out and says hey, then the island opens with its tabs
         if UserDefaults.standard.object(forKey: "helloOnOpen") as? Bool ?? true, SetupWizard.done {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { ZuffiHello.shared.show() }

@@ -251,7 +251,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         // Basic voices sound less robotic a touch slower; premium ones at a natural pace.
         let base = Float(rate == 0 ? 0.5 : rate)
         u.rate = voice?.quality == .default ? base * 0.94 : base
-        u.pitchMultiplier = (UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? false) ? 1.45 : (voice?.gender == .female ? 1.04 : 0.98)
+        u.pitchMultiplier = (UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true) ? 1.45 : (voice?.gender == .female ? 1.04 : 0.98)
         u.volume = 0.95
         u.preUtteranceDelay = 0.05
         u.prefersAssistiveTechnologySettings = false
@@ -464,7 +464,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         pauseRecognition()
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        req.contextualStrings = ["Zuffi", "hey Zuffi", "Zuffi open", "Zuffi play", "open", "close", "Claude", "Spotify", "Chrome",
+        req.contextualStrings = ["Zuffi", "hey Zuffi", "Zuffy", "hey Zuffy", "Zuffi open", "Zuffi play", "open", "close", "Claude", "Spotify", "Chrome",
                                  "Safari", "WhatsApp", "Gmail", "YouTube", "Finder", "Visual Studio Code", "volume", "pause", "next song",
                                  "remind me", "meeting notes", "Wi-Fi", "Bluetooth", "shut down", "restart", "kholo", "chalao", "band karo",
                                  "yaad dilao", "gaana", "awaaz"]
@@ -578,7 +578,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     /// wake word was said, nil if the wake word wasn't said at all.
     private func extractCommand(_ said: String) -> String? {
         let lower = said.lowercased()
-        for wake in ["zuffi's", "zuffis", "zuffi", "zuffy", "zuffie", "zufi", "zoofi", "zoofy", "zoofee", "zu fi", "zoo fee", "zaffi", "zuphy", "ज़ुफ़ी", "زوفی",
+        for wake in ["zuffi's", "zuffis", "zuffy's", "zuffi", "zuffy", "zuffie", "zufi", "zufy", "zuffee", "zoffy", "zofi", "zophie", "zuphie", "zoo fi", "zu fee", "zoofie", "suffy", "zoofi", "zoofy", "zoofee", "zu fi", "zoo fee", "zaffi", "zuphy", "ज़ुफ़ी", "زوفی",
                      "sparrow's", "sparrows", "sparrow", "sparro", "sparo", "spero", "sperro", "spirrow", "sporrow", "spar row",
                      "spa row", "sparrowe", "hey barrow", "barrow", "sorrow", "سپیرو", "स्पैरो"] {
             if let r = lower.range(of: wake, options: .backwards) {
@@ -592,6 +592,10 @@ final class VoiceEngine: NSObject, ObservableObject {
         }
         // Close mis-hearings at the very start: "spare open chrome", "sparo, play music"…
         if let r = lower.range(of: #"^(hey |ok |hi )?(sp[aeio]r+[oe]w?s?|z[uo]+f+(i|y|ie|ee))\b[, ]*"#, options: .regularExpression) {
+            return String(lower[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
+        }
+        // "Hey Zuffy" is often heard as "hey Sophie" / "hey Sufi" / "hey toffee": accept those after "hey".
+        if let r = lower.range(of: #"\b(hey|hi|ok|okay|hay) (sophie|sofie|sophia|soffy|sofi|sufi|soufi|suffy|toffee|zoe fee|zoey|zappy|duffy|fluffy)\b[, ]*"#, options: .regularExpression) {
             return String(lower[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
         }
         return nil

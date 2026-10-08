@@ -58,7 +58,7 @@ final class IslandWindowController: NSWindowController {
         let nH = geometry.height
 
         let panelW: CGFloat = 720
-        let panelH: CGFloat = 320
+        let panelH: CGFloat = 500
         let sf = screen.frame
         let menuBarH = max(sf.maxY - screen.visibleFrame.maxY, NSStatusBar.system.thickness)
         let defaultX: CGFloat
@@ -401,6 +401,24 @@ final class IslandWindowController: NSWindowController {
         // Hook server compact reveal (non-alert work events: session start, tool use, etc.)
         NotificationCenter.default.addObserver(forName: .hookReveal, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.fsm.reveal() }
+        }
+
+        // Switching panels: close the open one first, then open the one you picked.
+        NotificationCenter.default.addObserver(forName: .zuffiSwitch, object: nil, queue: .main) { [weak self] note in
+            let view = note.object as? IslandView
+            MainActor.assumeIsolated {
+                guard let self, let view else { return }
+                if self.state.mode == .expanded && self.state.view != view {
+                    self.state.isPinned = false
+                    self.setMode(.compact)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        MainActor.assumeIsolated { self.expand(to: view); self.state.isPinned = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { self.state.isPinned = false } } }
+                    }
+                } else {
+                    self.expand(to: view)
+                }
+            }
         }
 
         // Collapse requests from views (OK button, etc.)
@@ -780,7 +798,7 @@ final class IslandWindowController: NSWindowController {
         if s.mode == .expanded && s.view == .prompt {
             let base: CGFloat = 240
             let perMsg: CGFloat = 40
-            islandH = min(300, base + CGFloat(s.chatHistory.count) * perMsg)
+            islandH = IslandConst.chatHeight; _ = base; _ = perMsg
         } else {
             islandH = fixedH
         }
@@ -845,7 +863,7 @@ final class IslandPanel: NSPanel {
         if s.mode == .expanded && s.view == .prompt {
             let base: CGFloat = 240
             let perMsg: CGFloat = 40
-            h = min(300, base + CGFloat(s.chatHistory.count) * perMsg)
+            h = IslandConst.chatHeight; _ = base; _ = perMsg
         } else {
             h = fixedH
         }
@@ -903,6 +921,6 @@ func islandSize(mode: IslandMode, view: IslandView,
     case .compact:  return (nw + 160, nh)
     case .expanded:
         let layout = IslandConst.viewLayouts[view]!
-        return (IslandConst.expandedWidth, layout.height)
+        return (IslandConst.width(for: view), layout.height)
     }
 }

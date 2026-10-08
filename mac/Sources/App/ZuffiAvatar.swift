@@ -105,11 +105,13 @@ final class ZuffiLook: ObservableObject {
     }
 }
 
-/// The full-body bunny, cut into body + two legs so it can step.
+/// The full-body bunny: front view (standing, listening, waving) and side view (walking),
+/// each cut into body + arms + legs so they can move.
 @MainActor
 final class ZuffiBodyArt {
     static let shared = ZuffiBodyArt()
     let top: CGImage?, legL: CGImage?, legR: CGImage?, armL: CGImage?, armR: CGImage?, paw: CGImage?
+    let sTop: CGImage?, sLegB: CGImage?, sLegF: CGImage?, sArmB: CGImage?, sArmF: CGImage?
     private init() {
         func load(_ n: String) -> CGImage? {
             guard let u = Bundle.main.resourceURL?.appendingPathComponent("web/mascots/\(n)"),
@@ -119,8 +121,11 @@ final class ZuffiBodyArt {
         top = load("zuffi-walk-top.webp"); legL = load("zuffi-walk-legL.webp"); legR = load("zuffi-walk-legR.webp")
         armL = load("zuffi-walk-armL.webp"); armR = load("zuffi-walk-armR.webp")
         paw = load("zuffi-paw.webp")
+        sTop = load("zuffi-side-top.webp"); sLegB = load("zuffi-side-legB.webp"); sLegF = load("zuffi-side-legF.webp")
+        sArmB = load("zuffi-side-armB.webp"); sArmF = load("zuffi-side-armF.webp")
     }
     var available: Bool { top != nil && legL != nil && legR != nil && armL != nil && armR != nil }
+    var sideAvailable: Bool { sTop != nil && sLegB != nil && sLegF != nil && sArmB != nil && sArmF != nil }
 }
 
 /// The face part of the avatar — the bunny frame, an emoji or a photo.
@@ -178,46 +183,32 @@ extension View {
     }
 }
 
-/// The whole bunny walking on its feet: legs take turns, the body bobs and leans into the step.
+enum ZuffiPose: Equatable { case stand, listen, wave, think }
+
+/// The whole bunny. Walking: side view, legs stride, arms swing, body bobs.
+/// Standing: front view that breathes; listening = paw up by the ear; wave = says hi.
 struct ZuffiWalker: View {
     var height: CGFloat
     var walking: Bool
     var facingLeft: Bool = false
     var speed: Double = 1
+    var pose: ZuffiPose = .stand
     @ObservedObject private var look = ZuffiLook.shared
     @State private var start = Date()
 
     var body: some View {
         let art = ZuffiBodyArt.shared
         let w = height * 330 / 648
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: !walking)) { tl in
-            let t = tl.date.timeIntervalSince(start) * 4.4 * speed      // about 1.4 steps a second
-            let s = walking ? sin(t) : 0
-            let px = w / 330                                              // art pixels → points
+        TimelineView(.animation(minimumInterval: walking || pose == .wave ? 1 / 30 : 1 / 12)) { tl in
+            let time = tl.date.timeIntervalSince(start)
             Group {
-                if look.kind == .bunny, art.available {
-                    ZStack {
-                        // legs: one foot lifts while the other carries the weight
-                        Image(decorative: art.legL!, scale: 1).resizable().interpolation(.high)
-                            .offset(x: -max(0, s) * 3 * px, y: -max(0, s) * height * 0.045)
-                        Image(decorative: art.legR!, scale: 1).resizable().interpolation(.high)
-                            .offset(x: max(0, -s) * 3 * px, y: -max(0, -s) * height * 0.045)
-                        // body + swinging arms, waddling over the planted foot
-                        ZStack {
-                            Image(decorative: art.top!, scale: 1).resizable().interpolation(.high)
-                            Image(decorative: art.armL!, scale: 1).resizable().interpolation(.high)
-                                .rotationEffect(.degrees(s * 16), anchor: UnitPoint(x: 0.194, y: 0.665))
-                            Image(decorative: art.armR!, scale: 1).resizable().interpolation(.high)
-                                .rotationEffect(.degrees(s * 16), anchor: UnitPoint(x: 0.806, y: 0.671))
-                        }
-                        .rotationEffect(.degrees(-s * 3.5), anchor: UnitPoint(x: 0.5, y: 0.85))
-                        .offset(x: s * 5 * px, y: -abs(s) * height * 0.012)
-                    }
-                    .frame(width: w, height: height)
-                    .zuffiFur(look)
-                    .scaleEffect(x: facingLeft ? -1 : 1, y: 1)
+                if look.kind == .bunny, walking, art.sideAvailable {
+                    side(art, time: time)
+                } else if look.kind == .bunny, art.available {
+                    front(art, time: time, w: w)
                 } else {
                     // emoji / photo: little hops instead of steps
+                    let s = walking ? sin(time * 7) : 0
                     ZuffiFace(frame: SparrowSprites.shared.directions.count == 9 ? SparrowSprites.shared.directions[facingLeft ? 3 : 5] : nil, size: w * 1.5)
                         .offset(y: -abs(s) * height * 0.08)
                         .frame(width: w * 1.5, height: height, alignment: .bottom)
@@ -225,6 +216,62 @@ struct ZuffiWalker: View {
             }
         }
         .frame(width: max(w, look.kind == .bunny ? w : w * 1.5), height: height)
+    }
+
+    /// Side view walking (faces right; flipped when going left).
+    private func side(_ art: ZuffiBodyArt, time: Double) -> some View {
+        let sw = height * 258 / 480
+        let s = sin(time * 6.0 * speed)               // ~1.9 steps a second
+        return ZStack {
+            Image(decorative: art.sArmB!, scale: 1).resizable().interpolation(.high)
+                .rotationEffect(.degrees(s * 14), anchor: UnitPoint(x: 0.233, y: 0.664))
+                .offset(y: -abs(s) * height * 0.016)
+            Image(decorative: art.sLegB!, scale: 1).resizable().interpolation(.high)
+                .rotationEffect(.degrees(-s * 24), anchor: UnitPoint(x: 0.247, y: 0.805))
+                .offset(y: -max(0, -s) * height * 0.0125)
+            Image(decorative: art.sTop!, scale: 1).resizable().interpolation(.high)
+                .rotationEffect(.degrees(s * 1.5), anchor: .bottom)
+                .offset(y: -abs(s) * height * 0.016)
+            Image(decorative: art.sLegF!, scale: 1).resizable().interpolation(.high)
+                .rotationEffect(.degrees(s * 24), anchor: UnitPoint(x: 0.712, y: 0.867))
+                .offset(y: -max(0, s) * height * 0.0125)
+            Image(decorative: art.sArmF!, scale: 1).resizable().interpolation(.high)
+                .rotationEffect(.degrees(-s * 16), anchor: UnitPoint(x: 0.785, y: 0.648))
+                .offset(y: -abs(s) * height * 0.016)
+        }
+        .frame(width: sw, height: height)
+        .zuffiFur(look)
+        .scaleEffect(x: facingLeft ? -1 : 1, y: 1)
+    }
+
+    /// Front view: breathing, listening (paw by the ear), waving, thinking (head tilt).
+    private func front(_ art: ZuffiBodyArt, time: Double, w: CGFloat) -> some View {
+        let breathe = 1 + 0.012 * sin(time * 2.2)
+        let armUp: Double = {
+            switch pose {
+            case .listen: return -160
+            case .wave: return -150 + 18 * sin(time * 9)
+            default: return 0
+            }
+        }()
+        let tilt: Double = pose == .listen ? -5 : pose == .think ? 4 * sin(time * 1.4) : 0
+        return ZStack {
+            Image(decorative: art.legL!, scale: 1).resizable().interpolation(.high)
+            Image(decorative: art.legR!, scale: 1).resizable().interpolation(.high)
+            ZStack {
+                Image(decorative: art.top!, scale: 1).resizable().interpolation(.high)
+                Image(decorative: art.armL!, scale: 1).resizable().interpolation(.high)
+                    .rotationEffect(.degrees(pose == .think ? 8 * sin(time * 1.4) : 0), anchor: UnitPoint(x: 0.194, y: 0.665))
+                Image(decorative: art.armR!, scale: 1).resizable().interpolation(.high)
+                    .rotationEffect(.degrees(armUp), anchor: UnitPoint(x: 0.806, y: 0.671))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: pose)
+            }
+            .rotationEffect(.degrees(tilt), anchor: UnitPoint(x: 0.5, y: 0.8))
+            .scaleEffect(x: 1, y: breathe, anchor: .bottom)
+        }
+        .frame(width: w, height: height)
+        .zuffiFur(look)
+        .scaleEffect(x: facingLeft ? -1 : 1, y: 1)
     }
 }
 

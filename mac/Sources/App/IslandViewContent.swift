@@ -7,9 +7,18 @@ struct IslandViewContent: View {
     @ObservedObject var state: AppState
 
     var body: some View {
+        // The tall panels animate (sky, stars): only build the one that's open.
+        if IslandConst.isPortrait(view) && (state.view != view || state.mode != .expanded) {
+            Color.clear
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         switch view {
-        case .overview:  OverviewView(state: state)
-        case .empty:     EmptyStateView(state: state)
+        case .overview:  ZuffiHomePanel(state: state)
+        case .empty:     ZuffiHomePanel(state: state)
         case .approval:  ApprovalView(state: state)
         case .question:  QuestionView(state: state)
         case .error:     ErrorView(state: state)
@@ -19,14 +28,19 @@ struct IslandViewContent: View {
         case .uploading: UploadingView(state: state)
         case .choose:    ChooseView(state: state)
         case .mail:      MailView(state: state)
-        case .prompt:    PromptView(state: state)
+        case .prompt:
+            ZuffiTallPanel(title: "Chat", icon: "bubble.left.fill", trailing: AnyView(HStack(spacing: 6) {
+                MicCamToggles()
+                Button { AppState.shared.newChat() } label: { Image(systemName: "square.and.pencil").font(.system(size: 11, weight: .bold)).frame(width: 24, height: 24) }
+                    .buttonStyle(.plain).help("New chat")
+            })) { PromptView(state: state) }
         case .searching: SearchingView(state: state)
         case .result:    ResultView(state: state)
         case .note:      NoteView(state: state)
-        case .settings:  SettingsIslandView(state: state)
+        case .settings:  ZuffiTallPanel(title: "Settings", icon: "gearshape.fill") { ZuffiQuickSettings(state: state) }
         case .greeting:  EmptyView()  // GreetingCanvasView overlaid in IslandRootView
-        case .agents:    AgentsIslandView()
-        case .history:   HistoryIslandView()
+        case .agents:    ZuffiTallPanel(title: "Agents", icon: "sparkles") { AgentsIslandView() }
+        case .history:   ZuffiTallPanel(title: "History", icon: "clock.arrow.circlepath") { HistoryIslandView() }
         }
     }
 }
@@ -711,20 +725,19 @@ struct PromptView: View {
     private var listening: Bool { voice.status.hasPrefix("Listening") || LiveSession.shared.listeningNow }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            CardBackground(wash: .indigo)
-
-            VStack(alignment: .leading, spacing: 8) {
-                askBar
-                if let ctx = state.promptContext { ContextChip(context: ctx) }
-                if !state.chatHistory.isEmpty || thinking { conversation } else { Spacer(minLength: 0) }
+        VStack(alignment: .leading, spacing: 8) {
+            if let ctx = state.promptContext { ContextChip(context: ctx) }
+            if !state.chatHistory.isEmpty || thinking { conversation } else {
+                VStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    ZuffiWalker(height: 110, walking: false, pose: listening ? .listen : .stand)
+                    Text("Ask me anything — type below or just talk").font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.75))
+                    Spacer(minLength: 0)
+                }.frame(maxWidth: .infinity)
             }
-            .padding(.leading, 84)
-            .padding(.trailing, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
+            askBar
         }
-        .padding(.bottom, 10)
         .onAppear { focused = true }
         .onChange(of: state.chatHistory.count) { _, _ in
             if let start = sentAt, let last = state.chatHistory.last, last.role == .assistant {
@@ -769,10 +782,13 @@ struct PromptView: View {
                     }.buttonStyle(SendButtonStyle())
                 }
             }
-            MicCamToggles()
+            Button { VoiceEngine.shared.listenOnce() } label: {
+                Image(systemName: "mic.fill").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                    .frame(width: 24, height: 24).background(Circle().fill(Color.white.opacity(0.12)))
+            }.buttonStyle(.plain).help("Talk").disabled(!VoiceEngine.micOn)
         }
-        .padding(.horizontal, 12).padding(.vertical, 7)
-        .background(Capsule().fill(Color.white.opacity(0.08)))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Capsule().fill(.ultraThinMaterial))
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
         .simultaneousGesture(TapGesture().onEnded { focused = true })
     }
@@ -835,9 +851,8 @@ struct PromptView: View {
             .frame(maxHeight: .infinity)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(LinearGradient(colors: [Color(hex: "#3A1B27"), Color(hex: "#1E0F16")], startPoint: .top, endPoint: .bottom)))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.ultraThinMaterial).opacity(0.85))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
     }
 
     private func pillButton(_ icon: String, tint: String, action: @escaping () -> Void) -> some View {

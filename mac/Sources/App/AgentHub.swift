@@ -101,13 +101,13 @@ final class HookServer: @unchecked Sendable {
 
 // MARK: Model
 
-struct AgentLimit: Equatable {
+struct AgentLimit: Equatable, Sendable {
     var label: String          // "5-hour", "Weekly"
     var usedPercent: Double
     var resetsAt: Date?
 }
 
-struct AgentSession: Identifiable, Equatable {
+struct AgentSession: Identifiable, Equatable, Sendable {
     let id: String
     var tool: String           // "Claude Code", "Codex"
     var project: String
@@ -120,7 +120,7 @@ struct AgentSession: Identifiable, Equatable {
     var contextLeft: Double?   // 0…100
     var tokens: Int?
     var updated = Date()
-    enum State: String { case idle, working, needsYou, finished }
+    enum State: String, Sendable { case idle, working, needsYou, finished }
 }
 
 struct AgentApproval: Identifiable, Equatable {
@@ -284,24 +284,50 @@ final class AgentHub: ObservableObject {
 
     // MARK: Codex (reads its session logs)
 
+    private var codexBusy = false
+
+    /// Reads Codex's newest session log in the background (never on the main thread, so Zuffi never stutters).
     private func readCodex() {
+        guard !codexBusy else { return }
+        codexBusy = true
+        let stamp = codexStamp
+        let base = sessions.first { $0.id == "codex" } ?? AgentSession(id: "codex", tool: "Codex", project: "Codex", cwd: "", state: .idle)
+        Task.detached(priority: .utility) {
+            let r = AgentHub.scanCodex(since: stamp, base: base)
+            await MainActor.run { AgentHub.shared.applyCodex(r) }
+        }
+    }
+
+    struct CodexScan: Sendable { let mtime: Date; let session: AgentSession; let limits: [AgentLimit] }
+
+    private func applyCodex(_ r: CodexScan?) {
+        codexBusy = false
+        guard let r else { return }
+        codexStamp = r.mtime
+        if !r.limits.isEmpty { codexLimits = r.limits }
+        if Date().timeIntervalSince(r.mtime) < 6 * 3600 {
+            let was = sessions.first { $0.id == "codex" }?.state
+            upsert(r.session)
+            if was == .working && r.session.state == .finished { SoundEngine.shared.play("finish"); EdgeGlow.shared.flash(.done) }
+        }
+    }
+
+    nonisolated static func scanCodex(since stamp: Date?, base: AgentSession) -> CodexScan? {
         let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
-        guard let file = Self.newest(in: root, depth: 3),
+        guard let file = newest(in: root, depth: 3),
               let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
-              let mtime = attrs[.modificationDate] as? Date else { return }
-        if mtime == codexStamp { return }
-        codexStamp = mtime
-        guard let text = Self.tail(file, bytes: 400_000) else { return }
-        var s = sessions.first { $0.id == "codex" } ?? AgentSession(id: "codex", tool: "Codex", project: "Codex", cwd: "", state: .idle)
+              let mtime = attrs[.modificationDate] as? Date, mtime != stamp,
+              let text = tail(file, bytes: 300_000) else { return nil }
+        var s = base
         var limits: [AgentLimit] = []
         for line in text.split(separator: "\n") {
-            guard let d = line.data(using: .utf8), let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { continue }
+            guard line.contains("\"payload\""), let d = line.data(using: .utf8), let j = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] else { continue }
             let p = j["payload"] as? [String: Any] ?? [:]
             let type = p["type"] as? String ?? ""
-            if let cwd = p["cwd"] as? String, !cwd.isEmpty { s.cwd = cwd; s.project = Self.project(cwd) }
+            if let cwd = p["cwd"] as? String, !cwd.isEmpty { s.cwd = cwd; s.project = project(cwd) }
             switch type {
-            case "user_message": s.state = .working; s.startedAt = Self.date(j["timestamp"]) ?? Date(); s.lastPrompt = p["message"] as? String ?? ""; s.lastStep = "Thinking…"
-            case "task_started": s.state = .working; s.startedAt = Self.date(j["timestamp"]) ?? s.startedAt
+            case "user_message": s.state = .working; s.startedAt = date(j["timestamp"]) ?? Date(); s.lastPrompt = p["message"] as? String ?? ""; s.lastStep = "Thinking…"
+            case "task_started": s.state = .working; s.startedAt = date(j["timestamp"]) ?? s.startedAt
             case "agent_message": s.lastReply = p["message"] as? String ?? s.lastReply
             case "exec_command_begin":
                 if let cmd = p["command"] as? [String] { s.lastStep = "Shell · " + cmd.joined(separator: " ").prefix(80) }
@@ -324,21 +350,16 @@ final class AgentHub: ObservableObject {
                         let label = mins >= 10_000 ? "Weekly" : mins > 0 ? "\(mins / 60)-hour" : key.capitalized
                         var reset: Date?
                         if let r = (w["resets_at"] as? NSNumber)?.doubleValue { reset = Date(timeIntervalSince1970: r) }
-                        else if let r = (w["resets_in_seconds"] as? NSNumber)?.doubleValue { reset = (Self.date(j["timestamp"]) ?? Date()).addingTimeInterval(r) }
+                        else if let r = (w["resets_in_seconds"] as? NSNumber)?.doubleValue { reset = (date(j["timestamp"]) ?? Date()).addingTimeInterval(r) }
                         limits.append(AgentLimit(label: label, usedPercent: used, resetsAt: reset))
                     }
                 }
             default: break
             }
         }
-        if s.state == .working, Date().timeIntervalSince(mtime) > 600 { s.state = .finished }   // left running and forgotten
+        if s.state == .working, Date().timeIntervalSince(mtime) > 600 { s.state = .finished }
         s.updated = mtime
-        if !limits.isEmpty { codexLimits = limits }
-        if Date().timeIntervalSince(mtime) < 6 * 3600 {
-            let was = sessions.first { $0.id == "codex" }?.state
-            upsert(s)
-            if was == .working && s.state == .finished { SoundEngine.shared.play("finish"); EdgeGlow.shared.flash(.done) }
-        }
+        return CodexScan(mtime: mtime, session: s, limits: limits)
     }
 
     // MARK: GitHub
@@ -359,7 +380,7 @@ final class AgentHub: ObservableObject {
 
     // MARK: Helpers
 
-    static func project(_ cwd: String) -> String {
+    nonisolated static func project(_ cwd: String) -> String {
         let n = (cwd as NSString).lastPathComponent
         return n.isEmpty ? "Claude Code" : n
     }
@@ -409,22 +430,25 @@ final class AgentHub: ObservableObject {
         return nil
     }
 
-    static func newest(in dir: URL, depth: Int) -> URL? {
+    /// Newest .jsonl under year/month/day folders — looks only at the latest folders.
+    nonisolated static func newest(in dir: URL, depth: Int) -> URL? {
         let fm = FileManager.default
-        guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return nil }
+        guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return nil }
         if depth == 0 {
-            return items.filter { $0.pathExtension == "jsonl" }.max { a, b in
-                ((try? fm.attributesOfItem(atPath: a.path)[.modificationDate] as? Date) ?? .distantPast)
-                    < ((try? fm.attributesOfItem(atPath: b.path)[.modificationDate] as? Date) ?? .distantPast)
+            var best: (URL, Date)?
+            for f in items where f.pathExtension == "jsonl" {
+                let d = (try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                if best == nil || d > best!.1 { best = (f, d) }
             }
+            return best?.0
         }
-        for sub in items.filter({ $0.hasDirectoryPath }).sorted(by: { $0.lastPathComponent > $1.lastPathComponent }) {
+        for sub in items.filter({ $0.hasDirectoryPath }).sorted(by: { $0.lastPathComponent > $1.lastPathComponent }).prefix(2) {
             if let f = newest(in: sub, depth: depth - 1) { return f }
         }
         return nil
     }
 
-    static func date(_ any: Any?) -> Date? {
+    nonisolated static func date(_ any: Any?) -> Date? {
         guard let s = any as? String else { return nil }
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.date(from: s) ?? ISO8601DateFormatter().date(from: s)

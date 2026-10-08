@@ -147,7 +147,7 @@ final class NativeSpeech {
         let rate = UserDefaults.standard.double(forKey: AssistantPrefs.voiceRate)
         let speed = rate == 0 ? 1.0 : max(0.8, min(1.3, rate / 0.5))
         onEnd = ended
-        let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? false
+        let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
         send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny ? speed * 1.06 : speed, "pitch": bunny ? 450.0 : 0.0])
         let id = currentId
         // Never wait long: if the first words aren't ready in 4 s, use the instant voice instead.

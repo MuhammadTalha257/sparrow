@@ -51,7 +51,7 @@ final class PetController {
     static let shared = PetController()
     let model = PetModel()
     private var panel: NSPanel?
-    private let size = NSSize(width: 230, height: 262)
+    private let size = NSSize(width: 230, height: 330)
 
     var isShown: Bool { panel?.isVisible == true }
 
@@ -277,39 +277,20 @@ struct PetView: View {
 
             ZStack {
                 // little perch shadow
-                Ellipse().fill(Color.black.opacity(model.flying ? 0 : 0.22))
-                    .frame(width: 70, height: 10).blur(radius: 3).offset(y: 44)
+                Ellipse().fill(Color.black.opacity(0.22))
+                    .frame(width: 74, height: 10).blur(radius: 3).offset(y: 80)
                 Group {
-                    if model.walking && (ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny) {
-                        ZuffiWalker(height: 108, walking: true, facingLeft: model.walkLeft)
-                            .offset(y: 4)
+                    if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
+                        // the whole bunny, always — walks on its feet, cups its ear when listening, waves on a click
+                        ZuffiWalker(height: 168, walking: model.walking, facingLeft: model.walkLeft, pose: petPose)
+                            .scaleEffect(x: model.sprite.squash.width, y: model.sprite.squash.height, anchor: .bottom)
                             .allowsHitTesting(false)
                     } else if SparrowSprites.shared.available {
                         SparrowSpriteView(model: model.sprite, size: 118, deadZone: 60, mood: BotCanvasView.mood(voice, AppState.shared))
                             .allowsHitTesting(false)
-                    } else {
-                    TimelineView(.animation) { tl in
-                        Canvas { ctx, size in
-                            let now = tl.date.timeIntervalSinceReferenceDate
-                            let dt = min(0.05, now - engine.lastTime)
-                            let mouse = NSEvent.mouseLocation
-                            if let f = NSApp.windows.first(where: { $0.contentView is FirstMouseHostingView<PetView> })?.frame {
-                                engine.lookX = tanh((mouse.x - f.midX) / 260)
-                                engine.lookY = -tanh(((f.minY + 70) - mouse.y) / 200)
-                            }
-                            engine.update(dt: dt)
-                            // Wings: flap fast while flying or listening, tucked otherwise
-                            if model.flying { engine.hands = 0.65 + 0.35 * CGFloat(sin(now * 38)) }
-                            else if voice.isListening && voice.status == "Listening…" { engine.hands = 0.35 + 0.25 * CGFloat(sin(now * 18)) }
-                            else if engine.hands > 0.01 && now > engine.waveUntil { engine.hands *= 0.85 }
-                            engine.drawHandsBehind(context: ctx, size: size)
-                            engine.draw(context: ctx, size: size)
-                            engine.drawHandsAndExtras(context: ctx, size: size)
-                        }
-                    }
                     }
                 }
-                .frame(width: 124, height: 110)
+                .frame(width: 124, height: 172)
                 .colorMultiply(model.angry ? Color(red: 1, green: 0.62, blue: 0.62) : .white)
                 .modifier(Shake(amount: model.angry ? 4 : 0))
                 if let prop = model.prop {
@@ -318,14 +299,14 @@ struct PetView: View {
                         .foregroundStyle(prop.contains("water") ? Color(hex: "#4FA7FF") : prop.contains("cup") ? Color(hex: "#9A6A48") : Color(hex: "#F06A8A"))
                         .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
                         .rotationEffect(.degrees(-14))
-                        .offset(x: 46, y: 22)
+                        .offset(x: 46, y: 30)
                         .transition(.scale.combined(with: .opacity))
                         .allowsHitTesting(false)
                 }
                 PetDragArea { petClicked() }
-                    .frame(width: 96, height: 84)
+                    .frame(width: 96, height: 160)
             }
-            .frame(width: 140, height: 112)
+            .frame(width: 140, height: 176)
             .onHover { model.hovering = $0 }
 
             if model.asking != nil {
@@ -357,7 +338,7 @@ struct PetView: View {
             .animation(.easeOut(duration: 0.15), value: model.hovering)
             .onHover { if $0 { model.hovering = true } }
         }
-        .frame(width: 230, height: 262)
+        .frame(width: 230, height: 330)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: bubbleText)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: model.prop)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: model.asking == nil)
@@ -365,6 +346,14 @@ struct PetView: View {
             if let e = n.object as? BotEmote { engine.triggerEmote(e, silent: true) }
         }
         .onAppear { engine.setState(.idle, force: true) }
+    }
+
+    @State private var waveUntil = Date.distantPast
+    private var petPose: ZuffiPose {
+        if voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) { return .listen }
+        if Date() < waveUntil || voice.speaking { return .wave }
+        if AppState.shared.stateOverride == .thinking { return .think }
+        return .stand
     }
 
     private var bubbleText: String? {
@@ -383,6 +372,7 @@ struct PetView: View {
         if clicks >= 4 { clicks = 0 }
         NotificationCenter.default.post(name: .triggerEmote, object: e)
         model.sprite.boop()
+        waveUntil = Date().addingTimeInterval(1.6)
         if model.asking == nil { VoiceEngine.shared.listenOnce() }
     }
 

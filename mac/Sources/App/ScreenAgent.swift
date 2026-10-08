@@ -58,6 +58,38 @@ final class ScreenAgent {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
 
+    /// First launch of Zuffi after the rename: the old "Sparrow" app (same identity) makes System Settings
+    /// list the permissions as "Sparrow", switched off. Move the old copy to the Bin, clear its stale
+    /// entries, and ask again so "Zuffi" (with the bunny icon) appears in the lists.
+    static func migrateFromSparrowOnce() async {
+        let ud = UserDefaults.standard
+        guard !ud.bool(forKey: "zuffiPermsMigrated2") else { return }
+        ud.set(true, forKey: "zuffiPermsMigrated2")
+        let me = Bundle.main.bundleURL.resolvingSymlinksInPath()
+        let id = Bundle.main.bundleIdentifier ?? "app.sparrowai.Sparrow"
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var old: [URL] = []
+        for path in ["/Applications/Sparrow.app", "\(home)/Applications/Sparrow.app", "\(home)/Downloads/Sparrow.app", "\(home)/Desktop/Sparrow.app"] {
+            let u = URL(fileURLWithPath: path)
+            guard u.resolvingSymlinksInPath() != me, let b = Bundle(url: u), b.bundleIdentifier == id else { continue }
+            old.append(u)
+        }
+        if !old.isEmpty {
+            NSWorkspace.shared.recycle(old) { _, err in
+                appendAppLog("agents.log", "moved old Sparrow app to the Bin: \(old.map(\.path)) \(err?.localizedDescription ?? "ok")")
+            }
+            // make sure macOS now knows this app (Zuffi.app) for our identity
+            _ = await LocalAISetup.run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", me.path])
+        }
+        var reset: [String] = []
+        if !AXIsProcessTrusted() { reset.append("Accessibility") }
+        if !CGPreflightScreenCaptureAccess() { reset.append("ScreenCapture") }
+        for service in reset { _ = await LocalAISetup.run("/usr/bin/tccutil", ["reset", service, id]) }
+        appendAppLog("agents.log", "permission migration: reset \(reset)")
+        if reset.contains("Accessibility") { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) }
+        if reset.contains("ScreenCapture") { _ = CGRequestScreenCaptureAccess() }
+    }
+
     /// macOS only applies a new Screen Recording permission after the app restarts.
     static func relaunch() {
         let path = Bundle.main.bundlePath

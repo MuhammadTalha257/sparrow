@@ -494,6 +494,7 @@ final class EdgeGlow: ObservableObject {
     private var xDownAt = Date.distantPast
     private var shiftSince: Date?
     private var caps = false
+    private var powerTick = 0
 
     func start() {
         timer?.invalidate()
@@ -527,8 +528,9 @@ final class EdgeGlow: ObservableObject {
             if Date().timeIntervalSince(xDownAt) < 1.2 { flash(.cut, seconds: 1.4) }
             else if flags.contains(.maskCommand) { flash(.copied, seconds: 1.2) }
         }
-        // Charger
-        if let pw = Self.power() {
+        // Charger (checked every ~4 s, not every tick)
+        powerTick += 1
+        if powerTick % 32 == 0, let pw = Self.power() {
             if let was = lastPower, was != pw.0 { flash(pw.0 ? .charging(pw.1) : .battery(pw.1), seconds: 3) }
             lastPower = pw.0
         }
@@ -691,7 +693,7 @@ struct HelloView: View {
                 .opacity(model.phase == 1 ? 1 : 0)
             Group {
                 if ZuffiLook.shared.kind == .bunny && ZuffiBodyArt.shared.available {
-                    ZuffiWalker(height: 200, walking: false)
+                    ZuffiWalker(height: 200, walking: false, pose: .wave)
                 } else {
                     ZuffiFace(frame: SparrowSprites.shared.available ? SparrowSprites.shared.reactions[8] : nil, size: 150)
                 }

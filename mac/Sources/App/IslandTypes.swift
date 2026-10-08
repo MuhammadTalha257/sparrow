@@ -83,17 +83,24 @@ enum IslandConst {
     static let notchWidth: CGFloat  = IslandScreenGeometry.fallbackNotchWidth
     static let notchHeight: CGFloat = 32
     static let expandedWidth: CGFloat = 640
+    /// The new Zuffi panels are narrow and tall (hand-drawn design): home, chat, settings, agents, history.
+    static let viewWidths: [IslandView: CGFloat] = [
+        .overview: 312, .empty: 312, .prompt: 372, .settings: 340, .agents: 380, .history: 350,
+    ]
+    static func width(for v: IslandView) -> CGFloat { viewWidths[v] ?? expandedWidth }
+    static func isPortrait(_ v: IslandView) -> Bool { viewWidths[v] != nil }
+    static let chatHeight: CGFloat = 470
     static let earRadius: CGFloat   = 14
     static let roundedCorner: CGFloat = 14    // hidden/peek/compact
     static let expandedCorner: CGFloat = 22
 
     static let viewLayouts: [IslandView: ViewLayout] = [
         // Home is the reference: height 150
-        .overview:  ViewLayout(height: 214, botX: 319, botY: 100, botDiameter: 0, agentMode: .pills),
+        .overview:  ViewLayout(height: 286, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills),
         // All non-chat views match home height (150) — law
-        .empty:     ViewLayout(height: 214, botX: 319, botY: 100, botDiameter: 0, agentMode: .none),
-        .agents:    ViewLayout(height: 300, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
-        .history:   ViewLayout(height: 280, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
+        .empty:     ViewLayout(height: 286, botX: 150, botY: 100, botDiameter: 0, agentMode: .none),
+        .agents:    ViewLayout(height: 440, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
+        .history:   ViewLayout(height: 420, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
         .approval:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .question:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .error:     ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 58, agentMode: .column),
@@ -103,11 +110,11 @@ enum IslandConst {
         .uploading: ViewLayout(height: 176, botX: 46,  botY: 118, botDiameter: 20, agentMode: .none),
         .choose:    ViewLayout(height: 176, botX: 60,  botY: 101, botDiameter: 52, agentMode: .column),
         .mail:      ViewLayout(height: 240, botX: 56,  botY: nil, botDiameter: 46, agentMode: .column),
-        .prompt:    ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
+        .prompt:    ViewLayout(height: 470, botX: 52,  botY: nil, botDiameter: 0, agentMode: .column),
         .searching: ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
         .result:    ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
         .note:      ViewLayout(height: 160, botX: 60,  botY: nil, botDiameter: 50, agentMode: .column),
-        .settings:  ViewLayout(height: 160, botX: 54,  botY: nil, botDiameter: 46, agentMode: .none),
+        .settings:  ViewLayout(height: 400, botX: 54,  botY: nil, botDiameter: 0, agentMode: .none),
         // Greeting: bot drawn by GreetingCanvasView; no BotPlacement needed
         .greeting:  ViewLayout(height: 150, botX: 320, botY: 90,  botDiameter: 0,  agentMode: .none),
     ]

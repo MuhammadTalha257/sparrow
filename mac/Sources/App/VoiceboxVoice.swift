@@ -20,7 +20,45 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
 
     struct Profile: Identifiable, Hashable { let id: String; let name: String; let language: String; let kind: String }
 
-    static var enabled: Bool { UserDefaults.standard.bool(forKey: "voiceboxVoice") }
+    /// "auto" (VoiceStudio, else Voicebox, if one is running), "voicestudio", "voicebox" or "builtin".
+    static var mode: String { UserDefaults.standard.string(forKey: "offlineVoice") ?? (UserDefaults.standard.bool(forKey: "voiceboxVoice") ? "voicebox" : "auto") }
+    /// True when an offline voice studio is running and allowed — checked every 30 s, so speaking never waits for it.
+    static var enabled: Bool { mode != "builtin" && (shared.studioUp && mode != "voicebox" || shared.boxUp && mode != "voicestudio") }
+    static let studioBase = URL(string: "http://127.0.0.1:3900")!
+
+    private(set) var studioUp = false
+    private(set) var boxUp = false
+    private var watch: Timer?
+
+    func startWatching() {
+        guard watch == nil else { return }
+        Task { await refreshStatus() }
+        watch = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            Task { @MainActor in await VoiceboxVoice.shared.refreshStatus() }
+        }
+    }
+
+    func refreshStatus() async {
+        studioUp = await Self.ping(Self.studioBase.appendingPathComponent(".well-known/voicestudio-speech"))
+        boxUp = await Self.ping(Self.base.appendingPathComponent("health"))
+    }
+
+    nonisolated static func ping(_ u: URL) async -> Bool {
+        let r = URLRequest(url: u, timeoutInterval: 1.2)
+        guard let (_, resp) = try? await URLSession.shared.data(for: r) else { return false }
+        return (resp as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    /// VoiceStudio voices (your clones and presets).
+    func studioVoices() async -> [Profile] {
+        let r = URLRequest(url: Self.studioBase.appendingPathComponent("v1/audio/voices"), timeoutInterval: 3)
+        guard let (d, _) = try? await URLSession.shared.data(for: r), let j = try? JSONSerialization.jsonObject(with: d) else { return [] }
+        let list = (j as? [[String: Any]]) ?? ((j as? [String: Any])?["voices"] as? [[String: Any]]) ?? ((j as? [String: Any])?["data"] as? [[String: Any]]) ?? []
+        return list.compactMap { v in
+            guard let id = (v["voice_id"] as? String) ?? (v["id"] as? String) else { return nil }
+            return Profile(id: id, name: v["name"] as? String ?? id, language: v["language"] as? String ?? "", kind: "voicestudio")
+        }
+    }
 
     private var player: AVAudioPlayer?
     private var onEnd: (() -> Void)?
@@ -48,6 +86,11 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         stop()
         turn += 1
         let my = turn
+        let m = Self.mode
+        if studioUp && (m == "auto" || m == "voicestudio") {
+            if await studioSay(text, my: my, ended: ended) { return true }
+        }
+        guard boxUp && (m == "auto" || m == "voicebox") else { return false }
         var pid = UserDefaults.standard.string(forKey: "voiceboxProfile") ?? ""
         if pid.isEmpty { pid = await profiles().first?.id ?? "" }
         guard !pid.isEmpty else { return false }
@@ -78,6 +121,30 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         return true
     }
 
+    /// VoiceStudio (OmniVoice): offline, 600+ languages. The bunny voice is designed with its voice tags.
+    private func studioSay(_ text: String, my: Int, ended: @escaping () -> Void) async -> Bool {
+        let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
+        let picked = UserDefaults.standard.string(forKey: "voicestudioVoice") ?? ""
+        var body: [String: Any] = ["model": "tts-1", "input": text, "voice": picked.isEmpty ? "alloy" : picked, "response_format": "wav"]
+        if bunny && picked.isEmpty { body["instructions"] = "female, child, very high pitch" }
+        var r = URLRequest(url: Self.studioBase.appendingPathComponent("v1/audio/speech"), timeoutInterval: 60)
+        r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (d, resp) = try? await URLSession.shared.data(for: r),
+              (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 100, my == turn,
+              let p = try? AVAudioPlayer(data: d) else {
+            appendAppLog("voice.log", "VoiceStudio didn't answer")
+            return false
+        }
+        p.delegate = self
+        p.volume = 0.95
+        player = p
+        onEnd = ended
+        p.play()
+        return true
+    }
+
     func stop() {
         turn += 1
         player?.stop()
@@ -97,11 +164,14 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
 // MARK: - Settings → Voice
 
 struct VoiceboxSettings: View {
-    @AppStorage("voiceboxVoice") private var on = false
+    @AppStorage("offlineVoice") private var mode = "auto"
     @AppStorage("voiceboxProfile") private var profile = ""
-    @AppStorage("bunnyVoice") private var bunny = false
-    @State private var running = false
+    @AppStorage("voicestudioVoice") private var studioVoice = ""
+    @AppStorage("bunnyVoice") private var bunny = true
+    @State private var studioUp = false
+    @State private var boxUp = false
     @State private var list: [VoiceboxVoice.Profile] = []
+    @State private var studioList: [VoiceboxVoice.Profile] = []
     @State private var testing = false
 
     var body: some View {
@@ -109,29 +179,42 @@ struct VoiceboxSettings: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Cute bunny voice (higher, a little quicker)", isOn: $bunny)
                 Divider()
-                HStack {
-                    Text("Voicebox voices").font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    Circle().fill(running ? Color.green : Color.gray).frame(width: 7, height: 7)
-                    Text(running ? "Voicebox is running" : "Voicebox isn't running").font(.system(size: 11)).foregroundColor(.secondary)
-                }
-                Text("Offline voices in 23 languages — or your own cloned voice. Free and open source; runs on this Mac, no API key.")
+                Text("Offline voice studios").font(.system(size: 13, weight: .semibold))
+                Text("Zuffi can speak through a free voice studio running on this Mac — no internet, no API key, many languages, even your own cloned voice. If none is running, Zuffi uses its own voice.")
                     .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
-                Toggle("Speak with Voicebox when it's running", isOn: $on)
+                Picker("Speak with", selection: $mode) {
+                    Text("Automatic").tag("auto")
+                    Text("VoiceStudio").tag("voicestudio")
+                    Text("Voicebox").tag("voicebox")
+                    Text("Zuffi's own voice").tag("builtin")
+                }
+                status("VoiceStudio", up: studioUp, note: "600+ languages · voice cloning · voicestudio.sh")
+                if !studioList.isEmpty {
+                    Picker("VoiceStudio voice", selection: $studioVoice) {
+                        Text(bunny ? "Bunny (designed)" : "Default").tag("")
+                        ForEach(studioList) { p in Text(p.name).tag(p.id) }
+                    }
+                }
+                status("Voicebox", up: boxUp, note: "23 languages · voice cloning · voicebox.sh")
                 if !list.isEmpty {
-                    Picker("Voice", selection: $profile) {
+                    Picker("Voicebox voice", selection: $profile) {
                         Text("First voice").tag("")
                         ForEach(list) { p in Text("\(p.name) · \(p.language)").tag(p.id) }
                     }
                 }
                 HStack {
-                    if !running { Button("Get Voicebox") { NSWorkspace.shared.open(URL(string: "https://voicebox.sh")!) } }
+                    if !studioUp {
+                        Button("Install VoiceStudio") { installStudio() }
+                            .help("Opens Terminal with VoiceStudio's official installer so you can see what it does")
+                    }
+                    if !boxUp { Button("Get Voicebox") { NSWorkspace.shared.open(URL(string: "https://voicebox.sh")!) } }
                     Button("Check again") { Task { await refresh() } }
                     Button(testing ? "…" : "Test") {
                         testing = true
                         Task {
-                            let ok = await VoiceboxVoice.shared.say("Hi! I'm Zuffi. This is my Voicebox voice.") {}
-                            if !ok { VoiceEngine.shared.speak("Voicebox didn't answer, so this is my own voice.") }
+                            await VoiceboxVoice.shared.refreshStatus()
+                            if VoiceboxVoice.enabled { VoiceEngine.shared.speak("Hi! I'm Zuffi. This is my offline studio voice.") }
+                            else { VoiceEngine.shared.speak("Hi! I'm Zuffi. No voice studio is running, so this is my own voice.") }
                             testing = false
                         }
                     }.disabled(testing)
@@ -142,8 +225,29 @@ struct VoiceboxSettings: View {
         .task { await refresh() }
     }
 
+    private func status(_ name: String, up: Bool, note: String) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(up ? Color.green : Color.gray).frame(width: 7, height: 7)
+            Text(name).font(.system(size: 12, weight: .semibold))
+            Text(up ? "running" : "not running").font(.system(size: 11)).foregroundColor(.secondary)
+            Spacer()
+            Text(note).font(.system(size: 10)).foregroundColor(.secondary)
+        }
+    }
+
+    private func installStudio() {
+        let cmd = "curl -fsSL https://voicestudio.sh/install | sh"
+        let script = "tell application \"Terminal\"\n activate\n do script \"\(cmd)\"\nend tell"
+        var err: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&err)
+        if err != nil { NSWorkspace.shared.open(URL(string: "https://github.com/debpalash/VoiceStudio/releases/latest")!) }
+    }
+
     private func refresh() async {
-        running = await VoiceboxVoice.shared.running()
-        list = running ? await VoiceboxVoice.shared.profiles() : []
+        await VoiceboxVoice.shared.refreshStatus()
+        studioUp = VoiceboxVoice.shared.studioUp
+        boxUp = VoiceboxVoice.shared.boxUp
+        studioList = studioUp ? await VoiceboxVoice.shared.studioVoices() : []
+        list = boxUp ? await VoiceboxVoice.shared.profiles() : []
     }
 }
