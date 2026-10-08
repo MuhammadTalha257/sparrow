@@ -109,7 +109,7 @@ final class ZuffiLook: ObservableObject {
 @MainActor
 final class ZuffiBodyArt {
     static let shared = ZuffiBodyArt()
-    let top: CGImage?, legL: CGImage?, legR: CGImage?, paw: CGImage?
+    let top: CGImage?, legL: CGImage?, legR: CGImage?, armL: CGImage?, armR: CGImage?, paw: CGImage?
     private init() {
         func load(_ n: String) -> CGImage? {
             guard let u = Bundle.main.resourceURL?.appendingPathComponent("web/mascots/\(n)"),
@@ -117,9 +117,10 @@ final class ZuffiBodyArt {
             return CGImageSourceCreateImageAtIndex(s, 0, nil)
         }
         top = load("zuffi-walk-top.webp"); legL = load("zuffi-walk-legL.webp"); legR = load("zuffi-walk-legR.webp")
+        armL = load("zuffi-walk-armL.webp"); armR = load("zuffi-walk-armR.webp")
         paw = load("zuffi-paw.webp")
     }
-    var available: Bool { top != nil && legL != nil && legR != nil }
+    var available: Bool { top != nil && legL != nil && legR != nil && armL != nil && armR != nil }
 }
 
 /// The face part of the avatar — the bunny frame, an emoji or a photo.
@@ -190,20 +191,30 @@ struct ZuffiWalker: View {
         let art = ZuffiBodyArt.shared
         let w = height * 330 / 648
         TimelineView(.animation(minimumInterval: 1 / 30, paused: !walking)) { tl in
-            let t = tl.date.timeIntervalSince(start) * 7.5 * speed
+            let t = tl.date.timeIntervalSince(start) * 4.4 * speed      // about 1.4 steps a second
             let s = walking ? sin(t) : 0
+            let px = w / 330                                              // art pixels → points
             Group {
                 if look.kind == .bunny, art.available {
                     ZStack {
-                        Image(decorative: art.legL!, scale: 1).resizable().interpolation(.high).offset(y: -max(0, s) * height * 0.03)
-                        Image(decorative: art.legR!, scale: 1).resizable().interpolation(.high).offset(y: -max(0, -s) * height * 0.03)
-                        Image(decorative: art.top!, scale: 1).resizable().interpolation(.high)
-                            .offset(y: -abs(s) * height * 0.018)
-                            .rotationEffect(.degrees(s * 2.2), anchor: .bottom)
+                        // legs: one foot lifts while the other carries the weight
+                        Image(decorative: art.legL!, scale: 1).resizable().interpolation(.high)
+                            .offset(x: -max(0, s) * 3 * px, y: -max(0, s) * height * 0.045)
+                        Image(decorative: art.legR!, scale: 1).resizable().interpolation(.high)
+                            .offset(x: max(0, -s) * 3 * px, y: -max(0, -s) * height * 0.045)
+                        // body + swinging arms, waddling over the planted foot
+                        ZStack {
+                            Image(decorative: art.top!, scale: 1).resizable().interpolation(.high)
+                            Image(decorative: art.armL!, scale: 1).resizable().interpolation(.high)
+                                .rotationEffect(.degrees(s * 16), anchor: UnitPoint(x: 0.194, y: 0.665))
+                            Image(decorative: art.armR!, scale: 1).resizable().interpolation(.high)
+                                .rotationEffect(.degrees(s * 16), anchor: UnitPoint(x: 0.806, y: 0.671))
+                        }
+                        .rotationEffect(.degrees(-s * 3.5), anchor: UnitPoint(x: 0.5, y: 0.85))
+                        .offset(x: s * 5 * px, y: -abs(s) * height * 0.012)
                     }
                     .frame(width: w, height: height)
                     .zuffiFur(look)
-                    .rotationEffect(.degrees(walking ? 3 : 0), anchor: .bottom)      // leans into the walk
                     .scaleEffect(x: facingLeft ? -1 : 1, y: 1)
                 } else {
                     // emoji / photo: little hops instead of steps

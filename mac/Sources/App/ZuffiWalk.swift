@@ -71,9 +71,10 @@ final class ZuffiWalk {
         m.sprite.walkLeft = false
         m.walking = true
         SoundEngine.shared.play("greet")
+        let inDist = (vf.midX - size.width / 2) - (vf.minX - size.width)
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 3.0
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ctx.duration = max(4, min(11, Double(inDist) / 95))        // a calm bunny stroll, not a dash
+            ctx.timingFunction = CAMediaTimingFunction(name: .linear)
             p.animator().setFrame(NSRect(x: vf.midX - size.width / 2, y: y, width: size.width, height: size.height), display: true)
         }, completionHandler: {
             MainActor.assumeIsolated {
@@ -125,8 +126,8 @@ final class ZuffiWalk {
         model.sprite.walkLeft = false
         model.walking = true
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 2.6
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            ctx.duration = max(4, min(11, Double(vf.maxX + 10 - p.frame.minX) / 95))
+            ctx.timingFunction = CAMediaTimingFunction(name: .linear)
             p.animator().setFrame(NSRect(x: vf.maxX + 10, y: p.frame.minY, width: size.width, height: size.height), display: true)
         }, completionHandler: {
             MainActor.assumeIsolated {
