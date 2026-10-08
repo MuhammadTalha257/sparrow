@@ -142,6 +142,7 @@ struct SparrowSpriteView: View {
     var mood: SpriteMood = .idle
     var onTap: (() -> Void)? = nil
 
+    @ObservedObject private var look = ZuffiLook.shared
     @State private var anchor = SpriteAnchor()
     @State private var t = 0.0
     private let tick = Timer.publish(every: 1.0 / 20.0, on: .main, in: .common).autoconnect()
@@ -180,12 +181,8 @@ struct SparrowSpriteView: View {
                         .offset(x: cos(a) * size * 0.46, y: -size * 0.34 + sin(a) * size * 0.12)
                 }
             }
-            if sprites.available {
-                Image(decorative: frame(sprites), scale: 1)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .frame(width: size, height: size)
+            if sprites.available || ZuffiLook.shared.kind != .bunny {
+                ZuffiFace(frame: sprites.available ? frame(sprites) : nil, size: size, mood: mood)
             }
             if let prop = model.prop {
                 Image(systemName: prop)

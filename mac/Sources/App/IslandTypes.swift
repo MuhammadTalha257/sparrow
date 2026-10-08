@@ -12,6 +12,7 @@ enum IslandView: String, CaseIterable {
     case overview, empty, approval, question, error, finished
     case confused, upload, uploading, choose, mail, prompt
     case searching, result, note, settings, greeting
+    case agents, history
 }
 
 // MARK: - Bot State
@@ -88,9 +89,11 @@ enum IslandConst {
 
     static let viewLayouts: [IslandView: ViewLayout] = [
         // Home is the reference: height 150
-        .overview:  ViewLayout(height: 168, botX: 319, botY: 100, botDiameter: 48, agentMode: .pills),
+        .overview:  ViewLayout(height: 214, botX: 319, botY: 100, botDiameter: 0, agentMode: .pills),
         // All non-chat views match home height (150) — law
-        .empty:     ViewLayout(height: 168, botX: 319, botY: 100, botDiameter: 48, agentMode: .none),
+        .empty:     ViewLayout(height: 214, botX: 319, botY: 100, botDiameter: 0, agentMode: .none),
+        .agents:    ViewLayout(height: 300, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
+        .history:   ViewLayout(height: 280, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
         .approval:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .question:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .error:     ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 58, agentMode: .column),

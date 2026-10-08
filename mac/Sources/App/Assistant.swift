@@ -875,7 +875,7 @@ enum Weather {
         return s + "."
     }
 
-    private static func location() async -> (lat: Double, lon: Double, city: String)? {
+    static func location() async -> (lat: Double, lon: Double, city: String)? {
         let city = (UserDefaults.standard.string(forKey: AssistantPrefs.weatherCity) ?? "").trimmingCharacters(in: .whitespaces)
         if !city.isEmpty {
             var c = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
@@ -896,7 +896,7 @@ enum Weather {
         return nil
     }
 
-    private static func getJSON(_ url: URL) async -> [String: Any]? {
+    static func getJSON(_ url: URL) async -> [String: Any]? {
         var req = URLRequest(url: url, timeoutInterval: 6)
         req.setValue("Zuffi", forHTTPHeaderField: "User-Agent")
         guard let (data, resp) = try? await URLSession.shared.data(for: req),

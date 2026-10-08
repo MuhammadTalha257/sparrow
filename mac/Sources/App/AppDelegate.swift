@@ -117,7 +117,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NativeSpeech.shared.start()
         HoldToTalk.start()
         BackgroundKeeper.start()
-        // Pet mode: bring the sparrow back if it was on screen last time
+        // Agents (Claude Code / Codex / GitHub) and the glowing notch edge
+        AgentHub.shared.start()
+        EdgeGlow.shared.start()
+        // The bunny pops out and says hey, then the island opens with its tabs
+        if UserDefaults.standard.object(forKey: "helloOnOpen") as? Bool ?? true, SetupWizard.done {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { ZuffiHello.shared.show() }
+        }
+        // Pet mode: bring the bunny back if it was on screen last time
         if UserDefaults.standard.bool(forKey: "petVisible") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
                 PetController.shared.show(); self?.updatePetMenuTitle()

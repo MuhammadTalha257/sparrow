@@ -36,7 +36,7 @@ final class ZuffiWalk {
     private var queue: [Visit] = []
     private var current: Visit?
     private var timeout: DispatchWorkItem?
-    private let size = NSSize(width: 360, height: 330)
+    private let size = NSSize(width: 360, height: 400)
 
     func arrive(kind: String, title: String, sub: String = "", itemId: String? = nil) {
         queue.append(Visit(kind: kind, title: title, sub: sub, itemId: itemId))
@@ -199,16 +199,31 @@ struct WalkView: View {
                     .shadow(color: .black.opacity(0.25), radius: 10, y: 4))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(hex: model.tint).opacity(0.5), lineWidth: 1.5))
             }
-            ZStack {
-                Ellipse().fill(Color.black.opacity(0.18)).frame(width: 70, height: 10).blur(radius: 3).offset(y: 52)
-                SparrowSpriteView(model: model.sprite, size: 120, mood: model.walking ? .walking : .idle)
-                    .colorMultiply(model.cross ? Color(red: 1, green: 0.7, blue: 0.7) : .white)
-                    .modifier(Shake(amount: model.cross ? 4 : 0))
-                    .allowsHitTesting(false)
+            ZStack(alignment: .bottom) {
+                Ellipse().fill(Color.black.opacity(0.18)).frame(width: 74, height: 10).blur(radius: 3).offset(y: 3)
+                Group {
+                    if model.sprite.reaction != nil || !ZuffiBodyArt.shared.available {
+                        // a big reaction face when you answer
+                        SparrowSpriteView(model: model.sprite, size: 130, mood: .idle)
+                    } else {
+                        // the whole bunny, walking on its feet
+                        ZuffiWalker(height: 168, walking: model.walking, facingLeft: model.sprite.walkLeft)
+                    }
+                }
+                .colorMultiply(model.cross ? Color(red: 1, green: 0.7, blue: 0.7) : .white)
+                .modifier(Shake(amount: model.cross ? 4 : 0))
+                .allowsHitTesting(false)
+                if let prop = model.sprite.prop, model.sprite.reaction == nil {
+                    Image(systemName: prop).font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(prop.contains("water") ? Color(hex: "#4FA7FF") : prop.contains("cup") ? Color(hex: "#9A6A48") : Color(hex: "#F06A8A"))
+                        .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                        .rotationEffect(.degrees(-12))
+                        .offset(x: model.sprite.walkLeft ? -40 : 40, y: -62)
+                }
             }
-            .frame(height: 124)
+            .frame(height: 172)
         }
-        .frame(width: 360, height: 330)
+        .frame(width: 360, height: 400)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.walking)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.bubble)
     }

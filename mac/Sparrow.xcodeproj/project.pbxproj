@@ -15,12 +15,18 @@
 		7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573E04989084923B39144398 /* SetupWizard.swift */; };
 		2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */; };
 		D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */; };
+		ADF41286FC4E3EFF979C918D /* GlanceCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2622A37C7E4ED1D660856F /* GlanceCards.swift */; };
+		B5F5603FADFAF7637B8A3F76 /* AgentHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2173290A0779D0438B90DD79 /* AgentHub.swift */; };
+		587E9AD3034088D16BB8E0BE /* ZuffiAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD254C6C6556BEB29CCAFB24 /* ZuffiAvatar.swift */; };
 		679D07CD7A63DF433D3A40A3 /* ScreenAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */; };
 		EAD634B20DDEFE624E6EED6B /* HealthSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E29F781B3752D5E125F95E /* HealthSettingsView.swift */; };
 		BF6032E05D9F2A032063962A /* PhoneLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97D330FAF5BD94A22EAA4AD1 /* PhoneLink.swift */; };
 		EC9F164883A3250BB9FDDC35 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573E04989084923B39144398 /* SetupWizard.swift */; };
 		AEE9FFFAAAD838DA5EB86EC0 /* InstalledAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */; };
 		D12BE8443642E6CC7641F7B0 /* ZuffiWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */; };
+		4F8011BF5E9C917350365842 /* GlanceCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2622A37C7E4ED1D660856F /* GlanceCards.swift */; };
+		D1541F6D8124AC10A3EDCDF2 /* AgentHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2173290A0779D0438B90DD79 /* AgentHub.swift */; };
+		9C1DDF378068DC15D468D863 /* ZuffiAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD254C6C6556BEB29CCAFB24 /* ZuffiAvatar.swift */; };
 		7FCD6C311D82B57466309C9B /* ScreenAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */; };
 		2D3AF78DCCDF91C75694D4F6 /* SparrowSprite.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10880C30B417627900CDFBF /* SparrowSprite.swift */; };
 		4AABC4FB27EE7F4E4928FA0C /* SparrowSprite.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10880C30B417627900CDFBF /* SparrowSprite.swift */; };
@@ -126,6 +132,9 @@
 		573E04989084923B39144398 /* SetupWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizard.swift; sourceTree = "<group>"; };
 		3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledAI.swift; sourceTree = "<group>"; };
 		CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiWalk.swift; sourceTree = "<group>"; };
+		0A2622A37C7E4ED1D660856F /* GlanceCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceCards.swift; sourceTree = "<group>"; };
+		2173290A0779D0438B90DD79 /* AgentHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHub.swift; sourceTree = "<group>"; };
+		AD254C6C6556BEB29CCAFB24 /* ZuffiAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiAvatar.swift; sourceTree = "<group>"; };
 		753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenAgent.swift; sourceTree = "<group>"; };
 		71055F0E5D33857DB26A3635 /* SmartPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartPlanner.swift; sourceTree = "<group>"; };
 		C705035F81568D3A64CB2907 /* NetStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetStatus.swift; sourceTree = "<group>"; };
@@ -190,6 +199,9 @@
 				573E04989084923B39144398 /* SetupWizard.swift */,
 				3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */,
 				CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */,
+				0A2622A37C7E4ED1D660856F /* GlanceCards.swift */,
+				2173290A0779D0438B90DD79 /* AgentHub.swift */,
+				AD254C6C6556BEB29CCAFB24 /* ZuffiAvatar.swift */,
 				753E5D0EDE9DF20E74B3C665 /* ScreenAgent.swift */,
 				E10880C30B417627900CDFBF /* SparrowSprite.swift */,
 				FA89CBF823F723D8E86288AB /* LiveSession.swift */,
@@ -389,6 +401,9 @@
 				7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */,
 				2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */,
 				D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */,
+				ADF41286FC4E3EFF979C918D /* GlanceCards.swift in Sources */,
+				B5F5603FADFAF7637B8A3F76 /* AgentHub.swift in Sources */,
+				587E9AD3034088D16BB8E0BE /* ZuffiAvatar.swift in Sources */,
 				679D07CD7A63DF433D3A40A3 /* ScreenAgent.swift in Sources */,
 				2D3AF78DCCDF91C75694D4F6 /* SparrowSprite.swift in Sources */,
 				0BC07A6C61B0D278B2189061 /* LiveSession.swift in Sources */,
@@ -444,6 +459,9 @@
 				EC9F164883A3250BB9FDDC35 /* SetupWizard.swift in Sources */,
 				AEE9FFFAAAD838DA5EB86EC0 /* InstalledAI.swift in Sources */,
 				D12BE8443642E6CC7641F7B0 /* ZuffiWalk.swift in Sources */,
+				4F8011BF5E9C917350365842 /* GlanceCards.swift in Sources */,
+				D1541F6D8124AC10A3EDCDF2 /* AgentHub.swift in Sources */,
+				9C1DDF378068DC15D468D863 /* ZuffiAvatar.swift in Sources */,
 				7FCD6C311D82B57466309C9B /* ScreenAgent.swift in Sources */,
 				4AABC4FB27EE7F4E4928FA0C /* SparrowSprite.swift in Sources */,
 				2B0E1B1399E8949DA8905A93 /* LiveSession.swift in Sources */,

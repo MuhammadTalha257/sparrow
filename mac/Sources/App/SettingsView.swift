@@ -126,6 +126,15 @@ struct SettingsView: View {
                 }
                 }
 
+                if tab == .look {
+                ZuffiLookSettings()
+                ZuffiExtrasSettings()
+                }
+
+                if tab == .agents {
+                AgentsSettingsView()
+                }
+
                 if tab == .routine {
                 RoutineSettings()
                 }
@@ -310,11 +319,13 @@ struct ShortcutRecorderButton: View {
 // MARK: - Settings tabs (friendlier than one long page)
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, routine, voice, ai, apps, screen, health, iphone
+    case general, look, routine, voice, ai, agents, apps, screen, health, iphone
     var id: String { rawValue }
     var title: String {
         switch self {
         case .general:   return "General"
+        case .look:      return "Look"
+        case .agents:    return "Agents"
         case .routine:   return "My day"
         case .voice:     return "Voice"
         case .ai:        return "AI"
@@ -327,6 +338,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general:   return "slider.horizontal.3"
+        case .look:      return "paintpalette.fill"
+        case .agents:    return "terminal.fill"
         case .routine:   return "sun.horizon.fill"
         case .voice:     return "waveform"
         case .ai:        return "sparkles"

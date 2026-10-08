@@ -11,7 +11,7 @@ extension Notification.Name {
 }
 
 // =====================================================================
-// MARK: - Pet mode: the sparrow flies out and sits anywhere on screen
+// MARK: - Pet mode: the bunny walks out and sits anywhere on screen
 // =====================================================================
 
 @MainActor
@@ -24,6 +24,9 @@ final class PetModel: ObservableObject {
     @Published var angry = false
     @Published var bubble: String?
     @Published var flying = false
+    /// Walking on its feet (in, out, or a little stroll along the bottom of the screen).
+    @Published var walking = false
+    @Published var walkLeft = false
     @Published var hovering = false
     private var hideBubble: DispatchWorkItem?
 
@@ -105,49 +108,74 @@ final class PetController {
         if greeting { UserDefaults.standard.set(true, forKey: "petVisible") }
         let target = homeFrame()
         guard !p.isVisible else { p.setFrame(target, display: true); return }
-        // Fly in from the top-left, flapping, and land on the spot
+        // Hop in from the nearest side of the screen, walking on its feet, and stop on the spot
         let screen = NSScreen.main ?? NSScreen.screens[0]
-        let start = NSRect(x: max(screen.frame.minX - size.width, target.minX - 520),
-                           y: min(screen.frame.maxY, target.minY + 420), width: size.width, height: size.height)
+        let fromLeft = target.midX < screen.frame.midX
+        let start = NSRect(x: fromLeft ? screen.frame.minX - size.width : screen.frame.maxX, y: target.minY, width: size.width, height: size.height)
         p.setFrame(start, display: false)
         p.alphaValue = 1
         p.orderFrontRegardless()
-        model.flying = true
         SoundEngine.shared.play("greet")
+        walk(p, to: target) {
+            let m = PetController.shared.model
+            NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
+            if m.prop == nil {
+                let name = AssistantPrefs.displayName
+                m.say("Hey\(name.isEmpty ? "" : " \(name)")! Tap me to talk. Drag me anywhere. 🐰", for: 5)
+            }
+        }
+        startStrolling()
+    }
+
+    /// Walks the panel to `target` at a gentle bunny pace, legs stepping the whole way.
+    private func walk(_ p: NSPanel, to target: NSRect, then done: @escaping @MainActor () -> Void = {}) {
+        let dist = hypot(target.minX - p.frame.minX, target.minY - p.frame.minY)
+        model.walkLeft = target.minX < p.frame.minX
+        model.walking = true
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 1.25
-            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.75, 0.25, 1)
+            ctx.duration = max(0.8, min(6, Double(dist) / 190))
+            ctx.timingFunction = CAMediaTimingFunction(name: .linear)
             p.animator().setFrame(target, display: true)
         }, completionHandler: {
             MainActor.assumeIsolated {
-                let m = PetController.shared.model
-                m.flying = false
-                NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
-                if m.prop == nil {
-                    let name = AssistantPrefs.displayName
-                    m.say("Hi\(name.isEmpty ? "" : " \(name)")! Tap me to talk. Drag me anywhere. 🐦", for: 5)
-                }
+                PetController.shared.model.walking = false
+                done()
             }
         })
+    }
+
+    /// Every few minutes the bunny strolls a little way along the screen (unless it's busy).
+    private var strollTimer: Timer?
+    private func startStrolling() {
+        strollTimer?.invalidate()
+        strollTimer = Timer.scheduledTimer(withTimeInterval: Double.random(in: 240...420), repeats: false) { _ in
+            MainActor.assumeIsolated { PetController.shared.stroll() }
+        }
+    }
+    func stroll() {
+        defer { startStrolling() }
+        guard let p = panel, p.isVisible, !model.walking, !model.flying, model.asking == nil, !model.hovering,
+              UserDefaults.standard.object(forKey: "petStroll") as? Bool ?? true else { return }
+        let vf = (p.screen ?? NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+        let dx = CGFloat.random(in: 120...320) * (Bool.random() ? 1 : -1)
+        var x = p.frame.minX + dx
+        if x < vf.minX + 8 || x + size.width > vf.maxX - 8 { x = p.frame.minX - dx }
+        x = min(max(x, vf.minX + 8), vf.maxX - size.width - 8)
+        walk(p, to: NSRect(x: x, y: p.frame.minY, width: size.width, height: size.height)) {
+            PetController.shared.savePosition()
+            PetController.shared.model.sprite.react(8, for: 0.8)
+        }
     }
 
     func hide(remember: Bool = true) {
         if remember { UserDefaults.standard.set(false, forKey: "petVisible") }
         guard let p = panel, p.isVisible else { return }
-        model.flying = true
+        strollTimer?.invalidate()
         let f = p.frame
-        let away = NSRect(x: f.minX + 420, y: f.minY + 380, width: f.width, height: f.height)
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.9
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            p.animator().setFrame(away, display: true)
-            p.animator().alphaValue = 0
-        }, completionHandler: {
-            MainActor.assumeIsolated {
-                PetController.shared.panel?.orderOut(nil)
-                PetController.shared.model.flying = false
-            }
-        })
+        let screen = p.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        let toLeft = f.midX < screen.frame.midX
+        let away = NSRect(x: toLeft ? screen.frame.minX - f.width - 10 : screen.frame.maxX + 10, y: f.minY, width: f.width, height: f.height)
+        walk(p, to: away) { PetController.shared.panel?.orderOut(nil) }
     }
 
     /// Water / coffee / medicine time: the sparrow flies in carrying it and asks "Take" or "Later".
@@ -252,7 +280,11 @@ struct PetView: View {
                 Ellipse().fill(Color.black.opacity(model.flying ? 0 : 0.22))
                     .frame(width: 70, height: 10).blur(radius: 3).offset(y: 44)
                 Group {
-                    if SparrowSprites.shared.available {
+                    if model.walking && (ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny) {
+                        ZuffiWalker(height: 108, walking: true, facingLeft: model.walkLeft)
+                            .offset(y: 4)
+                            .allowsHitTesting(false)
+                    } else if SparrowSprites.shared.available {
                         SparrowSpriteView(model: model.sprite, size: 118, deadZone: 60, mood: BotCanvasView.mood(voice, AppState.shared))
                             .allowsHitTesting(false)
                     } else {
@@ -321,7 +353,7 @@ struct PetView: View {
                 }
                 petButton("xmark", "Hide") { PetController.shared.hide() }
             }
-            .opacity(model.hovering && !model.flying && model.asking == nil ? 1 : 0)
+            .opacity(model.hovering && !model.flying && !model.walking && model.asking == nil ? 1 : 0)
             .animation(.easeOut(duration: 0.15), value: model.hovering)
             .onHover { if $0 { model.hovering = true } }
         }

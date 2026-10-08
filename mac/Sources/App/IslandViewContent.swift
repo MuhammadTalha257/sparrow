@@ -25,6 +25,8 @@ struct IslandViewContent: View {
         case .note:      NoteView(state: state)
         case .settings:  SettingsIslandView(state: state)
         case .greeting:  EmptyView()  // GreetingCanvasView overlaid in IslandRootView
+        case .agents:    AgentsIslandView()
+        case .history:   HistoryIslandView()
         }
     }
 }
@@ -40,7 +42,7 @@ struct OverviewView: View {
     var body: some View {
         HStack(spacing: 10) {
             if agent == nil || agent?.isIntegration == true {
-                SparrowHomeView(state: state)
+                GlanceHomeView(state: state)
             } else {
             // Left card: title row + ticker below + ↗ button overlay
             ZStack(alignment: .topLeading) {
@@ -167,7 +169,7 @@ struct EmptyStateView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        SparrowHomeView(state: state)
+        GlanceHomeView(state: state)
     }
 }
 
@@ -186,13 +188,16 @@ struct ApprovalView: View {
                 CodeBlock(text: approval?.command ?? approval?.tool ?? "…")
                 HStack(spacing: 8) {
                     SecondaryButton("Deny") {
-                        withAnimation { state.view = .overview }
+                        if let a = AgentHub.shared.approvals.first { AgentHub.shared.decide(a, allow: false) }
+                        withAnimation { state.view = .agents }
                     }
-                    PrimaryButton("Allow") {
-                        withAnimation { state.view = .overview }
+                    PrimaryButton("Approve") {
+                        if let a = AgentHub.shared.approvals.first { AgentHub.shared.decide(a, allow: true) }
+                        withAnimation { state.view = .agents }
                     }
-                    SecondaryButton("Always") {
-                        withAnimation { state.view = .overview }
+                    SecondaryButton("All") {
+                        if let a = AgentHub.shared.approvals.first { AgentHub.shared.decide(a, allow: true, all: true) }
+                        withAnimation { state.view = .agents }
                     }
                 }
             }

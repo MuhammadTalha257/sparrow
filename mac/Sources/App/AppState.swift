@@ -211,7 +211,13 @@ final class AppState: ObservableObject {
     @Published var notionError: String? = nil
 
     // Chat conversation history
-    @Published var chatHistory: [ChatMessage] = []
+    @Published var chatHistory: [ChatMessage] = [] {
+        didSet {
+            if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !(mode == .expanded && view == .prompt) { unreadReplies += 1 }
+        }
+    }
+    /// Replies that arrived while the Chat tab wasn't open (badge on the tab).
+    @Published var unreadReplies = 0
 
     // Pending approval request from Claude Code hook
     @Published var pendingApproval: ApprovalInfo? = nil
@@ -505,6 +511,7 @@ extension AppState {
     /// Fresh conversation: clears the chat, the attached file and what the AI remembers of it.
     func newChat() {
         // Keep it in History (in "More") so it can be reopened and continued.
+        ChatArchive.shared.archive(chatHistory)
         let msgs = chatHistory.map { ["role": $0.role == .user ? "user" : "assistant", "content": $0.content] }
         if !msgs.isEmpty, let d = try? JSONSerialization.data(withJSONObject: msgs), let j = String(data: d, encoding: .utf8) {
             WebHub.shared.run("window.Sparrow && window.Sparrow.archiveChat && window.Sparrow.archiveChat(\(j))")

@@ -108,6 +108,7 @@ struct IslandContainer: View {
                 } else {
                     IslandContentView(state: state)
                         .frame(width: islandWidth, height: islandHeight - earOffset)
+                        .background(Group { if state.mode == .expanded { ZuffiAnimatedBackground(base: .clear).opacity(0.5) } })
                         .offset(y: earOffset)
                         .clipShape(IslandShape(width: islandWidth, height: islandHeight,
                                               cornerRadius: cornerRadius, topRadius: islandTopRadius))
@@ -461,7 +462,7 @@ struct IslandContentView: View {
                     // Views that fill available height instead of the fixed 98pt content frame:
                     // chat (prompt) is always flexible; mail is flexible only when active so
                     // it doesn't push the ZStack taller when inactive.
-                    let isTall = v == .prompt || (v == .mail && active)
+                    let isTall = v == .prompt || ((v == .mail || v == .agents || v == .history || v == .overview || v == .empty) && active)
                     let anim: Animation = active
                         ? .spring(response: 0.4, dampingFraction: 0.8).delay(0.16)
                         : .easeIn(duration: 0.16)
@@ -488,25 +489,33 @@ struct IslandContentView: View {
 
 struct IslandHeader: View {
     @ObservedObject var state: AppState
+    @ObservedObject private var agents = AgentHub.shared
 
     var body: some View {
         HStack(spacing: 0) {
             LittleSparrow(color: nil, size: 17)
                 .padding(.leading, 9)
                 .help("Drag to move Zuffi")
-            // Left: labelled tabs (Zuffi's own order)
+            // Left: tabs like the video — Home · Chat · New chat · History · Agents
             HStack(spacing: 3) {
                 TabButton(icon: "house.fill", label: "Home", view: .overview, state: state)
-                TabButton(icon: "sparkles", label: "Ask", view: .prompt, state: state, preAction: {
+                TabButton(icon: "bubble.left.fill", label: "Chat", view: .prompt, state: state, badge: state.view == .prompt ? 0 : state.unreadReplies, preAction: {
+                    state.unreadReplies = 0
                     #if !APPSTORE
                     if state.promptContext == nil {
                         state.promptContext = WindowContextCapture.captureActive(from: state.lastExternalApp)
                     }
                     #endif
                 })
-                HeaderChip(icon: "sun.max.fill", label: "Today") { TodayWindow.shared.show() }
-                HeaderChip(icon: "square.grid.2x2.fill", label: "More") { WebHub.shared.show() }
-                HeaderChip(icon: "bird.fill", label: "Pet") { PetController.shared.toggle() }
+                HeaderChip(icon: "square.and.pencil", label: "") {
+                    state.newChat()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.view = .prompt }
+                }.help("New chat")
+                TabButton(icon: "clock.arrow.circlepath", label: "", view: .history, state: state).help("History")
+                TabButton(icon: "sparkles", label: "Agents", view: .agents, state: state, badge: agents.approvals.count)
+                HeaderChip(icon: "sun.max.fill", label: "") { TodayWindow.shared.show() }.help("Today")
+                HeaderChip(icon: "square.grid.2x2.fill", label: "") { WebHub.shared.show() }.help("More")
+                HeaderChip(icon: "hare.fill", label: "") { PetController.shared.toggle() }.help("Pet")
             }
             .padding(.leading, 4)
 
@@ -517,7 +526,8 @@ struct IslandHeader: View {
                 Text(SparrowHeaderText.greeting)
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(Color(hex: "#FBF3E9"))
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .frame(maxWidth: 120, alignment: .trailing)
                 Text(Date().formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
                     .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundColor(Color(hex: "#A39486"))
@@ -559,7 +569,7 @@ struct IslandHeader: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
-                .help("Hide Zuffi — click the little sparrow bubble to bring it back")
+                .help("Hide Zuffi — click the little bubble to bring it back")
             }
             .padding(.trailing, 6)
         }
@@ -596,7 +606,7 @@ struct HeaderChip: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 10, weight: .bold))
-                Text(label).font(.system(size: 11, weight: .semibold, design: .rounded))
+                if !label.isEmpty { Text(label).font(.system(size: 11, weight: .semibold, design: .rounded)) }
             }
             .foregroundColor(hovered ? Color(hex: "#FBF3E9") : Color(hex: "#C9BBAB"))
             .padding(.horizontal, 9).padding(.vertical, 5)
@@ -612,6 +622,7 @@ struct TabButton: View {
     var label: String = ""
     let view: IslandView
     @ObservedObject var state: AppState
+    var badge: Int = 0
     var preAction: (() -> Void)? = nil
     @State private var isHovered = false
 
@@ -638,6 +649,14 @@ struct TabButton: View {
                     ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "#FBC56A"), Color(hex: "#F28A3C")], startPoint: .top, endPoint: .bottom))
                     : AnyShapeStyle(Color(hex: "#F9A830").opacity(isHovered ? 0.18 : 0.07)))
             )
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text("\(badge)").font(.system(size: 8.5, weight: .heavy)).foregroundColor(.white)
+                        .padding(.horizontal, 4).frame(minWidth: 14, minHeight: 14)
+                        .background(Capsule().fill(Color(hex: "#F4505E")))
+                        .offset(x: 5, y: -5)
+                }
+            }
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
