@@ -15,6 +15,7 @@
 		7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573E04989084923B39144398 /* SetupWizard.swift */; };
 		2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */; };
 		D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */; };
+		2BC6855FE0E77E6A66BBEC55 /* ZuffiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */; };
 		9F1E5BAA7F72384AB3050800 /* ZuffiSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821FD7D855AC144D100DF6E7 /* ZuffiSpace.swift */; };
 		7AD81119C638AF90374CC7C5 /* VoiceboxVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C83981EC175538D8D9BBFA9 /* VoiceboxVoice.swift */; };
 		ADF41286FC4E3EFF979C918D /* GlanceCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2622A37C7E4ED1D660856F /* GlanceCards.swift */; };
@@ -26,6 +27,7 @@
 		EC9F164883A3250BB9FDDC35 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573E04989084923B39144398 /* SetupWizard.swift */; };
 		AEE9FFFAAAD838DA5EB86EC0 /* InstalledAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */; };
 		D12BE8443642E6CC7641F7B0 /* ZuffiWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */; };
+		069B8B03C5BD725C4F89C3FC /* ZuffiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */; };
 		32ADC66D5EF72B39940D4DB8 /* ZuffiSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821FD7D855AC144D100DF6E7 /* ZuffiSpace.swift */; };
 		2FDAD2248E77D906F7B1DD57 /* VoiceboxVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C83981EC175538D8D9BBFA9 /* VoiceboxVoice.swift */; };
 		4F8011BF5E9C917350365842 /* GlanceCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2622A37C7E4ED1D660856F /* GlanceCards.swift */; };
@@ -136,6 +138,7 @@
 		573E04989084923B39144398 /* SetupWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizard.swift; sourceTree = "<group>"; };
 		3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledAI.swift; sourceTree = "<group>"; };
 		CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiWalk.swift; sourceTree = "<group>"; };
+		8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiData.swift; sourceTree = "<group>"; };
 		821FD7D855AC144D100DF6E7 /* ZuffiSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiSpace.swift; sourceTree = "<group>"; };
 		2C83981EC175538D8D9BBFA9 /* VoiceboxVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceboxVoice.swift; sourceTree = "<group>"; };
 		0A2622A37C7E4ED1D660856F /* GlanceCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlanceCards.swift; sourceTree = "<group>"; };
@@ -205,6 +208,7 @@
 				573E04989084923B39144398 /* SetupWizard.swift */,
 				3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */,
 				CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */,
+				8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */,
 				821FD7D855AC144D100DF6E7 /* ZuffiSpace.swift */,
 				2C83981EC175538D8D9BBFA9 /* VoiceboxVoice.swift */,
 				0A2622A37C7E4ED1D660856F /* GlanceCards.swift */,
@@ -409,6 +413,7 @@
 				7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */,
 				2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */,
 				D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */,
+				2BC6855FE0E77E6A66BBEC55 /* ZuffiData.swift in Sources */,
 				9F1E5BAA7F72384AB3050800 /* ZuffiSpace.swift in Sources */,
 				7AD81119C638AF90374CC7C5 /* VoiceboxVoice.swift in Sources */,
 				ADF41286FC4E3EFF979C918D /* GlanceCards.swift in Sources */,
@@ -469,6 +474,7 @@
 				EC9F164883A3250BB9FDDC35 /* SetupWizard.swift in Sources */,
 				AEE9FFFAAAD838DA5EB86EC0 /* InstalledAI.swift in Sources */,
 				D12BE8443642E6CC7641F7B0 /* ZuffiWalk.swift in Sources */,
+				069B8B03C5BD725C4F89C3FC /* ZuffiData.swift in Sources */,
 				32ADC66D5EF72B39940D4DB8 /* ZuffiSpace.swift in Sources */,
 				2FDAD2248E77D906F7B1DD57 /* VoiceboxVoice.swift in Sources */,
 				4F8011BF5E9C917350365842 /* GlanceCards.swift in Sources */,

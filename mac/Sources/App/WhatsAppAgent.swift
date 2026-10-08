@@ -24,6 +24,13 @@ final class WhatsAppAgent {
 
     func dropDraft() { draft = nil }
 
+    /// Scheduled messages you set up yourself ("every day at 9 send … to …"): sent without asking again.
+    func sendScheduled(to who: String, text: String) async -> String {
+        let p = await Self.phone(for: who)
+        guard !p.isEmpty else { return "I couldn't find a WhatsApp number for \(who)." }
+        return await send(Draft(name: who, phone: p, text: text, made: Date()))
+    }
+
     private static let checkRE = #"^(?:check|read|show|open)?\s*(?:my |any |the |new |unread |latest )*(?:whats ?app|whatsapp)(?: messages?| chats?| texts?)?(?:\s+(?:messages?|now|today))?\??$|^(?:any|do i have|have i got|got any)\s+(?:new |unread )*(?:whats ?app|whatsapp)(?: messages?| chats?)?\??$|^(?:any )?(?:new |unread )*(?:messages?|msgs?) (?:on|in) (?:whats ?app|whatsapp)\??$|^who (?:messaged|texted) me(?: on whats ?app)?\??$"#
     private static let sendRE = #"^(?:send\s+)?(?:a\s+)?(?:whats ?app|whatsapp|message|msg|text|reply(?: to)?|respond to|write to|tell)\s+(?:to\s+)?(.+?)(?:\s+(?:on|via|in) (?:whats ?app|whatsapp))?\s*(?:saying|that|and say|and tell (?:him|her|them)|to say|ke|keh do|bolo|:|,)\s*(.+)$"#
 

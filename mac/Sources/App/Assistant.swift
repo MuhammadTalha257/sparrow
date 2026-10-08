@@ -555,15 +555,15 @@ final class VoiceEngine: NSObject, ObservableObject {
             return c.split(separator: " ").count <= 7 && (CommandEngine.shared.intent(c) != nil || CommandEngine.shared.looksLikeCommand(l))
         }
         if let cmd = extractCommand(heard), !cmd.isEmpty {
-            wait = complete(cmd) ? 0.5 : 1.1        // a clear command runs the moment you stop
+            wait = complete(cmd) ? 0.35 : 0.85       // a clear command runs the moment you stop
         } else if oneShot, !heard.isEmpty {
-            wait = complete(heard) ? 0.5 : 1.0
+            wait = complete(heard) ? 0.4 : 0.8
         } else if extractCommand(heard) == "" {
-            wait = 1.7   // just "Zuffi" — give a moment to say the rest in the same breath
+            wait = 1.3   // just "Zuffi" — give a moment to say the rest in the same breath
         }
         // Sounds unfinished ("open spotify and…", "phir…")? Keep listening a little longer.
         if heard.lowercased().range(of: #"\b(and|then|also|aur|phir|or|to|the|for|with|ke|ki|ka|start|begin|take|meeting|my)\s*$"#, options: .regularExpression) != nil {
-            wait = max(wait, 1.8)
+            wait = max(wait, 1.4)
         }
         extraWait = 0
         silenceTimer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { _ in

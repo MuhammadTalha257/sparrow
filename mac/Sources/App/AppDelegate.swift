@@ -120,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Agents (Claude Code / Codex / GitHub) and the glowing notch edge
         AgentHub.shared.start()
         VoiceboxVoice.shared.startWatching()
+        ZuffiData.shared.start()
         EdgeGlow.shared.start()
         // Old "Sparrow" permission entries → fresh "Zuffi" ones (once)
         if SetupWizard.done { Task { await ScreenAgent.migrateFromSparrowOnce() } }

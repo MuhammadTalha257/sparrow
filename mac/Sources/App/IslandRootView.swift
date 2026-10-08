@@ -329,6 +329,14 @@ struct BotPlacement: View {
                         .position(x: uploadCx, y: cy)
                 }
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
+            } else if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
+                // the whole little bunny (in the notch it stands on the bottom edge)
+                ZuffiMini(state: state, height: max(16, diameter * (state.mode == .expanded ? 1.5 : 1.35)))
+                    .frame(width: canvasSize, height: canvasSize + overhang)
+                    .opacity(state.isDraggingBot ? 0 : opacity)
+                    .position(x: cx, y: cy - overhang / 2)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.72), value: cx)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.72), value: cy)
             } else {
                 BotCanvasView(state: state, particleOverhang: overhang)
                     .frame(width: canvasSize, height: canvasSize + overhang)

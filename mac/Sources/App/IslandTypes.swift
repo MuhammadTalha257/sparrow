@@ -12,7 +12,7 @@ enum IslandView: String, CaseIterable {
     case overview, empty, approval, question, error, finished
     case confused, upload, uploading, choose, mail, prompt
     case searching, result, note, settings, greeting
-    case agents, history
+    case agents, history, data
 }
 
 // MARK: - Bot State
@@ -85,7 +85,7 @@ enum IslandConst {
     static let expandedWidth: CGFloat = 640
     /// The new Zuffi panels are narrow and tall (hand-drawn design): home, chat, settings, agents, history.
     static let viewWidths: [IslandView: CGFloat] = [
-        .overview: 312, .empty: 312, .prompt: 372, .settings: 340, .agents: 380, .history: 350,
+        .overview: 330, .empty: 330, .prompt: 372, .settings: 340, .agents: 380, .history: 350, .data: 370,
     ]
     static func width(for v: IslandView) -> CGFloat { viewWidths[v] ?? expandedWidth }
     static func isPortrait(_ v: IslandView) -> Bool { viewWidths[v] != nil }
@@ -101,6 +101,7 @@ enum IslandConst {
         .empty:     ViewLayout(height: 286, botX: 150, botY: 100, botDiameter: 0, agentMode: .none),
         .agents:    ViewLayout(height: 440, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
         .history:   ViewLayout(height: 420, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
+        .data:      ViewLayout(height: 440, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
         .approval:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .question:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .error:     ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 58, agentMode: .column),

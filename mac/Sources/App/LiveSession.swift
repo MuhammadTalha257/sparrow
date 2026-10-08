@@ -224,7 +224,7 @@ final class LiveSession: NSObject {
     private func setupMessage(model: String, search: Bool) async -> [String: Any] {
         var gen: [String: Any] = [
             "responseModalities": ["AUDIO"],
-            "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": UserDefaults.standard.string(forKey: "liveVoice") ?? "Kore"]]],
+            "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": UserDefaults.standard.string(forKey: "liveVoice") ?? ((UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true) ? "Leda" : "Kore")]]],
         ]
         if model.contains("3.1-flash-live") { gen["thinkingConfig"] = ["thinkingLevel": "minimal"] }
         var tools: [[String: Any]] = [["functionDeclarations": LiveTools.declarations]]
@@ -388,7 +388,16 @@ final class LiveSession: NSObject {
             input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
         }
         e.attach(p)
-        e.connect(p, to: e.mainMixerNode, format: outFormat)
+        if UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true {
+            // Zuffi's cute bunny voice: the live voice, a few notes higher
+            let tp = AVAudioUnitTimePitch()
+            tp.pitch = 420
+            e.attach(tp)
+            e.connect(p, to: tp, format: outFormat)
+            e.connect(tp, to: e.mainMixerNode, format: outFormat)
+        } else {
+            e.connect(p, to: e.mainMixerNode, format: outFormat)
+        }
         let hw = input.outputFormat(forBus: 0)
         guard hw.sampleRate > 0, hw.channelCount > 0 else {
             appendAppLog("voice.log", "live: no microphone format (echo \(echo))")

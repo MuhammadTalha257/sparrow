@@ -103,6 +103,18 @@ final class AIService {
     // MARK: Entry point
 
     func chat(query: String, context: PromptContext?, state: AppState) async {
+        var context = context
+        // 0) Your data: daily messages, and spreadsheets you hand over.
+        if let r = ZuffiData.shared.handleCommand(query) { finish(r, state: state, emote: .happy); return }
+        if case .file(_, let fileURL)? = context, let fileURL, ZuffiData.isSheet(fileURL) {
+            let saved = await ZuffiData.shared.importSheet(fileURL)
+            state.promptContext = nil
+            context = nil
+            let q = query.lowercased()
+            if q.isEmpty || q.range(of: #"^(store|save|keep|remember|add)\b|this data|these data|is data"#, options: .regularExpression) != nil {
+                finish(saved, state: state, emote: .happy); return
+            }
+        }
         // 1) Built-in commands run instantly, offline, with no API key.
         if let reply = await AgentRouter.shared.handle(query) {
             finish(reply, state: state, emote: .happy)
@@ -127,14 +139,14 @@ final class AIService {
 
         // Claude keeps its own richer pipeline (web search, PDFs, images).
         if provider == .claude {
-            await ClaudeService.shared.chat(query: query, context: context, state: state)
+            await ClaudeService.shared.chat(query: ZuffiData.shared.augment(query), context: context, state: state)
             return
         }
 
         // 3) Attachments. A file's text lives in the system prompt for the whole
         //    conversation, so follow-up questions still "see" it. A newly attached
         //    file starts a fresh conversation about that file.
-        var turn = query
+        var turn = ZuffiData.shared.augment(query)
         if let context, context.key != lastContextKey {
             lastContextKey = context.key
             let limit = provider == .ollama || provider == .apple ? 12_000 : 80_000

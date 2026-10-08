@@ -377,6 +377,8 @@ final class IslandWindowController: NSWindowController {
 
     // MARK: - Keyboard (Escape closes)
 
+    private var clickMonitor: Any?
+
     private func startKeyMonitor() {
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             Task { @MainActor in
@@ -386,6 +388,16 @@ final class IslandWindowController: NSWindowController {
                         self.collapse()
                     }
                 }
+            }
+        }
+
+        // Click anywhere else on the screen → Zuffi folds away at once (no waiting).
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.state.mode == .expanded, !self.state.isPinned else { return }
+                // still deciding something important (an agent asking permission): stay open
+                if self.state.view == .approval || !AgentHub.shared.approvals.isEmpty && self.state.view == .agents { return }
+                self.collapse()
             }
         }
 

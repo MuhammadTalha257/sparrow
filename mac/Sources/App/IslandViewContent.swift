@@ -41,6 +41,7 @@ struct IslandViewContent: View {
         case .greeting:  EmptyView()  // GreetingCanvasView overlaid in IslandRootView
         case .agents:    ZuffiTallPanel(title: "Agents", icon: "sparkles") { AgentsIslandView() }
         case .history:   ZuffiTallPanel(title: "History", icon: "clock.arrow.circlepath") { HistoryIslandView() }
+        case .data:      ZuffiTallPanel(title: "My data", icon: "tablecells.fill") { ZuffiDataPanel() }
         }
     }
 }
