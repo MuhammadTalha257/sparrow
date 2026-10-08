@@ -93,7 +93,7 @@ jobs:
           make_latest: false
           files: samples/*
 
-      - name: Build Sparrow.app (Apple silicon + Intel)
+      - name: Build Zuffi.app (Apple silicon + Intel)
         working-directory: mac
         run: |
           xcodebuild -version
@@ -111,7 +111,7 @@ jobs:
           P12: ${{ secrets.MAC_SIGN_P12 }}
           PASS: ${{ secrets.MAC_SIGN_PASSWORD }}
         run: |
-          APP=mac/build/Release/Sparrow.app
+          APP=mac/build/Release/Zuffi.app
           if [ -z "$P12" ]; then echo "::warning::No MAC_SIGN_P12 secret: ad-hoc signed, so macOS asks for permissions again after each update."; exit 0; fi
           echo "$P12" | base64 --decode > "$RUNNER_TEMP/sign.p12"
           KC="$RUNNER_TEMP/sparrow.keychain-db"
@@ -143,8 +143,8 @@ jobs:
 
       - name: Make the download (.dmg)
         run: |
-          du -sh mac/build/Release/Sparrow.app/Contents/Resources/speech
-          mkdir -p dmg && cp -R mac/build/Release/Sparrow.app dmg/Zuffi.app && ln -s /Applications dmg/Applications
+          du -sh mac/build/Release/Zuffi.app/Contents/Resources/speech
+          mkdir -p dmg && cp -R mac/build/Release/Zuffi.app dmg/Zuffi.app && ln -s /Applications dmg/Applications
           hdiutil create -volname "Zuffi" -srcfolder dmg -ov -format UDZO Zuffi.dmg && cp Zuffi.dmg Sparrow.dmg
           ls -lh Sparrow.dmg
 
@@ -160,7 +160,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mac-test
-          name: Sparrow for Mac (test copy)
+          name: Zuffi for Mac (test copy)
           prerelease: true
           make_latest: false
           files: |
@@ -177,7 +177,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mac-latest
-          name: Sparrow for Mac
+          name: Zuffi for Mac
           make_latest: false
           files: |
             Zuffi.dmg

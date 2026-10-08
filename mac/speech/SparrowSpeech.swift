@@ -109,6 +109,10 @@ final class Speaker {
 
     init() {
         engine.attach(player)
+        // Sleep, headphones, a new speaker: the engine's output changes — reconnect next time we speak.
+        NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            self?.connectedRate = 0
+        }
     }
 
     func voice(_ model: String) -> Voice? {     // genQ
@@ -150,8 +154,11 @@ final class Speaker {
             engine.connect(player, to: engine.mainMixerNode, format: fmt)
             connectedRate = rate
         }
-        if !engine.isRunning { try? engine.start() }
-        return fmt
+        if !engine.isRunning {
+            // After sleep or a headphone change the engine stops: start it again, and give up quietly if it won't.
+            do { try engine.start() } catch { return nil }
+        }
+        return engine.isRunning ? fmt : nil
     }
 
     func stop() {
@@ -202,7 +209,11 @@ final class Speaker {
                             if pending == 0 { emit(["ev": "end", "id": id]) }
                         }
                     }
-                    if !started { started = true; self.player.play(); emit(["ev": "start", "id": id]) }
+                    if !started {
+                        // play() throws an Objective-C exception (a crash) if the engine isn't running — never call it then.
+                        guard self.engine.isRunning else { pending = 0; emit(["ev": "error", "id": id, "msg": "audio engine stopped"]); return }
+                        started = true; self.player.play(); emit(["ev": "start", "id": id])
+                    }
                 }
             }
         }

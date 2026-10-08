@@ -45,12 +45,35 @@ final class ScreenAgent {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
         }
     }
+    /// Old entries from earlier builds (when the app was "Sparrow") can look switched on but no longer match
+    /// this app. Clear Zuffi's own entries, then ask again so macOS adds the right one.
+    static func fixPermissions() async {
+        let id = Bundle.main.bundleIdentifier ?? "app.sparrowai.Sparrow"
+        for service in ["ScreenCapture", "Accessibility"] {
+            _ = await LocalAISetup.run("/usr/bin/tccutil", ["reset", service, id])
+        }
+        appendAppLog("agents.log", "permissions reset for \(id)")
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        _ = CGRequestScreenCaptureAccess()
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+    }
+
+    /// macOS only applies a new Screen Recording permission after the app restarts.
+    static func relaunch() {
+        let path = Bundle.main.bundlePath
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1; open \"\(path)\""]
+        try? p.run()
+        NSApp.terminate(nil)
+    }
+
     static func askToAct() {
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
-    private static let seeHelp = "I need permission to see your screen: System Settings → Privacy & Security → Screen & System Audio Recording → switch on Zuffi (if it's already on, switch it off and on again — macOS forgets it after an update). Then quit and reopen Zuffi."
+    private static let seeHelp = "I can't see the screen yet. Open Zuffi Settings → Screen and press Fix permissions, switch Zuffi on in the list, then press Restart Zuffi."
     private static let actHelp = "I need permission to use the mouse and keyboard: System Settings → Privacy & Security → Accessibility → switch on Zuffi (off and on again after an update)."
 
     // MARK: Look (no actions)
@@ -567,6 +590,13 @@ struct ScreenSettingsView: View {
                     row("Screen Recording", "so Zuffi can see the screen", see) { ScreenAgent.askToSee() }
                     Divider()
                     row("Accessibility", "so Zuffi can click and type", act) { ScreenAgent.askToAct() }
+                    HStack {
+                        Button("Fix permissions") { Task { await ScreenAgent.fixPermissions() } }
+                        Button("Restart Zuffi") { ScreenAgent.relaunch() }
+                        Spacer()
+                    }.controlSize(.small)
+                    Text("Allowed in System Settings but Zuffi still says no? Press Fix permissions: it clears old “Sparrow” entries and asks again. Switch Zuffi on in the list, then press Restart Zuffi.")
+                        .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                     if !see || !act {
                         Text("After every Zuffi update macOS may forget these: switch Zuffi off and on again in that list, then reopen Zuffi.")
                             .font(.system(size: 10)).foregroundColor(.orange).fixedSize(horizontal: false, vertical: true)

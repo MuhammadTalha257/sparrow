@@ -498,7 +498,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.sparrowai.Sparrow;
-				PRODUCT_NAME = Sparrow;
+				PRODUCT_NAME = Zuffi;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -516,7 +516,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.sparrowai.Sparrow;
-				PRODUCT_NAME = Sparrow;
+				PRODUCT_NAME = Zuffi;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -538,7 +538,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.sparrowai.Sparrow.appstore;
-				PRODUCT_NAME = Sparrow;
+				PRODUCT_NAME = Zuffi;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = APPSTORE;
 			};
@@ -561,7 +561,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.sparrowai.Sparrow.appstore;
-				PRODUCT_NAME = Sparrow;
+				PRODUCT_NAME = Zuffi;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = APPSTORE;
 			};

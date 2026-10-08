@@ -77,8 +77,10 @@ final class NativeSpeech {
     }
 
     private func send(_ o: [String: Any]) {
-        guard let input, let d = try? JSONSerialization.data(withJSONObject: o) else { return }
-        input.write(d + Data([0x0A]))
+        guard let input, proc?.isRunning == true, let d = try? JSONSerialization.data(withJSONObject: o) else { return }
+        // write(contentsOf:) throws a Swift error if the helper has gone away; the old write(_:) crashed Zuffi instead.
+        do { try input.write(contentsOf: d + Data([0x0A])) }
+        catch { appendAppLog("voice.log", "natural voice helper gone: \(error.localizedDescription)"); proc = nil; self.input = nil }
     }
 
     private func received(_ data: Data) {

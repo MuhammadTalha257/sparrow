@@ -624,7 +624,7 @@ enum LiveTools {
             return ["ok": true, "result": "A photo from the camera was just sent to you as an image. Answer from what you see in it."]
         case "look_at_screen":
             guard let jpeg = await ScreenGrab.main()?.jpeg else {
-                return ["ok": false, "result": "I couldn't see the screen. Allow Zuffi under System Settings → Privacy & Security → Screen & System Audio Recording."]
+                return ["ok": false, "result": "I couldn't see the screen. Tell the user: open Zuffi Settings → Screen, press Fix permissions, switch Zuffi on, then press Restart Zuffi."]
             }
             LiveSession.shared.sendImage(jpeg)
             return ["ok": true, "result": "A screenshot was just sent to you as an image. Answer from what you see in it."]
