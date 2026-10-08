@@ -132,7 +132,7 @@ struct IslandContainer: View {
             CountdownBar(state: state, islandW: islandWidth)
 
             Group {
-                if state.mode == .compact {
+                if state.mode == .compact && false {
                     CompactMiniGrid(state: state)
                         .scaleEffect(IslandRestingLayout(width: islandWidth, height: islandHeight).miniGridScale)
                         .position(x: islandWidth - 40, y: islandHeight / 2)
@@ -148,7 +148,7 @@ struct IslandContainer: View {
             let (w, h) = islandSize(mode: newMode, view: state.view,
                                     progress: state.uploadProgress,
                                     nw: state.notchWidth, nh: state.notchHeight)
-            let cr  = newMode == .expanded ? IslandConst.expandedCorner : IslandConst.roundedCorner
+            let cr  = newMode == .expanded ? IslandConst.expandedCorner : newMode == .compact ? IslandConst.compactCorner : IslandConst.roundedCorner
             let tr: CGFloat = 0
             withAnimation(anim) {
                 islandWidth      = w
@@ -182,7 +182,7 @@ struct IslandContainer: View {
                                     nw: state.notchWidth, nh: state.notchHeight)
             islandWidth      = w
             islandHeight     = state.view == .prompt ? chatPromptHeight : h
-            cornerRadius     = state.mode == .expanded ? IslandConst.expandedCorner : IslandConst.roundedCorner
+            cornerRadius     = state.mode == .expanded ? IslandConst.expandedCorner : state.mode == .compact ? IslandConst.compactCorner : IslandConst.roundedCorner
             islandTopRadius  = 0
         }
         .onReceive(NotificationCenter.default.publisher(for: .botGreet)) { _ in
@@ -329,6 +329,13 @@ struct BotPlacement: View {
                         .position(x: uploadCx, y: cy)
                 }
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
+            } else if state.mode == .compact {
+                // Closed: one bunny face, centred under the notch, watching the cursor.
+                ZuffiMini(state: state, height: 42)
+                    .frame(width: 56, height: 50)
+                    .opacity(state.isDraggingBot ? 0 : opacity)
+                    .position(x: cx, y: cy)
+                    .transition(.opacity)
             } else if diameter <= 0.5 {
                 EmptyView()          // this view draws its own Zuffi
             } else if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
@@ -386,7 +393,7 @@ func botPosition(mode: IslandMode, view: IslandView, islandW: CGFloat, islandH: 
     case .hidden:
         return hasNotch ? (46, 16, 6, 0)
             : (islandW / 2, resting.botCenterY, resting.botDiameter, 1)
-    case .compact: return (40, resting.botCenterY, resting.botDiameter, 1)
+    case .compact: return (islandW / 2, islandH - IslandConst.compactDrop / 2, 40, 1)
     case .expanded:
         let layout = IslandConst.viewLayouts[view]!
         let diameter = layout.botDiameter

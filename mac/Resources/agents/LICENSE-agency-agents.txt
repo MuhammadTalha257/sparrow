@@ -1,13 +1,6 @@
-# Third-party notices
-
-## Coucou (island, notch state machine, Claude Code integration code)
-
-Parts of Zuffi's Mac island code started from Coucou by Louis Raillé (https://github.com/Louis-CFM/coucou), used under the MIT License:
-
-```
 MIT License
 
-Copyright (c) 2026 Louis Raillé
+Copyright (c) 2025 AgentLand Contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
-
-Coucou's name, its Mochi character, icon, sounds and media are not used in Zuffi
-(Zuffi has its own bunny character, icon and sounds).
-
-## agency-agents (Zuffi's team of specialist agents)
-
-The specialist agent prompts in `mac/Resources/agents/agency-agents.json` come from "agency-agents", used under the MIT License. The full licence text ships alongside them in `mac/Resources/agents/LICENSE-agency-agents.txt`.

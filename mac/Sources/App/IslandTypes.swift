@@ -92,6 +92,9 @@ enum IslandConst {
     static let chatHeight: CGFloat = 470
     static let earRadius: CGFloat   = 14
     static let roundedCorner: CGFloat = 14    // hidden/peek/compact
+    /// How far the closed island reaches below the notch to show Zuffi's face.
+    static let compactDrop: CGFloat = 46
+    static let compactCorner: CGFloat = 22
     static let expandedCorner: CGFloat = 22
 
     static let viewLayouts: [IslandView: ViewLayout] = [

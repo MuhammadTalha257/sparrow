@@ -46,7 +46,7 @@ struct ZuffiSpaceBackground: View {
     }()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 15)) { tl in
+        TimelineView(.animation(minimumInterval: 1 / 24, paused: false)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
             Canvas { ctx, size in
                 // deep sky
@@ -56,11 +56,11 @@ struct ZuffiSpaceBackground: View {
                 // orbs (soft nebula lights)
                 var orb = ctx
                 orb.addFilter(.blur(radius: min(size.width, size.height) * 0.16))
-                let orbs: [(String, Double, Double, Double)] = [("#E2648A", 0.13, 0.0, 0.55), ("#7C5CFF", 0.09, 2.2, 0.62), ("#3BA8FF", 0.07, 4.1, 0.45), ("#F7A072", 0.05, 1.1, 0.35)]
+                let orbs: [(String, Double, Double, Double)] = [("#E2648A", 0.55, 0.0, 0.62), ("#7C5CFF", 0.42, 2.2, 0.7), ("#3BA8FF", 0.34, 4.1, 0.52), ("#F7A072", 0.27, 1.1, 0.42)]
                 for (hex, sp, ph, r) in orbs {
-                    let x = size.width * (0.5 + 0.38 * cos(t * sp + ph))
-                    let y = size.height * (0.5 + 0.34 * sin(t * sp * 1.3 + ph))
-                    let rad = min(size.width, size.height) * r * 0.5
+                    let x = size.width * (0.5 + 0.42 * cos(t * sp + ph))
+                    let y = size.height * (0.5 + 0.38 * sin(t * sp * 1.3 + ph))
+                    let rad = min(size.width, size.height) * r * 0.5 * (1 + 0.18 * sin(t * sp * 2 + ph))
                     orb.fill(Path(ellipseIn: CGRect(x: x - rad, y: y - rad, width: rad * 2, height: rad * 2)), with: .color(Color(hex: hex).opacity(0.42 * intensity)))
                 }
                 // stars
@@ -180,6 +180,13 @@ struct HomeAction: Identifiable {
         HomeAction(id: "appointments", icon: "calendar", label: "Today's appointments", tint: "#F58FA8"),
         HomeAction(id: "reminders", icon: "bell.badge.fill", label: "Send tomorrow's reminders", tint: "#7CC4FF"),
         HomeAction(id: "rebook", icon: "arrow.clockwise.heart.fill", label: "Clients to rebook", tint: "#C4B5FD"),
+        HomeAction(id: "leads", icon: "person.2.fill", label: "My leads", tint: "#34D399"),
+        HomeAction(id: "newLead", icon: "person.badge.plus", label: "Add a lead", tint: "#7CE0A8"),
+        HomeAction(id: "messageLeads", icon: "paperplane.fill", label: "Message new leads", tint: "#7CC4FF"),
+        HomeAction(id: "book", icon: "calendar.badge.plus", label: "Book an appointment", tint: "#F58FA8"),
+        HomeAction(id: "week", icon: "calendar.day.timeline.left", label: "This week's bookings", tint: "#FBC56A"),
+        HomeAction(id: "save", icon: "square.and.arrow.down.fill", label: "Save some data", tint: "#FDE68A"),
+        HomeAction(id: "team", icon: "person.3.fill", label: "Zuffi's team", tint: "#C4B5FD"),
     ]
     static func find(_ id: String) -> HomeAction? { all.first { $0.id == id } }
     static let defaultLeft = ["chat", "settings", "more", "pet"]
@@ -192,6 +199,15 @@ struct HomeAction: Identifiable {
     @MainActor static var right: [String] {
         get { (UserDefaults.standard.stringArray(forKey: "homeRight") ?? defaultRight).filter { find($0) != nil } }
         set { UserDefaults.standard.set(newValue, forKey: "homeRight") }
+    }
+
+    /// Asks Zuffi in the chat window (for answers that are lists).
+    @MainActor static func ask(_ q: String) {
+        let s = AppState.shared
+        s.chatHistory.append(ChatMessage(role: .user, content: q))
+        s.stateOverride = .thinking
+        ZuffiChat.shared.open()
+        Task { await AIService.shared.chat(query: q, context: nil, state: s) }
     }
 
     @MainActor static func run(_ id: String, home: ZuffiHomeModel) {
@@ -217,6 +233,13 @@ struct HomeAction: Identifiable {
         case "appointments": home.say(ZuffiBusiness.shared.todays(offset: 0, short: false))
         case "reminders": let r = ZuffiBusiness.shared.prepareReminders(); home.say(r); VoiceEngine.shared.speak(r)
         case "rebook": home.say(ZuffiBusiness.shared.rebook())
+        case "leads": ask("my leads")
+        case "newLead": ZuffiChat.shared.open(prefill: "New lead ")
+        case "messageLeads": ask("message new leads")
+        case "book": ZuffiChat.shared.open(prefill: "Book ")
+        case "week": ask("this week's appointments")
+        case "save": ZuffiChat.shared.open(prefill: "Save this: ")
+        case "team": ask("show my team")
         default: break
         }
     }

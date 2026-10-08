@@ -160,6 +160,10 @@ struct ZuffiChatView: View {
                     .focused($focused)
                     .onSubmit(send)
             }
+            if !thinking && !listening {
+                ModelChip(state: state)
+                TeamMenu()
+            }
             if thinking || voice.speaking || listening {
                 Button {
                     VoiceEngine.shared.stopSpeaking()
@@ -209,7 +213,8 @@ struct ZuffiChatView: View {
                     Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
                         .frame(width: 26, height: 26).background(Circle().fill(Color.white.opacity(0.1)))
                 }.buttonStyle(.plain).help("New chat")
-                Text("Conversation").font(.system(size: 14, weight: .bold, design: .rounded))
+                Text(ZuffiTeam.shared.active.map { "\($0.emoji) \($0.name)" } ?? "Conversation")
+                    .font(.system(size: 14, weight: .bold, design: .rounded)).lineLimit(1)
                 Spacer()
                 ProviderMenu(state: state)
                 if let last = state.chatHistory.last(where: { $0.role == .assistant }) {

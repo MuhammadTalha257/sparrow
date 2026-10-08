@@ -46,7 +46,7 @@ final class AgentRouter {
 
     /// "ask ChatGPT …", "ask Claude …", "Copilot se poocho …" → the user's own chat app gets the question.
     private func askChatApp(_ raw: String) async -> String? {
-        let pattern = #"^(?:ask|open|use)\s+(chat ?gpt|claude|copilot|gemini)(?:\s+(?:app))?(?:\s*[,:]?\s*(?:and\s+)?(?:ask\s+)?(?:it\s+|him\s+)?(?:about\s+)?)?(.*)$"#
+        let pattern = #"^(?:ask|open|use)\s+(chat ?gpt|claude|copilot|gemini|grok|perplexity)(?:\s+(?:app))?(?:\s*[,:]?\s*(?:and\s+)?(?:ask\s+)?(?:it\s+|him\s+)?(?:about\s+)?)?(.*)$"#
         guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
               let m = re.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
               let a = Range(m.range(at: 1), in: raw) else { return nil }
@@ -54,7 +54,7 @@ final class AgentRouter {
         let q = Range(m.range(at: 2), in: raw).map { String(raw[$0]).trimmingCharacters(in: .whitespaces) } ?? ""
         // "open Claude" with nothing to ask is just opening an app — leave it to the normal opener.
         if q.isEmpty, raw.lowercased().hasPrefix("open") { return nil }
-        let id = ["chatgpt": "chatgpt-app", "claude": "claude-app", "copilot": "copilot-app", "gemini": "gemini-app"][which] ?? "chatgpt-app"
+        let id = ["chatgpt": "chatgpt-app", "claude": "claude-app", "copilot": "copilot-app", "gemini": "gemini-app", "grok": "grok-app", "perplexity": "perplexity-app"][which] ?? "chatgpt-app"
         return await InstalledAI.handOff(appID: id, question: q)
     }
 

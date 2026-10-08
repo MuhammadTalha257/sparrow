@@ -9,7 +9,7 @@ import FoundationModels
 // MARK: - Providers
 
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
-    case auto, claude, openai, gemini, groq, ollama, apple, claudeCode, codex
+    case auto, claude, openai, gemini, groq, grok, deepseek, mistral, perplexity, openrouter, ollama, apple, claudeCode, codex, geminiCLI
     var id: String { rawValue }
 
     var label: String {
@@ -19,6 +19,12 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .openai: return "ChatGPT"
         case .gemini: return "Gemini"
         case .groq:   return "Groq (fast, free)"
+        case .grok:   return "Grok (xAI)"
+        case .deepseek: return "DeepSeek"
+        case .mistral: return "Mistral"
+        case .perplexity: return "Perplexity (web answers)"
+        case .openrouter: return "OpenRouter (any model)"
+        case .geminiCLI: return "My Gemini (Gemini CLI)"
         case .ollama: return "Ollama (local)"
         case .apple:  return "Apple (on-device)"
         case .claudeCode: return "My Claude (Claude Code)"
@@ -33,6 +39,12 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .openai: return "circle.hexagongrid"
         case .gemini: return "diamond"
         case .groq:   return "bolt.fill"
+        case .grok:   return "xmark.diamond"
+        case .deepseek: return "water.waves"
+        case .mistral: return "wind"
+        case .perplexity: return "globe"
+        case .openrouter: return "arrow.triangle.branch"
+        case .geminiCLI: return "terminal"
         case .ollama: return "desktopcomputer"
         case .apple:  return "apple.logo"
         case .claudeCode: return "terminal.fill"
@@ -47,7 +59,24 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .openai: return "openai-api-key"
         case .gemini: return "gemini-api-key"
         case .groq:   return "groq-api-key"
+        case .grok:   return "xai-api-key"
+        case .deepseek: return "deepseek-api-key"
+        case .mistral: return "mistral-api-key"
+        case .perplexity: return "perplexity-api-key"
+        case .openrouter: return "openrouter-api-key"
         default:      return nil
+        }
+    }
+
+    /// OpenAI-compatible providers: (chat URL, default model, models URL, preferred model prefixes).
+    var openAICompatible: (url: String, model: String, models: String, prefer: [String])? {
+        switch self {
+        case .grok: return ("https://api.x.ai/v1/chat/completions", "grok-4", "https://api.x.ai/v1/models", ["grok-4", "grok-3", "grok"])
+        case .deepseek: return ("https://api.deepseek.com/chat/completions", "deepseek-chat", "https://api.deepseek.com/models", ["deepseek-chat", "deepseek"])
+        case .mistral: return ("https://api.mistral.ai/v1/chat/completions", "mistral-large-latest", "https://api.mistral.ai/v1/models", ["mistral-large", "mistral-medium", "mistral"])
+        case .perplexity: return ("https://api.perplexity.ai/chat/completions", "sonar", "", ["sonar"])
+        case .openrouter: return ("https://openrouter.ai/api/v1/chat/completions", "openrouter/auto", "", ["openrouter/auto"])
+        default: return nil
         }
     }
 }
@@ -75,9 +104,13 @@ final class AIService {
     """
 
     /// System prompt plus the attached document (if any).
+    private var oneShotSystem: String?
+
     var fullSystemPrompt: String {
-        guard let document else { return Self.systemPrompt }
-        return Self.systemPrompt + """
+        if let o = oneShotSystem { return o }
+        let base = Self.systemPrompt + ZuffiTeam.shared.persona
+        guard let document else { return base }
+        return base + """
 
 
         The user attached a file. Its content is below, between <file> and </file>. \
@@ -105,6 +138,7 @@ final class AIService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         var context = context
         // 0) Your data: daily messages, and spreadsheets you hand over.
+        if let r = ZuffiTeam.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiData.shared.handleCommand(query) { finish(r, state: state, emote: .happy); return }
         if case .file(_, let fileURL)? = context, let fileURL, ZuffiData.isSheet(fileURL) {
             let saved = await ZuffiData.shared.importSheet(fileURL)
@@ -115,6 +149,7 @@ final class AIService {
                 finish(saved, state: state, emote: .happy); return
             }
         }
+        if let r = await ZuffiPA.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         // 1) Built-in commands run instantly, offline, with no API key.
         if let reply = await AgentRouter.shared.handle(query) {
             finish(reply, state: state, emote: .happy)
@@ -189,8 +224,9 @@ final class AIService {
         case .groq:   return try await callGroq(state: state)
         case .ollama: return try await callOllama(state: state)
         case .apple:  return try await callApple()
-        case .claudeCode, .codex:
-            guard let tool = p == .claudeCode ? InstalledAI.claudeCode : InstalledAI.codex else {
+        case .grok, .deepseek, .mistral, .perplexity, .openrouter: return try await callCompatible(p)
+        case .claudeCode, .codex, .geminiCLI:
+            guard let tool = p == .claudeCode ? InstalledAI.claudeCode : p == .codex ? InstalledAI.codex : InstalledAI.geminiCLI else {
                 throw NSError(domain: "Zuffi", code: 0, userInfo: [NSLocalizedDescriptionKey: "\(p.label) isn't installed on this Mac."])
             }
             return try await InstalledAI.ask(tool, prompt: cliPrompt())
@@ -200,7 +236,8 @@ final class AIService {
 
     /// One prompt for a command-line AI: Zuffi's instructions, any document, and the recent conversation.
     private func cliPrompt() -> String {
-        var t = "You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n"
+        var t = oneShotSystem.map { $0 + " Do not use tools or edit files.\n" }
+            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + ZuffiTeam.shared.persona + "\n")
         if let d = document { t += "\nDocument the user shared:\n\(d.prefix(20_000))\n" }
         for m in history.suffix(12) { t += "\n\(m.role == "assistant" ? "Zuffi" : "User"): \(m.text)" }
         return t + "\nZuffi:"
@@ -209,7 +246,7 @@ final class AIService {
     /// The chosen provider, then every other one that is ready (keys first, then on-device).
     private func fallbackChain(first: AIProvider) async -> [AIProvider] {
         var out: [AIProvider] = [first]
-        for p in [AIProvider.groq, .gemini, .openai] where p != first {
+        for p in [AIProvider.groq, .gemini, .openai, .grok, .deepseek, .mistral, .openrouter] where p != first {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { out.append(p) }
         }
         if first != .apple, Self.appleModelAvailable { out.append(.apple) }
@@ -229,12 +266,13 @@ final class AIService {
     func resolveProvider(state: AppState) async -> AIProvider? {
         let chosen = AIProvider(rawValue: state.aiProvider) ?? .auto
         if chosen != .auto { return chosen }
-        for p in [AIProvider.claude, .groq, .openai, .gemini] {
+        for p in [AIProvider.claude, .groq, .openai, .gemini, .grok, .deepseek, .mistral, .perplexity, .openrouter] {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { return p }
         }
         // The subscription you already pay for (Claude Code / Codex), if installed.
         if InstalledAI.claudeCode != nil { return .claudeCode }
         if InstalledAI.codex != nil { return .codex }
+        if InstalledAI.geminiCLI != nil { return .geminiCLI }
         if Self.appleModelAvailable { return .apple }
         let local = await Self.ollamaModels()
         if !local.isEmpty { return .ollama }
@@ -388,6 +426,65 @@ final class AIService {
         return text
     }
 
+    // MARK: One quiet question (used by the PA to turn your words into rows)
+
+    /// Asks whichever AI is set up, without touching the chat. Returns nil when no AI is available.
+    func oneShot(_ prompt: String, system: String = "You turn the user's words into exactly the JSON asked for. Reply with JSON only.") async -> String? {
+        let savedHistory = history, savedDoc = document, savedImage = pendingImage
+        history = [(role: "user", text: prompt)]; document = nil; pendingImage = nil; oneShotSystem = system
+        defer { history = savedHistory; document = savedDoc; pendingImage = savedImage; oneShotSystem = nil }
+        if let k = KeychainStore.shared.get("anthropic-api-key"), !k.isEmpty,
+           let j = try? await postJSON(URL(string: "https://api.anthropic.com/v1/messages")!,
+                                       body: ["model": AppState.shared.claudeModel.isEmpty ? AppState.defaultClaudeModel : AppState.shared.claudeModel,
+                                              "max_tokens": 4000, "system": system, "messages": [["role": "user", "content": prompt]]],
+                                       headers: ["x-api-key": k, "anthropic-version": "2023-06-01"], timeout: 60),
+           let parts = j["content"] as? [[String: Any]] {
+            let t = parts.compactMap { $0["text"] as? String }.joined()
+            if !t.isEmpty { return t }
+        }
+        guard let first = await resolveProvider(state: AppState.shared) else { return nil }
+        for p in await fallbackChain(first: first) where p != .claude {
+            if let r = try? await call(p, state: AppState.shared), !r.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return r }
+        }
+        return nil
+    }
+
+    /// Pulls the first JSON object or array out of an AI reply (which may be wrapped in ``` fences).
+    static func jsonIn(_ text: String) -> Any? {
+        let t = text.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
+        guard let a = t.firstIndex(where: { $0 == "{" || $0 == "[" }) else { return nil }
+        let close: Character = t[a] == "{" ? "}" : "]"
+        guard let b = t.lastIndex(of: close), a < b else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(t[a...b].utf8))
+    }
+
+    // MARK: Grok, DeepSeek, Mistral, Perplexity, OpenRouter (all OpenAI-style)
+
+    private func callCompatible(_ p: AIProvider) async throws -> String {
+        guard let c = p.openAICompatible else { throw Self.badResponse }
+        let k = try key(p)
+        var messages: [[String: Any]] = [["role": "system", "content": fullSystemPrompt]]
+        for m in history { messages.append(["role": m.role, "content": m.text]) }
+        let url = URL(string: c.url)!
+        let saved = "\(p.rawValue)Resolved"
+        let chosen = UserDefaults.standard.string(forKey: saved) ?? c.model
+        var headers = ["Authorization": "Bearer \(k)"]
+        if p == .openrouter { headers["HTTP-Referer"] = "https://zuffi.app"; headers["X-Title"] = "Zuffi" }
+        var json: [String: Any]
+        do {
+            json = try await postJSON(url, body: ["model": chosen, "messages": messages], headers: headers, timeout: 60)
+        } catch let error where Self.isModelProblem(error) && !c.models.isEmpty {
+            let list = try await Self.listModels(URL(string: c.models)!, auth: "Bearer \(k)")
+            guard let pick = Self.best(list.filter { !$0.contains("image") && !$0.contains("embed") && !$0.contains("vision") }, prefer: c.prefer) else { throw error }
+            UserDefaults.standard.set(pick, forKey: saved)
+            json = try await postJSON(url, body: ["model": pick, "messages": messages], headers: headers, timeout: 60)
+        }
+        guard let choices = json["choices"] as? [[String: Any]],
+              let msg = choices.first?["message"] as? [String: Any],
+              let text = msg["content"] as? String else { throw Self.badResponse }
+        return text
+    }
+
     // MARK: Model discovery (so Zuffi keeps working when providers retire models)
 
     static func isModelProblem(_ error: Error) -> Bool {
@@ -532,7 +629,7 @@ final class AIService {
             let session = LanguageModelSession(instructions: fullSystemPrompt)
             let transcript = history.suffix(12).map { ($0.role == "user" ? "User: " : "Zuffi: ") + $0.text }
                 .joined(separator: "\n\n")
-            let response = try await session.respond(to: transcript + "\n\nSparrow:")
+            let response = try await session.respond(to: transcript + "\n\nZuffi:")
             return response.content
         }
         #endif
@@ -584,6 +681,11 @@ struct AIModelsSettings: View {
     @State private var openaiKey: String = KeychainStore.shared.get("openai-api-key") ?? ""
     @State private var geminiKey: String = KeychainStore.shared.get("gemini-api-key") ?? ""
     @State private var groqKey: String = KeychainStore.shared.get("groq-api-key") ?? ""
+    @State private var xaiKey: String = KeychainStore.shared.get("xai-api-key") ?? ""
+    @State private var deepseekKey: String = KeychainStore.shared.get("deepseek-api-key") ?? ""
+    @State private var mistralKey: String = KeychainStore.shared.get("mistral-api-key") ?? ""
+    @State private var perplexityKey: String = KeychainStore.shared.get("perplexity-api-key") ?? ""
+    @State private var openrouterKey: String = KeychainStore.shared.get("openrouter-api-key") ?? ""
     @State private var ollamaInstalled: [String] = []
     @State private var saved: String = ""
 
@@ -597,6 +699,7 @@ struct AIModelsSettings: View {
                     .font(.system(size: 11)).foregroundColor(.secondary)
 
                 InstalledAIView(state: state)
+                TeamSettings()
 
                 Divider()
                 Text("ChatGPT (OpenAI)").font(.system(size: 12, weight: .semibold))
@@ -612,8 +715,21 @@ struct AIModelsSettings: View {
                 SecureField("API key (AIza…)", text: $geminiKey).textFieldStyle(.roundedBorder)
                 TextField("Model (default \(AppState.defaultGeminiModel))", text: $state.geminiModel).textFieldStyle(.roundedBorder)
 
+                Divider()
+                Text("More AI: Grok, DeepSeek, Mistral, Perplexity, OpenRouter").font(.system(size: 12, weight: .semibold))
+                SecureField("Grok key from console.x.ai (xai-…)", text: $xaiKey).textFieldStyle(.roundedBorder)
+                SecureField("DeepSeek key from platform.deepseek.com", text: $deepseekKey).textFieldStyle(.roundedBorder)
+                SecureField("Mistral key from console.mistral.ai", text: $mistralKey).textFieldStyle(.roundedBorder)
+                SecureField("Perplexity key (pplx-…)", text: $perplexityKey).textFieldStyle(.roundedBorder)
+                SecureField("OpenRouter key (sk-or-…) — one key, hundreds of models", text: $openrouterKey).textFieldStyle(.roundedBorder)
+
                 HStack {
                     Button("Save keys") {
+                        save("xai-api-key", xaiKey)
+                        save("deepseek-api-key", deepseekKey)
+                        save("mistral-api-key", mistralKey)
+                        save("perplexity-api-key", perplexityKey)
+                        save("openrouter-api-key", openrouterKey)
                         save("openai-api-key", openaiKey)
                         save("gemini-api-key", geminiKey)
                         save("groq-api-key", groqKey)

@@ -206,10 +206,10 @@ struct SetupView: View {
                 }
 
                 section("2", "Give me a brain (AI)") {
-                    if !tools.filter({ $0.isCLI }).isEmpty {
+                    if !tools.filter({ $0.provider != nil }).isEmpty {
                         Text("Good news — you already have AI on this Mac:").font(.system(size: 12, weight: .semibold))
-                        ForEach(tools.filter { $0.isCLI }) { t in
-                            let pick = t.id == "claude-code" ? AIProvider.claudeCode.rawValue : AIProvider.codex.rawValue
+                        ForEach(tools.filter { $0.provider != nil }) { t in
+                            let pick = t.provider?.rawValue ?? AIProvider.codex.rawValue
                             HStack {
                                 Image(systemName: "checkmark.seal.fill").foregroundColor(Color(hex: "#E2648A"))
                                 VStack(alignment: .leading, spacing: 1) {

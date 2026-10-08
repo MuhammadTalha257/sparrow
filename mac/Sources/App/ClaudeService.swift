@@ -69,6 +69,7 @@ final class KeychainStore: @unchecked Sendable {
         "stripe-api-key",
         "calcom-api-key",
         "notion-api-key",
+        "groq-api-key", "xai-api-key", "deepseek-api-key", "mistral-api-key", "perplexity-api-key", "openrouter-api-key",
     ]
 
     private init() {
@@ -190,7 +191,7 @@ final class ClaudeService {
             "model": model,
             "max_tokens": 4096,
             "tools": webSearchTools,
-            "system": systemPrompt,
+            "system": systemPrompt + ZuffiTeam.shared.persona,
             "messages": conversationMessages,
         ]
 

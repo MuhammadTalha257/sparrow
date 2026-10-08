@@ -15,6 +15,8 @@
 		7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573E04989084923B39144398 /* SetupWizard.swift */; };
 		2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */; };
 		D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */; };
+		B4462BEE3D6F79CBCD0705C1 /* ZuffiPA.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717774D00C85758BFEBD88F1 /* ZuffiPA.swift */; };
+		EDD7B5EEC60B0FD72CEF8F2D /* ZuffiTeam.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E58164047913821ED40C4C /* ZuffiTeam.swift */; };
 		3B2E39A8528DEA2DDE046599 /* ZuffiBusiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739140E6E4376D7A75563982 /* ZuffiBusiness.swift */; };
 		AC59C5437013AE7D8A6778C3 /* ZuffiChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94767A4A4F55DACF5A3A9B3A /* ZuffiChat.swift */; };
 		2BC6855FE0E77E6A66BBEC55 /* ZuffiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */; };
@@ -29,6 +31,8 @@
 		EC9F164883A3250BB9FDDC35 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573E04989084923B39144398 /* SetupWizard.swift */; };
 		AEE9FFFAAAD838DA5EB86EC0 /* InstalledAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */; };
 		D12BE8443642E6CC7641F7B0 /* ZuffiWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */; };
+		FA56646E78820C30FE1D3F62 /* ZuffiPA.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717774D00C85758BFEBD88F1 /* ZuffiPA.swift */; };
+		6587EA7F77348357577186EC /* ZuffiTeam.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E58164047913821ED40C4C /* ZuffiTeam.swift */; };
 		932F207B3C026B1E561994ED /* ZuffiBusiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739140E6E4376D7A75563982 /* ZuffiBusiness.swift */; };
 		5BF6CD47942E5D95EACD4528 /* ZuffiChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94767A4A4F55DACF5A3A9B3A /* ZuffiChat.swift */; };
 		069B8B03C5BD725C4F89C3FC /* ZuffiData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */; };
@@ -108,6 +112,7 @@
 		878924960FC0F2B3524D48AC /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 192844E7299DEED5C2372067 /* AppDelegate.swift */; };
 		8D1C01F283FA7806119A1C85 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A7D5CBE2AC084A10C5FF3 /* SettingsView.swift */; };
 		B3EC9CF3C8BD629C3530E8F1 /* sounds in Resources */ = {isa = PBXBuildFile; fileRef = C066E2B991AA4F56B2724263 /* sounds */; };
+		1AEF2BD3810B753947F0218E /* agents in Resources */ = {isa = PBXBuildFile; fileRef = 911B368FBBDFB4104197D3BD /* agents */; };
 		A1B2C3D4E5F60718293A4B01 /* web in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B00 /* web */; };
 		A1B2C3D4E5F60718293A4B11 /* studio in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B10 /* studio */; };
 		A1B2C3D4E5F60718293A4B21 /* speech in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B20 /* speech */; };
@@ -126,6 +131,7 @@
 		E776C7D1DE5C62EA8D4BA3E3 /* FileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3232F258523DD8D09B670363 /* FileDropView.swift */; };
 		ECECA2F225E82B7C951658D7 /* UploadSequenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD65943C32E150F1CD65C31 /* UploadSequenceEngine.swift */; };
 		F06EE0A97CB77096A337AA8B /* sounds in Resources */ = {isa = PBXBuildFile; fileRef = C066E2B991AA4F56B2724263 /* sounds */; };
+		55F9857087212A6A88CE6EBD /* agents in Resources */ = {isa = PBXBuildFile; fileRef = 911B368FBBDFB4104197D3BD /* agents */; };
 		FAD78D74C6906D4EC8AA4101 /* UploadSequenceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD65943C32E150F1CD65C31 /* UploadSequenceEngine.swift */; };
 		FBBC4CDE82B5886A83A27D7A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 506824380E9C80B9BC6DCE72 /* Assets.xcassets */; };
 		FEFEF1EBAB0E6CA74A33C10B /* SafeWebURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2FDED98F7F6C755A72C97A3 /* SafeWebURL.swift */; };
@@ -142,6 +148,8 @@
 		573E04989084923B39144398 /* SetupWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizard.swift; sourceTree = "<group>"; };
 		3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledAI.swift; sourceTree = "<group>"; };
 		CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiWalk.swift; sourceTree = "<group>"; };
+		717774D00C85758BFEBD88F1 /* ZuffiPA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiPA.swift; sourceTree = "<group>"; };
+		97E58164047913821ED40C4C /* ZuffiTeam.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiTeam.swift; sourceTree = "<group>"; };
 		739140E6E4376D7A75563982 /* ZuffiBusiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiBusiness.swift; sourceTree = "<group>"; };
 		94767A4A4F55DACF5A3A9B3A /* ZuffiChat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiChat.swift; sourceTree = "<group>"; };
 		8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiData.swift; sourceTree = "<group>"; };
@@ -185,6 +193,7 @@
 		B241B043223AFBBFB7418A5E /* UploadCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadCanvasView.swift; sourceTree = "<group>"; };
 		B2FDED98F7F6C755A72C97A3 /* SafeWebURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeWebURL.swift; sourceTree = "<group>"; };
 		C066E2B991AA4F56B2724263 /* sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = sounds; path = Resources/sounds; sourceTree = SOURCE_ROOT; };
+		911B368FBBDFB4104197D3BD /* agents */ = {isa = PBXFileReference; lastKnownFileType = folder; name = agents; path = Resources/agents; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60718293A4B00 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = Resources/web; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60718293A4B10 /* studio */ = {isa = PBXFileReference; lastKnownFileType = folder; name = studio; path = Resources/studio; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60718293A4B20 /* speech */ = {isa = PBXFileReference; lastKnownFileType = folder; name = speech; path = Resources/speech; sourceTree = SOURCE_ROOT; };
@@ -214,6 +223,8 @@
 				573E04989084923B39144398 /* SetupWizard.swift */,
 				3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */,
 				CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */,
+				717774D00C85758BFEBD88F1 /* ZuffiPA.swift */,
+				97E58164047913821ED40C4C /* ZuffiTeam.swift */,
 				739140E6E4376D7A75563982 /* ZuffiBusiness.swift */,
 				94767A4A4F55DACF5A3A9B3A /* ZuffiChat.swift */,
 				8CEAE5402E38BAEF0254F7AF /* ZuffiData.swift */,
@@ -292,6 +303,7 @@
 			isa = PBXGroup;
 			children = (
 				C066E2B991AA4F56B2724263 /* sounds */,
+				911B368FBBDFB4104197D3BD /* agents */,
 				A1B2C3D4E5F60718293A4B00 /* web */,
 				A1B2C3D4E5F60718293A4B10 /* studio */,
 				A1B2C3D4E5F60718293A4B20 /* speech */,
@@ -383,6 +395,7 @@
 			files = (
 				FBBC4CDE82B5886A83A27D7A /* Assets.xcassets in Resources */,
 				B3EC9CF3C8BD629C3530E8F1 /* sounds in Resources */,
+				1AEF2BD3810B753947F0218E /* agents in Resources */,
 				A1B2C3D4E5F60718293A4B01 /* web in Resources */,
 				A1B2C3D4E5F60718293A4B11 /* studio in Resources */,
 				A1B2C3D4E5F60718293A4B21 /* speech in Resources */,
@@ -395,6 +408,7 @@
 			files = (
 				DCAC390FF9EC65B945A15B24 /* Assets.xcassets in Resources */,
 				F06EE0A97CB77096A337AA8B /* sounds in Resources */,
+				55F9857087212A6A88CE6EBD /* agents in Resources */,
 				A1B2C3D4E5F60718293A4B02 /* web in Resources */,
 				A1B2C3D4E5F60718293A4B12 /* studio in Resources */,
 				A1B2C3D4E5F60718293A4B22 /* speech in Resources */,
@@ -421,6 +435,8 @@
 				7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */,
 				2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */,
 				D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */,
+				B4462BEE3D6F79CBCD0705C1 /* ZuffiPA.swift in Sources */,
+				EDD7B5EEC60B0FD72CEF8F2D /* ZuffiTeam.swift in Sources */,
 				3B2E39A8528DEA2DDE046599 /* ZuffiBusiness.swift in Sources */,
 				AC59C5437013AE7D8A6778C3 /* ZuffiChat.swift in Sources */,
 				2BC6855FE0E77E6A66BBEC55 /* ZuffiData.swift in Sources */,
@@ -484,6 +500,8 @@
 				EC9F164883A3250BB9FDDC35 /* SetupWizard.swift in Sources */,
 				AEE9FFFAAAD838DA5EB86EC0 /* InstalledAI.swift in Sources */,
 				D12BE8443642E6CC7641F7B0 /* ZuffiWalk.swift in Sources */,
+				FA56646E78820C30FE1D3F62 /* ZuffiPA.swift in Sources */,
+				6587EA7F77348357577186EC /* ZuffiTeam.swift in Sources */,
 				932F207B3C026B1E561994ED /* ZuffiBusiness.swift in Sources */,
 				5BF6CD47942E5D95EACD4528 /* ZuffiChat.swift in Sources */,
 				069B8B03C5BD725C4F89C3FC /* ZuffiData.swift in Sources */,

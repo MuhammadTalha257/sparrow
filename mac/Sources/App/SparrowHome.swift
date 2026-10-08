@@ -176,7 +176,7 @@ struct SparrowHomeView: View {
     var body: some View {
         HStack(spacing: 8) {
             SparrowContextCard(state: state).frame(width: 226)
-            SparrowOrb(size: 116).frame(width: 150)
+            ZuffiMini(state: state, height: 96).frame(width: 150)
             SparrowAppGrid()
         }
     }
@@ -250,24 +250,40 @@ extension View {
 struct SparrowGreetingView: View {
     @ObservedObject var state: AppState
     @State private var landed = false
+    @State private var hello = false
     @State private var done = false
+
+    private var greeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        return h < 5 ? "Up late? I'm here." : h < 12 ? "Good morning!" : h < 17 ? "Good afternoon!" : "Good evening!"
+    }
 
     var body: some View {
         ZStack {
-            SparrowOrb(size: 132).opacity(landed ? 1 : 0)
-            ZuffiMini(state: state, height: 92)
-                .frame(width: 96, height: 96)
-                .offset(x: landed ? 0 : 360, y: landed ? 0 : -50)
-                .rotationEffect(.degrees(landed ? 0 : -14))
-                .scaleEffect(landed ? 1 : 0.45)
+            // The same moving space sky as Zuffi's home: drifting orbs, twinkling stars.
+            ZuffiSpaceBackground(intensity: 1)
+            HStack(spacing: 16) {
+                ZuffiMini(state: state, height: 92)
+                    .frame(width: 96, height: 96)
+                    .offset(x: landed ? 0 : 320, y: landed ? 0 : -40)
+                    .rotationEffect(.degrees(landed ? 0 : -14))
+                    .scaleEffect(landed ? 1 : 0.4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Hi, I'm Zuffi").font(.system(size: 22, weight: .heavy, design: .rounded)).foregroundColor(.white)
+                    Text(greeting + " Click me or say “Zuffy” any time.").font(.system(size: 12.5, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.75))
+                }
+                .opacity(hello ? 1 : 0).offset(x: hello ? 0 : 16)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            SparrowFlight.fly(for: 1.3)
             SoundEngine.shared.play("chime")
-            withAnimation(.spring(response: 1.0, dampingFraction: 0.62)) { landed = true }
+            withAnimation(.spring(response: 0.9, dampingFraction: 0.62)) { landed = true }
+            withAnimation(.easeOut(duration: 0.5).delay(0.55)) { hello = true }
+            NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 3_200_000_000)
                 guard !done else { return }
                 done = true
                 NotificationCenter.default.post(name: .greetComplete, object: nil)

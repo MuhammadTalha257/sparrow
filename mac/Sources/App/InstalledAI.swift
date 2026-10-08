@@ -19,7 +19,11 @@ enum InstalledAI {
         let name: String        // what people call it
         let detail: String
         let path: String
-        var isCLI: Bool { id == "claude-code" || id == "codex" }
+        var isCLI: Bool { ["claude-code", "codex", "gemini-cli", "qwen-cli", "opencode", "cursor-agent", "grok-cli"].contains(id) }
+        /// The AI choice in Settings this tool answers for, if any.
+        var provider: AIProvider? {
+            switch id { case "claude-code": return .claudeCode; case "codex": return .codex; case "gemini-cli": return .geminiCLI; default: return nil }
+        }
     }
 
     private static var cache: [Tool]?
@@ -55,9 +59,19 @@ enum InstalledAI {
         var out: [Tool] = []
         if let p = find("claude") { out.append(Tool(id: "claude-code", name: "Claude (Claude Code)", detail: "Uses your Claude subscription", path: p)) }
         if let p = find("codex") { out.append(Tool(id: "codex", name: "ChatGPT (Codex)", detail: "Uses your ChatGPT subscription", path: p)) }
+        if let p = find("gemini") { out.append(Tool(id: "gemini-cli", name: "Gemini (Gemini CLI)", detail: "Uses your Google account — free daily quota", path: p)) }
+        if let p = find("grok") { out.append(Tool(id: "grok-cli", name: "Grok CLI", detail: "Uses your xAI key", path: p)) }
+        if let p = find("qwen") { out.append(Tool(id: "qwen-cli", name: "Qwen Code", detail: "Free Qwen account", path: p)) }
+        if let p = find("opencode") { out.append(Tool(id: "opencode", name: "OpenCode", detail: "Any model you set up in OpenCode", path: p)) }
+        if let p = find("cursor-agent") { out.append(Tool(id: "cursor-agent", name: "Cursor Agent", detail: "Uses your Cursor plan", path: p)) }
+        if let p = find("aider") { out.append(Tool(id: "aider", name: "Aider", detail: "Coding helper in Terminal", path: p)) }
         if let p = app(["Claude"]) { out.append(Tool(id: "claude-app", name: "Claude app", detail: "Zuffi can send your question to it", path: p)) }
         if let p = app(["ChatGPT"]) { out.append(Tool(id: "chatgpt-app", name: "ChatGPT app", detail: "Zuffi can send your question to it", path: p)) }
         if let p = app(["Microsoft Copilot", "Copilot"]) { out.append(Tool(id: "copilot-app", name: "Copilot app", detail: "Zuffi can send your question to it", path: p)) }
+        if let p = app(["Grok"]) { out.append(Tool(id: "grok-app", name: "Grok app", detail: "Zuffi can send your question to it", path: p)) }
+        if let p = app(["Perplexity"]) { out.append(Tool(id: "perplexity-app", name: "Perplexity app", detail: "Zuffi can send your question to it", path: p)) }
+        if let p = app(["Cursor"]) { out.append(Tool(id: "cursor-app", name: "Cursor", detail: "Code editor with AI", path: p)) }
+        if let p = app(["Windsurf"]) { out.append(Tool(id: "windsurf-app", name: "Windsurf", detail: "Code editor with AI", path: p)) }
         if let p = app(["Gemini"]) { out.append(Tool(id: "gemini-app", name: "Gemini app", detail: "Zuffi can send your question to it", path: p)) }
         if let p = app(["Ollama"]) ?? find("ollama") { out.append(Tool(id: "ollama", name: "Ollama", detail: "Free AI on this Mac", path: p)) }
         if let p = app(["LM Studio"]) { out.append(Tool(id: "lmstudio", name: "LM Studio", detail: "Free AI on this Mac", path: p)) }
@@ -67,6 +81,7 @@ enum InstalledAI {
 
     static var claudeCode: Tool? { detect().first { $0.id == "claude-code" } }
     static var codex: Tool? { detect().first { $0.id == "codex" } }
+    static var geminiCLI: Tool? { detect().first { $0.id == "gemini-cli" } }
 
     // MARK: Think with Claude Code / Codex
 
@@ -79,6 +94,9 @@ enum InstalledAI {
         switch tool.id {
         case "claude-code": args = ["-p", prompt, "--output-format", "text"]
         case "codex": args = ["exec", "--skip-git-repo-check", "--output-last-message", outFile.path, prompt]
+        case "gemini-cli", "qwen-cli", "grok-cli": args = ["-p", prompt]
+        case "cursor-agent": args = ["-p", prompt, "--output-format", "text"]
+        case "opencode": args = ["run", prompt]
         default: throw NSError(domain: "Zuffi", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(tool.name) can't be used as a brain."])
         }
         let path = await MainActor.run { searchPath.joined(separator: ":") }
@@ -109,7 +127,7 @@ enum InstalledAI {
                 if p.terminationStatus == 0, !text.isEmpty { cont.resume(returning: text); return }
                 let why = (String(data: edata, encoding: .utf8) ?? "").split(separator: "\n").last.map(String.init) ?? "no answer"
                 let hint = why.lowercased().contains("login") || why.lowercased().contains("auth")
-                    ? "\(tool.name) isn't signed in. Open Terminal, type \(tool.id == "codex" ? "codex" : "claude") and sign in once."
+                    ? "\(tool.name) isn't signed in. Open Terminal, type \(URL(fileURLWithPath: tool.path).lastPathComponent) and sign in once."
                     : "\(tool.name): \(why)"
                 cont.resume(throwing: NSError(domain: "Zuffi", code: Int(p.terminationStatus), userInfo: [NSLocalizedDescriptionKey: hint]))
             }
@@ -120,8 +138,9 @@ enum InstalledAI {
 
     /// "ask ChatGPT what's the capital of Peru" → opens the app, types the question, sends it.
     static func handOff(appID: String, question: String) async -> String {
-        let names = ["claude-app": "Claude", "chatgpt-app": "ChatGPT", "copilot-app": "Copilot", "gemini-app": "Gemini"]
-        let web = ["claude-app": "https://claude.ai/new", "chatgpt-app": "https://chatgpt.com", "copilot-app": "https://copilot.microsoft.com", "gemini-app": "https://gemini.google.com/app"]
+        let names = ["claude-app": "Claude", "chatgpt-app": "ChatGPT", "copilot-app": "Copilot", "gemini-app": "Gemini", "grok-app": "Grok", "perplexity-app": "Perplexity"]
+        let web = ["claude-app": "https://claude.ai/new", "chatgpt-app": "https://chatgpt.com", "copilot-app": "https://copilot.microsoft.com", "gemini-app": "https://gemini.google.com/app",
+                   "grok-app": "https://grok.com", "perplexity-app": "https://www.perplexity.ai"]
         let name = names[appID] ?? "the app"
         if let tool = detect().first(where: { $0.id == appID }) {
             NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: tool.path), configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
@@ -139,7 +158,9 @@ enum InstalledAI {
         }
         // Not installed: use the website instead.
         var s = web[appID] ?? "https://chatgpt.com"
-        if !question.isEmpty, appID == "chatgpt-app", let q = question.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) { s += "/?q=\(q)" }
+        if !question.isEmpty, ["chatgpt-app", "grok-app", "perplexity-app"].contains(appID), let q = question.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            s += appID == "perplexity-app" ? "/search?q=\(q)" : "/?q=\(q)"
+        }
         if let u = URL(string: s) { NSWorkspace.shared.open(u) }
         return "\(name) isn't installed, so I opened it in your browser."
     }
@@ -162,7 +183,7 @@ struct InstalledAIView: View {
                     Button("Look again") { tools = InstalledAI.detect(refresh: true) }.controlSize(.small)
                 }
                 if tools.isEmpty {
-                    Text("Nothing found yet. Zuffi works with Claude Code, Codex, the Claude / ChatGPT / Copilot / Gemini apps, Ollama and LM Studio.")
+                    Text("Nothing found yet. Zuffi works with Claude Code, Codex, Gemini CLI, Grok CLI, Qwen, OpenCode, Cursor Agent, the Claude / ChatGPT / Copilot / Gemini / Grok / Perplexity apps, Ollama and LM Studio.")
                         .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(tools) { t in
@@ -175,8 +196,10 @@ struct InstalledAIView: View {
                         }
                         Spacer()
                         if t.isCLI {
-                            let pick = t.id == "claude-code" ? AIProvider.claudeCode.rawValue : AIProvider.codex.rawValue
-                            if state.aiProvider == pick {
+                            let pick = t.provider?.rawValue ?? ""
+                            if pick.isEmpty {
+                                EmptyView()
+                            } else if state.aiProvider == pick {
                                 Label("Zuffi uses this", systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundColor(.green)
                             } else {
                                 Button("Use for answers") { state.aiProvider = pick; UserDefaults.standard.set(pick, forKey: "aiProvider") }.controlSize(.small)

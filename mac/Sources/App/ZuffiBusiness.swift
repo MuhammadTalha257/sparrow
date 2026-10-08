@@ -41,15 +41,16 @@ final class ZuffiBusiness: ObservableObject {
         case .realEstate:
             files = [
                 ("Listings", "Property ID,Area,Type,Beds,Size,Price (PKR),Status,Owner,Owner phone,Notes\nP-101,DHA Phase 6,House,3,10 Marla,19500000,Available,Kamran,03001234567,Corner\nP-102,Bahria Town,Apartment,2,1100 sqft,9500000,Available,Sana,03211234567,Park facing\n"),
+                ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\nAli Raza,03331234567,Facebook ad – DHA plots,10 marla house,DHA Phase 6,2 crore,New,\(today),\(today),\(today),Wants to visit on Sunday\nHina Khan,03451234567,Zameen.com,2 bed apartment,Bahria Town,1 crore,Hot,\(ago4),\(ago4),\(tomorrow),\n"),
                 ("Buyers", "Name,Phone,Budget (PKR),Wants,Area,Last contact,Next follow-up,Notes\nAli Raza,03331234567,20000000,3 bed house,DHA,\(ago4),\(today),Wants to visit on Sunday\nHina Khan,03451234567,10000000,2 bed apartment,Bahria Town,\(today),\(tomorrow),\n"),
             ]
-            HomeAction.right = ["callToday", "quiet", "data", "whatsapp"]
+            HomeAction.right = ["leads", "callToday", "newLead", "messageLeads"]
         case .salon:
             files = [
                 ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n\(today),10:00,Emma Clarke,07700900123,Cut & blow dry,Sophie,45,Booked\n\(tomorrow),14:30,Priya Patel,07700900456,Colour,Jade,85,Booked\n"),
                 ("Clients", "Name,Phone,Last visit,Usual service,Notes\nEmma Clarke,07700900123,\(today),Cut & blow dry,\nOlivia Brown,07700900789,\(Self.iso(Date().addingTimeInterval(-50 * 86400))),Highlights,Prefers Saturdays\n"),
             ]
-            HomeAction.right = ["appointments", "reminders", "rebook", "data"]
+            HomeAction.right = ["appointments", "book", "week", "reminders"]
         }
         ZuffiHomeModel.shared.reloadButtons()
         var made: [String] = []
@@ -62,13 +63,14 @@ final class ZuffiBusiness: ObservableObject {
         }
         NSWorkspace.shared.open(Self.docs)
         return p == .realEstate
-            ? "Done! I made your Listings and Buyers sheets in Documents → Zuffi (with two examples). Fill them in with Excel or Numbers and keep them as .csv — I'll read them by myself. Ask me “who to call today?”"
-            : "Done! I made your Appointments and Clients sheets in Documents → Zuffi (with two examples). Fill them in with Excel or Numbers and keep them as .csv — I'll read them by myself. Ask me “today's appointments” or “send tomorrow's reminders”."
+            ? "Done! I made your Leads, Listings and Buyers sheets in Documents → Zuffi (with examples). Tell me leads as they come (“new lead Ali 0333… from Facebook, 10 marla DHA, 2 crore”), download your Facebook / Zameen leads into Downloads and I'll add them by myself, and ask “my leads”, “follow-ups today” or “message new leads”."
+            : "Done! I made your Appointments and Clients sheets in Documents → Zuffi (with examples). Just tell me: “book Emma tomorrow at 3pm for a cut”, “move Emma to Friday 2pm”, “cancel Emma's appointment”, “this week's bookings”, “send tomorrow's reminders”."
     }
 
     /// Every half minute: re-read sheets you've edited; at 10:00 tell you who has gone quiet / who to call.
     func tick() {
-        for name in ["Listings", "Buyers", "Appointments", "Clients"] {
+        ZuffiPA.shared.scanDownloads()
+        for name in ["Leads", "Listings", "Buyers", "Appointments", "Clients"] {
             let url = Self.docs.appendingPathComponent("\(name).csv")
             guard let m = Self.mtime(url) else { continue }
             if let old = stamps[url.path], old == m { continue }
@@ -118,6 +120,7 @@ final class ZuffiBusiness: ObservableObject {
     // MARK: Estate agents
 
     func callToday() -> String {
+        if FileManager.default.fileExists(atPath: ZuffiPA.url("Leads").path) { return ZuffiPA.shared.followUpsToday() }
         guard let (h, rows) = table("Buyers") else { return "Set yourself up first: say “set me up as an estate agent” (or add a Buyers sheet)." }
         let name = Self.col(h, ["name", "buyer", "client"]), phone = Self.col(h, ["phone", "mobile", "number", "contact no"])
         let next = Self.col(h, ["next", "follow"]), last = Self.col(h, ["last contact", "last call", "last"])
@@ -235,9 +238,9 @@ struct BusinessPackCard: View {
             TextField("Business name (for messages)", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
                 .textFieldStyle(.roundedBorder).font(.system(size: 11))
             if biz.pack == .realEstate {
-                quick(["Who to call today?", "Who hasn't replied?", "Which 3-bed in DHA under 2 crore?"])
+                quick(["My leads", "Follow-ups today", "Message new leads", "How do I connect my Facebook leads?", "Which 3-bed in DHA under 2 crore?"])
             } else if biz.pack == .salon {
-                quick(["Today's appointments", "Send tomorrow's reminders", "Who should rebook?", "This week's takings"])
+                quick(["Today's appointments", "This week's appointments", "Send tomorrow's reminders", "Who should rebook?", "This week's takings"])
             }
             if !note.isEmpty { Text(note).font(.system(size: 10.5)).foregroundColor(Color(hex: "#7CE0A8")).fixedSize(horizontal: false, vertical: true) }
         }
