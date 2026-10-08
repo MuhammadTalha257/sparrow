@@ -235,11 +235,11 @@ final class PetController {
         model.walkLeft = origin.x < panel.frame.minX
         model.reaching = true
         panel.ignoresMouseEvents = true          // the click goes to your app, never to the bunny
-        NSAnimationContext.runAnimationGroup { ctx in
+        NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.45
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             panel.animator().setFrameOrigin(origin)
-        }
+        }, completionHandler: nil)
         try? await Task.sleep(nanoseconds: 520_000_000)
         model.sprite.react(4, for: 0.6)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated {
