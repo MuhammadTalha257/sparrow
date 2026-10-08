@@ -244,11 +244,11 @@ final class ScreenAgent {
     private func perform(_ m: ScreenMove, on shot: ScreenShot) async -> String {
         func pt(_ x: Double, _ y: Double) -> CGPoint { shot.point(x: x, y: y) }
         switch m.action {
-        case "click": Hands.click(pt(m.x, m.y)); return "clicked"
-        case "double_click": Hands.click(pt(m.x, m.y), count: 2); return "double-clicked"
-        case "right_click": Hands.click(pt(m.x, m.y), right: true); return "right-clicked"
+        case "click": await PetController.shared.reach(pt(m.x, m.y)); Hands.click(pt(m.x, m.y)); return "clicked"
+        case "double_click": await PetController.shared.reach(pt(m.x, m.y)); Hands.click(pt(m.x, m.y), count: 2); return "double-clicked"
+        case "right_click": await PetController.shared.reach(pt(m.x, m.y)); Hands.click(pt(m.x, m.y), right: true); return "right-clicked"
         case "move": Hands.move(pt(m.x, m.y)); return "moved"
-        case "drag": Hands.drag(pt(m.x, m.y), pt(m.x2, m.y2)); return "dragged"
+        case "drag": await PetController.shared.reach(pt(m.x, m.y)); Hands.drag(pt(m.x, m.y), pt(m.x2, m.y2)); return "dragged"
         case "scroll":
             if m.x > 0 || m.y > 0 { Hands.move(pt(m.x, m.y)) }
             Hands.scroll(lines: m.amount == 0 ? 5 : m.amount); return "scrolled"

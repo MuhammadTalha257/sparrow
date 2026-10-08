@@ -22,12 +22,7 @@ extension Notification.Name {
 @MainActor
 enum ZuffiNav {
     static func go(_ v: IslandView) {
-        if v == .prompt {
-            ZuffiHomeModel.shared.chatOpen = true
-            AppState.shared.unreadReplies = 0
-            NotificationCenter.default.post(name: .zuffiSwitch, object: IslandView.overview)
-            return
-        }
+        if v == .prompt { ZuffiChat.shared.open(); return }
         if v == .prompt, AppState.shared.promptContext == nil {
             #if !APPSTORE
             AppState.shared.promptContext = WindowContextCapture.captureActive(from: AppState.shared.lastExternalApp)
@@ -118,11 +113,28 @@ final class NowUsing: ObservableObject {
                 await MainActor.run { NowUsing.shared.titleBusy = false; if NowUsing.shared.title != t { NowUsing.shared.title = t } }
             }
         }
-        let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.bundleIdentifier != me && $0.bundleIdentifier != "com.apple.finder" }
+        let withWindows = Self.pidsWithWindows()
+        let running = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && $0.bundleIdentifier != me && withWindows.contains($0.processIdentifier)
+        }
         // what you use most (front first), up to 5
         let list = running
         let ids = list.prefix(8).map { $0.processIdentifier }
         if ids != apps.map({ $0.processIdentifier }) { apps = Array(list.prefix(8)) }
+    }
+
+    /// Apps that really have a window open (on screen, minimised or hidden) — not ones running with nothing open.
+    static func pidsWithWindows() -> Set<pid_t> {
+        guard let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        var out = Set<pid_t>()
+        for w in list {
+            guard (w[kCGWindowLayer as String] as? Int) == 0, let pid = w[kCGWindowOwnerPID as String] as? pid_t,
+                  let b = w[kCGWindowBounds as String] as? [String: Any], let wd = b["Width"] as? Double, let ht = b["Height"] as? Double,
+                  wd > 120, ht > 80 else { continue }
+            if (w[kCGWindowAlpha as String] as? Double ?? 1) <= 0.01 { continue }
+            out.insert(pid)
+        }
+        return out
     }
 
     /// The focused window's title ("GitHub — Claude", "Inbox — Gmail") — needs Accessibility; empty otherwise.
@@ -163,6 +175,11 @@ struct HomeAction: Identifiable {
         HomeAction(id: "newchat", icon: "square.and.pencil", label: "New chat", tint: "#F58FA8"),
         HomeAction(id: "lock", icon: "lock.fill", label: "Lock screen", tint: "#A9B2C6"),
         HomeAction(id: "whatsapp", icon: "message.fill", label: "WhatsApp", tint: "#34D399"),
+        HomeAction(id: "callToday", icon: "phone.fill", label: "Who to call today", tint: "#34D399"),
+        HomeAction(id: "quiet", icon: "hourglass", label: "Buyers gone quiet", tint: "#FBC56A"),
+        HomeAction(id: "appointments", icon: "calendar", label: "Today's appointments", tint: "#F58FA8"),
+        HomeAction(id: "reminders", icon: "bell.badge.fill", label: "Send tomorrow's reminders", tint: "#7CC4FF"),
+        HomeAction(id: "rebook", icon: "arrow.clockwise.heart.fill", label: "Clients to rebook", tint: "#C4B5FD"),
     ]
     static func find(_ id: String) -> HomeAction? { all.first { $0.id == id } }
     static let defaultLeft = ["chat", "settings", "more", "pet"]
@@ -179,7 +196,7 @@ struct HomeAction: Identifiable {
 
     @MainActor static func run(_ id: String, home: ZuffiHomeModel) {
         switch id {
-        case "chat": withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { home.chatOpen.toggle() }
+        case "chat": ZuffiChat.shared.open()
         case "settings": ZuffiNav.go(.settings)
         case "more": WebHub.shared.show()
         case "pet": PetController.shared.toggle()
@@ -191,10 +208,15 @@ struct HomeAction: Identifiable {
         case "weather": Task { await Assistant.run("what's the weather", spoken: true) }
         case "music": Task { await Assistant.run("play music", spoken: true) }
         case "camera": Task { await Assistant.run("what do you see through the camera", spoken: true) }
-        case "notes": withAnimation { home.chatOpen = true }; home.draft = "Note: "
-        case "newchat": AppState.shared.newChat(); withAnimation { home.chatOpen = true }
+        case "notes": ZuffiChat.shared.open(prefill: "Note: ")
+        case "newchat": AppState.shared.newChat(); ZuffiChat.shared.open()
         case "lock": Task { await Assistant.run("lock screen", spoken: false) }
         case "whatsapp": Task { await Assistant.run("any new whatsapp messages", spoken: true) }
+        case "callToday": home.say(ZuffiBusiness.shared.callToday())
+        case "quiet": home.say(ZuffiBusiness.shared.quietBuyers(short: false))
+        case "appointments": home.say(ZuffiBusiness.shared.todays(offset: 0, short: false))
+        case "reminders": let r = ZuffiBusiness.shared.prepareReminders(); home.say(r); VoiceEngine.shared.speak(r)
+        case "rebook": home.say(ZuffiBusiness.shared.rebook())
         default: break
         }
     }
@@ -208,11 +230,11 @@ final class ZuffiHomeModel: ObservableObject {
     @Published var flash: String?
     @Published var left = HomeAction.left
     @Published var right = HomeAction.right
-    func say(_ s: String) { flash = s; DispatchQueue.main.asyncAfter(deadline: .now() + 3) { MainActor.assumeIsolated { if ZuffiHomeModel.shared.flash == s { ZuffiHomeModel.shared.flash = nil } } } }
+    func say(_ s: String) { flash = s; DispatchQueue.main.asyncAfter(deadline: .now() + (s.count > 60 ? 12 : 3)) { MainActor.assumeIsolated { if ZuffiHomeModel.shared.flash == s { ZuffiHomeModel.shared.flash = nil } } } }
     func reloadButtons() { left = HomeAction.left; right = HomeAction.right }
 }
 
-// MARK: Home — the panel from the sketch
+// MARK: Home — the panel from the sketch (fixed geometry, so nothing can push the buttons off the sides)
 
 struct ZuffiHomePanel: View {
     @ObservedObject var state: AppState
@@ -220,128 +242,111 @@ struct ZuffiHomePanel: View {
     @ObservedObject private var now = NowUsing.shared
     @ObservedObject private var agents = AgentHub.shared
     @ObservedObject private var home = ZuffiHomeModel.shared
+    @StateObject private var head = SparrowSpriteModel()
     @State private var hover: String?
-    @State private var react: Int?
-    @FocusState private var typing: Bool
 
+    private let W = IslandConst.width(for: .overview)
+    private let H = IslandConst.viewLayouts[.overview]!.height
+    private let side: CGFloat = 46
+
+    private var listening: Bool { voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) }
     private var mood: SpriteMood {
         if listening { return .listening }
         if voice.speaking { return .speaking }
         if state.stateOverride != nil { return .thinking }
         return .idle
     }
-
-    private var listening: Bool { voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) }
-    private var pose: ZuffiPose {
-        if listening { return .listen }
-        if voice.speaking { return .wave }
-        if state.stateOverride != nil { return .think }
-        return .stand
-    }
     private var words: String {
         if listening { return voice.heard.isEmpty ? "I'm listening…" : "“\(voice.heard)”" }
         if state.stateOverride != nil { return "Let me think…" }
         if let f = home.flash { return f }
-        if let last = state.chatHistory.last(where: { $0.role == .assistant }), voice.speaking || home.chatOpen || Date().timeIntervalSince(state.lastActivity) < 90 {
+        if let last = state.chatHistory.last(where: { $0.role == .assistant }), voice.speaking || Date().timeIntervalSince(state.lastActivity) < 90 {
             return last.content
         }
-        if !VoiceEngine.micOn { return "My mic is off — tap it to talk to me" }
+        if !VoiceEngine.micOn { return "My mic is off — tap Mic to talk to me" }
         let name = AssistantPrefs.displayName
         return "Hi\(name.isEmpty ? "" : " \(name)")! Say “Hey Zuffi”"
     }
 
     var body: some View {
-        ZStack {
-            ZuffiSpaceBackground()
-            // drag anywhere on the sky to move Zuffi
-            Color.clear.contentShape(Rectangle()).movesIsland()
-            VStack(spacing: 6) {
-                appsRow
-                ZStack {
-                    VStack(spacing: 4) {
-                        ZStack {
-                            if listening { ForEach(0..<3, id: \.self) { i in PulseRing(delay: Double(i) / 3) } }
-                            ZuffiBust(size: home.chatOpen ? 108 : 132, mood: mood, react: $react)
-                                .onTapGesture {
-                                    react = [1, 8, 4, 5][Int.random(in: 0..<4)]
-                                    SoundEngine.shared.play("love")
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { react = nil }
-                                }
-                        }
-                        .frame(height: home.chatOpen ? 110 : 134)
-                        ScrollView(.vertical, showsIndicators: false) {
-                            Text(words)
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundColor(.white.opacity(0.94))
-                                .multilineTextAlignment(.center)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .frame(maxWidth: 196, maxHeight: home.chatOpen ? 64 : 48)
+        ZStack(alignment: .top) {
+            ZuffiSpaceBackground().frame(width: W, height: H)
+            Color.clear.frame(width: W, height: H).contentShape(Rectangle()).movesIsland()
+            VStack(spacing: 8) {
+                appsRow.frame(width: W - 20)
+                HStack(alignment: .center, spacing: 0) {
+                    column(home.left, round: true).frame(width: side)
+                    VStack(spacing: 6) {
+                        // the little bunny head that follows your cursor
+                        SparrowSpriteView(model: head, size: 96, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
+                            .frame(width: 100, height: 100)
+                        Text(words)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.94))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(4)
+                            .frame(width: W - 20 - side * 2 - 8)
+                            .animation(.easeInOut(duration: 0.2), value: words)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(width: W - 20 - side * 2)
+                    column(home.right, round: false).frame(width: side)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .leading) { column(home.left, round: true) }
-                .overlay(alignment: .trailing) { column(home.right, round: false) }
-                if home.chatOpen { chatLine.transition(.move(edge: .bottom).combined(with: .opacity)) } else { micRow }
+                .frame(width: W - 20)
+                Spacer(minLength: 0)
+                bottomRow.frame(width: W - 20)
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 6)
-            .padding(.bottom, 10)
+            .padding(.top, 8).padding(.bottom, 12)
+            .frame(width: W, height: H)
             if let h = hover {
                 Text(h).font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
                     .padding(.horizontal, 8).frame(height: 20)
-                    .background(Capsule().fill(Color.black.opacity(0.65)))
-                    .frame(maxHeight: .infinity, alignment: .top).padding(.top, 34)
-                    .transition(.opacity).allowsHitTesting(false)
+                    .background(Capsule().fill(Color.black.opacity(0.7)))
+                    .padding(.top, 42)
+                    .allowsHitTesting(false)
             }
         }
+        .frame(width: W, height: H)
+        .clipped()
         .onAppear { NowUsing.shared.start(); home.reloadButtons() }
-        .onChange(of: home.chatOpen) { _, open in if open { typing = true } }
     }
 
-    // the open apps along the top — click one to jump to it (the one you're in is highlighted)
+    // the apps you have open (with a window) — click one to jump to it
     private var appsRow: some View {
-        HStack(spacing: 5) {
-            if now.apps.isEmpty {
-                Text("Zuffi").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(.white)
-            }
+        HStack(spacing: 4) {
+            if now.apps.isEmpty { Text("Zuffi").font(.system(size: 11, weight: .bold, design: .rounded)) }
             ForEach(now.apps, id: \.processIdentifier) { a in
                 let cur = a.processIdentifier == now.app?.processIdentifier
-                Button { a.activate(options: .activateIgnoringOtherApps) } label: {
+                Button { a.unhide(); a.activate(options: .activateIgnoringOtherApps) } label: {
                     HStack(spacing: 4) {
-                        if let icon = a.icon { Image(nsImage: icon).resizable().frame(width: 16, height: 16) }
-                        if cur { Text(a.localizedName ?? "").font(.system(size: 10.5, weight: .bold, design: .rounded)).lineLimit(1) }
+                        if let icon = a.icon { Image(nsImage: icon).resizable().frame(width: 18, height: 18) }
+                        if cur { Text(a.localizedName ?? "").font(.system(size: 10.5, weight: .bold, design: .rounded)).lineLimit(1).fixedSize() }
                     }
-                    .padding(.horizontal, cur ? 7 : 4).frame(height: 24)
-                    .background(Capsule().fill(Color.white.opacity(cur ? 0.18 : 0.0)))
+                    .padding(.horizontal, cur ? 7 : 3).frame(height: 26)
+                    .background(Capsule().fill(Color.white.opacity(cur ? 0.2 : 0)))
                 }
                 .buttonStyle(.plain)
                 .onHover { hover = $0 ? (a.localizedName ?? "") + (cur && !now.title.isEmpty ? " · " + now.title : "") : nil }
             }
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 6).frame(height: 30)
+        .padding(.horizontal, 6).frame(height: 32)
         .background(Capsule().fill(.ultraThinMaterial).opacity(0.75))
         .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.6))
-        .frame(maxWidth: .infinity)
-        .clipped()
     }
 
-    // the buttons beside Zuffi (left: round, right: soft capsules) — choose them in Settings
+    // four buttons on each side — you choose them in Settings
     private func column(_ ids: [String], round: Bool) -> some View {
-        VStack(spacing: 9) {
-            ForEach(Array(ids.prefix(4).enumerated()), id: \.element) { i, id in
+        VStack(spacing: 10) {
+            ForEach(Array(ids.prefix(4).enumerated()), id: \.offset) { i, id in
                 if let a = HomeAction.find(id) {
                     Button { HomeAction.run(id, home: home) } label: {
-                        Image(systemName: a.icon).font(.system(size: 12.5, weight: .semibold))
+                        Image(systemName: a.icon).font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color(hex: a.tint))
-                            .frame(width: round ? (i < 2 ? 34 : 32) : 40, height: round ? (i < 2 ? 34 : 30) : 28)
+                            .frame(width: round ? 34 : 42, height: round ? 34 : 28)
                             .background(shape(round: round, square: i >= 2).fill(.ultraThinMaterial))
                             .overlay(shape(round: round, square: i >= 2).stroke(
-                                LinearGradient(colors: [Color.white.opacity(0.45), Color(hex: a.tint).opacity(0.35)], startPoint: .top, endPoint: .bottom), lineWidth: 0.9))
-                            .shadow(color: Color(hex: a.tint).opacity(0.35), radius: 6)
+                                LinearGradient(colors: [Color.white.opacity(0.5), Color(hex: a.tint).opacity(0.4)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                            .shadow(color: Color(hex: a.tint).opacity(0.4), radius: 6)
                             .overlay(alignment: .topTrailing) { badge(id) }
                     }
                     .buttonStyle(.plain)
@@ -365,74 +370,26 @@ struct ZuffiHomePanel: View {
         }
     }
 
-    // a single line opens under Zuffi: type, or add a picture / file
-    private var chatLine: some View {
-        HStack(spacing: 6) {
-            Button { attach(images: false) } label: { Image(systemName: "paperclip").font(.system(size: 12, weight: .semibold)) }
-                .buttonStyle(.plain).help("Add a file (PDF, Excel, Word…)")
-            Button { attach(images: true) } label: { Image(systemName: "photo").font(.system(size: 12, weight: .semibold)) }
-                .buttonStyle(.plain).help("Add a picture")
-            if case .file(let name, _)? = state.promptContext {
-                Text(name).font(.system(size: 10, weight: .semibold)).lineLimit(1).padding(.horizontal, 6).frame(height: 18)
-                    .background(Capsule().fill(Color.white.opacity(0.15)))
-            }
-            TextField("Ask Zuffi…", text: $home.draft)
-                .textFieldStyle(.plain).font(.system(size: 12.5)).focused($typing)
-                .onSubmit(send)
-            Button { VoiceEngine.shared.listenOnce() } label: { Image(systemName: listening ? "waveform" : "mic.fill").font(.system(size: 12, weight: .semibold)) }
-                .buttonStyle(.plain).disabled(!VoiceEngine.micOn).help("Talk")
-            Button(action: send) {
-                Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#1A1008"))
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(LinearGradient(colors: [Color(hex: "#FBC56A"), Color(hex: "#F28A3C")], startPoint: .top, endPoint: .bottom)))
-            }.buttonStyle(.plain)
-        }
-        .foregroundColor(.white.opacity(0.85))
-        .padding(.horizontal, 10).frame(height: 36)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 0.8))
-    }
-
-    private func attach(images: Bool) {
-        let p = NSOpenPanel()
-        p.allowedContentTypes = images ? [.image] : [.item]
-        p.allowsMultipleSelection = false
-        NSApp.activate(ignoringOtherApps: true)
-        guard p.runModal() == .OK, let u = p.url else { return }
-        state.promptContext = .file(name: u.lastPathComponent, fileURL: u)
-        typing = true
-    }
-
-    private func send() {
-        let q = home.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty || state.promptContext != nil else { return }
-        home.draft = ""
-        state.chatHistory.append(ChatMessage(role: .user, content: q.isEmpty ? "Here's a file" : q))
-        state.stateOverride = .thinking
-        let ctx = state.promptContext
-        Task { await AIService.shared.chat(query: q, context: ctx, state: state) }
-    }
-
-    private var micRow: some View {
+    private var bottomRow: some View {
         HStack(spacing: 6) {
             Button { VoiceEngine.shared.setMic(!VoiceEngine.micOn) } label: {
                 Label(VoiceEngine.micOn ? "Mic on" : "Mic off", systemImage: VoiceEngine.micOn ? "mic.fill" : "mic.slash.fill")
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .foregroundColor(VoiceEngine.micOn ? .white : Color(hex: "#FF8A8F"))
-                    .padding(.horizontal, 10).frame(height: 26)
+                    .padding(.horizontal, 10).frame(height: 28)
                     .background(Capsule().fill(.ultraThinMaterial))
                     .overlay(Capsule().stroke(VoiceEngine.micOn ? Color.white.opacity(0.2) : Color(hex: "#E5484D").opacity(0.6), lineWidth: 0.8))
             }.buttonStyle(.plain).help("Turn the microphone on or off")
-            Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { home.chatOpen = true } } label: {
-                Label("Type", systemImage: "keyboard").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
-                    .padding(.horizontal, 10).frame(height: 26)
+            Button { ZuffiChat.shared.open() } label: {
+                Label("Chat", systemImage: "bubble.left.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
+                    .padding(.horizontal, 12).frame(height: 28)
                     .background(Capsule().fill(.ultraThinMaterial))
                     .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.8))
             }.buttonStyle(.plain)
             Button { VoiceEngine.shared.listenOnce() } label: {
                 Image(systemName: listening ? "waveform" : "mic.circle.fill").font(.system(size: 13, weight: .bold))
                     .foregroundColor(Color(hex: "#1A1008"))
-                    .frame(width: 26, height: 26)
+                    .frame(width: 28, height: 28)
                     .background(Circle().fill(LinearGradient(colors: [Color(hex: "#FBC56A"), Color(hex: "#F28A3C")], startPoint: .top, endPoint: .bottom)))
             }.buttonStyle(.plain).help("Talk to Zuffi").disabled(!VoiceEngine.micOn)
         }

@@ -359,7 +359,7 @@ final class IslandWindowController: NSWindowController {
     func expand(to view: IslandView) {
         var view = view
         // No separate chat panel any more: chat is the one line under Zuffi on the home screen.
-        if view == .prompt { ZuffiHomeModel.shared.chatOpen = true; state.unreadReplies = 0; view = .overview }
+        if view == .prompt { ZuffiChat.shared.open(); return }
         state.view = view
         if state.mode == .expanded {
             // Already expanded — just switch view

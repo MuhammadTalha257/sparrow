@@ -329,6 +329,8 @@ struct BotPlacement: View {
                         .position(x: uploadCx, y: cy)
                 }
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
+            } else if diameter <= 0.5 {
+                EmptyView()          // this view draws its own Zuffi
             } else if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
                 // the whole little bunny (in the notch it stands on the bottom edge)
                 ZuffiMini(state: state, height: max(16, diameter * (state.mode == .expanded ? 1.5 : 1.35)))

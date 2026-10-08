@@ -27,6 +27,8 @@ final class PetModel: ObservableObject {
     /// Walking on its feet (in, out, or a little stroll along the bottom of the screen).
     @Published var walking = false
     @Published var walkLeft = false
+    /// Paw up — pointing at what it is about to click for you.
+    @Published var reaching = false
     @Published var hovering = false
     private var hideBubble: DispatchWorkItem?
 
@@ -216,6 +218,36 @@ final class PetController {
         }
     }
 
+    /// When Zuffi uses the mouse for you, the bunny hops over and "presses" the spot first,
+    /// so you can see what it's doing. `p` is in screen points with the origin at the top-left (like CGEvent).
+    func reach(_ p: CGPoint) async {
+        guard UserDefaults.standard.object(forKey: "petShowsClicks") as? Bool ?? true else { return }
+        if !isShown { show(greeting: false) ; try? await Task.sleep(nanoseconds: 700_000_000) }
+        guard let panel else { return }
+        let primaryH = NSScreen.screens.first?.frame.height ?? 900
+        let target = NSPoint(x: p.x, y: primaryH - p.y)                      // to AppKit coordinates
+        // stand just below-left of the spot, raised paw near it
+        var origin = NSPoint(x: target.x - size.width / 2 - 48, y: target.y - size.height + 70)
+        if let vf = (NSScreen.screens.first { $0.frame.contains(target) } ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(max(origin.x, vf.minX - 40), vf.maxX - size.width + 40)
+            origin.y = min(max(origin.y, vf.minY - 20), vf.maxY - size.height + 20)
+        }
+        model.walkLeft = origin.x < panel.frame.minX
+        model.reaching = true
+        panel.ignoresMouseEvents = true          // the click goes to your app, never to the bunny
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.45
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrameOrigin(origin)
+        }
+        try? await Task.sleep(nanoseconds: 520_000_000)
+        model.sprite.react(4, for: 0.6)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated {
+            PetController.shared.model.reaching = false
+            PetController.shared.panel?.ignoresMouseEvents = false
+        } }
+    }
+
     func moveBy(dx: CGFloat, dy: CGFloat) {
         guard let p = panel else { return }
         p.setFrameOrigin(NSPoint(x: p.frame.minX + dx, y: p.frame.minY + dy))
@@ -329,6 +361,7 @@ struct PetView: View {
             HStack(spacing: 6) {
                 petButton("mic.fill", "Talk") { petClicked() }
                 petButton("sun.max.fill", "Today") { TodayWindow.shared.show() }
+                petButton("cursorarrow.click.2", "Do something on screen") { ZuffiChat.shared.open(prefill: "On screen, ") }
                 petButton("bubble.left.fill", "Chat") {
                     NotificationCenter.default.post(name: .hookExpand, object: IslandView.prompt)
                 }
@@ -351,6 +384,7 @@ struct PetView: View {
     @State private var waveUntil = Date.distantPast
     private var petPose: ZuffiPose {
         if voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) { return .listen }
+        if model.reaching { return .listen }
         if Date() < waveUntil || voice.speaking { return .wave }
         if AppState.shared.stateOverride == .thinking { return .think }
         return .stand

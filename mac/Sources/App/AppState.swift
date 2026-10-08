@@ -33,7 +33,10 @@ final class AppState: ObservableObject {
     @Published var view: IslandView = .overview {
         didSet {
             // No separate chat panel: chat is the one line under Zuffi on the home screen.
-            if view == .prompt { ZuffiHomeModel.shared.chatOpen = true; unreadReplies = 0; view = .overview }
+            if view == .prompt {
+                view = oldValue == .prompt ? .overview : oldValue
+                if !ZuffiChat.shared.isOpen { ZuffiChat.shared.open() }
+            }
         }
     }
 
@@ -218,7 +221,7 @@ final class AppState: ObservableObject {
     // Chat conversation history
     @Published var chatHistory: [ChatMessage] = [] {
         didSet {
-            if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !(mode == .expanded && (view == .overview || view == .empty) && ZuffiHomeModel.shared.chatOpen) { unreadReplies += 1 }
+            if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !ZuffiChat.shared.isOpen { unreadReplies += 1 }
         }
     }
     /// Replies that arrived while the Chat tab wasn't open (badge on the tab).

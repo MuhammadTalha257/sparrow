@@ -125,7 +125,7 @@ final class ZuffiData: ObservableObject {
         let words = Set(l.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count > 2 })
         let byColumn = sheets.filter { s in s.columns.contains { c in words.contains(c.lowercased()) || words.contains(where: { c.lowercased().contains($0) && $0.count > 3 }) } }
         if !byColumn.isEmpty { return Array(byColumn.prefix(2)) }
-        let dataWords = ["sheet", "excel", "data", "spreadsheet", "table", "analy", "predict", "forecast", "trend", "total", "average", "number of", "phone", "customer", "sales", "list", "row", "column"]
+        let dataWords = ["sheet", "excel", "data", "spreadsheet", "table", "analy", "predict", "forecast", "trend", "total", "average", "number of", "phone", "customer", "sales", "list", "row", "column", "crore", "lakh", "marla", "kanal", "plot", "bed", "buyer", "listing", "property", "house", "flat", "apartment", "appointment", "client", "booking", "takings", "revenue", "income", "profit", "earn", "owe", "stock", "inventory"]
         return dataWords.contains(where: { l.contains($0) }) ? Array(sheets.prefix(2)) : []
     }
 
@@ -168,6 +168,7 @@ final class ZuffiData: ObservableObject {
 
     /// "every day at 9am send good morning to 0300… (on whatsapp)" → set up; returns a reply, or nil if it isn't that.
     func handleCommand(_ raw: String) -> String? {
+        if let r = ZuffiBusiness.shared.handle(raw) { return r }
         let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let re = #"(?i)^(?:every ?day|daily|each day|roz)\s*(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?[, ]+(?:send|text|message|whatsapp)\s+[\"“']?(.+?)[\"”']?\s+to\s+(.+?)(?:\s+on\s+whats ?app)?\.?$"#
         guard let rx = try? NSRegularExpression(pattern: re),
@@ -192,6 +193,7 @@ final class ZuffiData: ObservableObject {
     func removeDaily(_ d: Daily) { dailies.removeAll { $0.id == d.id }; saveDaily() }
 
     private func checkDaily() {
+        ZuffiBusiness.shared.tick()
         let now = Date(), cal = Calendar.current
         let today = ISO8601DateFormatter.string(from: now, timeZone: .current, formatOptions: [.withFullDate])
         let h = cal.component(.hour, from: now), m = cal.component(.minute, from: now)
@@ -339,6 +341,8 @@ struct ZuffiDataPanel: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 8) {
+                BusinessPackCard()
+                Divider().overlay(Color.white.opacity(0.15))
                 Button { data.choose() } label: {
                     Label("Add an Excel or CSV sheet", systemImage: "tablecells.badge.ellipsis")
                         .font(.system(size: 11.5, weight: .bold, design: .rounded)).foregroundColor(Color(hex: "#1A1008"))
