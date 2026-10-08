@@ -111,7 +111,8 @@ final class ZuffiLook: ObservableObject {
 final class ZuffiBodyArt {
     static let shared = ZuffiBodyArt()
     let top: CGImage?, legL: CGImage?, legR: CGImage?, armL: CGImage?, armR: CGImage?, paw: CGImage?
-    let sTop: CGImage?, sLegB: CGImage?, sLegF: CGImage?, sArmB: CGImage?, sArmF: CGImage?
+    /// Side-view walk: three drawn poses (passing, contact, push-off).
+    let side: [CGImage]
     private init() {
         func load(_ n: String) -> CGImage? {
             guard let u = Bundle.main.resourceURL?.appendingPathComponent("web/mascots/\(n)"),
@@ -121,11 +122,10 @@ final class ZuffiBodyArt {
         top = load("zuffi-walk-top.webp"); legL = load("zuffi-walk-legL.webp"); legR = load("zuffi-walk-legR.webp")
         armL = load("zuffi-walk-armL.webp"); armR = load("zuffi-walk-armR.webp")
         paw = load("zuffi-paw.webp")
-        sTop = load("zuffi-side-top.webp"); sLegB = load("zuffi-side-legB.webp"); sLegF = load("zuffi-side-legF.webp")
-        sArmB = load("zuffi-side-armB.webp"); sArmF = load("zuffi-side-armF.webp")
+        side = (1...3).compactMap { load("zuffi-side-\($0).webp") }
     }
     var available: Bool { top != nil && legL != nil && legR != nil && armL != nil && armR != nil }
-    var sideAvailable: Bool { sTop != nil && sLegB != nil && sLegF != nil && sArmB != nil && sArmF != nil }
+    var sideAvailable: Bool { side.count == 3 }
 }
 
 /// The face part of the avatar — the bunny frame, an emoji or a photo.
@@ -218,28 +218,26 @@ struct ZuffiWalker: View {
         .frame(width: max(w, look.kind == .bunny ? w : w * 1.5), height: height)
     }
 
-    /// Side view walking (faces right; flipped when going left).
+    /// Side view walking (faces right; flipped when going left): the three drawn poses in turn —
+    /// passing → contact → push-off — with the body rising on the passing step and settling on contact.
     private func side(_ art: ZuffiBodyArt, time: Double) -> some View {
-        let sw = height * 258 / 480
-        let s = sin(time * 6.0 * speed)               // ~1.9 steps a second
+        let sw = height * 263 / 480
+        let slot = 0.2 / speed
+        let k = time / slot
+        let i = Int(k) % 3, j = (i + 1) % 3
+        let f = k - floor(k)
+        let bobs: [Double] = [0.022, 0.0, 0.012]
+        let e = 0.5 - 0.5 * cos(Double.pi * f)
+        let bob = bobs[i] + (bobs[j] - bobs[i]) * e
+        let mix = max(0, (f - 0.75) / 0.25)                      // a quick soft hand-over to the next pose
+        let land = i == 1 && f < 0.3 ? (0.3 - f) / 0.3 : 0         // a little squash as the foot lands
         return ZStack {
-            Image(decorative: art.sArmB!, scale: 1).resizable().interpolation(.high)
-                .rotationEffect(.degrees(s * 14), anchor: UnitPoint(x: 0.233, y: 0.664))
-                .offset(y: -abs(s) * height * 0.016)
-            Image(decorative: art.sLegB!, scale: 1).resizable().interpolation(.high)
-                .rotationEffect(.degrees(-s * 24), anchor: UnitPoint(x: 0.247, y: 0.805))
-                .offset(y: -max(0, -s) * height * 0.0125)
-            Image(decorative: art.sTop!, scale: 1).resizable().interpolation(.high)
-                .rotationEffect(.degrees(s * 1.5), anchor: .bottom)
-                .offset(y: -abs(s) * height * 0.016)
-            Image(decorative: art.sLegF!, scale: 1).resizable().interpolation(.high)
-                .rotationEffect(.degrees(s * 24), anchor: UnitPoint(x: 0.712, y: 0.867))
-                .offset(y: -max(0, s) * height * 0.0125)
-            Image(decorative: art.sArmF!, scale: 1).resizable().interpolation(.high)
-                .rotationEffect(.degrees(-s * 16), anchor: UnitPoint(x: 0.785, y: 0.648))
-                .offset(y: -abs(s) * height * 0.016)
+            Image(decorative: art.side[i], scale: 1).resizable().interpolation(.high)
+            Image(decorative: art.side[j], scale: 1).resizable().interpolation(.high).opacity(mix)
         }
         .frame(width: sw, height: height)
+        .scaleEffect(x: 1 + 0.012 * land, y: 1 - 0.018 * land, anchor: .bottom)
+        .offset(y: -bob * height)
         .zuffiFur(look)
         .scaleEffect(x: facingLeft ? -1 : 1, y: 1)
     }

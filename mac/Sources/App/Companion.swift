@@ -133,7 +133,7 @@ final class PetController {
         model.walkLeft = target.minX < p.frame.minX
         model.walking = true
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = max(1.5, min(12, Double(dist) / 90))
+            ctx.duration = max(1.5, min(12, Double(dist) / 112))
             ctx.timingFunction = CAMediaTimingFunction(name: .linear)
             p.animator().setFrame(target, display: true)
         }, completionHandler: {
