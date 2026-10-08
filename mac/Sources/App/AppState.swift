@@ -311,9 +311,9 @@ final class AppState: ObservableObject {
 
     func syncMode() {
         // If no tasks and not expanded/peek, go hidden
-        if tasks.isEmpty && mode == .compact {
+        if tasks.isEmpty && mode == .compact && !IslandStateMachine.alwaysShowZuffi {
             mode = .hidden
-        } else if !tasks.isEmpty && mode == .hidden && isPresent {
+        } else if (!tasks.isEmpty || IslandStateMachine.alwaysShowZuffi) && mode == .hidden && isPresent {
             mode = .compact
         }
     }

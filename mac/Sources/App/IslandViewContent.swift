@@ -8,7 +8,7 @@ struct IslandViewContent: View {
 
     var body: some View {
         // The tall panels animate (sky, stars): only build the one that's open.
-        if IslandConst.isPortrait(view) && (state.view != view || state.mode != .expanded) {
+        if (IslandConst.isPortrait(view) || IslandConst.isPortrait(state.view)) && (state.view != view || state.mode != .expanded) {
             Color.clear
         } else {
             content
@@ -29,7 +29,7 @@ struct IslandViewContent: View {
         case .choose:    ChooseView(state: state)
         case .mail:      MailView(state: state)
         case .prompt:
-            ZuffiTallPanel(title: "Chat", icon: "bubble.left.fill", trailing: AnyView(HStack(spacing: 6) {
+            ZuffiTallPanel(title: "Chat", icon: "bubble.left.fill", view: .prompt, trailing: AnyView(HStack(spacing: 6) {
                 MicCamToggles()
                 Button { AppState.shared.newChat() } label: { Image(systemName: "square.and.pencil").font(.system(size: 11, weight: .bold)).frame(width: 24, height: 24) }
                     .buttonStyle(.plain).help("New chat")
@@ -37,11 +37,11 @@ struct IslandViewContent: View {
         case .searching: SearchingView(state: state)
         case .result:    ResultView(state: state)
         case .note:      NoteView(state: state)
-        case .settings:  ZuffiTallPanel(title: "Settings", icon: "gearshape.fill") { ZuffiQuickSettings(state: state) }
+        case .settings:  ZuffiTallPanel(title: "Settings", icon: "gearshape.fill", view: .settings) { ZuffiQuickSettings(state: state) }
         case .greeting:  EmptyView()  // GreetingCanvasView overlaid in IslandRootView
-        case .agents:    ZuffiTallPanel(title: "Agents", icon: "sparkles") { AgentsIslandView() }
-        case .history:   ZuffiTallPanel(title: "History", icon: "clock.arrow.circlepath") { HistoryIslandView() }
-        case .data:      ZuffiTallPanel(title: "My data", icon: "tablecells.fill") { ZuffiDataPanel() }
+        case .agents:    ZuffiTallPanel(title: "Agents", icon: "sparkles", view: .agents) { AgentsIslandView() }
+        case .history:   ZuffiTallPanel(title: "History", icon: "clock.arrow.circlepath", view: .history) { HistoryIslandView() }
+        case .data:      ZuffiTallPanel(title: "My data", icon: "tablecells.fill", view: .data) { ZuffiDataPanel() }
         }
     }
 }

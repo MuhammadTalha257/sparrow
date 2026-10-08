@@ -423,16 +423,9 @@ final class IslandWindowController: NSWindowController {
             let view = note.object as? IslandView
             MainActor.assumeIsolated {
                 guard let self, let view else { return }
-                if self.state.mode == .expanded && self.state.view != view {
-                    self.state.isPinned = false
-                    self.setMode(.compact)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        MainActor.assumeIsolated { self.expand(to: view); self.state.isPinned = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { self.state.isPinned = false } } }
-                    }
-                } else {
-                    self.expand(to: view)
-                }
+                // Switch straight to the panel you picked (the island reshapes itself smoothly).
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { self.expand(to: view) }
+                self.fsm.click()
             }
         }
 
@@ -752,6 +745,7 @@ final class IslandWindowController: NSWindowController {
 
     func baseMode() -> IslandMode {
         guard state.isPresent else { return .hidden }
+        if IslandStateMachine.alwaysShowZuffi { return .compact }      // the little bunny stays visible by the notch
         return state.tasks.isEmpty ? .hidden : .compact
     }
 

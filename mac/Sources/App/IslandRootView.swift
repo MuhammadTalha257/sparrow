@@ -461,11 +461,12 @@ struct IslandContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            IslandHeader(state: state)
-                .frame(height: IslandConst.isPortrait(state.view) ? 0 : 34)
-                .opacity(state.view == .confused || IslandConst.isPortrait(state.view) ? 0 : 1)
-                .allowsHitTesting(!IslandConst.isPortrait(state.view))
-                .animation(.easeInOut(duration: 0.2), value: state.view == .confused)
+            if !IslandConst.isPortrait(state.view) {
+                IslandHeader(state: state)
+                    .frame(height: 34)
+                    .opacity(state.view == .confused ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.2), value: state.view == .confused)
+            }
 
             ZStack {
                 ForEach(IslandView.allCases, id: \.self) { v in
@@ -473,7 +474,7 @@ struct IslandContentView: View {
                     // Views that fill available height instead of the fixed 98pt content frame:
                     // chat (prompt) is always flexible; mail is flexible only when active so
                     // it doesn't push the ZStack taller when inactive.
-                    let isTall = v == .prompt || ((v == .mail || IslandConst.isPortrait(v)) && active)
+                    let isTall = (v == .prompt && active) || ((v == .mail || IslandConst.isPortrait(v)) && active)
                     let anim: Animation = active
                         ? .spring(response: 0.4, dampingFraction: 0.8).delay(0.16)
                         : .easeIn(duration: 0.16)

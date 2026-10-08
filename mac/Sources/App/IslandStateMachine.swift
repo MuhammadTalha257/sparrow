@@ -131,8 +131,12 @@ final class IslandStateMachine {
 
     // MARK: – Timers
 
+    /// Keep the little bunny visible by the notch when Zuffi is closed (Settings can turn this off).
+    static var alwaysShowZuffi: Bool { UserDefaults.standard.object(forKey: "alwaysShowZuffi") as? Bool ?? true }
+
     private func schedulePetitHide() {
         petitHideWork?.cancel()
+        if Self.alwaysShowZuffi { return }
         let item = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.state == .petit else { return }

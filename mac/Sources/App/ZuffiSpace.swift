@@ -46,7 +46,7 @@ struct ZuffiSpaceBackground: View {
     }()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 24)) { tl in
+        TimelineView(.animation(minimumInterval: 1 / 15)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
             Canvas { ctx, size in
                 // deep sky
@@ -441,17 +441,24 @@ struct ZuffiPanelBar: View {
 struct ZuffiTallPanel<Content: View>: View {
     let title: String
     let icon: String
+    var view: IslandView = .settings
     var trailing: AnyView? = nil
     @ViewBuilder let content: () -> Content
     var body: some View {
-        ZStack {
-            ZuffiSpaceBackground()
+        // Fixed size = the island's own size, so nothing inside can spill past the edges.
+        let W = IslandConst.width(for: view)
+        let H = IslandConst.viewLayouts[view]?.height ?? 400
+        ZStack(alignment: .top) {
+            ZuffiSpaceBackground().frame(width: W, height: H)
             VStack(spacing: 8) {
-                ZuffiPanelBar(title: title, icon: icon, trailing: trailing)
-                content().frame(maxWidth: .infinity, maxHeight: .infinity)
+                ZuffiPanelBar(title: title, icon: icon, trailing: trailing).frame(width: W - 20)
+                content().frame(width: W - 20, height: H - 20 - 38 - 8)
             }
             .padding(10)
+            .frame(width: W, height: H, alignment: .top)
         }
+        .frame(width: W, height: H)
+        .clipped()
     }
 }
 
@@ -477,6 +484,9 @@ struct ZuffiQuickSettings: View {
                     set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
                 row("hare.fill", "Cute bunny voice", on: $bunny)
                 row("light.max", "Glow around the notch", on: $glow.enabled)
+                row("rectangle.topthird.inset.filled", "Show Zuffi by the notch when closed", on: Binding(
+                    get: { IslandStateMachine.alwaysShowZuffi },
+                    set: { UserDefaults.standard.set($0, forKey: "alwaysShowZuffi"); AppState.shared.syncMode() }))
                 row("figure.walk", "Zuffi on screen (pet)", on: Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Fur colour").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.6))
