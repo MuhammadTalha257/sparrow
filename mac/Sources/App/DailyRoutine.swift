@@ -215,7 +215,7 @@ final class Planner {
         e.endDate = start.addingTimeInterval(3600)
         e.calendar = s.defaultCalendarForNewEvents
         e.addAlarm(EKAlarm(relativeOffset: -600))
-        e.notes = "Added by Zuffi 🐦"
+        e.notes = "Added by Zuffi 🐰"
         do { try s.save(e, span: .thisEvent, commit: true); return true } catch { return false }
     }
 

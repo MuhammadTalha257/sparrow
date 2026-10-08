@@ -124,7 +124,7 @@ final class MacControl {
         // Screenshot of the whole screen to the Desktop
         if has(#"^(take a |take )?(full )?screenshot( of (the )?(whole |full )?screen)?( to (the )?desktop)?$"#) && has(#"whole|full|desktop"#) {
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-            let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/Sparrow screenshot \(f.string(from: Date())).png").path
+            let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/Zuffi screenshot \(f.string(from: Date())).png").path
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { _ = MacControl.run("/usr/sbin/screencapture", ["-x", path]) }
             return "Screenshot saved to your Desktop."
         }

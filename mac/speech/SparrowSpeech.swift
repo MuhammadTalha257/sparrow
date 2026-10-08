@@ -103,12 +103,15 @@ final class Speaker {
     var voices: [String: Voice] = [:]          // touched only on genQ
     let engine = AVAudioEngine()
     let player = AVAudioPlayerNode()
+    /// Raises the pitch for the cute bunny voice (cents; 0 = normal).
+    let pitch = AVAudioUnitTimePitch()
     var connectedRate = 0
     var turn = 0                               // main thread
     var speedLogs = 0
 
     init() {
         engine.attach(player)
+        engine.attach(pitch)
         // Sleep, headphones, a new speaker: the engine's output changes — reconnect next time we speak.
         NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             self?.connectedRate = 0
@@ -151,7 +154,9 @@ final class Speaker {
         guard let fmt = AVAudioFormat(standardFormatWithSampleRate: Double(rate), channels: 1) else { return nil }
         if connectedRate != rate {
             engine.disconnectNodeOutput(player)
-            engine.connect(player, to: engine.mainMixerNode, format: fmt)
+            engine.disconnectNodeOutput(pitch)
+            engine.connect(player, to: pitch, format: fmt)
+            engine.connect(pitch, to: engine.mainMixerNode, format: fmt)
             connectedRate = rate
         }
         if !engine.isRunning {
@@ -166,8 +171,9 @@ final class Speaker {
         player.stop()
     }
 
-    func say(id: Int, text: String, model: String, sid: Int, speed: Float) {
+    func say(id: Int, text: String, model: String, sid: Int, speed: Float, cents: Float = 0) {
         stop()
+        pitch.pitch = max(-1200, min(1200, cents))
         let my = turn
         let parts = sentences(text)
         guard !parts.isEmpty else { emit(["ev": "end", "id": id]); return }
@@ -244,7 +250,7 @@ final class Speaker {
         let model = o["model"] as? String ?? "kokoro"
         let sid = o["sid"] as? Int ?? 3
         switch cmd {
-        case "say": say(id: o["id"] as? Int ?? 0, text: o["text"] as? String ?? "", model: model, sid: sid, speed: Float(o["speed"] as? Double ?? 1))
+        case "say": say(id: o["id"] as? Int ?? 0, text: o["text"] as? String ?? "", model: model, sid: sid, speed: Float(o["speed"] as? Double ?? 1), cents: Float(o["pitch"] as? Double ?? 0))
         case "stop": stop()
         case "warm":
             let phrases = o["phrases"] as? [String] ?? []

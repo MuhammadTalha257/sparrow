@@ -142,6 +142,7 @@ struct SettingsView: View {
                 if tab == .voice {
                 // MARK: Voice, greeting, notifications, apps
                 AssistantSettings(parts: [.voice, .greeting, .notifications])
+                VoiceboxSettings()
                 }
 
                 if tab == .ai {

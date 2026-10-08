@@ -249,7 +249,7 @@ final class CommandEngine {
                 ?? running.first(where: { q.count >= 3 && ($0.localizedName ?? "").lowercased().contains(q) }) else {
             return "\(rawTarget.capitalized) isn't open."
         }
-        if app.bundleIdentifier == Bundle.main.bundleIdentifier { return "I'll stay right here. 🐦" }
+        if app.bundleIdentifier == Bundle.main.bundleIdentifier { return "I'll stay right here. 🐰" }
         _ = app.terminate()
         return "Closing \(app.localizedName ?? rawTarget)."
     }
@@ -381,7 +381,7 @@ final class CommandEngine {
             return "I need permission: System Settings → Privacy & Security → Automation → Zuffi → System Events."
         }
         if ["show pet", "show sparrow", "come here", "fly out", "pet mode", "show yourself", "come out"].contains(t) {
-            PetController.shared.show(); return "Here I am! 🐦"
+            PetController.shared.show(); return "Here I am! 🐰"
         }
         if ["hide pet", "hide sparrow", "go away", "go back", "hide yourself", "fly away"].contains(t) {
             PetController.shared.hide(); return "See you soon!"

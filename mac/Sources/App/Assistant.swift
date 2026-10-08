@@ -193,6 +193,26 @@ final class VoiceEngine: NSObject, ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        // Voicebox (if you use it): your own cloned or preset voice, offline, 23 languages.
+        if VoiceboxVoice.enabled {
+            if isListening { resumeAfterSpeech = true; pauseRecognition() }
+            speaking = true
+            neuralTurn += 1
+            let turn = neuralTurn
+            let text = String(clean.prefix(1500))
+            Task { @MainActor in
+                let ok = await VoiceboxVoice.shared.say(text) {
+                    if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
+                }
+                guard turn == self.neuralTurn else { return }
+                if !ok { self.speakBuiltIn(clean) }
+            }
+            return
+        }
+        speakBuiltIn(clean)
+    }
+
+    private func speakBuiltIn(_ clean: String) {
         // Zuffi's built-in natural voice (fast, native). Falls back to Apple's voice instantly if it can't.
         if UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true, NativeSpeech.shared.isAvailable {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
@@ -231,7 +251,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         // Basic voices sound less robotic a touch slower; premium ones at a natural pace.
         let base = Float(rate == 0 ? 0.5 : rate)
         u.rate = voice?.quality == .default ? base * 0.94 : base
-        u.pitchMultiplier = voice?.gender == .female ? 1.04 : 0.98
+        u.pitchMultiplier = (UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? false) ? 1.45 : (voice?.gender == .female ? 1.04 : 0.98)
         u.volume = 0.95
         u.preUtteranceDelay = 0.05
         u.prefersAssistiveTechnologySettings = false
@@ -243,6 +263,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     func stopSpeaking() {
         synth.stopSpeaking(at: .immediate)
+        VoiceboxVoice.shared.stop()
         if speaking, neuralTurn > 0 { NativeSpeech.shared.stop(); neuralEnded() }
     }
 
@@ -663,7 +684,7 @@ enum Assistant {
     /// A warm "say that again" — then Zuffi listens straight away.
     static func askAgain() {
         let line = notUnderstood.randomElement()!
-        AppState.shared.noteMessage = "🐦 " + line
+        AppState.shared.noteMessage = "🐰 " + line
         NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
         NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
         VoiceEngine.shared.listenAfterSpeech = true

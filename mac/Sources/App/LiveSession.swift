@@ -613,7 +613,7 @@ enum LiveTools {
             }
             LiveSession.shared.sendImage(jpeg)
             if name == "take_photo" {
-                let dir = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0].appendingPathComponent("Sparrow", isDirectory: true)
+                let dir = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0].appendingPathComponent("Zuffi", isDirectory: true)
                 try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
                 let url = dir.appendingPathComponent("Photo \(f.string(from: Date())).jpg")

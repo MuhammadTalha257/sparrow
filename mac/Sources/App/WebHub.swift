@@ -318,7 +318,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         var req = URLRequest(url: u, timeoutInterval: method == "GET" ? 20 : 90)
         req.httpMethod = method == "GET" ? "GET" : "POST"
         req.setValue("application/json", forHTTPHeaderField: method == "GET" ? "Accept" : "Content-Type")
-        if method == "GET" { req.setValue("Sparrow/1.0 (Macintosh)", forHTTPHeaderField: "User-Agent") }
+        if method == "GET" { req.setValue("Zuffi/1.0 (Macintosh)", forHTTPHeaderField: "User-Agent") }
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         if method != "GET" { req.httpBody = body.data(using: .utf8) }
         Task {

@@ -228,7 +228,7 @@ function resultRows(m) {
 }
 function renderChat() {
   const box = $('#chat');
-  if (!store.chat.length) { box.innerHTML = `<div class="msg bot">Hi${S().name ? ' ' + esc(S().name) : ''}! I'm Zuffi 🐦\nAsk me anything, tell me what to remember, or drop a file with 📎 and ask about it.</div>`; return; }
+  if (!store.chat.length) { box.innerHTML = `<div class="msg bot">Hi${S().name ? ' ' + esc(S().name) : ''}! I'm Zuffi 🐰\nAsk me anything, tell me what to remember, or drop a file with 📎 and ask about it.</div>`; return; }
   box.innerHTML = store.chat.slice(-60).map(m => {
     let extra = '';
     if (m.itemId) { const it = store.items.find(x => x.id === m.itemId); if (it?.when) extra = `<div class="cal"><button class="chip" data-cal="${it.id}">📅 Add to calendar</button></div>`; }
@@ -460,7 +460,8 @@ function tone(pairs, vol = .08) {
     setTimeout(() => ac.close(), 2000);
   } catch {}
 }
-const chirp = () => tone([[2600, 3600, 0, .08], [3000, 4200, .09, .08]]);
+// a little bunny "eep-eep!"
+const chirp = () => tone([[1500, 2300, 0, .11], [1700, 2700, .16, .14]]);
 const chime = () => tone([[880, 880, 0, .5], [1318.5, 1318.5, .16, .9]], .18);
 
 // ---------------- voice out ----------------
@@ -1180,7 +1181,7 @@ $('#aiDownload').onclick = async () => {
   bar.hidden = false; btn.disabled = true; btn.textContent = 'Downloading…';
   try {
     await loadLocal((p, txt) => { bar.firstElementChild.style.width = Math.round(p * 100) + '%'; $('#aiStatus').textContent = txt.slice(0, 90); });
-    btn.textContent = 'Ready ✅'; toast('Free AI ready 🐦'); refreshAiStatus();
+    btn.textContent = 'Ready ✅'; toast('Free AI ready 🐰'); refreshAiStatus();
   } catch (e) { btn.disabled = false; btn.textContent = '⬇️ Try again'; $('#aiStatus').textContent = '⚠️ ' + e.message; }
 };
 
@@ -1194,7 +1195,7 @@ function installHint() {
   if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
   const el = $('#installHint'); el.hidden = false;
   el.innerHTML = isIOS ? '📲 <b>Install Zuffi:</b> tap <b>Share</b> in Safari, then <b>“Add to Home Screen”</b>.'
-    : isAndroid ? '📲 <b>Get the full Android app</b> (floating sparrow, hands-free voice, alarms): <a href="https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk">download Sparrow.apk</a>'
+    : isAndroid ? '📲 <b>Get the full Android app</b> (floating Zuffi, hands-free voice, alarms): <a href="https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk">download Zuffi for Android</a>'
     : '💻 <b>Get Zuffi for your computer</b> — hands-free “Zuffi…”, files, clipboard and more: <a href="get.html">download for Mac or Windows</a>';
 }
 

@@ -103,7 +103,7 @@ window.SparrowIsland = {
 const sec = document.createElement('details');
 sec.innerHTML = `<summary>💻 This ${plat === 'mac' ? 'Mac' : 'computer'}</summary>
   <label class="row"><input type="checkbox" id="dLogin"> 🚀 Start Sparrow when I log in</label>
-  <label class="row"><input type="checkbox" id="dPill"> 🐦 Show the island at the top when Sparrow is closed</label>
+  <label class="row"><input type="checkbox" id="dPill"> 🐰 Show the island at the top when Sparrow is closed</label>
   <label class="row"><input type="checkbox" id="dClip"> 📎 Keep a clipboard history (on this computer only)</label>
   <label class="field"><span>Where Sparrow lives</span><select id="dPos"><option value="right">Top right corner</option><option value="center">Top centre (notch)</option><option value="left">Top left corner</option></select></label>
   <p class="small-text">Open Sparrow: click the island, press <b>${plat === 'mac' ? '⌘' : 'Ctrl'} + Shift + Space</b>, or just say “Sparrow…”. Close: <b>Esc</b> or click anywhere else.</p>
@@ -246,7 +246,7 @@ const Voice = {
   },
   finish(text) {
     this.endCommand(); send({ type: 'partial', text: '' });
-    capText('🐦 ' + text.slice(0, 60), 'On it…'); if (state !== 'expanded') setState('peek');
+    capText('🐰 ' + text.slice(0, 60), 'On it…'); if (state !== 'expanded') setState('peek');
     send({ type: 'speech', text });
   },
   /** Mic button / tap: take one command, no wake word needed. */

@@ -169,7 +169,7 @@ export function icsFor(item) {
   const alarm = item.type === 'meeting' ? `-PT${Math.max(5, +store.settings.lead || 10)}M` : 'PT0M';
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sparrow//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT', `UID:${item.id}@sparrow`, `DTSTAMP:${icsDate(new Date())}`, `DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`,
-    `SUMMARY:${icsEsc(item.title)}`, rrule(item.repeat), 'DESCRIPTION:Added by Zuffi 🐦',
+    `SUMMARY:${icsEsc(item.title)}`, rrule(item.repeat), 'DESCRIPTION:Added by Zuffi 🐰',
     'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(item.title)}`, `TRIGGER:${alarm}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR',
   ].filter(Boolean).join('\r\n');
 }
@@ -189,7 +189,7 @@ export function prayerICS(lat, lon, days = 30) {
 export function googleCalUrl(item) {
   const start = new Date(item.when);
   const end = new Date(start.getTime() + (item.type === 'meeting' ? 60 : 15) * 60000);
-  const p = new URLSearchParams({ action: 'TEMPLATE', text: item.title, dates: `${icsDate(start)}/${icsDate(end)}`, details: 'Added by Zuffi 🐦' });
+  const p = new URLSearchParams({ action: 'TEMPLATE', text: item.title, dates: `${icsDate(start)}/${icsDate(end)}`, details: 'Added by Zuffi 🐰' });
   if (item.repeat) p.set('recur', rrule(item.repeat));
   return 'https://calendar.google.com/calendar/render?' + p.toString();
 }
@@ -355,12 +355,12 @@ export async function handle(input) {
   const t = o.toLowerCase().replace(/[?!.]+$/, '').trim();
   const D = window.SparrowDesktop, N = window.SparrowNative;
   let m;
-  if (!t) return { reply: 'Yes? 🐦' };
+  if (!t) return { reply: 'Yes? 🐰' };
 
   if (/^(help|what can you do|commands)\b/.test(t)) return { reply:
     'Try:\n• remind me every day at 8pm to take medicine\n• meeting with Ali Friday 3pm\n• add task buy milk\n• snooze 10 minutes\n• prayer times\n• add habit drink water 8 times a day\n• quote for Ali, 3 hours at £40\n• start timer for Ali · stop timer\n• spent £12 on lunch\n• which file did I send on 12 September?\n• play Tum Hi Ho on Spotify\n• open WhatsApp · weather · focus 25 minutes\nAnything else, just ask.' };
   if (/^(hi|hello|hey|salam|assalam|aoa|good (morning|afternoon|evening))\b/.test(t) && t.split(' ').length <= 4)
-    return { reply: `${greetingWord()}${hi()}! How can I help? 🐦` };
+    return { reply: `${greetingWord()}${hi()}! How can I help? 🐰` };
 
   if (/^(new chat|start (a )?new chat|start (a )?fresh chat|start over|clear (the |this )?chat|reset (the )?chat|naya chat|nayi chat|nai chat|chat clear kar(o|do)|نئی چیٹ|नई चैट)$/.test(t))
     return { reply: 'Fresh chat started. Ask me anything.', action: 'newchat' };
@@ -409,7 +409,7 @@ export async function handle(input) {
       }
       h.on = true; delete h.last; store.save();
       const when = h.mode === 'every' ? `every ${h.every >= 60 && h.every % 60 === 0 ? (h.every / 60) + ' hour' + (h.every > 60 ? 's' : '') : h.every + ' minutes'}` : `at ${h.times}`;
-      return { reply: `${NAME[kind]} reminders are on — ${when}, between ${h.start} and ${h.end}. The sparrow will bring it to you. Change it in Settings → Health.` };
+      return { reply: `${NAME[kind]} reminders are on — ${when}, between ${h.start} and ${h.end}. Zuffi will bring it to you. Change it in Settings → Health.` };
     }
   }
   if (/^(turn on|start|enable|show)\s+(the )?(prayer|namaz|salah) (times|reminders?|alerts?)$/.test(t)) { store.settings.prayer.on = true; store.save(); return { reply: '🕌 Prayer times are on. They follow your location automatically.', action: 'refresh' }; }

@@ -93,7 +93,7 @@ final class AgentRouter {
         let lowered = base.lowercased()
         if SparrowBubble.shared.isHidden,
            lowered.range(of: #"^(come back|show (yourself|sparrow|up)|bring (sparrow|yourself) back|wapas aao|where are you|sparrow)$"#, options: .regularExpression) != nil {
-            SparrowBubble.shared.restore(); return "I'm back! 🐦"
+            SparrowBubble.shared.restore(); return "I'm back! 🐰"
         }
         if lowered.range(of: #"^(hide|minimi[sz]e) (yourself|sparrow|the island)$|^go hide$"#, options: .regularExpression) != nil {
             SparrowBubble.shared.hideIsland(); return "I'll wait in my little bubble. Click it when you need me."

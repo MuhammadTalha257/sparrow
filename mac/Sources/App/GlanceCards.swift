@@ -52,7 +52,7 @@ final class WeatherStore: ObservableObject {
     func add(_ name: String) async -> Bool {
         var comps = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
         comps.queryItems = [.init(name: "name", value: name), .init(name: "count", value: "1")]
-        guard let url = comps.url, let j = await Weather.getJSON(url), let r = (j["results"] as? [[String: Any]])?.first,
+        guard let url = comps.url, let j = Self.json(await Self.data(url)), let r = (j["results"] as? [[String: Any]])?.first,
               let lat = r["latitude"] as? Double, let lon = r["longitude"] as? Double else { return false }
         let c = City(name: r["name"] as? String ?? name, lat: lat, lon: lon)
         if !cities.contains(c) { cities.append(c); save() }
@@ -77,7 +77,7 @@ final class WeatherStore: ObservableObject {
             .init(name: "timeformat", value: "unixtime"),
             .init(name: "temperature_unit", value: useF ? "fahrenheit" : "celsius"),
         ]
-        guard let url = comps.url, let j = await Weather.getJSON(url), let cur = j["current"] as? [String: Any],
+        guard let url = comps.url, let j = Self.json(await Self.data(url)), let cur = j["current"] as? [String: Any],
               let t = (cur["temperature_2m"] as? NSNumber)?.doubleValue else { return nil }
         let code = (cur["weather_code"] as? NSNumber)?.intValue ?? 0
         var hours: [Hour] = []
@@ -95,6 +95,14 @@ final class WeatherStore: ObservableObject {
         let lo = ((d?["temperature_2m_min"] as? [NSNumber])?.first?.doubleValue).map { Int($0.rounded()) } ?? Int(t)
         return Report(temp: Int(t.rounded()), code: code, hi: hi, lo: lo, hours: hours, at: Date())
     }
+
+    nonisolated static func data(_ url: URL) async -> Data? {
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.setValue("Zuffi", forHTTPHeaderField: "User-Agent")
+        guard let (d, resp) = try? await URLSession.shared.data(for: req), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return d
+    }
+    static func json(_ d: Data?) -> [String: Any]? { d.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } }
 
     static func symbol(_ code: Int, night: Bool = false) -> String {
         switch code {
