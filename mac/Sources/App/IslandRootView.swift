@@ -323,7 +323,7 @@ struct BotPlacement: View {
                     let t = min(1.0, max(0, elapsed / state.uploadDuration))
                     // cx = 36 + 526*t: bot center at fill right edge (bar left=36, width=526)
                     let uploadCx = 36 + CGFloat(t * (2 - t)) * 526
-                    BotCanvasView(state: state, particleOverhang: 0)
+                    ZuffiMini(state: state, height: canvasSize * 0.8)
                         .frame(width: canvasSize, height: canvasSize)
                         .opacity(state.isDraggingBot ? 0 : opacity)
                         .position(x: uploadCx, y: cy)
@@ -685,7 +685,7 @@ struct CompactMiniGrid: View {
         let cols = [GridItem(.fixed(12), spacing: 4), GridItem(.fixed(12), spacing: 4)]
         LazyVGrid(columns: cols, spacing: 4) {
             ForEach(others) { task in
-                MiniBotCanvasView(task: task)
+                LittleSparrow(color: task.color, size: 12)
                     .frame(width: 12 / 0.6, height: 12 / 0.6)
                     .frame(width: 12, height: 12, alignment: .center)
             }

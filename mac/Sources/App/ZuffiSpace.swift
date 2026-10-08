@@ -22,6 +22,12 @@ extension Notification.Name {
 @MainActor
 enum ZuffiNav {
     static func go(_ v: IslandView) {
+        if v == .prompt {
+            ZuffiHomeModel.shared.chatOpen = true
+            AppState.shared.unreadReplies = 0
+            NotificationCenter.default.post(name: .zuffiSwitch, object: IslandView.overview)
+            return
+        }
         if v == .prompt, AppState.shared.promptContext == nil {
             #if !APPSTORE
             AppState.shared.promptContext = WindowContextCapture.captureActive(from: AppState.shared.lastExternalApp)
@@ -215,7 +221,15 @@ struct ZuffiHomePanel: View {
     @ObservedObject private var agents = AgentHub.shared
     @ObservedObject private var home = ZuffiHomeModel.shared
     @State private var hover: String?
+    @State private var react: Int?
     @FocusState private var typing: Bool
+
+    private var mood: SpriteMood {
+        if listening { return .listening }
+        if voice.speaking { return .speaking }
+        if state.stateOverride != nil { return .thinking }
+        return .idle
+    }
 
     private var listening: Bool { voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) }
     private var pose: ZuffiPose {
@@ -247,10 +261,14 @@ struct ZuffiHomePanel: View {
                     VStack(spacing: 4) {
                         ZStack {
                             if listening { ForEach(0..<3, id: \.self) { i in PulseRing(delay: Double(i) / 3) } }
-                            ZuffiWalker(height: home.chatOpen ? 100 : 122, walking: false, pose: pose)
-                                .onTapGesture { VoiceEngine.shared.listenOnce() }
+                            ZuffiBust(size: home.chatOpen ? 108 : 132, mood: mood, react: $react)
+                                .onTapGesture {
+                                    react = [1, 8, 4, 5][Int.random(in: 0..<4)]
+                                    SoundEngine.shared.play("love")
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { react = nil }
+                                }
                         }
-                        .frame(height: home.chatOpen ? 102 : 126)
+                        .frame(height: home.chatOpen ? 110 : 134)
                         ScrollView(.vertical, showsIndicators: false) {
                             Text(words)
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -457,7 +475,7 @@ struct ZuffiPanelBar: View {
         }
         .foregroundColor(.white)
         .padding(.horizontal, 10).frame(height: 38)
-        .background(Capsule().fill(.ultraThinMaterial).opacity(0.85))
+        .background(Capsule().fill(.ultraThinMaterial).opacity(0.85).movesIsland())
         .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
     }
 }
@@ -470,7 +488,7 @@ struct ZuffiTallPanel<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {
         ZStack {
-            ZuffiSpaceBackground(intensity: 0.45)
+            ZuffiSpaceBackground()
             VStack(spacing: 8) {
                 ZuffiPanelBar(title: title, icon: icon, trailing: trailing)
                 content().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -497,6 +515,9 @@ struct ZuffiQuickSettings: View {
                 row("video.fill", "Camera", on: Binding(get: { VoiceEngine.cameraOn }, set: { VoiceEngine.shared.setCamera($0) }))
                 row("ear.fill", "Answer to “Hey Zuffi”", on: Binding(get: { wake }, set: { wake = $0; if $0 { VoiceEngine.shared.setMic(VoiceEngine.micOn) } }))
                 row("speaker.wave.2.fill", "Sounds", on: $state.soundEnabled)
+                row("bell.badge.fill", "Read notifications out loud", on: Binding(
+                    get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
+                    set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
                 row("hare.fill", "Cute bunny voice", on: $bunny)
                 row("light.max", "Glow around the notch", on: $glow.enabled)
                 row("figure.walk", "Zuffi on screen (pet)", on: Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
@@ -580,17 +601,16 @@ struct ZuffiQuickSettings: View {
 }
 
 
-/// The tiny whole bunny that lives in the notch (instead of the old round bird).
+/// The little bunny head in the notch when Zuffi is closed — it turns to follow your cursor.
 struct ZuffiMini: View {
     @ObservedObject var state: AppState
     @ObservedObject private var voice = VoiceEngine.shared
+    @StateObject private var sprite = SparrowSpriteModel()
     var height: CGFloat
     var body: some View {
         let listening = voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk)
-        ZuffiWalker(height: height, walking: false,
-                    pose: listening ? .listen : voice.speaking ? .wave : state.stateOverride != nil ? .think : .stand)
-            .frame(maxHeight: .infinity, alignment: .bottom)
-            .padding(.bottom, 2)
+        SparrowSpriteView(model: sprite, size: height, deadZone: 20,
+                          mood: listening ? .listening : voice.speaking ? .speaking : state.stateOverride != nil ? .thinking : .idle)
             .allowsHitTesting(false)
     }
 }

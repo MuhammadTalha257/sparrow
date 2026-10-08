@@ -1341,7 +1341,7 @@ struct AgentPill: View {
                             .frame(width: 20, height: 20)
                             .background(RoundedRectangle(cornerRadius: 5).fill(Color(hex: task.color).opacity(0.18)))
                     } else {
-                        MiniBotCanvasView(task: task)
+                        LittleSparrow(color: task.color, size: 22)
                             .frame(width: 22 / 0.6, height: 22 / 0.6)
                             .frame(width: 20, height: 20, alignment: .center)
                     }
@@ -1430,7 +1430,7 @@ struct ColumnAgentsView: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(others.prefix(4).enumerated()), id: \.1.id) { idx, task in
-                MiniBotCanvasView(task: task)
+                LittleSparrow(color: task.color, size: 16)
                     .frame(width: 16 / 0.6, height: 16 / 0.6)
                     .frame(width: 16, height: 16)
                     .position(x: 0, y: CGFloat(50 + idx * 24))

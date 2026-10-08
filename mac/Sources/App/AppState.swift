@@ -30,7 +30,12 @@ final class AppState: ObservableObject {
 
     // Island state
     @Published var mode: IslandMode = .hidden
-    @Published var view: IslandView = .overview
+    @Published var view: IslandView = .overview {
+        didSet {
+            // No separate chat panel: chat is the one line under Zuffi on the home screen.
+            if view == .prompt { ZuffiHomeModel.shared.chatOpen = true; unreadReplies = 0; view = .overview }
+        }
+    }
 
     // Tasks
     @Published var tasks: [AgentTask] = []
@@ -213,7 +218,7 @@ final class AppState: ObservableObject {
     // Chat conversation history
     @Published var chatHistory: [ChatMessage] = [] {
         didSet {
-            if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !(mode == .expanded && view == .prompt) { unreadReplies += 1 }
+            if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !(mode == .expanded && (view == .overview || view == .empty) && ZuffiHomeModel.shared.chatOpen) { unreadReplies += 1 }
         }
     }
     /// Replies that arrived while the Chat tab wasn't open (badge on the tab).
@@ -338,7 +343,7 @@ final class AppState: ObservableObject {
             tasks.removeAll { $0.id == id }
             if focusId == id { focusId = showVSCode ? "integration_claude" : tasks.first?.id }
         } else {
-            guard activeIntegrations.count < 4 else { return }
+            guard activeIntegrations.filter({ $0.hasPrefix("integration_") }).count < 4 else { return }
             activeIntegrations.insert(id)
             if let task = (AgentTask.integrationAgents + QuickItems.tasks()).first(where: { $0.id == id }),
                !tasks.contains(where: { $0.id == id }) {

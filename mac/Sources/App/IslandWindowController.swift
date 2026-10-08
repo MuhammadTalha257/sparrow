@@ -357,6 +357,9 @@ final class IslandWindowController: NSWindowController {
     }
 
     func expand(to view: IslandView) {
+        var view = view
+        // No separate chat panel any more: chat is the one line under Zuffi on the home screen.
+        if view == .prompt { ZuffiHomeModel.shared.chatOpen = true; state.unreadReplies = 0; view = .overview }
         state.view = view
         if state.mode == .expanded {
             // Already expanded — just switch view
@@ -890,7 +893,7 @@ struct GhostBotView: View {
     @State private var scale: CGFloat = 0.35
 
     var body: some View {
-        BotCanvasView(state: AppState.shared)
+        ZuffiMini(state: AppState.shared, height: canvasSize * 0.75)
             .frame(width: canvasSize, height: canvasSize)
             .scaleEffect(scale)
             .onAppear {

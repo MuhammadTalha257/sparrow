@@ -389,3 +389,78 @@ struct ZuffiExtrasSettings: View {
         }
     }
 }
+
+// MARK: - Zuffi from the waist up (home screen): nine expressions, moods and little extras
+
+@MainActor
+final class ZuffiBustArt {
+    static let shared = ZuffiBustArt()
+    let frames: [CGImage]
+    private init() {
+        guard let u = Bundle.main.resourceURL?.appendingPathComponent("web/mascots/zuffi-bust.webp"),
+              let s = CGImageSourceCreateWithURL(u as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(s, 0, nil) else { frames = []; return }
+        let w = img.width / 3, h = img.height / 3
+        frames = (0..<9).compactMap { i in img.cropping(to: CGRect(x: (i % 3) * w, y: (i / 3) * h, width: w, height: h)) }
+    }
+    var available: Bool { frames.count == 9 }
+}
+
+/// Faces: 0 blink · 1 love · 2 sparkle · 3 surprised · 4 starstruck · 5 bashful · 6 sleepy · 7 dizzy · 8 happy
+struct ZuffiBust: View {
+    var size: CGFloat
+    var mood: SpriteMood = .idle
+    @Binding var react: Int?
+    @ObservedObject private var look = ZuffiLook.shared
+    @State private var start = Date()
+
+    var body: some View {
+        let art = ZuffiBustArt.shared
+        TimelineView(.animation(minimumInterval: 1 / 12)) { tl in
+            let t = tl.date.timeIntervalSince(start)
+            let f = frame(t)
+            ZStack {
+                if look.kind != .bunny {
+                    ZuffiFace(frame: nil, size: size * 0.85, mood: mood)
+                } else if art.available {
+                    Image(decorative: art.frames[f], scale: 1).resizable().interpolation(.high)
+                        .frame(width: size, height: size)
+                        .zuffiFur(look)
+                        .scaleEffect(x: 1, y: 1 + 0.012 * sin(t * 2.2), anchor: .bottom)   // breathing
+                }
+                extras(f, t)
+            }
+            .frame(width: size, height: size)
+        }
+    }
+
+    private func frame(_ t: Double) -> Int {
+        if let r = react { return r }
+        switch mood {
+        case .listening: return 4                                           // all ears, starry-eyed
+        case .thinking: return Int(t * 1.2) % 2 == 0 ? 2 : 6                // eyes closed, pondering
+        case .speaking: return Int(t * 6) % 3 == 0 ? 5 : 8                  // mouth opens and closes
+        default:
+            let cyc = t.truncatingRemainder(dividingBy: 4.2)
+            return cyc > 4.0 ? 0 : 8                                        // happy, with a blink now and then
+        }
+    }
+
+    @ViewBuilder private func extras(_ f: Int, _ t: Double) -> some View {
+        switch f {
+        case 1:
+            Image(systemName: "heart.fill").font(.system(size: size * 0.13)).foregroundColor(Color(hex: "#F4505E"))
+                .offset(x: size * 0.32, y: -size * 0.18 - CGFloat(sin(t * 3)) * 4)
+        case 2, 4:
+            ForEach(0..<4, id: \.self) { i in
+                let a = t * 1.4 + Double(i) * .pi / 2
+                Image(systemName: "sparkle").font(.system(size: size * (i % 2 == 0 ? 0.09 : 0.06)))
+                    .foregroundColor(Color(hex: "#F7C948")).opacity(0.5 + 0.5 * sin(t * 4 + Double(i)))
+                    .offset(x: cos(a) * size * 0.4, y: -size * 0.3 + sin(a) * size * 0.08)
+            }
+        case 6:
+            Text("z z").font(.system(size: size * 0.09, weight: .heavy, design: .rounded)).foregroundColor(.white.opacity(0.8))
+                .offset(x: size * 0.3, y: -size * 0.28 - CGFloat(sin(t * 2)) * 3)
+        default: EmptyView()
+        }
+    }
+}

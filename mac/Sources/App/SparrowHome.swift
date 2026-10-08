@@ -255,7 +255,7 @@ struct SparrowGreetingView: View {
     var body: some View {
         ZStack {
             SparrowOrb(size: 132).opacity(landed ? 1 : 0)
-            BotCanvasView(state: state)
+            ZuffiMini(state: state, height: 92)
                 .frame(width: 96, height: 96)
                 .offset(x: landed ? 0 : 360, y: landed ? 0 : -50)
                 .rotationEffect(.degrees(landed ? 0 : -14))

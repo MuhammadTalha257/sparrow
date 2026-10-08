@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ApplicationServices
 import SwiftUI
 @preconcurrency import Network
 
@@ -362,6 +363,30 @@ final class AgentHub: ObservableObject {
         return CodexScan(mtime: mtime, session: s, limits: limits)
     }
 
+    /// Bring the terminal (or editor) running that session to the front — the window whose title mentions the project if we can see titles.
+    static func jumpToTerminal(project: String) {
+        let ids = ["com.mitchellh.ghostty", "com.googlecode.iterm2", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty", "com.apple.Terminal",
+                   "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92", "dev.zed.Zed"]
+        let running = ids.compactMap { id in NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id } }
+        let pick = running.first { app in
+            guard AXIsProcessTrusted() else { return false }
+            let ax = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(ax, 0.3)
+            var wins: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(ax, kAXWindowsAttribute as CFString, &wins) == .success, let list = wins as? [AXUIElement] else { return false }
+            for w in list {
+                var t: CFTypeRef?
+                if AXUIElementCopyAttributeValue(w, kAXTitleAttribute as CFString, &t) == .success, let title = t as? String,
+                   title.localizedCaseInsensitiveContains(project) {
+                    AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+                    return true
+                }
+            }
+            return false
+        } ?? running.first
+        pick?.activate(options: .activateIgnoringOtherApps)
+    }
+
     // MARK: GitHub
 
     func refreshGitHub() async {
@@ -593,6 +618,7 @@ struct AgentsIslandView: View {
                 ForEach(hub.sessions) { s in sessionCard(s) }
                 limitsRow
                 if !hub.github.isEmpty || !hub.githubNote.isEmpty { githubCard }
+                DeveloperCard()
             }
             .padding(.vertical, 4)
         }
@@ -635,6 +661,9 @@ struct AgentsIslandView: View {
                 } else {
                     Text(label(s.state)).font(.system(size: 10.5, weight: .semibold, design: .rounded)).foregroundColor(color(s.state))
                 }
+                Button { AgentHub.jumpToTerminal(project: s.project) } label: {
+                    Image(systemName: "arrow.up.forward.app").font(.system(size: 10, weight: .bold))
+                }.buttonStyle(.plain).foregroundColor(.white.opacity(0.6)).help("Open its terminal")
                 if hub.autoApprove.contains(s.id) {
                     Text("Auto-approve").font(.system(size: 9.5, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(Color(hex: "#34D399").opacity(0.25))).foregroundColor(Color(hex: "#34D399"))
@@ -804,5 +833,45 @@ struct AgentsSettingsView: View {
             }
             .padding(6)
         }
+    }
+}
+
+
+// MARK: - Developer tools (like Coucou): your services at a glance
+
+struct DeveloperCard: View {
+    @ObservedObject private var state = AppState.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "hammer.fill").foregroundColor(Color(hex: "#F7C948"))
+                Text("Developer tools").font(.system(size: 12, weight: .bold, design: .rounded))
+                Spacer()
+                Button("Keys…") { NotificationCenter.default.post(name: .openFullSettings, object: nil) }
+                    .buttonStyle(.plain).font(.system(size: 10.5, weight: .semibold)).foregroundColor(Color(hex: "#F9A830"))
+            }
+            Text("Stripe payments, Vercel deploys, n8n workflows, Resend emails, Notion, Cal.com and GitHub — switch on the ones you use.")
+                .font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).fixedSize(horizontal: false, vertical: true)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                ForEach(IslandConst.allIntegrations, id: \.id) { m in
+                    let on = state.activeIntegrations.contains(m.id)
+                    let task = state.tasks.first { $0.id == m.id }
+                    Button { state.toggleIntegration(m.id) } label: {
+                        HStack(spacing: 6) {
+                            LittleSparrow(color: m.color, size: 16)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(m.name).font(.system(size: 11, weight: .semibold))
+                                Text(on ? (task?.steps.last ?? "Watching") : "Off").font(.system(size: 9)).foregroundColor(.white.opacity(0.5)).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                            Circle().fill(on ? Color(hex: "#34D399") : Color.white.opacity(0.2)).frame(width: 7, height: 7)
+                        }
+                        .padding(6).background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(on ? 0.1 : 0.04)))
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
     }
 }
