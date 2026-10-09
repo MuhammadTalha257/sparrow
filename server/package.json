@@ -1,0 +1,11 @@
+{
+  "name": "zuffi-wa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --no-warnings test/run.mjs",
+    "db:init": "wrangler d1 execute zuffi-business --remote --file=schema.sql",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": { "wrangler": "^4.0.0" }
+}

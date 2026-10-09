@@ -125,7 +125,7 @@ final class ZuffiCRM: ObservableObject {
     var isEstate: Bool { ZuffiBusiness.shared.pack != .salon }
     var stages: [String] { isEstate ? ["New", "Contacted", "Site visit", "Negotiating", "Won", "Lost"] : ["New", "Contacted", "Booked", "Regular", "Won", "Lost"] }
 
-    static func stage(for raw: String) -> String {
+    nonisolated static func stage(for raw: String) -> String {
         let s = raw.lowercased().trimmingCharacters(in: .whitespaces)
         if s.isEmpty || s == "new" || ["hot", "warm", "cold"].contains(s) { return "New" }
         if s.contains("visit") { return "Site visit" }
@@ -509,8 +509,9 @@ final class ZuffiCRM: ObservableObject {
     private var serverKey: String { KeychainStore.shared.get("zuffi-server-key") ?? "" }
 
     private func api(_ path: String, method: String = "GET", body: Any? = nil) async -> Any? {
-        guard let base = URL(string: serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))), !serverKey.isEmpty else { return nil }
-        var req = URLRequest(url: base.appendingPathComponent(path), timeoutInterval: 20)
+        let base = serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard !base.isEmpty, !serverKey.isEmpty, let url = URL(string: base + "/" + path) else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 20)
         req.httpMethod = method
         req.setValue("Bearer \(serverKey)", forHTTPHeaderField: "Authorization")
         if let body { req.setValue("application/json", forHTTPHeaderField: "Content-Type"); req.httpBody = try? JSONSerialization.data(withJSONObject: body) }
@@ -538,8 +539,18 @@ final class ZuffiCRM: ObservableObject {
                              ("priority", "priority"), ("assigned", "assigned"), ("status", "status"), ("last_message", "last message"), ("last_message_at", "last message at")] {
                 if let v = d[k] as? String, !v.isEmpty { f[col] = v }
             }
-            let key = addLead(f, note: (d["voice_text"] as? String).map { "🎤 \"\($0)\"" } ?? "")
-            if let draft = d["draft"] as? String, !draft.isEmpty { drafts[key] = draft }
+            if let v = d["next_follow_up"] as? String, !v.isEmpty { f["next follow"] = v }
+            let voiceNote = (d["voice_text"] as? String).flatMap { $0.isEmpty ? nil : "🎤 \"\($0)\"" } ?? ""
+            let key = addLead(f, note: leads.contains { ZuffiPA.samePhone($0.phone, f["phone"] ?? "") && $0.notes.contains(voiceNote) } ? "" : voiceNote)
+            // A team member changed it on their phone: their stage / follow-up / notes win.
+            if (d["changed_by"] as? String) == "staff" {
+                edit(key) { b, i in
+                    for (k, col) in [("status", "status"), ("priority", "priority"), ("assigned", "assigned"), ("next_follow_up", "next follow"), ("notes", "notes"), ("last_contact", "last contact")] {
+                        if let v = d[k] as? String, !v.isEmpty { b.set(i, [col], v) }
+                    }
+                }
+            }
+            if let draft = d["draft"] as? String, !draft.isEmpty { drafts[key] = draft } else if (d["changed_by"] as? String) == "staff" { drafts[key] = nil }
         }
         if let s = j["now"] as? String { UserDefaults.standard.set(s, forKey: "crmServerSince") }
     }
@@ -552,7 +563,7 @@ final class ZuffiCRM: ObservableObject {
 
     func pushTeam() async {
         _ = await api("api/team", method: "PUT", body: ["team": team.map { ["name": $0.name, "phone": $0.phone, "role": $0.role, "pin": $0.pin] },
-                                                        "owner_phone": ownerPhone, "summary_hour": summaryHour,
+                                                        "owner_phone": ownerPhone, "owner_name": ownerName, "summary_hour": summaryHour, "quiet_days": quietDays,
                                                         "auto": Dictionary(uniqueKeysWithValues: Auto.allCases.map { ($0.rawValue, isOn($0)) }),
                                                         "welcome": welcomeText, "business": ZuffiBusiness.shared.businessName,
                                                         "kind": isEstate ? "estate" : "salon"])

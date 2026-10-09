@@ -1,0 +1,27 @@
+name = "zuffi-wa"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zuffi-business"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+
+[triggers]
+crons = ["5 * * * *"]   # every hour: daily summary, staff lists, quiet-lead follow-ups
+
+[vars]
+TIMEZONE = "Asia/Karachi"   # or "Europe/London"
+GRAPH_VERSION = "v23.0"
+
+# Secrets (set with: npx wrangler secret put NAME)
+#   ADMIN_KEY       a long random password — the Mac app and the owner's web login use it
+#   VERIFY_TOKEN    any word; paste the same in Meta's webhook settings
+#   APP_SECRET      Meta app → Settings → Basic → App secret (checks messages really come from Meta)
+#   WA_TOKEN        WhatsApp access token (System User token, permanent)
+#   PHONE_NUMBER_ID the business number's Phone number ID (WhatsApp → API setup)
+#   PAGE_TOKEN      optional: Facebook Page token, for instant Lead Ads leads
+#   GROQ_KEY        optional: better Urdu voice notes + replies (free at console.groq.com)

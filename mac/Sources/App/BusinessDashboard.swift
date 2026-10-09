@@ -93,7 +93,7 @@ private struct Pill: View {
     }
 }
 
-private struct PrimaryButton: View {
+private struct BizMainButton: View {
     let title: String; var icon: String? = nil; let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -105,7 +105,7 @@ private struct PrimaryButton: View {
     }
 }
 
-private struct SoftButton: View {
+private struct BizSoftButton: View {
     let title: String; var icon: String? = nil; let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -205,8 +205,8 @@ struct BusinessDashboardView: View {
             if biz.pack == nil {
                 Text("Pick your business:").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.6))
                 HStack {
-                    SoftButton(title: "Estate", icon: "house.fill") { Task { nav.say(await biz.install(.realEstate)); crm.reload() } }
-                    SoftButton(title: "Salon", icon: "scissors") { Task { nav.say(await biz.install(.salon)); crm.reload() } }
+                    BizSoftButton(title: "Estate", icon: "house.fill") { Task { nav.say(await biz.install(.realEstate)); crm.reload() } }
+                    BizSoftButton(title: "Salon", icon: "scissors") { Task { nav.say(await biz.install(.salon)); crm.reload() } }
                 }
             }
             // Talk to Zuffi about the business
@@ -236,8 +236,8 @@ struct BusinessDashboardView: View {
                 TextField("Search name, number, area…", text: $nav.search).textFieldStyle(.plain).frame(width: 200)
             }
             .padding(.horizontal, 10).frame(height: 30).background(Capsule().fill(Color.white.opacity(0.08)))
-            SoftButton(title: "Voice note", icon: "waveform.badge.mic") { BusinessFiles.pickVoiceNote(for: nil) }
-            PrimaryButton(title: "Add lead", icon: "plus") { adding = true }
+            BizSoftButton(title: "Voice note", icon: "waveform.badge.mic") { BusinessFiles.pickVoiceNote(for: nil) }
+            BizMainButton(title: "Add lead", icon: "plus") { adding = true }
         }
         .padding(.horizontal, 22).padding(.top, 30).padding(.bottom, 12)
     }
@@ -334,11 +334,11 @@ struct BizTodayView: View {
                                 Text(crm.summary()).font(.system(size: 11.5, design: .rounded)).foregroundColor(.white.opacity(0.85))
                                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                                 HStack {
-                                    PrimaryButton(title: sending ? "Sending…" : "Send to my WhatsApp", icon: "paperplane.fill") {
+                                    BizMainButton(title: sending ? "Sending…" : "Send to my WhatsApp", icon: "paperplane.fill") {
                                         sending = true
                                         Task { nav.say(await crm.sendSummaryNow()); sending = false }
                                     }
-                                    SoftButton(title: "Copy", icon: "doc.on.doc") {
+                                    BizSoftButton(title: "Copy", icon: "doc.on.doc") {
                                         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(crm.summary(), forType: .string); nav.say("Copied")
                                     }
                                 }
@@ -512,8 +512,8 @@ struct BizLeadDetail: View {
                         Text([lead.phone, lead.source].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.6)).textSelection(.enabled)
                     }
                     Spacer()
-                    SoftButton(title: "Edit", icon: "pencil") { editing = true }
-                    SoftButton(title: "WhatsApp", icon: "message.fill") { openChat() }
+                    BizSoftButton(title: "Edit", icon: "pencil") { editing = true }
+                    BizSoftButton(title: "WhatsApp", icon: "message.fill") { openChat() }
                 }
                 // Stage + priority + owner
                 HStack(spacing: 8) {
@@ -560,19 +560,19 @@ struct BizLeadDetail: View {
                             }
                         } else { empty("No message yet.") }
                         if lead.lastMessage.hasPrefix("🎤") || lead.notes.contains("voice note") {
-                            SoftButton(title: "Write out a voice note from \(lead.display.split(separator: " ").first.map(String.init) ?? "them")", icon: "waveform") { BusinessFiles.pickVoiceNote(for: lead.key) }
+                            BizSoftButton(title: "Write out a voice note from \(lead.display.split(separator: " ").first.map(String.init) ?? "them")", icon: "waveform") { BusinessFiles.pickVoiceNote(for: lead.key) }
                         }
                         TextEditor(text: $reply).font(.system(size: 12.5)).scrollContentBackground(.hidden)
                             .frame(minHeight: 70).padding(8)
                             .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.3)))
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Biz.stroke))
                         HStack {
-                            PrimaryButton(title: working ? "Sending…" : "Send on WhatsApp", icon: "paperplane.fill") {
+                            BizMainButton(title: working ? "Sending…" : "Send on WhatsApp", icon: "paperplane.fill") {
                                 guard !reply.isEmpty, !working else { return }
                                 working = true
                                 Task { nav.say(await crm.send(lead.key, reply)); reply = ""; working = false }
                             }
-                            SoftButton(title: "Write a reply for me", icon: "sparkles") {
+                            BizSoftButton(title: "Write a reply for me", icon: "sparkles") {
                                 working = true
                                 Task { reply = await crm.draftReply(for: lead, incoming: lead.lastMessage, first: lead.stage == "New"); working = false }
                             }
@@ -593,7 +593,7 @@ struct BizLeadDetail: View {
                         HStack {
                             TextField("Add a note…", text: $note).textFieldStyle(.roundedBorder)
                                 .onSubmit(addNote)
-                            SoftButton(title: "Add", action: addNote)
+                            BizSoftButton(title: "Add", action: addNote)
                         }
                     }
                 }
@@ -763,7 +763,9 @@ struct BizPipelineView: View {
 struct BizTeamView: View {
     @ObservedObject private var crm = ZuffiCRM.shared
     @ObservedObject private var nav = BizNav.shared
-    @State private var name = "", phone = "", role = "Agent"
+    @State private var name = ""
+    @State private var phone = ""
+    @State private var role = "Agent"
 
     var body: some View {
         ScrollView {
@@ -775,7 +777,7 @@ struct BizTeamView: View {
                             TextField("Name", text: $name).textFieldStyle(.roundedBorder)
                             TextField("WhatsApp number", text: $phone).textFieldStyle(.roundedBorder)
                             Picker("", selection: $role) { ForEach(["Agent", "Manager", "Receptionist", "Stylist"], id: \.self) { Text($0) } }.labelsHidden().frame(width: 130)
-                            PrimaryButton(title: "Add", icon: "plus") {
+                            BizMainButton(title: "Add", icon: "plus") {
                                 crm.addStaff(name: name, phone: phone, role: role); name = ""; phone = ""
                             }
                         }
@@ -791,7 +793,7 @@ struct BizTeamView: View {
                             Spacer()
                             let un = crm.leads.filter { $0.isOpen && $0.assigned.isEmpty }
                             if !un.isEmpty, !crm.team.isEmpty {
-                                SoftButton(title: "Share \(un.count) unassigned", icon: "arrow.triangle.branch") {
+                                BizSoftButton(title: "Share \(un.count) unassigned", icon: "arrow.triangle.branch") {
                                     let agents = crm.team.map(\.name)
                                     for (i, l) in un.enumerated() { crm.assign(l.key, to: agents[i % agents.count]) }
                                     nav.say("Shared \(un.count) leads among \(agents.count) people.")
@@ -912,8 +914,8 @@ struct BizConnectView: View {
                         HStack {
                             Text(crm.whatsAppStatus + (crm.lastWhatsAppCheck.map { " · \(ZuffiPA.hm($0))" } ?? "")).font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
                             Spacer()
-                            SoftButton(title: "Check now", icon: "arrow.clockwise") { Task { await crm.watchWhatsApp() } }
-                            if !AXIsProcessTrusted() { SoftButton(title: "Allow Accessibility") { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) } }
+                            BizSoftButton(title: "Check now", icon: "arrow.clockwise") { Task { await crm.watchWhatsApp() } }
+                            if !AXIsProcessTrusted() { BizSoftButton(title: "Allow Accessibility") { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) } }
                         }
                     }
                 }
@@ -930,7 +932,7 @@ struct BizConnectView: View {
                         HStack {
                             TextField("Server address, e.g. https://zuffi-wa.yourname.workers.dev", text: $crm.serverURL).textFieldStyle(.roundedBorder)
                             SecureField("Admin key", text: $key).textFieldStyle(.roundedBorder).frame(width: 200)
-                            PrimaryButton(title: "Test") {
+                            BizMainButton(title: "Test") {
                                 let v = key.trimmingCharacters(in: .whitespaces)
                                 if v.isEmpty { KeychainStore.shared.remove("zuffi-server-key") } else { KeychainStore.shared.set("zuffi-server-key", value: v) }
                                 Task { await crm.testServer(); if crm.serverStatus.hasPrefix("Connected") { await crm.pushTeam(); await crm.pushLeads() } }
