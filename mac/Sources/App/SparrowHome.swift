@@ -152,7 +152,7 @@ struct SparrowContextCard: View {
                 }
                 .buttonStyle(.plain)
                 Button {
-                    if let a = state.lastExternalApp { a.activate(options: .activateIgnoringOtherApps) } else { state.view = .prompt }
+                    if let a = state.lastExternalApp { a.bringForward() } else { state.view = .prompt }
                 } label: {
                     Text(appName.map { "Back to \($0)" } ?? "Type instead")
                         .font(.system(size: 10.5, weight: .semibold, design: .rounded))

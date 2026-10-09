@@ -28,7 +28,7 @@ final class ZuffiPA {
     private var pendingSends: [(name: String, phone: String, text: String)] = []
     private var pendingWhat = ""
 
-    static let leadHeader = ["Name", "Phone", "Source", "Interest", "Area", "Budget", "Status", "Added", "Last contact", "Next follow-up", "Notes"]
+    static let leadHeader = ["Name", "Phone", "Source", "Interest", "Area", "Budget", "Status", "Priority", "Assigned to", "Added", "Last contact", "Next follow-up", "Last message", "Last message at", "Notes"]
     static let apptHeader = ["Date", "Time", "Client", "Phone", "Service", "Staff", "Price", "Status"]
     static let clientHeader = ["Name", "Phone", "Last visit", "Usual service", "Notes"]
 
@@ -255,7 +255,7 @@ final class ZuffiPA {
         }
         if let m = t.range(of: #"^(?:show |list |my )?(new|hot|warm|cold|closed|lost|visited|negotiating) leads\??$"#, options: .regularExpression) {
             let st = String(t[m]).components(separatedBy: " ").first { ["new", "hot", "warm", "cold", "closed", "lost", "visited", "negotiating"].contains($0) } ?? "new"
-            return list({ b, r in b.get(r, ["status"]).lowercased().contains(st) }, title: "\(st.capitalized) leads")
+            return list({ b, r in (b.get(r, ["status"]) + " " + b.get(r, ["priority"])).lowercased().contains(st) }, title: "\(st.capitalized) leads")
         }
         if t.range(of: #"^(?:which |what )?(?:leads|follow[- ]?ups?) (?:are )?(?:due|for) today|^today'?s follow[- ]?ups?|^follow[- ]?ups?(?: due)? today|^who (?:do i|should i|to) follow[- ]?up"#, options: .regularExpression) != nil {
             let today = Calendar.current.startOfDay(for: Date())
@@ -272,7 +272,10 @@ final class ZuffiPA {
         guard !b.rows.isEmpty else { return nil }
         let patterns: [(String, (inout Book, Int, String) -> String)] = [
             (#"^(?:mark|set|move|update|put) (.+?) (?:as|to|status(?: to)?|in) (new|hot|warm|cold|visited|site visit done|negotiating|token paid|closed|deal done|sold|lost|not interested)$"#, { b, i, v in
-                b.set(i, ["status"], v.capitalized); b.set(i, ["last contact"], ZuffiBusiness.iso(Date())); return "Updated \(b.get(b.rows[i], ["name"])) → \(v.capitalized)." }),
+                if ["hot", "warm", "cold"].contains(v) { b.set(i, ["priority"], v.capitalized) } else { b.set(i, ["status"], ZuffiCRM.stage(for: v)) }
+                b.set(i, ["last contact"], ZuffiBusiness.iso(Date()))
+                ZuffiCRM.shared.log(lead: b.get(b.rows[i], ["name"]), staff: b.get(b.rows[i], ["assigned"]), kind: "Updated", detail: v.capitalized)
+                return "Updated \(b.get(b.rows[i], ["name"])) → \(v.capitalized)." }),
             (#"^(?:i )?(?:called|spoke to|spoke with|talked to|met|messaged|whatsapped|texted|showed (?:the )?(?:plot|house|property) to) (.+?)(?: today)?$"#, { b, i, _ in
                 b.set(i, ["last contact"], ZuffiBusiness.iso(Date())); return "Noted — you were in touch with \(b.get(b.rows[i], ["name"])) today." }),
         ]
@@ -345,7 +348,7 @@ final class ZuffiPA {
         var row = Array(repeating: "", count: b.header.count)
         func put(_ k: String, _ v: String) { if let x = b.i([k]) { row[x] = v } }
         put("name", name.capitalized); put("phone", phone); put("source", src); put("interest", interest); put("area", area)
-        put("budget", budget); put("status", "New"); put("added", today); put("last contact", today)
+        put("budget", budget); put("status", "New"); put("added", today); put("last contact", today); put("assigned", ZuffiCRM.shared.nextAssignee())
         put("next follow", next.isEmpty ? ZuffiBusiness.iso(Date().addingTimeInterval(86400)) : next); put("notes", notes)
         b.rows.append(row)
         Self.save("Leads", b)
@@ -397,7 +400,7 @@ final class ZuffiPA {
             if filter.isEmpty || filter.contains("new") { return st.isEmpty || st == "new" }
             if filter.contains("all") { return !["closed", "lost", "not interested", "sold", "deal done"].contains(st) }
             if filter.contains("today") { return ZuffiBusiness.date(b.get(r, ["next follow"])).map { $0 <= today } ?? false }
-            for w in ["hot", "warm", "cold"] where filter.contains(w) { return st.contains(w) }
+            for w in ["hot", "warm", "cold"] where filter.contains(w) { return (st + " " + b.get(r, ["priority"]).lowercased()).contains(w) }
             return filter.split(separator: " ").contains { src.contains($0) }
         }.filter { !b.get($0, ["phone"]).isEmpty }
         guard !picked.isEmpty else { return "No \(filter.isEmpty ? "new" : filter) leads with a phone number." }
@@ -571,7 +574,7 @@ final class ZuffiPA {
 
     /// Looks in Downloads for lead exports (Facebook / Instagram lead ads, Zameen, Google Forms…) and adds new people to Leads.
     func scanDownloads() {
-        guard UserDefaults.standard.object(forKey: "watchLeadExports") as? Bool ?? (ZuffiBusiness.shared.pack == .realEstate) else { return }
+        guard ZuffiCRM.shared.isOn(.leadExports) else { return }
         let dl = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
         guard let files = try? FileManager.default.contentsOfDirectory(at: dl, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return }
         var seen = UserDefaults.standard.dictionary(forKey: "leadExportsSeen") as? [String: Double] ?? [:]
@@ -614,6 +617,7 @@ final class ZuffiPA {
                 func put(_ k: String, _ v: String) { if let x = leads.i([k]) { row[x] = v } }
                 put("name", name); put("phone", phone); put("source", source + (campaign.isEmpty ? "" : " – \(campaign)"))
                 put("status", "New"); put("added", ZuffiBusiness.iso(Date())); put("next follow", ZuffiBusiness.iso(Date())); put("notes", extra)
+                put("assigned", ZuffiCRM.shared.nextAssignee())
                 put("area", src.get(r, ["area", "city", "location", "sector"])); put("budget", src.get(r, ["budget", "price"])); put("interest", src.get(r, ["interest", "property", "looking", "requirement"]))
                 leads.rows.append(row); added += 1
             }

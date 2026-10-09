@@ -137,7 +137,7 @@ struct OverviewView: View {
         case "integration_claude":
             let vscodeBundleId = "com.microsoft.VSCode"
             if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == vscodeBundleId }) {
-                app.activate(options: .activateIgnoringOtherApps)
+                app.bringForward()
             } else {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Visual Studio Code.app"))
             }
@@ -170,7 +170,7 @@ struct OverviewView: View {
                 if let hit = terminalBundleIds.compactMap({ id in
                     NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id }
                 }).first {
-                    hit.activate(options: .activateIgnoringOtherApps)
+                    hit.bringForward()
                 }
                 #endif
             }
@@ -296,7 +296,7 @@ struct FinishedView: View {
                         let terminalBundleIds = ["com.apple.Terminal", "com.googlecode.iterm2", "net.kovidgoyal.kitty", "com.mitchellh.ghostty"]
                         let activated = terminalBundleIds.compactMap { id in
                             NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id }
-                        }.first.map { $0.activate(options: .activateIgnoringOtherApps) }
+                        }.first.map { $0.bringForward() }
                         if activated == nil {
                             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
                         }

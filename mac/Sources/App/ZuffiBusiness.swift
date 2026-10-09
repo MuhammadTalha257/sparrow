@@ -44,13 +44,13 @@ final class ZuffiBusiness: ObservableObject {
                 ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\nAli Raza,03331234567,Facebook ad – DHA plots,10 marla house,DHA Phase 6,2 crore,New,\(today),\(today),\(today),Wants to visit on Sunday\nHina Khan,03451234567,Zameen.com,2 bed apartment,Bahria Town,1 crore,Hot,\(ago4),\(ago4),\(tomorrow),\n"),
                 ("Buyers", "Name,Phone,Budget (PKR),Wants,Area,Last contact,Next follow-up,Notes\nAli Raza,03331234567,20000000,3 bed house,DHA,\(ago4),\(today),Wants to visit on Sunday\nHina Khan,03451234567,10000000,2 bed apartment,Bahria Town,\(today),\(tomorrow),\n"),
             ]
-            HomeAction.right = ["leads", "callToday", "newLead", "messageLeads"]
+            HomeAction.right = ["business", "inbox", "callToday", "newLead"]
         case .salon:
             files = [
                 ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n\(today),10:00,Emma Clarke,07700900123,Cut & blow dry,Sophie,45,Booked\n\(tomorrow),14:30,Priya Patel,07700900456,Colour,Jade,85,Booked\n"),
                 ("Clients", "Name,Phone,Last visit,Usual service,Notes\nEmma Clarke,07700900123,\(today),Cut & blow dry,\nOlivia Brown,07700900789,\(Self.iso(Date().addingTimeInterval(-50 * 86400))),Highlights,Prefers Saturdays\n"),
             ]
-            HomeAction.right = ["appointments", "book", "week", "reminders"]
+            HomeAction.right = ["business", "appointments", "book", "inbox"]
         }
         ZuffiHomeModel.shared.reloadButtons()
         var made: [String] = []
@@ -70,6 +70,7 @@ final class ZuffiBusiness: ObservableObject {
     /// Every half minute: re-read sheets you've edited; at 10:00 tell you who has gone quiet / who to call.
     func tick() {
         ZuffiPA.shared.scanDownloads()
+        ZuffiCRM.shared.tick()
         for name in ["Leads", "Listings", "Buyers", "Appointments", "Clients"] {
             let url = Self.docs.appendingPathComponent("\(name).csv")
             guard let m = Self.mtime(url) else { continue }

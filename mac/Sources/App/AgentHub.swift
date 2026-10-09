@@ -384,7 +384,7 @@ final class AgentHub: ObservableObject {
             }
             return false
         } ?? running.first
-        pick?.activate(options: .activateIgnoringOtherApps)
+        pick?.bringForward()
     }
 
     // MARK: GitHub

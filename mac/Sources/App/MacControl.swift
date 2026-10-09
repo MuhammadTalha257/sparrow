@@ -115,7 +115,7 @@ final class MacControl {
         let spoken = raw.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: #"^(?i)(hey |ok )?sparrow[, ]*"#, with: "", options: .regularExpression)
         if let text = first(#"^(?:type|likho)\s+(.+)$"#, spoken) {
             let esc = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            if let front = AppState.shared.lastExternalApp { front.activate(options: .activateIgnoringOtherApps) }
+            if let front = AppState.shared.lastExternalApp { front.bringForward() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { MainActor.assumeIsolated {
                 _ = CommandEngine.shared.runAppleScript("tell application \"System Events\" to keystroke \"\(esc)\"")
             } }
@@ -170,7 +170,7 @@ final class MacControl {
     }
 
     private func keys(_ key: String, _ mods: [String], _ reply: String) -> String {
-        if let front = AppState.shared.lastExternalApp { front.activate(options: .activateIgnoringOtherApps) }
+        if let front = AppState.shared.lastExternalApp { front.bringForward() }
         let using = mods.map { "\($0) down" }.joined(separator: ", ")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { MainActor.assumeIsolated {
             _ = CommandEngine.shared.runAppleScript("tell application \"System Events\" to keystroke \"\(key)\" using {\(using)}")

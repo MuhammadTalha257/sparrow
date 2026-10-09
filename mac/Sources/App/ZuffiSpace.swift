@@ -187,6 +187,8 @@ struct HomeAction: Identifiable {
         HomeAction(id: "week", icon: "calendar.day.timeline.left", label: "This week's bookings", tint: "#FBC56A"),
         HomeAction(id: "save", icon: "square.and.arrow.down.fill", label: "Save some data", tint: "#FDE68A"),
         HomeAction(id: "team", icon: "person.3.fill", label: "Zuffi's team", tint: "#C4B5FD"),
+        HomeAction(id: "business", icon: "briefcase.fill", label: "Business dashboard", tint: "#F58FA8"),
+        HomeAction(id: "inbox", icon: "tray.full.fill", label: "WhatsApp inbox", tint: "#34D399"),
     ]
     static func find(_ id: String) -> HomeAction? { all.first { $0.id == id } }
     static let defaultLeft = ["chat", "settings", "more", "pet"]
@@ -233,13 +235,15 @@ struct HomeAction: Identifiable {
         case "appointments": home.say(ZuffiBusiness.shared.todays(offset: 0, short: false))
         case "reminders": let r = ZuffiBusiness.shared.prepareReminders(); home.say(r); VoiceEngine.shared.speak(r)
         case "rebook": home.say(ZuffiBusiness.shared.rebook())
-        case "leads": ask("my leads")
+        case "leads": BusinessDashboard.shared.show(.pipeline)
         case "newLead": ZuffiChat.shared.open(prefill: "New lead ")
         case "messageLeads": ask("message new leads")
         case "book": ZuffiChat.shared.open(prefill: "Book ")
         case "week": ask("this week's appointments")
         case "save": ZuffiChat.shared.open(prefill: "Save this: ")
         case "team": ask("show my team")
+        case "business": BusinessDashboard.shared.show()
+        case "inbox": BusinessDashboard.shared.show(.inbox)
         default: break
         }
     }
@@ -339,7 +343,7 @@ struct ZuffiHomePanel: View {
             if now.apps.isEmpty { Text("Zuffi").font(.system(size: 11, weight: .bold, design: .rounded)) }
             ForEach(now.apps, id: \.processIdentifier) { a in
                 let cur = a.processIdentifier == now.app?.processIdentifier
-                Button { a.unhide(); a.activate(options: .activateIgnoringOtherApps) } label: {
+                Button { a.bringForward(); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
                     HStack(spacing: 4) {
                         if let icon = a.icon { Image(nsImage: icon).resizable().frame(width: 18, height: 18) }
                         if cur { Text(a.localizedName ?? "").font(.system(size: 10.5, weight: .bold, design: .rounded)).lineLimit(1).fixedSize() }
@@ -396,7 +400,7 @@ struct ZuffiHomePanel: View {
     private var bottomRow: some View {
         HStack(spacing: 6) {
             Button { VoiceEngine.shared.setMic(!VoiceEngine.micOn) } label: {
-                Label(VoiceEngine.micOn ? "Mic on" : "Mic off", systemImage: VoiceEngine.micOn ? "mic.fill" : "mic.slash.fill")
+                Label(VoiceEngine.micOn ? "Mic" : "Off", systemImage: VoiceEngine.micOn ? "mic.fill" : "mic.slash.fill")
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .foregroundColor(VoiceEngine.micOn ? .white : Color(hex: "#FF8A8F"))
                     .padding(.horizontal, 10).frame(height: 28)
@@ -409,6 +413,12 @@ struct ZuffiHomePanel: View {
                     .background(Capsule().fill(.ultraThinMaterial))
                     .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.8))
             }.buttonStyle(.plain)
+            Button { BusinessDashboard.shared.show() } label: {
+                Label("Business", systemImage: "briefcase.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
+                    .padding(.horizontal, 10).frame(height: 28)
+                    .background(Capsule().fill(LinearGradient(colors: [Color(hex: "#F58FA8").opacity(0.55), Color(hex: "#7C5CFF").opacity(0.45)], startPoint: .leading, endPoint: .trailing)))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.8))
+            }.buttonStyle(.plain).help("Your leads, WhatsApp inbox, team and automations")
             Button { VoiceEngine.shared.listenOnce() } label: {
                 Image(systemName: listening ? "waveform" : "mic.circle.fill").font(.system(size: 13, weight: .bold))
                     .foregroundColor(Color(hex: "#1A1008"))
@@ -602,5 +612,23 @@ struct ZuffiMini: View {
         SparrowSpriteView(model: sprite, size: height, deadZone: 20,
                           mood: listening ? .listening : voice.speaking ? .speaking : state.stateOverride != nil ? .thinking : .idle)
             .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Bring an app to the front (works on macOS 14+, where a background app can't simply "activate" another)
+
+extension NSRunningApplication {
+    @MainActor func bringForward() {
+        unhide()
+        if let url = bundleURL {
+            let cfg = NSWorkspace.OpenConfiguration()
+            cfg.activates = true
+            let pid = processIdentifier
+            NSWorkspace.shared.openApplication(at: url, configuration: cfg) { app, _ in
+                if app == nil { NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows]) }
+            }
+        } else {
+            activate(options: [.activateAllWindows])
+        }
     }
 }
