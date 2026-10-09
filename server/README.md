@@ -33,9 +33,9 @@ Set `TIMEZONE` in `wrangler.toml` to `Asia/Karachi` or `Europe/London`.
 ## 2. Connect WhatsApp (Meta)
 
 1. Go to [developers.facebook.com](https://developers.facebook.com). Create an app (type **Business**) and add the **WhatsApp** product.
-2. Under **WhatsApp → API setup**, add the business number.
-   - To keep the WhatsApp Business app working on the phone, choose **"Use an existing WhatsApp Business app number"** (Coexistence) and scan the QR code with the phone.
-   - The last 6 months of chats are copied over.
+2. Under **WhatsApp → API setup**, add the business number. There are two ways:
+   - **Keep the WhatsApp Business app on the phone (Coexistence).** Meta only lets a *Solution Partner* or *Tech Provider* connect an existing app number. So either Zuffi becomes a Meta Tech Provider (free, needs business verification and app review), or the business connects through a partner such as 360dialog, Twilio or Gupshup. The phone needs WhatsApp Business 2.24.17 or newer, must be opened at least every 14 days, and up to 6 months of chats are copied over.
+   - **Simpler: a number that isn't on WhatsApp yet** (a new SIM, or remove the WhatsApp account from it first). Add it directly here. The team then works from the Zuffi team page instead of the phone app.
 3. Create a **System User** in Business Settings and give it the WhatsApp account. Make a **permanent token** with `whatsapp_business_messaging` and `whatsapp_business_management`. Then:
    ```bash
    npx wrangler secret put WA_TOKEN

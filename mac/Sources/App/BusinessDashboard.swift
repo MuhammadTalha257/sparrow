@@ -926,7 +926,7 @@ struct BizConnectView: View {
                             .font(.system(size: 11.5)).foregroundColor(.white.opacity(0.7)).fixedSize(horizontal: false, vertical: true)
                         VStack(alignment: .leading, spacing: 4) {
                             step("1", "Set up the Zuffi server (one time) — see server/README.md: Cloudflare, free plan is enough.")
-                            step("2", "Create a Meta business app and add WhatsApp. Connect the business's number using “WhatsApp Business app number” (Coexistence) and scan the QR code with the phone.")
+                            step("2", "Create a Meta business app and add WhatsApp. To keep the WhatsApp Business app on the phone (Coexistence), connect through a Meta partner (or Zuffi as a Tech Provider) and scan the QR code. Or use a number that isn't on WhatsApp yet — that one you can add directly.")
                             step("3", "Paste the server address and the admin key below, then press Test.")
                         }
                         HStack {
