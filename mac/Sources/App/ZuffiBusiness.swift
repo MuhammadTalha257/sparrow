@@ -256,7 +256,7 @@ final class ZuffiBusiness: ObservableObject {
         return nil
     }
     static func cell(_ r: [String], _ i: Int?) -> String { guard let i, i < r.count else { return "" }; return r[i].trimmingCharacters(in: .whitespaces) }
-    static func iso(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: d) }
+    nonisolated static func iso(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: d) }
     nonisolated static func date(_ s: String) -> Date? {
         let t = s.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return nil }

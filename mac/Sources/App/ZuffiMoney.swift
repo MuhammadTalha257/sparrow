@@ -124,7 +124,7 @@ final class ZuffiMoney: ObservableObject {
 
     // MARK: Numbers
 
-    static func number(_ s: String) -> Double {
+    nonisolated static func number(_ s: String) -> Double {
         let t = s.lowercased().replacingOccurrences(of: ",", with: "")
         guard let r = t.range(of: #"\d+(\.\d+)?"#, options: .regularExpression), let v = Double(t[r]) else { return 0 }
         if t.contains("crore") || t.range(of: #"\d\s*cr\b"#, options: .regularExpression) != nil { return v * 10_000_000 }
@@ -133,8 +133,8 @@ final class ZuffiMoney: ObservableObject {
         if t.range(of: #"\d\s*(m|million)\b"#, options: .regularExpression) != nil { return v * 1_000_000 }
         return v
     }
-    static func plain(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.2f", v) }
-    static func pretty(_ v: Double) -> String { Int(v.rounded()).formatted() }
+    nonisolated static func plain(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.2f", v) }
+    nonisolated static func pretty(_ v: Double) -> String { Int(v.rounded()).formatted() }
 
     var month: String { String(ZuffiBusiness.iso(Date()).prefix(7)) }
     func inMonth(_ m: String) -> [MoneyEntry] { entries.filter { $0.date.hasPrefix(m) } }
