@@ -439,7 +439,7 @@ struct PropertyDetail: View {
                     }
                 }
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                    for pr in providers { _ = pr.loadObject(ofClass: URL.self) { u, _ in
+                    for pr in providers { _ = pr.loadObject(ofClass: URL.self) { @Sendable u, _ in
                         guard let u else { return }
                         Task { @MainActor in try? FileManager.default.copyItem(at: u, to: ZuffiProperties.folder(p.id).appendingPathComponent(u.lastPathComponent)); props.reload() }
                     } }

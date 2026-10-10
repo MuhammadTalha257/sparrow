@@ -152,6 +152,7 @@ class Bridge(private val a: MainActivity) {
         for (k in listOf("bizName", "bizInfo", "bizToday", "bizTodayDate", "groqKey", "geminiKey")) if (o.has(k)) e.putString(k, o.optString(k))
         if (o.has("waLeads")) e.putBoolean("waLeads", o.optBoolean("waLeads"))
         if (o.has("waPilot")) e.putBoolean("waPilot", o.optBoolean("waPilot"))
+        if (o.has("waContactsToo")) e.putBoolean("waContactsToo", o.optBoolean("waContactsToo"))
         e.apply()
         if ((o.optBoolean("waLeads") || o.optBoolean("waPilot")) && !hasNotificationAccess()) a.runOnUiThread {
             try { a.startActivity(android.content.Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } catch (_: Exception) {}

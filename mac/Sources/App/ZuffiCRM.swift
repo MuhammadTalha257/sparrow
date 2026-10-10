@@ -117,12 +117,13 @@ final class ZuffiCRM: ObservableObject {
     }
 
     enum Auto: String, CaseIterable, Identifiable {
-        case autopilot, watchWhatsApp, draftReplies, autoReply, morningAsk, voiceNotes, leadExports, roundRobin, quietFollowUp, ownerSummary, staffDigest
+        case autopilot, includeContacts, watchWhatsApp, draftReplies, autoReply, morningAsk, voiceNotes, leadExports, roundRobin, quietFollowUp, ownerSummary, staffDigest
         var id: String { rawValue }
         var title: String {
             switch self {
             case .autopilot: return "Autopilot — let Zuffi chat with clients"
             case .morningAsk: return "Ask me each morning for today's offers and news"
+            case .includeContacts: return "Also treat my saved contacts as clients"
             case .watchWhatsApp: return "Turn new WhatsApp chats into leads"
             case .draftReplies: return "Write a reply for every new enquiry"
             case .autoReply: return "Send the first reply straight away"
@@ -137,6 +138,7 @@ final class ZuffiCRM: ObservableObject {
         var detail: String {
             switch self {
             case .autopilot: return "Zuffi answers every client message by itself, using your business info and today's update, in the client's language. It hands over to you (and doesn't reply) when someone wants to bargain, complains, asks for a person or asks something it doesn't know. It waits until you stop typing before it sends."
+            case .includeContacts: return "Off (recommended): Zuffi only handles numbers you haven't saved — new enquiries — and leaves friends and family alone. Turn on if your clients are saved in your contacts. Group chats and communities are always skipped."
             case .morningAsk: return "At your summary hour Zuffi asks “any offers or news today?”. Tell it “today's update: …” and it uses it in replies all day."
             case .watchWhatsApp: return "Zuffi reads unread chats in WhatsApp on this Mac every minute and creates or updates the lead. With the always-on server, this works even when the Mac is off."
             case .draftReplies: return "A ready reply in the client's language, using your listings / services. You check it in Inbox and press Send."
@@ -149,7 +151,7 @@ final class ZuffiCRM: ObservableObject {
             case .staffDigest: return "At the same hour each team member gets their own follow-ups for the day."
             }
         }
-        var defaultOn: Bool { ![.autopilot, .autoReply, .ownerSummary, .staffDigest].contains(self) }
+        var defaultOn: Bool { ![.autopilot, .includeContacts, .autoReply, .ownerSummary, .staffDigest].contains(self) }
     }
 
     func isOn(_ a: Auto) -> Bool { UserDefaults.standard.object(forKey: "auto_" + a.rawValue) as? Bool ?? a.defaultOn }
@@ -474,6 +476,17 @@ final class ZuffiCRM: ObservableObject {
         let phone = rawPhone.isEmpty ? (isNumber ? rawName.filter { $0.isNumber || $0 == "+" } : "") : rawPhone
         let name = isNumber ? "" : rawName
         let text = preview.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Never group chats or communities.
+        if Self.looksLikeGroup(rawName, text) { return }
+        // Saved contacts (friends, family) are left alone unless you say your clients are saved too.
+        // Clients already in your Leads always count.
+        // (A lead only counts as a real client if you added it, it came from an ad / portal, or you've worked it past "New" —
+        //  not just because Zuffi saw a WhatsApp message from that person once.)
+        let known = leads.contains { l in
+            ((!phone.isEmpty && ZuffiPA.samePhone(l.phone, phone)) || (!name.isEmpty && l.name.lowercased() == name.lowercased()))
+            && (l.source.lowercased() != "whatsapp" || l.stage != "New")
+        }
+        if !isNumber && rawPhone.isEmpty && !known && !isOn(.includeContacts) { return }
         // The same message can arrive twice (banner + chat list): ignore the repeat.
         let who = (phone.isEmpty ? name : String(phone.filter(\.isNumber).suffix(10))).lowercased()
         if let r = recentIn[who], Date().timeIntervalSince(r.at) < 600,
@@ -526,6 +539,14 @@ final class ZuffiCRM: ObservableObject {
             autoCount[countKey, default: 0] += 1
             enqueueAuto(key, r.reply)
         }
+    }
+
+    static func looksLikeGroup(_ name: String, _ text: String) -> Bool {
+        let n = name.lowercased()
+        if name.unicodeScalars.contains(where: { [0x200E, 0x200F, 0x202A, 0x202C].contains($0.value) }) { return true }   // WhatsApp marks communities this way
+        if n.range(of: #"\b(community|communities|group|alumni|official|announcements?|channel|broadcast|class|batch|society|team|family|friends|students|members)\b"#, options: .regularExpression) != nil { return true }
+        if text.range(of: #"^[^:]{1,30}:\s"#, options: .regularExpression) != nil { return true }   // "Ali: hello" = a message inside a group
+        return false
     }
 
     // MARK: Sending without getting in your way
@@ -882,7 +903,7 @@ enum VoiceNotes {
     @MainActor static func apple(_ url: URL) async -> String? {
         guard ["m4a", "mp3", "wav", "aac", "caf"].contains(url.pathExtension.lowercased()) else { return nil }
         let ok = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
-            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
+            SFSpeechRecognizer.requestAuthorization { @Sendable s in c.resume(returning: s == .authorized) }
         }
         guard ok else { return nil }
         let rec = SFSpeechRecognizer(locale: Locale(identifier: "ur-PK")) ?? SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer()
@@ -892,7 +913,7 @@ enum VoiceNotes {
         return await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
             final class Once: @unchecked Sendable { var done = false }
             let once = Once()
-            _ = rec.recognitionTask(with: req) { result, error in
+            _ = rec.recognitionTask(with: req) { @Sendable result, error in
                 if once.done { return }
                 if let result, result.isFinal { once.done = true; c.resume(returning: result.bestTranscription.formattedString) }
                 else if error != nil { once.done = true; c.resume(returning: nil) }

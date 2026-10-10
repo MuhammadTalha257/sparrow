@@ -194,10 +194,10 @@ struct SetupView: View {
 
                 section("1", "Let me hear you and help you") {
                     permission("Microphone", "so I can hear you say “Zuffi…”", mic) {
-                        AVCaptureDevice.requestAccess(for: .audio) { _ in }
+                        AVCaptureDevice.requestAccess(for: .audio) { @Sendable _ in }
                     }
                     permission("Speech recognition", "so I understand your words, on this Mac", speech) {
-                        SFSpeechRecognizer.requestAuthorization { _ in }
+                        SFSpeechRecognizer.requestAuthorization { @Sendable _ in }
                     }
                     permission("Accessibility", "so I can open apps, type and click for you", hands) { ScreenAgent.askToAct() }
                     permission("Screen recording", "so I can see your screen when you ask", see) { ScreenAgent.askToSee() }

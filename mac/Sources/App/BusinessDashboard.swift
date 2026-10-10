@@ -77,27 +77,13 @@ private enum Biz {
     }
 }
 
-/// Apple's Liquid Glass on macOS 26 (Tahoe); frosted glass with a light edge on older macOS.
+/// Apple's Liquid Glass on macOS 26 (Tahoe); Zuffi's drawn liquid glass on older macOS.
 struct ZGlass: ViewModifier {
     var radius: CGFloat = 16
     var tint: Color? = nil
     var interactive = false
     func body(content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            content.glassEffect(interactive ? Glass.regular.tint(tint).interactive() : Glass.regular.tint(tint), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-        } else { fallback(content) }
-        #else
-        fallback(content)
-        #endif
-    }
-    private func fallback(_ content: Content) -> some View {
-        content
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial).opacity(0.55))
-            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill((tint ?? .white).opacity(tint == nil ? 0.06 : 0.25)))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .stroke(LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.05), Color.white.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.9))
-            .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
+        content.liquidGlass(RoundedRectangle(cornerRadius: radius, style: .continuous), tint: tint, interactive: interactive)
     }
 }
 
@@ -162,7 +148,6 @@ struct BusinessDashboardView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 210)
-            Divider().overlay(Biz.stroke)
             VStack(spacing: 0) {
                 topBar
                 Group {
@@ -201,7 +186,7 @@ struct BusinessDashboardView: View {
         }
         .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
             for p in providers {
-                _ = p.loadObject(ofClass: URL.self) { url, _ in
+                _ = p.loadObject(ofClass: URL.self) { @Sendable url, _ in
                     guard let url else { return }
                     Task { @MainActor in await BusinessFiles.take(url) }
                 }
@@ -233,7 +218,9 @@ struct BusinessDashboardView: View {
                         if t == .business { Pill(text: crm.isOn(.autopilot) ? "auto" : "off", color: crm.isOn(.autopilot) ? Biz.green : .white.opacity(0.5)) }
                     }
                     .padding(.horizontal, 10).frame(height: 34)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(nav.tab == t ? Color.white.opacity(0.13) : .clear))
+                    .background {
+                        if nav.tab == t { Color.clear.liquidGlass(RoundedRectangle(cornerRadius: 11, style: .continuous), tint: Biz.pink.opacity(0.35)) }
+                    }
                     .contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
@@ -250,14 +237,21 @@ struct BusinessDashboardView: View {
                 }.buttonStyle(.plain).help("Talk: “new lead Ali 0333… from Facebook”, “who isn't following up?”")
                 Button { ZuffiChat.shared.open() } label: {
                     Label("Ask Zuffi", systemImage: "bubble.left.fill").font(.system(size: 12, weight: .bold, design: .rounded))
-                        .padding(.horizontal, 12).frame(height: 34).background(Capsule().fill(Color.white.opacity(0.1)))
+                        .padding(.horizontal, 12).frame(height: 34).liquidGlass(Capsule(), interactive: true)
                 }.buttonStyle(.plain)
             }
             Text(voice.isListening ? (voice.heard.isEmpty ? "Listening…" : voice.heard) : "Mic or chat: “new lead…”, “mark Ali as hot”, “team report”")
                 .font(.system(size: 10)).foregroundColor(.white.opacity(0.5)).lineLimit(2).padding(.bottom, 14)
         }
         .padding(.horizontal, 12)
-        .background(Color.black.opacity(0.25))
+        .background(
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial).opacity(0.6)
+                LinearGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0.02)], startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [Biz.pink.opacity(0.18), .clear], center: .bottomLeading, startRadius: 0, endRadius: 260)
+            }
+        )
+        .overlay(alignment: .trailing) { LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom).frame(width: 1) }
     }
 
     private var topBar: some View {
@@ -268,7 +262,7 @@ struct BusinessDashboardView: View {
                 Image(systemName: "magnifyingglass").foregroundColor(.white.opacity(0.5))
                 TextField("Search name, number, area…", text: $nav.search).textFieldStyle(.plain).frame(width: 200)
             }
-            .padding(.horizontal, 10).frame(height: 30).background(Capsule().fill(Color.white.opacity(0.08)))
+            .padding(.horizontal, 12).frame(height: 32).liquidGlass(Capsule())
             BizSoftButton(title: "Voice note", icon: "waveform.badge.mic") { BusinessFiles.pickVoiceNote(for: nil) }
             BizMainButton(title: "Add lead", icon: "plus") { adding = true }
         }
@@ -932,6 +926,7 @@ struct BizAutomationsView: View {
         switch a {
         case .autopilot: return "airplane"
         case .morningAsk: return "sunrise.fill"
+        case .includeContacts: return "person.crop.circle.badge.checkmark"
         case .watchWhatsApp: return "message.badge.filled.fill"
         case .draftReplies: return "text.bubble.fill"
         case .autoReply: return "paperplane.fill"

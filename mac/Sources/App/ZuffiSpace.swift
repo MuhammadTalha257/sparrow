@@ -349,16 +349,17 @@ struct ZuffiHomePanel: View {
                         if cur { Text(a.localizedName ?? "").font(.system(size: 10.5, weight: .bold, design: .rounded)).lineLimit(1).fixedSize() }
                     }
                     .padding(.horizontal, cur ? 7 : 3).frame(height: 26)
-                    .background(Capsule().fill(Color.white.opacity(cur ? 0.2 : 0)))
+                    .background(Capsule().fill(LinearGradient(colors: [Color.white.opacity(cur ? 0.32 : 0), Color.white.opacity(cur ? 0.12 : 0)], startPoint: .top, endPoint: .bottom)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(cur ? 0.35 : 0), lineWidth: 0.7))
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .onHover { hover = $0 ? (a.localizedName ?? "") + (cur && !now.title.isEmpty ? " · " + now.title : "") : nil }
             }
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 6).frame(height: 32)
-        .background(Capsule().fill(.ultraThinMaterial).opacity(0.75))
-        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.6))
+        .padding(.horizontal, 6).frame(height: 34)
+        .liquidGlass(Capsule(), glow: Color(hex: "#7C5CFF"))
     }
 
     // four buttons on each side — you choose them in Settings
@@ -370,10 +371,7 @@ struct ZuffiHomePanel: View {
                         Image(systemName: a.icon).font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color(hex: a.tint))
                             .frame(width: round ? 34 : 42, height: round ? 34 : 28)
-                            .background(shape(round: round, square: i >= 2).fill(.ultraThinMaterial))
-                            .overlay(shape(round: round, square: i >= 2).stroke(
-                                LinearGradient(colors: [Color.white.opacity(0.5), Color(hex: a.tint).opacity(0.4)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
-                            .shadow(color: Color(hex: a.tint).opacity(0.4), radius: 6)
+                            .modifier(SideGlass(round: round, square: i >= 2, tint: Color(hex: a.tint)))
                             .overlay(alignment: .topTrailing) { badge(id) }
                     }
                     .buttonStyle(.plain)
@@ -404,20 +402,17 @@ struct ZuffiHomePanel: View {
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .foregroundColor(VoiceEngine.micOn ? .white : Color(hex: "#FF8A8F"))
                     .padding(.horizontal, 10).frame(height: 28)
-                    .background(Capsule().fill(.ultraThinMaterial))
-                    .overlay(Capsule().stroke(VoiceEngine.micOn ? Color.white.opacity(0.2) : Color(hex: "#E5484D").opacity(0.6), lineWidth: 0.8))
+                    .liquidGlass(Capsule(), tint: VoiceEngine.micOn ? nil : Color(hex: "#E5484D"), interactive: true)
             }.buttonStyle(.plain).help("Turn the microphone on or off")
             Button { ZuffiChat.shared.open() } label: {
                 Label("Chat", systemImage: "bubble.left.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
                     .padding(.horizontal, 12).frame(height: 28)
-                    .background(Capsule().fill(.ultraThinMaterial))
-                    .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.8))
+                    .liquidGlass(Capsule(), interactive: true)
             }.buttonStyle(.plain)
             Button { BusinessDashboard.shared.show() } label: {
                 Label("Business", systemImage: "briefcase.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
                     .padding(.horizontal, 10).frame(height: 28)
-                    .background(Capsule().fill(LinearGradient(colors: [Color(hex: "#F58FA8").opacity(0.55), Color(hex: "#7C5CFF").opacity(0.45)], startPoint: .leading, endPoint: .trailing)))
-                    .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.8))
+                    .liquidGlass(Capsule(), tint: Color(hex: "#C77DFF"), glow: Color(hex: "#F58FA8"), interactive: true)
             }.buttonStyle(.plain).help("Your leads, WhatsApp inbox, team and automations")
             Button { VoiceEngine.shared.listenOnce() } label: {
                 Image(systemName: listening ? "waveform" : "mic.circle.fill").font(.system(size: 13, weight: .bold))
@@ -450,8 +445,7 @@ struct ZuffiPanelBar: View {
         HStack(spacing: 8) {
             Button { ZuffiNav.go(.overview) } label: {
                 Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
-                    .frame(width: 26, height: 26).background(Circle().fill(.ultraThinMaterial))
-                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.6))
+                    .frame(width: 26, height: 26).liquidGlass(Circle(), interactive: true)
             }.buttonStyle(.plain).help("Back to Zuffi")
             Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#F7C948"))
             Text(title).font(.system(size: 13, weight: .bold, design: .rounded))
@@ -459,8 +453,7 @@ struct ZuffiPanelBar: View {
             if let trailing { trailing }
             Button { NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
                 Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-                    .frame(width: 26, height: 26).background(Circle().fill(.ultraThinMaterial))
-                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.6))
+                    .frame(width: 26, height: 26).liquidGlass(Circle(), interactive: true)
             }.buttonStyle(.plain).help("Close")
         }
         .foregroundColor(.white)
@@ -624,8 +617,9 @@ extension NSRunningApplication {
             let cfg = NSWorkspace.OpenConfiguration()
             cfg.activates = true
             let pid = processIdentifier
-            NSWorkspace.shared.openApplication(at: url, configuration: cfg) { app, _ in
-                if app == nil { NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows]) }
+            // macOS calls this back on a background queue — it must not touch the main actor.
+            NSWorkspace.shared.openApplication(at: url, configuration: cfg) { @Sendable app, _ in
+                if app == nil { DispatchQueue.main.async { _ = NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateAllWindows]) } }
             }
         } else {
             activate(options: [.activateAllWindows])

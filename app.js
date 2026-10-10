@@ -1277,10 +1277,10 @@ if (N) {
   $('#aNotif').onchange = e => { N.setReadNotifications(e.target.checked); setTimeout(refreshAndroid, 600); };
   // WhatsApp on this phone: leads + autopilot replies
   const wb = () => S().waBiz || (S().waBiz = { name: '', info: '', today: '', todayDate: '', leads: false, pilot: false });
-  const pushBiz = () => { const b = wb(); try { N.setBusiness?.(JSON.stringify({ bizName: b.name, bizInfo: b.info, bizToday: b.todayDate === new Date().toISOString().slice(0, 10) ? b.today : '', bizTodayDate: b.todayDate, waLeads: !!b.leads, waPilot: !!b.pilot, groqKey: S().keys?.groq || '', geminiKey: S().keys?.gemini || '' })); } catch {} };
-  const fillBiz = () => { const b = wb(); $('#waLeads').checked = !!b.leads; $('#waPilot').checked = !!b.pilot; $('#waName').value = b.name; $('#waInfo').value = b.info; $('#waToday').value = b.todayDate === new Date().toISOString().slice(0, 10) ? b.today : ''; };
-  const saveBiz = () => { const b = wb(); b.leads = $('#waLeads').checked || $('#waPilot').checked; b.pilot = $('#waPilot').checked; b.name = $('#waName').value.trim(); b.info = $('#waInfo').value; const td = $('#waToday').value.trim(); if (td !== b.today) { b.today = td; b.todayDate = new Date().toISOString().slice(0, 10); } store.save(); pushBiz(); $('#waLeads').checked = b.leads; };
-  ['#waLeads', '#waPilot'].forEach(id => $(id).onchange = saveBiz);
+  const pushBiz = () => { const b = wb(); try { N.setBusiness?.(JSON.stringify({ bizName: b.name, bizInfo: b.info, bizToday: b.todayDate === new Date().toISOString().slice(0, 10) ? b.today : '', bizTodayDate: b.todayDate, waLeads: !!b.leads, waPilot: !!b.pilot, waContactsToo: !!b.contacts, groqKey: S().keys?.groq || '', geminiKey: S().keys?.gemini || '' })); } catch {} };
+  const fillBiz = () => { const b = wb(); $('#waLeads').checked = !!b.leads; $('#waPilot').checked = !!b.pilot; $('#waContacts').checked = !!b.contacts; $('#waName').value = b.name; $('#waInfo').value = b.info; $('#waToday').value = b.todayDate === new Date().toISOString().slice(0, 10) ? b.today : ''; };
+  const saveBiz = () => { const b = wb(); b.leads = $('#waLeads').checked || $('#waPilot').checked; b.pilot = $('#waPilot').checked; b.contacts = $('#waContacts').checked; b.name = $('#waName').value.trim(); b.info = $('#waInfo').value; const td = $('#waToday').value.trim(); if (td !== b.today) { b.today = td; b.todayDate = new Date().toISOString().slice(0, 10); } store.save(); pushBiz(); $('#waLeads').checked = b.leads; };
+  ['#waLeads', '#waPilot', '#waContacts'].forEach(id => $(id).onchange = saveBiz);
   ['#waName', '#waInfo', '#waToday'].forEach(id => $(id).onchange = saveBiz);
   $('#waOpen').onclick = () => openWhatsAppLeads();
   fillBiz(); pushBiz();

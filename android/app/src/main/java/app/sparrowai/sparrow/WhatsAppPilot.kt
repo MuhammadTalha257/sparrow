@@ -55,6 +55,10 @@ object WhatsAppPilot {
         if (Regex("(?i)^(whatsapp|whatsapp business)$").matches(sender)) return
         if (Regex("(?i)\\d+ new messages|checking for new messages|^(you|aap)$").containsMatchIn(text + " " + sender)) return
         if (sender.contains(" @ ") || Regex("^[^:]{1,30}:\\s").containsMatchIn(text)) return   // a group chat line
+        if (Regex("(?i)\\b(community|group|alumni|official|announcements?|channel|broadcast|class|batch|society|members)\\b").containsMatchIn(sender)) return
+        // Saved contacts (friends, family) are left alone unless the owner says clients are saved too.
+        val isNumber = sender.count { it.isDigit() } >= 9 && sender.none { it.isLetter() }
+        if (!isNumber && !sp.getBoolean("waContactsToo", false)) return
         val key = sender + "|" + text
         val now = System.currentTimeMillis()
         if (key == lastKey && now - lastAt < 60_000) return
