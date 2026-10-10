@@ -1426,7 +1426,7 @@ function openWhatsAppLeads() {
   list.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
   const rows = list.map(l => `<div class="item"><div class="grow"><b>${esc(l.name)}</b> <span class="faint">${esc(l.at || '')}</span>
       <div>${esc(l.last || '')}</div>${l.reply ? `<div class="faint">↩ ${esc(l.reply)} <i>(${esc(l.status || '')})</i></div>` : ''}</div></div>`).join('');
-  const body = openPanel('💬 WhatsApp chats', `<p class="small-text">${S().waBiz?.pilot ? '🟢 Autopilot is answering for you.' : 'Autopilot is off — Zuffi only saves the chats.'} Turn it on in Settings → Android powers.</p>
+  const body = openPanel('💬 WhatsApp chats', `<p class="small-text">${S().waBiz?.pilot ? '🟢 Autopilot is answering for you. Chats marked “needs you” are waiting for you.' : 'Autopilot is off — Zuffi only saves the chats. Turn it on in Settings → WhatsApp on this phone.'}</p>
     ${rows || '<p class="faint">No chats yet. When someone messages you on WhatsApp they appear here.</p>'}
     <div class="row-btns"><button class="btn ghost" id="waClear">Clear list</button></div>`);
   body.querySelector('#waClear')?.addEventListener('click', () => { N.waClear?.(); openWhatsAppLeads(); });

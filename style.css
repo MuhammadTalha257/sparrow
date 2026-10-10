@@ -267,8 +267,9 @@ summary::after { content: "›"; transform: rotate(90deg); color: var(--muted); 
 summary::-webkit-details-marker { display: none; }
 .field { display: block; margin: 10px 0; }
 .field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
-.field input, .field select { width: 100%; padding: 12px 14px; border-radius: 14px; background: var(--input); border: var(--bw) solid var(--line); outline: none; }
-.field input:focus, .field select:focus { border-color: var(--accent); }
+.field input, .field select, .field textarea { width: 100%; padding: 12px 14px; border-radius: 14px; background: var(--input); border: var(--bw) solid var(--line); outline: none; color: var(--text); font: inherit; }
+.field textarea { resize: vertical; min-height: 110px; line-height: 1.4; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
 .row { display: flex; gap: 10px; align-items: center; margin: 12px 0; }
 .row input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
 .btn { display: block; width: 100%; margin-top: 10px; padding: 13px; border-radius: 15px; font-weight: 800; background: var(--accent); color: var(--ink); text-align: center; }
@@ -673,7 +674,7 @@ html.mac-host .no-mac { display: none; }
   backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%); }
 [data-theme="space"] .ask { background: rgba(16,13,40,.82); }
 [data-theme="space"] .sheet { background: rgba(14,11,34,.94); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
-[data-theme="space"] .sheet-head { background: transparent; }
+[data-theme="space"] .sheet-head { background: rgba(14,11,34,.92); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 [data-theme="space"] .up-next { background: linear-gradient(135deg, rgba(245,143,168,.85), rgba(124,92,255,.75)); color: #fff; }
 [data-theme="space"] .tabs button.on { color: #fff; }
 [data-theme="space"] .tabs button.on svg { color: var(--accent); }
