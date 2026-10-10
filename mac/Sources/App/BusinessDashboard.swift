@@ -77,13 +77,39 @@ private enum Biz {
     }
 }
 
+/// Apple's Liquid Glass on macOS 26 (Tahoe); frosted glass with a light edge on older macOS.
+struct ZGlass: ViewModifier {
+    var radius: CGFloat = 16
+    var tint: Color? = nil
+    var interactive = false
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            content.glassEffect(interactive ? Glass.regular.tint(tint).interactive() : Glass.regular.tint(tint), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+        } else { fallback(content) }
+        #else
+        fallback(content)
+        #endif
+    }
+    private func fallback(_ content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial).opacity(0.55))
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill((tint ?? .white).opacity(tint == nil ? 0.06 : 0.25)))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.05), Color.white.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.9))
+            .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
+    }
+}
+
+extension View {
+    func zGlass(_ radius: CGFloat = 16, tint: Color? = nil, interactive: Bool = false) -> some View { modifier(ZGlass(radius: radius, tint: tint, interactive: interactive)) }
+}
+
 private struct GlassBox<C: View>: View {
     var padding: CGFloat = 14
     @ViewBuilder var content: () -> C
     var body: some View {
-        content().padding(padding)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Biz.card))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Biz.stroke, lineWidth: 0.8))
+        content().padding(padding).zGlass(18)
     }
 }
 
@@ -103,8 +129,10 @@ private struct BizMainButton: View {
         Button(action: action) {
             HStack(spacing: 5) { if let icon { Image(systemName: icon) }; Text(title) }
                 .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(Color(hex: "#1A1008"))
-                .padding(.horizontal, 12).frame(height: 30)
+                .padding(.horizontal, 13).frame(height: 31)
                 .background(Capsule().fill(Biz.accent))
+                .overlay(Capsule().stroke(Color.white.opacity(0.45), lineWidth: 0.8).blendMode(.overlay))
+                .shadow(color: Biz.orange.opacity(0.35), radius: 8, y: 3)
         }.buttonStyle(.plain)
     }
 }
@@ -115,9 +143,8 @@ private struct BizSoftButton: View {
         Button(action: action) {
             HStack(spacing: 5) { if let icon { Image(systemName: icon) }; Text(title) }
                 .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(.white)
-                .padding(.horizontal, 11).frame(height: 30)
-                .background(Capsule().fill(Color.white.opacity(0.1)))
-                .overlay(Capsule().stroke(Biz.stroke, lineWidth: 0.7))
+                .padding(.horizontal, 12).frame(height: 31)
+                .zGlass(16, interactive: true)
         }.buttonStyle(.plain)
     }
 }

@@ -2,7 +2,7 @@ name: Build Android app
 
 on:
   push:
-    branches: [main]
+    branches: [main, test]
     paths-ignore: ["desktop/**", "mac/**", ".github/workflows/desktop.yml", ".github/workflows/pages.yml", "README.md", "website/**"]
   workflow_dispatch: {}
 
@@ -34,22 +34,40 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Rename
-        run: cp android/app/build/outputs/apk/release/app-release.apk Sparrow.apk
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk Sparrow.apk
+          cp Sparrow.apk Zuffi.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sparrow-android
-          path: Sparrow.apk
+          name: Zuffi-android
+          path: Zuffi.apk
 
-      - name: Publish download
+      - name: Publish test download (test branch)
+        if: github.ref_name == 'test'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-test
+          name: Zuffi for Android (test)
+          prerelease: true
+          make_latest: false
+          files: Zuffi.apk
+          body: |
+            **Test Zuffi on Android**
+            1. Download `Zuffi.apk` below on your Android phone.
+            2. Open it. If asked, allow "Install unknown apps" for your browser.
+            3. Open Zuffi 🐰
+
+      - name: Publish download (main)
+        if: github.ref_name == 'main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Sparrow for Android
+          name: Zuffi for Android
           make_latest: true
           files: Sparrow.apk
           body: |
-            **Install Sparrow on Android**
+            **Install Zuffi on Android**
             1. Download `Sparrow.apk` below on your Android phone.
             2. Open it. If asked, allow "Install unknown apps" for your browser.
-            3. Open Sparrow 🐦
+            3. Open Zuffi 🐰

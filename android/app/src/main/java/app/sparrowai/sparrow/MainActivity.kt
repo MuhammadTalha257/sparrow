@@ -210,7 +210,7 @@ class MainActivity : Activity() {
             val then = afterMicPermission
             afterMicPermission = null
             if (ok) then?.invoke()
-            else send(JSONObject().put("type", "toast").put("text", "Sparrow needs the microphone to hear you"))
+            else send(JSONObject().put("type", "toast").put("text", "Zuffi needs the microphone to hear you"))
         }
         send(JSONObject().put("type", "status"))
     }

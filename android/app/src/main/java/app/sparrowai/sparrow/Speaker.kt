@@ -23,10 +23,10 @@ object Speaker : TextToSpeech.OnInitListener {
         if (!ready) return
         tts?.language = Locale.getDefault()
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) { onSpeaking?.invoke(true) }
-            override fun onDone(utteranceId: String?) { onSpeaking?.invoke(false) }
+            override fun onStart(utteranceId: String?) { onSpeaking?.invoke(true); BubbleService.speaking(true) }
+            override fun onDone(utteranceId: String?) { onSpeaking?.invoke(false); BubbleService.speaking(false) }
             @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) { onSpeaking?.invoke(false) }
+            override fun onError(utteranceId: String?) { onSpeaking?.invoke(false); BubbleService.speaking(false) }
         })
         applyVoice()
         pending.forEach { speak(it) }

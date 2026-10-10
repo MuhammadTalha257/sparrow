@@ -90,7 +90,7 @@ class Bridge(private val a: MainActivity) {
             val uri: Uri? = if (Build.VERSION.SDK_INT >= 29) {
                 val v = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, name); put(MediaStore.Downloads.MIME_TYPE, mime)
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Sparrow")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Zuffi")
                 }
                 a.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v)?.also { u -> a.contentResolver.openOutputStream(u)?.use { it.write(bytes) } }
             } else {
@@ -98,7 +98,7 @@ class Bridge(private val a: MainActivity) {
             }
             a.runOnUiThread {
                 if (uri != null) Commands.startSafely(a, Intent.createChooser(Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), name))
-                a.send(JSONObject().put("type", "toast").put("text", "Saved to Downloads/Sparrow: $name"))
+                a.send(JSONObject().put("type", "toast").put("text", "Saved to Downloads/Zuffi: $name"))
             }
             true
         } catch (e: Exception) { false }
@@ -110,7 +110,7 @@ class Bridge(private val a: MainActivity) {
             .putExtra(CalendarContract.Events.TITLE, title)
             .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start.toLong())
             .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end.toLong())
-            .putExtra(CalendarContract.Events.DESCRIPTION, "Added by Sparrow 🐦")
+            .putExtra(CalendarContract.Events.DESCRIPTION, "Added by Zuffi 🐰")
             .putExtra(CalendarContract.Events.HAS_ALARM, 1)
         a.runOnUiThread { Commands.startSafely(a, i) }
     }
@@ -144,6 +144,23 @@ class Bridge(private val a: MainActivity) {
 
     private fun hasNotificationAccess() =
         NotificationManagerCompat.getEnabledListenerPackages(a).contains(a.packageName)
+
+    /** Business info for WhatsApp replies (from Settings → WhatsApp on this phone). */
+    @JavascriptInterface fun setBusiness(json: String) {
+        val o = try { org.json.JSONObject(json) } catch (e: Exception) { return }
+        val e = Prefs.sp(a).edit()
+        for (k in listOf("bizName", "bizInfo", "bizToday", "bizTodayDate", "groqKey", "geminiKey")) if (o.has(k)) e.putString(k, o.optString(k))
+        if (o.has("waLeads")) e.putBoolean("waLeads", o.optBoolean("waLeads"))
+        if (o.has("waPilot")) e.putBoolean("waPilot", o.optBoolean("waPilot"))
+        e.apply()
+        if ((o.optBoolean("waLeads") || o.optBoolean("waPilot")) && !hasNotificationAccess()) a.runOnUiThread {
+            try { a.startActivity(android.content.Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } catch (_: Exception) {}
+        }
+    }
+
+    @JavascriptInterface fun waLeads(): String = WhatsAppPilot.leads(a).toString()
+    @JavascriptInterface fun waClear() { Prefs.sp(a).edit().putString("waLeadList", "[]").apply() }
+    @JavascriptInterface fun hasNotifAccess(): Boolean = hasNotificationAccess()
 
     @JavascriptInterface fun status(): String {
         val sp = Prefs.sp(a)

@@ -32,7 +32,7 @@ class BubbleService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate() {
         super.onCreate()
-        val n = Notifs.service(this, "Sparrow is floating on your screen")
+        val n = Notifs.service(this, "Zuffi is floating on your screen")
         if (Build.VERSION.SDK_INT >= 34) startForeground(3, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(3, n)
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
@@ -54,7 +54,7 @@ class BubbleService : Service() {
         val iv = ImageView(this).apply {
             setImageResource(R.drawable.bubble)
             elevation = 12f
-            contentDescription = "Sparrow"
+            contentDescription = "Zuffi"
         }
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false; var downAt = 0L
         iv.setOnTouchListener { v, e ->
@@ -106,10 +106,11 @@ class BubbleService : Service() {
             override fun onResults(results: Bundle?) {
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 view?.alpha = 1f
-                if (text.isNotBlank()) Commands.run(this@BubbleService, text.replace(Regex("^(hey )?sparrow[, ]*", RegexOption.IGNORE_CASE), ""))
+                setFace(R.drawable.bubble)
+                if (text.isNotBlank()) Commands.run(this@BubbleService, text.replace(Regex("^(hey )?(sparrow|zuffi|zuffy)[, ]*", RegexOption.IGNORE_CASE), ""))
             }
-            override fun onError(error: Int) { view?.alpha = 1f }
-            override fun onReadyForSpeech(params: Bundle?) { view?.alpha = 0.75f }
+            override fun onError(error: Int) { view?.alpha = 1f; setFace(R.drawable.bubble) }
+            override fun onReadyForSpeech(params: Bundle?) { setFace(R.drawable.bubble_listen) }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) { view?.scaleX = 1f + (rmsdB.coerceIn(0f, 10f) / 60f); view?.scaleY = view?.scaleX ?: 1f }
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -137,7 +138,29 @@ class BubbleService : Service() {
         super.onDestroy()
     }
 
+    // Zuffi talks: mouth opens and closes while the voice speaks.
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var talking = false
+    private var mouthOpen = false
+    private val talkTick = object : Runnable {
+        override fun run() {
+            if (!talking) { setFace(R.drawable.bubble); return }
+            mouthOpen = !mouthOpen
+            setFace(if (mouthOpen) R.drawable.bubble_talk else R.drawable.bubble)
+            handler.postDelayed(this, (110..190).random().toLong())
+        }
+    }
+    fun setFace(res: Int) { view?.setImageResource(res) }
+    fun setTalking(on: Boolean) {
+        handler.post {
+            talking = on
+            handler.removeCallbacks(talkTick)
+            if (on) handler.post(talkTick) else setFace(R.drawable.bubble)
+        }
+    }
+
     companion object {
+        fun speaking(on: Boolean) { instance?.setTalking(on) }
         var instance: BubbleService? = null
         fun pulse() { instance?.doPulse() }
         val running: Boolean get() = instance != null

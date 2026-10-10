@@ -34,7 +34,7 @@ class VoiceService : Service(), RecognitionListener {
 
     override fun onCreate() {
         super.onCreate()
-        val n = Notifs.service(this, "Say “Sparrow…” anytime")
+        val n = Notifs.service(this, "Say “Zuffi…” anytime")
         if (Build.VERSION.SDK_INT >= 30) startForeground(2, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(2, n)
         running = true
@@ -55,7 +55,7 @@ class VoiceService : Service(), RecognitionListener {
             val s = SpeechService(rec, 16000f)
             speech = s
             s.startListening(this)
-            setStatus("Say “Sparrow…” anytime")
+            setStatus("Say “Zuffi…” anytime")
         } catch (e: Exception) {
             Log.e("Sparrow", "voice start failed", e)
             setStatus("Voice listening stopped: ${e.message}")
@@ -75,7 +75,7 @@ class VoiceService : Service(), RecognitionListener {
         val text = try { JSONObject(json ?: "{}").optString("text") } catch (e: Exception) { "" }.trim()
         if (text.isEmpty()) return
         val lower = text.lowercase()
-        val wake = listOf("sparrow", "sparrows", "sparro", "sorrow", "barrow", "spare oh", "spar oh")
+        val wake = listOf("zuffi", "zuffy", "zoffy", "zoffi", "suffi", "sufi", "zuffie", "zophie", "sophie", "sparrow")
             .map { lower.lastIndexOf(it) to it }.filter { it.first >= 0 }.maxByOrNull { it.first }
         val cmd: String? = when {
             wake != null -> lower.substring(wake.first + wake.second.length).trim(' ', ',', '.')

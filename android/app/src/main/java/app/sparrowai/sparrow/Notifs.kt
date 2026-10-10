@@ -21,8 +21,8 @@ object Notifs {
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
         }
-        val svc = NotificationChannel(SERVICE, "Sparrow running", NotificationManager.IMPORTANCE_MIN).apply {
-            description = "Shown while Sparrow listens or floats on screen"
+        val svc = NotificationChannel(SERVICE, "Zuffi running", NotificationManager.IMPORTANCE_MIN).apply {
+            description = "Shown while Zuffi listens or floats on screen"
         }
         nm.createNotificationChannel(rem)
         nm.createNotificationChannel(svc)
@@ -38,7 +38,7 @@ object Notifs {
     fun service(c: Context, text: String): Notification =
         Notification.Builder(c, SERVICE)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Sparrow")
+            .setContentTitle("Zuffi")
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(openApp(c))
@@ -60,7 +60,7 @@ object Notifs {
     fun answer(c: Context, question: String) {
         val n = Notification.Builder(c, REMINDERS)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Sparrow")
+            .setContentTitle("Zuffi")
             .setContentText("Tap to see the answer: $question")
             .setAutoCancel(true)
             .setContentIntent(openApp(c, question))

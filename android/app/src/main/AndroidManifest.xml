@@ -35,7 +35,7 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Sparrow"
+        android:label="Zuffi"
         android:theme="@style/Theme.Sparrow">
 
         <activity
@@ -67,7 +67,7 @@
         <service
             android:name=".NotifListener"
             android:exported="true"
-            android:label="Sparrow reads notifications"
+            android:label="Zuffi (notifications &amp; WhatsApp)"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

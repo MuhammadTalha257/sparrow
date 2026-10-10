@@ -10,6 +10,10 @@ class NotifListener : NotificationListenerService() {
     private var lastAt = 0L
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // WhatsApp chats → leads / autopilot replies (Zuffi Business)
+        if (WhatsAppPilot.isWhatsApp(sbn.packageName)) {
+            try { WhatsAppPilot.handle(this, sbn) } catch (_: Exception) {}
+        }
         if (!Prefs.sp(this).getBoolean("readNotifs", false)) return
         if (sbn.packageName == packageName || sbn.isOngoing) return
         val n = sbn.notification

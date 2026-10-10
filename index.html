@@ -49,7 +49,7 @@
         <div class="brief" id="brief">Tap me and say what you need ✨</div>
         <div class="hero-actions">
           <button class="chip" id="hearBriefBtn"><span>🔊</span> <span data-i18n="myDay">My day</span></button>
-          <button class="chip" id="micHeroBtn"><span>🎙️</span> <span data-i18n="talk">Talk</span></button>
+          <button class="chip zc-open-btn" id="micHeroBtn"><i></i> <span>Zuffi Live</span></button>
         </div>
       </div>
     </div>
@@ -284,6 +284,15 @@
       <label class="row"><input type="checkbox" id="aWake"> 🗣️ Listen for “Zuffi…” hands-free (offline)</label>
       <label class="row"><input type="checkbox" id="aNotif"> 🔔 Read new notifications out loud</label>
       <p class="small-text" id="aNote"></p>
+    </details>
+    <details><summary>💬 WhatsApp on this phone (business)</summary>
+      <p class="small-text">Zuffi reads WhatsApp notifications on this phone — even with the screen off — saves each chat as a lead, and with Autopilot on answers from the notification using what you write below. It needs “Notification access” and a free Groq or Gemini key (Settings → AI).</p>
+      <label class="row"><input type="checkbox" id="waLeads"> 📥 Save new WhatsApp chats as leads</label>
+      <label class="row"><input type="checkbox" id="waPilot"> 🤖 Autopilot — reply to clients for me</label>
+      <label class="field"><span>Business name</span><input id="waName" placeholder="e.g. Talha Estates"></label>
+      <label class="field"><span>About your business (prices, area, hours, how booking works…)</span><textarea id="waInfo" rows="5" placeholder="We are a property agency in DHA Lahore. Plots, houses, rent. Office 10am–8pm Mon–Sat. Site visits free…"></textarea></label>
+      <label class="field"><span>Today's update (offers, new items — used today only)</span><input id="waToday" placeholder="e.g. New 5 marla plots in DHA 9, Rs 1.6 crore"></label>
+      <div class="row-btns"><button class="btn" id="waOpen">See WhatsApp chats</button></div>
     </details>
   </div>
   <div id="desktopSection"></div>

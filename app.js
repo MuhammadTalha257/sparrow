@@ -14,6 +14,7 @@ import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
 import * as maclink from './maclink.js';
+import * as zc from './companion.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
@@ -216,8 +217,13 @@ function downloadICS(ics, title) {
 }
 
 // ---------------- chat ----------------
+let zcAwait = false;   // waiting for an answer while Zuffi Live is open
 function addMsg(role, text, extra = {}) {
   const m = { role, text, ts: Date.now(), ...extra };
+  if (zc.isOpen()) {
+    if (role === 'bot') { zcAwait = false; zc.say(text); zc.agent(zc.agentFor(text)); zc.setState('idle'); }
+    else { zc.user(text); zcAwait = true; zc.setState('thinking'); }
+  }
   store.chat.push(m); store.save(); renderChat(); return m;
 }
 function resultRows(m) {
@@ -283,7 +289,7 @@ async function submit(text, fromVoice = false) {
     { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); }
     addMsg('bot', (r.ok ? '💻 ' : '⚠️ ') + r.text, { cmd: true });
     birdMood(r.ok ? 'happy' : 'talk');
-    if (fromVoice || S().speak) speak(r.text);
+    if (fromVoice || S().speak || zc.isOpen()) speak(r.text);
     return;
   }
   if (!files.length) {
@@ -295,7 +301,7 @@ async function submit(text, fromVoice = false) {
       addMsg('bot', r.reply, { cmd: true, ...(r.item ? { itemId: r.item.id } : {}), ...(r.results ? { results: r.results } : {}), ...(r.files ? { files: r.files } : {}) });
       birdMood(r.item ? 'happy' : 'talk');
       if (r.url) setTimeout(() => openUrl(r.url), 350);
-      if (fromVoice || S().speak) speak(r.reply);
+      if (fromVoice || S().speak || zc.isOpen()) speak(r.reply);
       if (fromVoice) window.SparrowIsland?.reply(r.reply, !r.results && !r.files);
       return;
     }
@@ -317,7 +323,7 @@ async function submit(text, fromVoice = false) {
     addMsg('bot', res.text || '…', { src: res.source });
     if (fromVoice) window.SparrowIsland?.reply(res.text || '', false);
     mem.remember('chat', 'Zuffi: ' + (res.text || '').slice(0, 200));
-    if (fromVoice || S().speak) speak(res.text);
+    if (fromVoice || S().speak || zc.isOpen()) speak(res.text);
   } catch (e) {
     typing.remove();
     if (e.message === 'NO_AI') addMsg('bot', D ? "I can do reminders, apps, files, music and lots more right now. To answer open questions, install the free Ollama app on this computer (ollama.com) or add a free key (Groq or Gemini) in Settings → AI."
@@ -445,8 +451,19 @@ function openUrl(url) {
 const bird = $('#bird');
 // The pink sparrow: looks at your pointer, reacts when tapped (and tapping still means "talk").
 const sparrow = mountBird(bird, { onTap: () => listen() });
-function setBird(cls, on) { bird.classList.toggle(cls, on); }
-function birdMood(m) { if (m === 'happy') { bird.classList.remove('happy'); void bird.offsetWidth; bird.classList.add('happy'); setTimeout(() => bird.classList.remove('happy'), 1100); sparrow.react(['delighted', 'heart', 'sparkle'][Math.floor(Math.random() * 3)], 1000); } }
+function setBird(cls, on) {
+  bird.classList.toggle(cls, on);
+  if (zc.isOpen()) {
+    if (cls === 'listening') zc.setState(on ? 'listening' : (zcAwait ? 'thinking' : 'idle'));
+    else if (cls === 'talking' && !(on && zcAwait)) zc.setState(on ? 'talking' : (zcAwait ? 'thinking' : 'idle'));
+  }
+}
+/** Zuffi Live: the full-screen animated Zuffi you talk to. */
+function openLive() {
+  zc.open({ mic: () => listen(true, true), send: t => submit(t, true), close: () => { try { N?.stopSpeaking?.(); speechSynthesis?.cancel(); } catch {} } });
+  setTimeout(() => listen(true, true), 700);
+}
+function birdMood(m) { if (m === 'happy' && zc.isOpen()) { zc.react([1, 2, 8][Math.floor(Math.random() * 3)]); zc.hearts(6); } if (m === 'happy') { bird.classList.remove('happy'); void bird.offsetWidth; bird.classList.add('happy'); setTimeout(() => bird.classList.remove('happy'), 1100); sparrow.react(['delighted', 'heart', 'sparkle'][Math.floor(Math.random() * 3)], 1000); } }
 function tone(pairs, vol = .08) {
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -514,6 +531,8 @@ function systemSpeak(clean) {
 }
 // Conversation mode: after answering a spoken question, listen again without a tap.
 function afterSpeech() {
+  // Zuffi Live keeps the conversation going: listen again after every answer.
+  if (zc.isOpen() && zc.continuous && lastWasVoice) { lastWasVoice = false; setTimeout(() => { if (zc.isOpen()) listen(true, true); }, 450); return; }
   // Only after a real answer to a spoken question (never after "Opening Spotify…"), and at most twice in a row.
   if (!lastWasVoice || !S().conversation || replyKind !== 'ai' || followUps >= 2) { lastWasVoice = false; followUps = 0; return; }
   lastWasVoice = false; followUps++;
@@ -581,9 +600,9 @@ $('#liveCam').onclick = async () => { try { liveSendImage(await cameraShot('envi
 // ---------------- voice in ----------------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false, wakeRec = null;
-function listen(quiet = false) {
+function listen(quiet = false, noLive = false) {
   if (liveActive()) { stopLive('tap'); return; }
-  if (liveUsable()) { startJarvis(); return; }
+  if (liveUsable() && !noLive) { startJarvis(); return; }
   if (N) { N.listen(); return; }
   if (M) { M.post('listen'); return; }
   if (window.SparrowVoice) { window.SparrowVoice.toggle(); return; }
@@ -594,7 +613,7 @@ function listen(quiet = false) {
   rec = new SR(); rec.lang = SPEECH_LANG[S().lang] || navigator.language || 'en-GB'; rec.interimResults = true; rec.maxAlternatives = 1;
   let finalText = '';
   rec.onstart = () => { listening = true; $('#micBtn').classList.add('on'); $('#pulse').classList.add('on'); setBird('listening', true); chirp(); $('#askInput').placeholder = 'Listening…'; };
-  rec.onresult = e => { let txt = ''; for (const r of e.results) txt += r[0].transcript; $('#askInput').value = txt; if (e.results[e.results.length - 1].isFinal) finalText = txt; };
+  rec.onresult = e => { let txt = ''; for (const r of e.results) txt += r[0].transcript; $('#askInput').value = txt; zc.partial(txt); if (e.results[e.results.length - 1].isFinal) finalText = txt; };
   rec.onerror = e => { if (e.error === 'not-allowed' && !quiet) toast('Allow the microphone for Zuffi in your settings.'); };
   rec.onend = () => {
     listening = false; $('#micBtn').classList.remove('on'); $('#pulse').classList.remove('on'); setBird('listening', false);
@@ -607,7 +626,8 @@ function listen(quiet = false) {
   try { rec.start(); } catch {}
 }
 $('#micBtn').onclick = () => listen();
-$('#micHeroBtn').onclick = () => listen();
+$('#micHeroBtn').onclick = () => openLive();
+window.ZuffiLive = openLive;
 
 
 // Hands-free on phones/browsers: listen for "Zuffi …" while the app is open.
@@ -1204,12 +1224,12 @@ window.sparrowEvent = raw => {
   const e = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (e.type === 'speech') submit(e.text, true);
   else if (e.type === 'ask') submit(e.text, !!e.voice);
-  else if (e.type === 'partial') $('#askInput').value = e.text;
+  else if (e.type === 'partial') { $('#askInput').value = e.text; zc.partial(e.text); }
   else if (e.type === 'listening') { $('#micBtn').classList.toggle('on', e.on); $('#pulse').classList.toggle('on', e.on); setBird('listening', e.on); if (e.on) chirp(); }
   else if (e.type === 'speaking') { setBird('talking', e.on); if (!e.on) afterSpeech(); }
   else if (e.type === 'toast') toast(e.text);
   else if (e.type === 'status') refreshAndroid();
-  else if (e.type === 'open') { if (e.what === 'checkin') openCheckIn(false); else if (e.what === 'briefing') showBriefing(false); }
+  else if (e.type === 'open') { if (e.what === 'checkin') openCheckIn(false); else if (e.what === 'briefing') showBriefing(false); else if (e.what === 'whatsapp') openWhatsAppLeads(); else if (e.what === 'live') openLive(); }
   else if (e.type === 'http') window.dispatchEvent(new CustomEvent('sparrow-http', { detail: e }));
 };
 function refreshAndroid() {
@@ -1255,6 +1275,15 @@ if (N) {
   $('#aWake').onchange = e => { N.setWakeWord(e.target.checked); setTimeout(refreshAndroid, 600); };
   $('#aBubble').onchange = e => { N.setBubble(e.target.checked); setTimeout(refreshAndroid, 600); };
   $('#aNotif').onchange = e => { N.setReadNotifications(e.target.checked); setTimeout(refreshAndroid, 600); };
+  // WhatsApp on this phone: leads + autopilot replies
+  const wb = () => S().waBiz || (S().waBiz = { name: '', info: '', today: '', todayDate: '', leads: false, pilot: false });
+  const pushBiz = () => { const b = wb(); try { N.setBusiness?.(JSON.stringify({ bizName: b.name, bizInfo: b.info, bizToday: b.todayDate === new Date().toISOString().slice(0, 10) ? b.today : '', bizTodayDate: b.todayDate, waLeads: !!b.leads, waPilot: !!b.pilot, groqKey: S().keys?.groq || '', geminiKey: S().keys?.gemini || '' })); } catch {} };
+  const fillBiz = () => { const b = wb(); $('#waLeads').checked = !!b.leads; $('#waPilot').checked = !!b.pilot; $('#waName').value = b.name; $('#waInfo').value = b.info; $('#waToday').value = b.todayDate === new Date().toISOString().slice(0, 10) ? b.today : ''; };
+  const saveBiz = () => { const b = wb(); b.leads = $('#waLeads').checked || $('#waPilot').checked; b.pilot = $('#waPilot').checked; b.name = $('#waName').value.trim(); b.info = $('#waInfo').value; const td = $('#waToday').value.trim(); if (td !== b.today) { b.today = td; b.todayDate = new Date().toISOString().slice(0, 10); } store.save(); pushBiz(); $('#waLeads').checked = b.leads; };
+  ['#waLeads', '#waPilot'].forEach(id => $(id).onchange = saveBiz);
+  ['#waName', '#waInfo', '#waToday'].forEach(id => $(id).onchange = saveBiz);
+  $('#waOpen').onclick = () => openWhatsAppLeads();
+  fillBiz(); pushBiz();
   refreshAndroid(); syncAlarms();
 }
 
@@ -1389,3 +1418,31 @@ if (!M && maclink.takeLink(location.hash)) {
   setTimeout(afterLink, 800);
 }
 document.addEventListener('toggle', e => { if (e.target.id === 'macLinkDetails' && e.target.open) renderMacLink(); }, true);
+
+// ---------------- WhatsApp chats Zuffi saw on this phone (Android) ----------------
+function openWhatsAppLeads() {
+  if (!N?.waLeads) return;
+  let list = []; try { list = JSON.parse(N.waLeads()); } catch {}
+  list.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  const rows = list.map(l => `<div class="item"><div class="grow"><b>${esc(l.name)}</b> <span class="faint">${esc(l.at || '')}</span>
+      <div>${esc(l.last || '')}</div>${l.reply ? `<div class="faint">↩ ${esc(l.reply)} <i>(${esc(l.status || '')})</i></div>` : ''}</div></div>`).join('');
+  const body = openPanel('💬 WhatsApp chats', `<p class="small-text">${S().waBiz?.pilot ? '🟢 Autopilot is answering for you.' : 'Autopilot is off — Zuffi only saves the chats.'} Turn it on in Settings → Android powers.</p>
+    ${rows || '<p class="faint">No chats yet. When someone messages you on WhatsApp they appear here.</p>'}
+    <div class="row-btns"><button class="btn ghost" id="waClear">Clear list</button></div>`);
+  body.querySelector('#waClear')?.addEventListener('click', () => { N.waClear?.(); openWhatsAppLeads(); });
+}
+
+// ---------------- Liquid glass (liquidGL, MIT © NaughtyDuk) on the home cards — capable devices only ----------------
+function liquidGlass() {
+  try {
+    if (S().liquid === false || matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.hardwareConcurrency || 4) < 6) return;
+    const targets = [$('.hero.card'), $('#upNext')].filter(Boolean);
+    if (!targets.length) return;
+    targets.forEach(el => el.classList.add('liquidGL'));
+    import('./lib/liquidGL.js').then(m => {
+      const lg = m.default || window.liquidGL;
+      lg?.({ target: '.liquidGL', snapshot: 'body', resolution: 1, refraction: 0.012, bevelDepth: 0.07, bevelWidth: 0.15, frost: 2, specular: true, shadow: true, tilt: false, zIndex: 5 });
+    }).catch(e => { console.warn('liquid glass off', e); targets.forEach(el => el.classList.remove('liquidGL')); });
+  } catch (e) { console.warn(e); }
+}
+if (document.readyState === 'complete') setTimeout(liquidGlass, 1200); else addEventListener('load', () => setTimeout(liquidGlass, 1200));

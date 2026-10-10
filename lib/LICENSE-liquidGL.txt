@@ -1,13 +1,6 @@
-# Third-party notices
-
-## Coucou (island, notch state machine, Claude Code integration code)
-
-Parts of Zuffi's Mac island code started from Coucou by Louis Raillé (https://github.com/Louis-CFM/coucou), used under the MIT License:
-
-```
 MIT License
 
-Copyright (c) 2026 Louis Raillé
+Copyright (c) NaughtyDuk
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,15 +19,22 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
 
-Coucou's name, its Mochi character, icon, sounds and media are not used in Zuffi
-(Zuffi has its own bunny character, icon and sounds).
+---
 
-## agency-agents (Zuffi's team of specialist agents)
+Exclusion of Assets
 
-The specialist agent prompts in `mac/Resources/agents/agency-agents.json` come from "agency-agents", used under the MIT License. The full licence text ships alongside them in `mac/Resources/agents/LICENSE-agency-agents.txt`.
+The MIT License above applies only to the source code of this project (the
+contents of the `scripts/` and `package/` directories). It does NOT apply to
+the contents of the `assets/` directory (including but not limited to the
+audio files under `assets/audio/` and `assets/fonts/`), which are provided
+for demonstration purposes only and may not be copied, redistributed, or
+reused outside of this repository without separate permission from their
+respective rights holders.
 
-## liquidGL (liquid glass effect on the phone / web app)
+---
 
-`lib/liquidGL.js` is liquidGL by NaughtyDuk (https://github.com/naughtyduk/liquidGL), used under the MIT License — see `lib/LICENSE-liquidGL.txt`.
+Support Open Source
+
+If this project has been useful to you, please consider supporting its
+continued open-source development at https://liquidgl.naughtyduk.com
