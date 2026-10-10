@@ -15,6 +15,8 @@ import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
 import * as maclink from './maclink.js';
 import * as zc from './companion.js';
+import * as bizapp from './bizapp.js';
+import * as bizsync from './bizsync.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
@@ -55,8 +57,23 @@ function go(v) {
   if (v === 'chat') setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
   else window.scrollTo({ top: 0 });
   if (v === 'memory') renderMemory();
+  document.body.classList.toggle('biz-on', v === 'biz');
+  if (v === 'biz') bizapp.show();
+  moveTabGlow();
 }
-$$('.tabs button').forEach(b => b.onclick = () => go(b.dataset.v));
+// The glass bubble that slides to the tab you're on.
+function moveTabGlow() {
+  const g = $('.tab-glow'), b = $('.tabs button.on');
+  if (!g) return;
+  if (!b) { g.style.opacity = 0; return; }
+  g.style.opacity = 1;
+  g.style.width = b.offsetWidth + 'px'; g.style.height = b.offsetHeight + 'px';
+  g.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
+}
+addEventListener('resize', moveTabGlow);
+requestAnimationFrame(() => requestAnimationFrame(moveTabGlow));
+$$('.tabs button').forEach(b => b.onclick = () => { go(b.dataset.v); try { N?.haptic?.(); navigator.vibrate?.(8); } catch {} });
+$$('[data-goto2]').forEach(b => b.onclick = () => go(b.dataset.goto2));
 $$('[data-goto]').forEach(b => b.onclick = () => go(b.dataset.goto));
 $$('#seg button').forEach(b => b.onclick = () => { planType = b.dataset.t; $$('#seg button').forEach(x => x.classList.toggle('on', x === b)); renderPlan(); });
 
@@ -291,6 +308,16 @@ async function submit(text, fromVoice = false) {
     birdMood(r.ok ? 'happy' : 'talk');
     if (fromVoice || S().speak || zc.isOpen()) speak(r.text);
     return;
+  }
+  // Business: "new lead Ali 0333…", "expense 2500 fuel", "mark Ali as won" → saved and synced to your other devices
+  if (!files.length) {
+    const br = bizapp.command(text);
+    if (br) {
+      const mine = store.chat[store.chat.length - 1]; if (mine?.role === 'me') mine.cmd = true;
+      addMsg('bot', br, { cmd: true }); birdMood('happy');
+      if (fromVoice || S().speak || zc.isOpen()) speak(br);
+      return;
+    }
   }
   if (!files.length) {
     const r = await handle(text);
@@ -1236,7 +1263,9 @@ function refreshAndroid() {
   if (!N) return;
   let st = {}; try { st = JSON.parse(N.status()); } catch {}
   $('#aWake').checked = !!st.wakeWord; $('#aBubble').checked = !!st.bubble; $('#aNotif').checked = !!st.readNotifs;
+  if ($('#aPet')) { $('#aPet').checked = !!st.pet; $('#aCharge').checked = !!st.chargeLight; }
   const notes = [];
+  if ((st.pet || st.chargeLight) && !st.overlay) notes.push('Allow "Display over other apps" so Zuffi can walk on your screen.');
   if (st.bubble && !st.overlay) notes.push('Allow "Display over other apps" for Zuffi to show the floating bird.');
   if (st.readNotifs && !st.notifAccess) notes.push('Allow "Notification access" for Zuffi to read notifications.');
   if (st.wakeWord && !st.mic) notes.push('Allow the microphone so Zuffi can hear you.');
@@ -1274,6 +1303,10 @@ if (N) {
   $('#androidSection').hidden = false;
   $('#aWake').onchange = e => { N.setWakeWord(e.target.checked); setTimeout(refreshAndroid, 600); };
   $('#aBubble').onchange = e => { N.setBubble(e.target.checked); setTimeout(refreshAndroid, 600); };
+  if ($('#aPet')) {
+    $('#aPet').onchange = e => { N.setPet?.(e.target.checked); setTimeout(refreshAndroid, 600); if (e.target.checked) toast('🐰 Zuffi will hop onto your screen — tap her for your next reminder'); };
+    $('#aCharge').onchange = e => { N.setChargeLight?.(e.target.checked); setTimeout(refreshAndroid, 600); };
+  }
   $('#aNotif').onchange = e => { N.setReadNotifications(e.target.checked); setTimeout(refreshAndroid, 600); };
   // WhatsApp on this phone: leads + autopilot replies
   const wb = () => S().waBiz || (S().waBiz = { name: '', info: '', today: '', todayDate: '', leads: false, pilot: false });
@@ -1413,6 +1446,12 @@ async function afterLink() {
   const r = await maclink.ping();
   toast((r.ok ? '✅ ' : '⚠️ ') + r.text, 6000);
 }
+// Opened from a business link code (QR on the Mac / another device) → join and fetch the business data.
+if (bizsync.join(location.hash)) {
+  history.replaceState(null, '', location.pathname + location.search);
+  setTimeout(() => { go('biz'); bizapp.show('devices'); toast('💗 Linked! Getting your business data…', 4000); }, 600);
+}
+bizapp.mount($('#bizRoot'), { toast: (t, ms) => toast(t, ms) });
 if (!M && maclink.takeLink(location.hash)) {
   history.replaceState(null, '', location.pathname + location.search);   // the key never stays in the address bar
   setTimeout(afterLink, 800);
@@ -1446,3 +1485,55 @@ function liquidGlass() {
   } catch (e) { console.warn(e); }
 }
 if (document.readyState === 'complete') setTimeout(liquidGlass, 1200); else addEventListener('load', () => setTimeout(liquidGlass, 1200));
+
+// ---------------- Charging light: a glow runs round the screen when you plug in ----------------
+function chargeFx(charging, level) {
+  let el = $('.charge-fx');
+  if (!el) {
+    el = document.createElement('div'); el.className = 'charge-fx';
+    el.innerHTML = `<div class="charge-pill"><img src="mascots/zuffi-side-2.webp" alt=""><div><span class="ch-t"></span><small class="ch-s"></small></div><div class="charge-bat"><i></i></div></div>`;
+    document.body.appendChild(el);
+  }
+  const pct = Math.round(level * 100);
+  el.classList.toggle('full', charging && pct >= 100); el.classList.toggle('off', !charging);
+  el.querySelector('.ch-t').textContent = `${pct}%`;
+  el.querySelector('.ch-s').textContent = !charging ? 'Unplugged' : pct >= 100 ? 'Fully charged 💗' : 'Charging ⚡';
+  el.querySelector('.charge-bat i').style.setProperty('--lvl', Math.max(6, pct) + '%');
+  el.classList.add('on'); clearTimeout(chargeFx.t);
+  chargeFx.t = setTimeout(() => el.classList.remove('on'), charging ? 3800 : 2200);
+}
+(async () => {
+  try {
+    if (M || !navigator.getBattery) return;
+    const b = await navigator.getBattery();
+    let was = b.charging, full = b.level >= 1;
+    b.addEventListener('chargingchange', () => {
+      if (b.charging === was) return; was = b.charging;
+      if (S().chargeLight === false || (N && N.nativeCharge?.())) return;      // the Android app shows it over every app instead
+      chargeFx(b.charging, b.level);
+    });
+    b.addEventListener('levelchange', () => { if (b.charging && b.level >= 1 && !full) { full = true; if (!(N && N.nativeCharge?.())) chargeFx(true, 1); } if (b.level < .98) full = false; });
+  } catch {}
+})();
+window.zuffiChargeTest = (c = true, l = .62) => chargeFx(c, l);
+
+// ---------------- Android: offer the walking pet once; tell her today's follow-ups ----------------
+(() => {
+  if (!N?.setPet) return;
+  let st = {}; try { st = JSON.parse(N.status()); } catch {}
+  if (!st.pet && !S().petAsked) {
+    const el = $('#installHint'); el.hidden = false;
+    el.innerHTML = `<div class="pet-offer"><img src="mascots/zuffi-side-2.webp" alt=""><div><b>Let Zuffi walk on your screen?</b><small>She hops over your apps, shows reminders and lights up when you charge.</small></div>
+      <button class="bz-mini" id="petYes">Turn on</button><button class="bz-x" id="petNo" aria-label="No thanks">✕</button></div>`;
+    const done = () => { S().petAsked = true; store.save(); el.hidden = true; };
+    $('#petYes').onclick = () => { N.setPet(true); done(); toast('🐰 Allow “Display over other apps”, then come back'); };
+    $('#petNo').onclick = done;
+  }
+  const day = new Date().toDateString();
+  if (st.pet && S().petTold !== day) {
+    setTimeout(() => {
+      const f = bizapp.followUpsToday();
+      if (f.length) { N.petSay?.(`📞 Follow up today: ${f.slice(0, 4).join(', ')}${f.length > 4 ? '…' : ''}`); S().petTold = day; store.save(); }
+    }, 4000);
+  }
+})();

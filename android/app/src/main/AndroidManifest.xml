@@ -65,6 +65,15 @@
         </service>
 
         <service
+            android:name=".PetService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Animated assistant pet on the screen that shows the user's reminders and a charging light, which the user turned on" />
+        </service>
+
+        <service
             android:name=".NotifListener"
             android:exported="true"
             android:label="Zuffi (notifications &amp; WhatsApp)"

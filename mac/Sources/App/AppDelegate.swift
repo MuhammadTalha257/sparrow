@@ -120,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Voice, greeting, weather and notification reading
         Assistant.start()
         PhoneLink.shared.startIfEnabled()
+        BizSync.shared.startIfLinked()
         SetupWizard.shared.showIfFirstRun()
         WebHub.shared.start()
         NativeSpeech.shared.start()

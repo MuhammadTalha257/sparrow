@@ -51,6 +51,9 @@ object Commands {
         if (!started || !android.provider.Settings.canDrawOverlays(c)) Notifs.answer(c, raw)
     }
 
+    fun startFgSafely(c: Context, i: Intent): Boolean =
+        try { c.startForegroundService(i); true } catch (e: Exception) { false }
+
     fun startSafely(c: Context, i: Intent): Boolean {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try { c.startActivity(i); true } catch (e: Exception) { false }

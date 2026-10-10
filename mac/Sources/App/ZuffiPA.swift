@@ -71,6 +71,7 @@ final class ZuffiPA {
         let csv = lines.map { $0.map(ZuffiData.csvCell).joined(separator: ",") }.joined(separator: "\n") + "\n"
         try? csv.write(to: url(name), atomically: true, encoding: .utf8)
         Task { _ = await ZuffiData.shared.importSheet(url(name)) }
+        BizSync.shared.changed()
     }
 
     // MARK: Small parsers

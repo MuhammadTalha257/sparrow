@@ -36,7 +36,7 @@ final class BusinessDashboard {
 }
 
 enum BizTab: String, CaseIterable, Identifiable {
-    case today = "Today", inbox = "Inbox", pipeline = "Pipeline", properties = "Properties", records = "Records", money = "Money", team = "Team & staff", business = "My business", automations = "Automations", connect = "Connect WhatsApp"
+    case today = "Today", inbox = "Inbox", pipeline = "Pipeline", properties = "Properties", records = "Records", money = "Money", team = "Team & staff", business = "My business", automations = "Automations", connect = "Connect & devices"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -50,6 +50,36 @@ enum BizTab: String, CaseIterable, Identifiable {
         case .team: return "person.3.fill"
         case .automations: return "bolt.fill"
         case .connect: return "link"
+        }
+    }
+    /// One line in plain words: what this page is for.
+    var subtitle: String {
+        switch self {
+        case .today: return "What needs you today"
+        case .inbox: return "WhatsApp messages & Zuffi's replies"
+        case .pipeline: return "Where each client is up to"
+        case .properties: return "Plots, houses & shops you're selling"
+        case .records: return "Every client in one table"
+        case .money: return "Money in, money out, profit"
+        case .team: return "Staff, salaries & hours"
+        case .business: return "Your details Zuffi uses to reply"
+        case .automations: return "Jobs Zuffi does for you"
+        case .connect: return "WhatsApp, your phone & other devices"
+        }
+    }
+    /// "What is this page?" — three short tips.
+    var tips: [String] {
+        switch self {
+        case .today: return ["The numbers at the top are today's work at a glance.", "“Follow up today” lists the people you promised to call back.", "Tap any name to open it, change its stage or add a note."]
+        case .inbox: return ["New WhatsApp chats arrive here and become clients automatically.", "Zuffi writes a reply for you — check it, then tap Send.", "Turn on Autopilot in My business to let Zuffi answer by itself."]
+        case .pipeline: return ["Each column is a step: New → Contacted → … → Won.", "Drag a client to the next column when things move on.", "Clients stuck too long are shown so nobody is forgotten."]
+        case .properties: return ["Add each plot, house, flat or shop you're selling or renting.", "Zuffi matches properties to buyers looking for that area and budget.", "Use Share to send the details on WhatsApp in one tap."]
+        case .records: return ["Everyone who ever contacted you, like a spreadsheet.", "Click a column title to sort; search at the top.", "It's saved as a normal file in Documents → Zuffi, so it's always yours."]
+        case .money: return ["Add money in (sales, commission) and money out (rent, salaries, fuel).", "Profit is worked out for you every month.", "Say it instead: “expense 2500 fuel”, “income 50000 commission”."]
+        case .team: return ["Add your staff or agents with their pay (monthly, hourly or commission).", "Log hours and pay salaries — each payment is added to Money.", "Give leads to a staff member and see who's following up."]
+        case .business: return ["Write your prices, hours and location — Zuffi uses it when replying.", "Add today's offer each morning (discounts, new stock, new plots).", "Pick your country and currency here."]
+        case .automations: return ["Switch on the jobs you want Zuffi to do: follow-ups, summaries, reminders.", "Each switch says exactly what it does.", "You can turn any of them off at any time."]
+        case .connect: return ["Connect WhatsApp so new chats become clients.", "Link your phone or tablet with the QR code to see the same business there.", "Changes on one device appear on the others by themselves."]
         }
     }
 }
@@ -144,10 +174,13 @@ struct BusinessDashboardView: View {
     @ObservedObject private var voice = VoiceEngine.shared
     @State private var dropping = false
     @State private var adding = false
+    @State private var showTips = false
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 210)
+            sidebar.frame(width: 226)
+                .liquidGlass(RoundedRectangle(cornerRadius: 24, style: .continuous), glow: Color(hex: "#7C5CFF"))
+                .padding(.leading, 10).padding(.vertical, 10)
             VStack(spacing: 0) {
                 topBar
                 Group {
@@ -210,17 +243,22 @@ struct BusinessDashboardView: View {
             ForEach(BizTab.allCases.filter { $0 != .properties || crm.isEstate }) { t in
                 Button { nav.tab = t } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: t.icon).frame(width: 18)
-                        Text(t.rawValue).font(.system(size: 13, weight: .semibold, design: .rounded))
+                        Image(systemName: t.icon).font(.system(size: 13, weight: .semibold)).frame(width: 26, height: 26)
+                            .background(Circle().fill(nav.tab == t ? Color.white.opacity(0.2) : Color.white.opacity(0.06)))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(t.rawValue).font(.system(size: 13, weight: .semibold, design: .rounded))
+                            if nav.tab == t { Text(t.subtitle).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.65)).lineLimit(1) }
+                        }
                         Spacer()
                         if t == .inbox, crm.drafts.count > 0 { Pill(text: "\(crm.drafts.count)", color: Biz.pink, filled: true) }
                         if t == .today { let d = crm.leads.filter(\.dueToday).count; if d > 0 { Pill(text: "\(d)", color: Biz.amber) } }
                         if t == .business { Pill(text: crm.isOn(.autopilot) ? "auto" : "off", color: crm.isOn(.autopilot) ? Biz.green : .white.opacity(0.5)) }
                     }
-                    .padding(.horizontal, 10).frame(height: 34)
+                    .padding(.horizontal, 8).frame(height: nav.tab == t ? 44 : 36)
                     .background {
-                        if nav.tab == t { Color.clear.liquidGlass(RoundedRectangle(cornerRadius: 11, style: .continuous), tint: Biz.pink.opacity(0.35)) }
+                        if nav.tab == t { Color.clear.liquidGlass(RoundedRectangle(cornerRadius: 13, style: .continuous), tint: Biz.pink.opacity(0.35)) }
                     }
+                    .help(t.subtitle)
                     .contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
@@ -243,20 +281,21 @@ struct BusinessDashboardView: View {
             Text(voice.isListening ? (voice.heard.isEmpty ? "Listening…" : voice.heard) : "Mic or chat: “new lead…”, “mark Ali as hot”, “team report”")
                 .font(.system(size: 10)).foregroundColor(.white.opacity(0.5)).lineLimit(2).padding(.bottom, 14)
         }
-        .padding(.horizontal, 12)
-        .background(
-            ZStack {
-                Rectangle().fill(.ultraThinMaterial).opacity(0.6)
-                LinearGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0.02)], startPoint: .top, endPoint: .bottom)
-                RadialGradient(colors: [Biz.pink.opacity(0.18), .clear], center: .bottomLeading, startRadius: 0, endRadius: 260)
-            }
-        )
-        .overlay(alignment: .trailing) { LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom).frame(width: 1) }
+        .padding(.horizontal, 10)
     }
 
     private var topBar: some View {
         HStack(spacing: 10) {
-            Text(nav.tab.rawValue).font(.system(size: 22, weight: .heavy, design: .rounded))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 8) {
+                    Text(nav.tab.rawValue).font(.system(size: 22, weight: .heavy, design: .rounded))
+                    Button { showTips.toggle() } label: {
+                        Image(systemName: "questionmark").font(.system(size: 11, weight: .heavy)).frame(width: 22, height: 22).liquidGlass(Circle(), interactive: true)
+                    }.buttonStyle(.plain).help("What is this page?")
+                    .popover(isPresented: $showTips, arrowEdge: .bottom) { BizTipsView(tab: nav.tab) }
+                }
+                Text(nav.tab.subtitle).font(.system(size: 12)).foregroundColor(.white.opacity(0.6))
+            }
             Spacer()
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundColor(.white.opacity(0.5))
@@ -313,6 +352,7 @@ struct BizTodayView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                BizStartGuide()
                 let today = ZuffiBusiness.iso(Date())
                 let monthAgo = ZuffiBusiness.iso(Date().addingTimeInterval(-30 * 86400))
                 HStack(spacing: 12) {
@@ -384,13 +424,7 @@ struct BizTodayView: View {
     }
 
     private func tile(_ t: String, _ v: String, _ icon: String, _ c: Color) -> some View {
-        GlassBox(padding: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: icon).foregroundColor(c)
-                Text(v).font(.system(size: 26, weight: .heavy, design: .rounded))
-                Text(t).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.6))
-            }.frame(maxWidth: .infinity, alignment: .leading)
-        }
+        BizTile(title: t, value: v, icon: icon, color: c)
     }
 }
 
@@ -949,6 +983,7 @@ struct BizConnectView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                GlassBox { BizSyncBox() }
                 GlassBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { header("1 · WhatsApp on this Mac", "laptopcomputer"); Spacer(); Pill(text: "works now", color: Biz.green) }
@@ -1540,12 +1575,113 @@ struct BizMoneyView: View {
     }
 
     private func tile(_ t: String, _ v: Double, _ c: Color, _ icon: String) -> some View {
-        GlassBox(padding: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: icon).foregroundColor(c)
-                Text("\(crm.currency) \(ZuffiMoney.pretty(v))").font(.system(size: 21, weight: .heavy, design: .rounded)).lineLimit(1).minimumScaleFactor(0.6)
-                Text(t).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.6))
-            }.frame(maxWidth: .infinity, alignment: .leading)
+        BizTile(title: t, value: "\(crm.currency) \(ZuffiMoney.pretty(v))", icon: icon, color: c)
+    }
+}
+
+
+// MARK: - Friendlier pieces: glass number tiles, "What is this page?", getting-started guide
+
+private struct BizTile: View {
+    let title: String, value: String, icon: String, color: Color
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon).font(.system(size: 13, weight: .bold)).foregroundColor(color)
+                .frame(width: 28, height: 28).background(Circle().fill(color.opacity(0.18)))
+            Text(value).font(.system(size: 24, weight: .heavy, design: .rounded)).lineLimit(1).minimumScaleFactor(0.55)
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.65))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(13)
+        .liquidGlass(RoundedRectangle(cornerRadius: 18, style: .continuous), tint: color.opacity(0.12), glow: color, interactive: true)
+    }
+}
+
+struct BizTipsView: View {
+    let tab: BizTab
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(tab.rawValue, systemImage: tab.icon).font(.system(size: 15, weight: .heavy, design: .rounded))
+            Text(tab.subtitle).font(.system(size: 12)).foregroundColor(.secondary)
+            ForEach(Array(tab.tips.enumerated()), id: \.offset) { i, t in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("\(i + 1)").font(.system(size: 11, weight: .heavy)).foregroundColor(.white)
+                        .frame(width: 20, height: 20).background(Circle().fill(Color(hex: "#E2648A")))
+                    Text(t).font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text("Tip: you can also just tell Zuffi — tap the mic and say it.").font(.system(size: 11)).foregroundColor(.secondary)
+        }
+        .padding(16).frame(width: 320)
+    }
+}
+
+/// The first thing a new owner sees: six simple steps, ticked off as they're done. Hides itself when finished.
+struct BizStartGuide: View {
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var biz = ZuffiBusiness.shared
+    @ObservedObject private var sync = BizSync.shared
+    @ObservedObject private var nav = BizNav.shared
+    @AppStorage("bizGuideHidden") private var hidden = false
+
+    private struct Step: Identifiable { let id: Int; let title: String; let detail: String; let done: Bool; let button: String; let go: () -> Void }
+
+    private var steps: [Step] {
+        [
+            Step(id: 1, title: "Tell Zuffi about your business", detail: "Your business name and type", done: !biz.businessName.isEmpty && biz.pack != nil, button: "Fill in") { nav.tab = .business },
+            Step(id: 2, title: "Write your prices & opening hours", detail: "Zuffi uses this to answer clients", done: crm.businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count > 20, button: "Write") { nav.tab = .business },
+            Step(id: 3, title: "Connect WhatsApp", detail: "New chats become clients automatically", done: crm.isOn(.watchWhatsApp) && WhatsAppAgent.installed, button: "Connect") { nav.tab = .connect },
+            Step(id: 4, title: "Add your first client", detail: "Or say “new lead Ali 0333…”", done: !crm.leads.isEmpty, button: "Add") { nav.tab = .records },
+            Step(id: 5, title: "Link your phone", detail: "Same business on your phone — scan a QR code", done: sync.linked, button: "Link") { nav.tab = .connect },
+            Step(id: 6, title: "Add your staff (optional)", detail: "Salaries, hours, who follows up", done: !crm.team.isEmpty, button: "Add") { nav.tab = .team },
+        ]
+    }
+
+    var body: some View {
+        let s = steps, done = s.filter(\.done).count
+        if !hidden && done < s.count {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().stroke(Color.white.opacity(0.12), lineWidth: 5)
+                        Circle().trim(from: 0, to: CGFloat(done) / CGFloat(s.count))
+                            .stroke(LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#7C5CFF")], startPoint: .top, endPoint: .bottom), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                        Text("\(done)/\(s.count)").font(.system(size: 12, weight: .heavy, design: .rounded))
+                    }.frame(width: 46, height: 46)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Let's set up your business").font(.system(size: 16, weight: .heavy, design: .rounded))
+                        Text("A few small steps — about 5 minutes. Zuffi does the rest.").font(.system(size: 11.5)).foregroundColor(.white.opacity(0.65))
+                    }
+                    Spacer()
+                    Button("Hide") { hidden = true }.buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.5))
+                }
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    ForEach(s) { st in
+                        HStack(spacing: 10) {
+                            Image(systemName: st.done ? "checkmark.circle.fill" : "\(st.id).circle")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(st.done ? Color(hex: "#34D399") : .white.opacity(0.75))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(st.title).font(.system(size: 12, weight: .bold, design: .rounded)).strikethrough(st.done, color: .white.opacity(0.4))
+                                    .foregroundColor(st.done ? .white.opacity(0.5) : .white).lineLimit(1).minimumScaleFactor(0.8)
+                                Text(st.detail).font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).lineLimit(1)
+                            }
+                            Spacer(minLength: 4)
+                            if !st.done {
+                                Button(st.button, action: st.go).buttonStyle(.plain)
+                                    .font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(Color(hex: "#1A1008"))
+                                    .padding(.horizontal, 10).frame(height: 24)
+                                    .background(Capsule().fill(LinearGradient(colors: [Color(hex: "#FBC56A"), Color(hex: "#F28A3C")], startPoint: .top, endPoint: .bottom)))
+                            }
+                        }
+                        .padding(10)
+                        .liquidGlass(RoundedRectangle(cornerRadius: 14, style: .continuous), tint: st.done ? Color(hex: "#34D399").opacity(0.12) : nil)
+                    }
+                }
+            }
+            .padding(16)
+            .liquidGlass(RoundedRectangle(cornerRadius: 22, style: .continuous), tint: Color(hex: "#7C5CFF").opacity(0.18), glow: Color(hex: "#F58FA8"))
         }
     }
 }

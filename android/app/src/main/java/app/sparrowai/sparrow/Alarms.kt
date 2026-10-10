@@ -69,6 +69,8 @@ class AlarmReceiver : BroadcastReceiver() {
         val open = intent.getStringExtra("open").takeUnless { it.isNullOrBlank() }
         val body = if (type == "briefing" || type == "checkin") say else title
         Notifs.reminder(c, id.hashCode(), head, body, open)
+        // Zuffi the bunny walks onto the screen with it (if she's switched on)
+        if (type == "reminder" || type == "meeting") PetService.remind(c, id, head, title)
         // Daily ones repeat tomorrow (the app refreshes the words whenever it's opened).
         if (type == "briefing" || type == "checkin") {
             val again = intent.getStringExtra("again").takeUnless { it.isNullOrBlank() } ?: say
@@ -88,6 +90,7 @@ class AlarmReceiver : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        PetService.refresh(c)
         val json = Prefs.sp(c).getString("alarmsJson", null) ?: return
         Alarms.sync(c, json)
     }

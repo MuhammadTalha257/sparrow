@@ -135,6 +135,28 @@ class Bridge(private val a: MainActivity) {
         }
     }
 
+    /** Zuffi the bunny walking on the screen (shows reminders). */
+    @JavascriptInterface fun setPet(on: Boolean) {
+        val sp = Prefs.sp(a)
+        val e = sp.edit().putBoolean("pet", on)
+        if (on && !sp.contains("chargeLight")) e.putBoolean("chargeLight", true)
+        e.apply()
+        a.runOnUiThread {
+            if (on && !Settings.canDrawOverlays(a)) Commands.startSafely(a, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + a.packageName)))
+            else PetService.refresh(a)
+        }
+    }
+    /** The light round the screen edge when the phone is plugged in. */
+    @JavascriptInterface fun setChargeLight(on: Boolean) {
+        Prefs.sp(a).edit().putBoolean("chargeLight", on).apply()
+        a.runOnUiThread {
+            if (on && !Settings.canDrawOverlays(a)) Commands.startSafely(a, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + a.packageName)))
+            else PetService.refresh(a)
+        }
+    }
+    @JavascriptInterface fun nativeCharge(): Boolean = PetService.running && Prefs.sp(a).getBoolean("chargeLight", false)
+    @JavascriptInterface fun petSay(text: String) { a.runOnUiThread { PetService.say(a, text) } }
+
     @JavascriptInterface fun setReadNotifications(on: Boolean) {
         Prefs.sp(a).edit().putBoolean("readNotifs", on).apply()
         if (on && !hasNotificationAccess()) a.runOnUiThread {
@@ -169,7 +191,12 @@ class Bridge(private val a: MainActivity) {
         if (sp.getBoolean("bubble", false) && Settings.canDrawOverlays(a) && !BubbleService.running) {
             a.runOnUiThread { a.startForegroundService(Intent(a, BubbleService::class.java)) }
         }
+        if ((sp.getBoolean("pet", false) || sp.getBoolean("chargeLight", false)) && Settings.canDrawOverlays(a) && !PetService.running) {
+            a.runOnUiThread { PetService.refresh(a) }
+        }
         return JSONObject()
+            .put("pet", sp.getBoolean("pet", false))
+            .put("chargeLight", sp.getBoolean("chargeLight", false))
             .put("wakeWord", sp.getBoolean("wakeWord", false))
             .put("listening", VoiceService.running)
             .put("bubble", sp.getBoolean("bubble", false))
