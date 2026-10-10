@@ -1031,14 +1031,24 @@ final class NotificationReader {
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
     }
 
+    /// Speak new notifications aloud (the user's setting).
+    private var speakOn = false
+
     func setEnabled(_ on: Bool) {
-        timer?.invalidate(); timer = nil
-        guard on else { return }
-        if !Self.hasAccess { Self.askAccess() }
-        primed = false
-        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
-            MainActor.assumeIsolated { NotificationReader.shared.poll() }
-        }
+        speakOn = on
+        if on, !Self.hasAccess { Self.askAccess() }
+        refresh()
+    }
+
+    /// Runs while notifications are read aloud, or while Zuffi turns WhatsApp messages into leads.
+    func refresh() {
+        let need = speakOn || (ZuffiCRM.shared.isOn(.watchWhatsApp) && ZuffiBusiness.shared.pack != nil)
+        if need, timer == nil {
+            primed = false
+            timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
+                MainActor.assumeIsolated { NotificationReader.shared.poll() }
+            }
+        } else if !need, let t = timer { t.invalidate(); timer = nil }
     }
 
     private func poll() {
@@ -1047,19 +1057,23 @@ final class NotificationReader {
         else { return }
         let appEl = AXUIElementCreateApplication(nc.processIdentifier)
         let windows = Self.children(appEl, attr: kAXWindowsAttribute as String)
-        var banners: [String] = []
+        var banners: [(joined: String, texts: [String], descs: [String])] = []
         for w in windows {
-            var texts: [String] = []
-            Self.collectTexts(w, into: &texts, depth: 0)
-            let joined = texts.filter { !$0.isEmpty }.joined(separator: ". ")
-            if !joined.isEmpty { banners.append(joined) }
+            var texts: [String] = [], descs: [String] = []
+            Self.collectTexts(w, into: &texts, depth: 0, descs: &descs)
+            let clean = texts.filter { !$0.isEmpty }
+            let joined = clean.joined(separator: ". ")
+            if !joined.isEmpty { banners.append((joined, clean, descs)) }
         }
-        // If the full Notification Centre is open there are lots of texts — don't read them all.
-        let new = banners.filter { !seen.contains($0) }
-        seen = Array((seen + new).suffix(40))
+        let new = banners.filter { !seen.contains($0.joined) }
+        seen = Array((seen + new.map(\.joined)).suffix(40))
         guard primed else { primed = true; return }
-        guard let first = new.first, new.count <= 2, first.count < 400 else { return }
-        VoiceEngine.shared.speak("New notification. " + first)
+        // If the full Notification Centre is open there are lots of texts — don't read them all.
+        guard !new.isEmpty, new.count <= 3 else { return }
+        for b in new { ZuffiCRM.shared.fromNotification(b.texts, descriptions: b.descs) }
+        if speakOn, let first = new.first, new.count <= 2, first.joined.count < 400 {
+            VoiceEngine.shared.speak("New notification. " + first.joined)
+        }
     }
 
     private static func children(_ el: AXUIElement, attr: String) -> [AXUIElement] {
@@ -1068,17 +1082,19 @@ final class NotificationReader {
         return arr
     }
 
-    private static func collectTexts(_ el: AXUIElement, into out: inout [String], depth: Int) {
+    private static func collectTexts(_ el: AXUIElement, into out: inout [String], depth: Int, descs: inout [String]) {
         guard depth < 12, out.count < 12 else { return }
         var role: CFTypeRef?
         AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &role)
+        var d: CFTypeRef?
+        if descs.count < 8, AXUIElementCopyAttributeValue(el, kAXDescriptionAttribute as CFString, &d) == .success, let ds = d as? String, !ds.isEmpty { descs.append(ds) }
         if (role as? String) == (kAXStaticTextRole as String) {
             var val: CFTypeRef?
             if AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &val) == .success, let s = val as? String {
                 out.append(s.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
-        for c in children(el, attr: kAXChildrenAttribute as String) { collectTexts(c, into: &out, depth: depth + 1) }
+        for c in children(el, attr: kAXChildrenAttribute as String) { collectTexts(c, into: &out, depth: depth + 1, descs: &descs) }
     }
 }
 

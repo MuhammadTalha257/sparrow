@@ -93,8 +93,10 @@ enum IslandConst {
     static let earRadius: CGFloat   = 14
     static let roundedCorner: CGFloat = 14    // hidden/peek/compact
     /// How far the closed island reaches below the notch to show Zuffi's face.
-    static let compactDrop: CGFloat = 46
-    static let compactCorner: CGFloat = 22
+    static let compactDrop: CGFloat = 38
+    static let compactCorner: CGFloat = 19
+    /// Closed island when parked on the left / right edge of the screen.
+    static let dockedCompact = CGSize(width: 50, height: 58)
     static let expandedCorner: CGFloat = 22
 
     static let viewLayouts: [IslandView: ViewLayout] = [

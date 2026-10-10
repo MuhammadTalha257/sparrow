@@ -343,7 +343,7 @@ struct ZuffiHomePanel: View {
             if now.apps.isEmpty { Text("Zuffi").font(.system(size: 11, weight: .bold, design: .rounded)) }
             ForEach(now.apps, id: \.processIdentifier) { a in
                 let cur = a.processIdentifier == now.app?.processIdentifier
-                Button { a.bringForward(); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
+                Button { a.bringForward() } label: {
                     HStack(spacing: 4) {
                         if let icon = a.icon { Image(nsImage: icon).resizable().frame(width: 18, height: 18) }
                         if cur { Text(a.localizedName ?? "").font(.system(size: 10.5, weight: .bold, design: .rounded)).lineLimit(1).fixedSize() }

@@ -200,12 +200,28 @@ struct GlassCard<Content: View>: View {
     }
 }
 
-// MARK: - Move the island by dragging it
+// MARK: - Move the island by dragging it (drop it near the left / right edge and it parks there)
+
+enum IslandDock: String {
+    case none, left, right
+    nonisolated(unsafe) static var side: IslandDock = IslandDock(rawValue: UserDefaults.standard.string(forKey: "islandDock") ?? "") ?? .none
+    nonisolated static var docked: Bool { side != .none }
+    /// The island's x inside the 720-wide panel.
+    nonisolated static func islandX(panelWidth: CGFloat, islandWidth: CGFloat) -> CGFloat {
+        switch side {
+        case .none: return (panelWidth - islandWidth) / 2
+        case .left: return 0
+        case .right: return panelWidth - islandWidth
+        }
+    }
+}
 
 @MainActor
 enum IslandDrag {
     private static var startMouse: NSPoint?
     private static var startOrigin: NSPoint?
+    /// True while the island is being dragged (so letting go doesn't count as a click).
+    static var isDragging: Bool { startMouse != nil }
 
     static var panel: NSWindow? { NSApp.windows.first { $0 is IslandPanel } }
 
@@ -217,7 +233,7 @@ enum IslandDrag {
         var o = NSPoint(x: so.x + m.x - sm.x, y: so.y + m.y - sm.y)
         if let s = p.screen ?? NSScreen.main {
             let f = s.frame
-            o.x = min(max(o.x, f.minX - 40), f.maxX - p.frame.width + 40)
+            o.x = min(max(o.x, f.minX - p.frame.width + 60), f.maxX - 60)
             o.y = min(max(o.y, f.minY), f.maxY - p.frame.height)
         }
         p.setFrameOrigin(o)
@@ -225,8 +241,33 @@ enum IslandDrag {
 
     static func ended() {
         startMouse = nil; startOrigin = nil
-        guard let p = panel else { return }
-        UserDefaults.standard.set(NSStringFromPoint(p.frame.origin), forKey: "islandOrigin")
+        guard let p = panel as? IslandPanel, let screen = p.screen ?? NSScreen.main else { return }
+        let f = screen.frame
+        let island = p.currentIslandFrame(nw: p.notchWidth, nh: p.notchHeight)
+        let islandScreenX = p.frame.minX + island.minX
+        let islandW = island.width
+        let mouseX = NSEvent.mouseLocation.x
+        // Where should it live now?
+        let newSide: IslandDock = mouseX < f.minX + 140 || islandScreenX < f.minX + 40 ? .left
+            : mouseX > f.maxX - 140 || islandScreenX + islandW > f.maxX - 40 ? .right : .none
+        if newSide != IslandDock.side {
+            IslandDock.side = newSide
+            UserDefaults.standard.set(newSide.rawValue, forKey: "islandDock")
+            AppState.shared.dockSide = newSide.rawValue
+        }
+        var o = p.frame.origin
+        switch newSide {
+        case .left: o.x = f.minX
+        case .right: o.x = f.maxX - p.frame.width
+        case .none: o.x = islandScreenX - (p.frame.width - islandW) / 2   // keep it where it is
+        }
+        let menuBar = max(f.maxY - screen.visibleFrame.maxY, NSStatusBar.system.thickness)
+        o.y = min(max(o.y, f.minY - p.frame.height + 80), f.maxY - (newSide == .none ? 0 : menuBar) - p.frame.height)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.25
+            p.animator().setFrameOrigin(o)
+        }, completionHandler: nil)
+        UserDefaults.standard.set(NSStringFromPoint(o), forKey: "islandOrigin")
     }
 
     /// Where the person last left the island (nil = default place).

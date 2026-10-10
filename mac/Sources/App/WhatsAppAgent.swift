@@ -189,7 +189,20 @@ final class WhatsAppAgent {
     // MARK: The Mac side (Accessibility)
 
     nonisolated static func isWhatsApp(_ a: NSRunningApplication) -> Bool {
-        (a.bundleIdentifier ?? "").lowercased().contains("whatsapp") || a.localizedName == "WhatsApp"
+        (a.bundleIdentifier ?? "").lowercased().contains("whatsapp") || (a.localizedName ?? "").lowercased().hasPrefix("whatsapp")
+    }
+
+    static let bundleIDs = ["net.whatsapp.WhatsApp", "desktop.WhatsApp", "net.whatsapp.WhatsAppSMB", "WhatsApp"]
+    /// Where WhatsApp for Mac is installed, if it is.
+    static var appURL: URL? {
+        for id in bundleIDs { if let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return u } }
+        for p in ["/Applications/WhatsApp.app", NSHomeDirectory() + "/Applications/WhatsApp.app"] where FileManager.default.fileExists(atPath: p) { return URL(fileURLWithPath: p) }
+        return nil
+    }
+    static var installed: Bool { appURL != nil }
+    static func openApp() {
+        if let u = appURL { NSWorkspace.shared.openApplication(at: u, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil) }
+        else if let u = URL(string: "https://www.whatsapp.com/download") { NSWorkspace.shared.open(u) }
     }
 
     nonisolated private static func pressReturn() {

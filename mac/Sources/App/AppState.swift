@@ -84,6 +84,8 @@ final class AppState: ObservableObject {
 
     // Claude model used by the chat and the search — persisted
     static let defaultClaudeModel = "claude-sonnet-4-6"
+    /// "none", "left" or "right" — where the island is parked (drives the layout).
+    @Published var dockSide: String = IslandDock.side.rawValue
     @Published var claudeModel: String = AppState.defaultClaudeModel {
         didSet { UserDefaults.standard.set(claudeModel, forKey: "claudeModel") }
     }

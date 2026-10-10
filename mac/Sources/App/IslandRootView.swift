@@ -12,7 +12,7 @@ struct IslandRootView: View {
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             IslandContainer(state: state)
-                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: state.dockSide == "left" ? .leading : state.dockSide == "right" ? .trailing : .center)
         }
         .ignoresSafeArea()
     }
@@ -60,7 +60,7 @@ struct IslandContainer: View {
                 ZStack {
                     VisualEffectBlur()
                     // Black at the very top so it melts into the notch, warm glass below
-                    if SparrowPosition.current == .notch {
+                    if SparrowPosition.current == .notch && !IslandDock.docked {
                         LinearGradient(stops: [
                             .init(color: .black, location: 0),
                             .init(color: .black.opacity(0.85), location: 0.12),
@@ -75,7 +75,7 @@ struct IslandContainer: View {
                                    center: UnitPoint(x: 0.1, y: 0.7), startRadius: 4, endRadius: 260)
                 }
                 .clipShape(shape)
-                .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch ? 0 : 0.3), Color.white.opacity(0.12)],
+                .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.12)],
                                                      startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
             } else {
@@ -131,6 +131,13 @@ struct IslandContainer: View {
 
             CountdownBar(state: state, islandW: islandWidth)
 
+            // Closed: drag the little pill anywhere — drop it at the left or right edge to park it there.
+            if state.mode == .compact {
+                Color.clear.frame(width: islandWidth, height: islandHeight)
+                    .contentShape(Rectangle())
+                    .movesIsland()
+            }
+
             Group {
                 if state.mode == .compact && false {
                     CompactMiniGrid(state: state)
@@ -149,7 +156,7 @@ struct IslandContainer: View {
                                     progress: state.uploadProgress,
                                     nw: state.notchWidth, nh: state.notchHeight)
             let cr  = newMode == .expanded ? IslandConst.expandedCorner : newMode == .compact ? IslandConst.compactCorner : IslandConst.roundedCorner
-            let tr: CGFloat = 0
+            let tr: CGFloat = IslandDock.docked ? cr : 0      // parked on a side: round all corners
             withAnimation(anim) {
                 islandWidth      = w
                 islandHeight     = (newMode == .expanded && state.view == .prompt) ? chatPromptHeight : h
@@ -183,7 +190,16 @@ struct IslandContainer: View {
             islandWidth      = w
             islandHeight     = state.view == .prompt ? chatPromptHeight : h
             cornerRadius     = state.mode == .expanded ? IslandConst.expandedCorner : state.mode == .compact ? IslandConst.compactCorner : IslandConst.roundedCorner
-            islandTopRadius  = 0
+            islandTopRadius  = IslandDock.docked ? cornerRadius : 0
+        }
+        .onChange(of: state.dockSide) { _, _ in
+            let (w, h) = islandSize(mode: state.mode, view: state.view, progress: state.uploadProgress, nw: state.notchWidth, nh: state.notchHeight)
+            withAnimation(openSpring) {
+                islandWidth = w
+                if !(state.mode == .expanded && state.view == .prompt) { islandHeight = h }
+                cornerRadius = state.mode == .expanded ? IslandConst.expandedCorner : state.mode == .compact ? IslandConst.compactCorner : IslandConst.roundedCorner
+                islandTopRadius = IslandDock.docked ? cornerRadius : 0
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .botGreet)) { _ in
             greetNotif.toggle()
@@ -331,8 +347,8 @@ struct BotPlacement: View {
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
             } else if state.mode == .compact {
                 // Closed: one bunny face, centred under the notch, watching the cursor.
-                ZuffiMini(state: state, height: 42)
-                    .frame(width: 56, height: 50)
+                ZuffiMini(state: state, height: IslandDock.docked ? 38 : 36)
+                    .frame(width: 50, height: 46)
                     .opacity(state.isDraggingBot ? 0 : opacity)
                     .position(x: cx, y: cy)
                     .transition(.opacity)
@@ -393,7 +409,9 @@ func botPosition(mode: IslandMode, view: IslandView, islandW: CGFloat, islandH: 
     case .hidden:
         return hasNotch ? (46, 16, 6, 0)
             : (islandW / 2, resting.botCenterY, resting.botDiameter, 1)
-    case .compact: return (islandW / 2, islandH - IslandConst.compactDrop / 2, 40, 1)
+    case .compact:
+        if IslandDock.docked { return (islandW / 2, islandH / 2, 34, 1) }
+        return (islandW / 2, islandH - IslandConst.compactDrop / 2, 34, 1)
     case .expanded:
         let layout = IslandConst.viewLayouts[view]!
         let diameter = layout.botDiameter

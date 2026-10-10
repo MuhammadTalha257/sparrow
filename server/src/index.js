@@ -90,7 +90,7 @@ async function route(req, env, ctx) {
   if (p === "/api/team" && req.method === "PUT" && admin) {
     const b = await req.json();
     const cfg = await config(env);
-    Object.assign(cfg, pick(b, ["team", "owner_phone", "owner_name", "summary_hour", "auto", "welcome", "business", "kind", "quiet_days", "summary_template", "template_lang"]));
+    Object.assign(cfg, pick(b, ["team", "owner_phone", "owner_name", "summary_hour", "auto", "welcome", "business", "kind", "quiet_days", "summary_template", "template_lang", "business_info", "today_update", "today_date"]));
     await saveConfig(env, cfg);
     return json({ ok: true });
   }
@@ -222,12 +222,15 @@ async function inbound(env, m, profileName) {
   await upsertLead(env, phone, f);
   if (isNew) await log(env, f.name || phone, f.assigned || "", "New lead", f.source);
 
-  if (auto.draftReplies !== false || auto.autoReply) {
+  if (auto.draftReplies !== false || auto.autoReply || auto.autopilot) {
     const fresh = await getLead(env, phone);
-    const reply = await draftReply(env, fresh, text, isNew);
+    const { reply, handoff } = await smartReply(env, fresh, text, isNew);
     if (reply) {
-      if (auto.autoReply && isNew) {
-        const r = await sendAndLog(env, phone, reply, "Zuffi (auto)");
+      if (handoff) {
+        await upsertLead(env, phone, { draft: reply, priority: "Hot", changed_by: "inbound" });
+        await log(env, fresh.name || phone, fresh.assigned || "", "Needs you", handoff);
+      } else if (auto.autopilot || (auto.autoReply && isNew)) {
+        const r = await sendAndLog(env, phone, reply, "Zuffi (autopilot)");
         if (!r.ok) await upsertLead(env, phone, { draft: reply });
       } else await upsertLead(env, phone, { draft: reply });
     }
@@ -343,21 +346,41 @@ Message: ${text.slice(0, 3000)}`, true));
 }
 
 export async function draftReply(env, lead, incoming, first) {
+  return (await smartReply(env, lead, incoming, first)).reply;
+}
+
+export async function smartReply(env, lead, incoming, first) {
   const cfg = await config(env);
   const estate = (cfg.kind || "estate") === "estate";
   const fname = (lead.name || "").split(" ")[0];
   const fallback = cfg.welcome ? cfg.welcome.replace(/\{name\}/g, fname)
     : estate ? `Assalam o Alaikum${fname ? " " + fname : ""}! Thank you for contacting ${cfg.business || "us"}. Which area are you looking in, what size, and what's your budget? I'll send you the best options.`
       : `Hi${fname ? " " + fname : ""}! Thanks for messaging ${cfg.business || "us"}. What would you like to book, and which day suits you?`;
-  const r = await ai(env, "You write short WhatsApp replies for a business. Reply with the message text only.",
-    `You reply for ${cfg.business || "a business"} (${estate ? "property agent in Pakistan" : "UK small business, e.g. a salon"}).
-Reply in the client's own language and script (English, Urdu or Roman Urdu). 1-3 short, warm, human sentences.
-${first ? "First message: greet them and ask only for what's missing (area / size / budget, or service / day)." : "Continue the conversation helpfully."}
-Never invent prices, listings or free times. If they ask something only a person can answer, say a team member will reply shortly.
-What we know: ${[lead.interest, lead.area, lead.budget].filter(Boolean).join(", ") || "nothing yet"}.
-Their message: ${incoming.slice(0, 2000)}`, false);
+  const today = cfg.today_date === todayStr(env) ? (cfg.today_update || "") : "";
+  const { results: past } = lead.phone ? await env.DB.prepare("SELECT direction, body FROM messages WHERE phone = ? ORDER BY at DESC LIMIT 10").bind(lead.phone).all() : { results: [] };
+  const convo = past.reverse().slice(0, -1).map((m) => (m.direction === "in" ? "Client: " : "Us: ") + m.body).join("\n");
+  const r = await ai(env, "You answer WhatsApp messages for a business. Reply with JSON only.",
+    `You answer WhatsApp messages for ${cfg.business || "a business"} (${estate ? "property agent in Pakistan" : "small business, e.g. a salon"}).
+ABOUT THE BUSINESS (only facts you may use):
+${cfg.business_info || "(nothing written yet)"}
+${today ? "TODAY'S UPDATE (mention when it fits):\n" + today : ""}
+CLIENT: ${lead.name || lead.phone}. Known: ${[lead.interest, lead.area, lead.budget].filter(Boolean).join(", ") || "nothing yet"}.
+${convo ? "CONVERSATION SO FAR:\n" + convo : ""}
+NEW MESSAGE: ${incoming.slice(0, 2000)}
+
+Reply in the client's own language and script (English, Urdu or Roman Urdu), 1-3 short warm sentences.
+${first ? "First message: greet them and ask only for what's missing." : ""}
+Use ONLY the facts above; never invent prices, discounts, stock, listings or free times.
+Set "handoff" to a short reason (and still write a polite holding reply) when they bargain, complain, ask for a person or call,
+raise payment / refund / legal issues, or the answer isn't in the facts.
+Return {"reply":"...","handoff":""}`, true);
+  const j = jsonIn(r);
+  if (j && j.reply) {
+    const h = String(j.handoff || "").trim();
+    return { reply: String(j.reply).trim(), handoff: h && !/^(false|no|none|null)$/i.test(h) ? h : "" };
+  }
   const clean = (r || "").trim().replace(/^["“]|["”]$/g, "");
-  return clean || fallback;
+  return { reply: clean || fallback, handoff: clean ? "" : (first ? "" : "no AI answer") };
 }
 
 export async function transcribeMedia(env, mediaId) {
@@ -573,6 +596,7 @@ function localParts(env, date = new Date()) {
   if (o.hour === "24") o.hour = "00";
   return o;
 }
+function todayStr(env) { return today(env); }
 function today(env) { const o = localParts(env); return `${o.year}-${o.month}-${o.day}`; }
 function nowLocal(env, d) { const o = localParts(env, d); return `${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}`; }
 function stamp(env) { const o = localParts(env); return `${o.year}-${o.month}-${o.day} ${o.hour}:${o.minute}:${o.second}.${String(Date.now() % 1000).padStart(3, "0")}`; }

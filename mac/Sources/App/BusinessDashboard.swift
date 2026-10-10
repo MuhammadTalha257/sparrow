@@ -36,13 +36,15 @@ final class BusinessDashboard {
 }
 
 enum BizTab: String, CaseIterable, Identifiable {
-    case today = "Today", inbox = "Inbox", pipeline = "Pipeline", team = "Team", automations = "Automations", connect = "Connect WhatsApp"
+    case today = "Today", inbox = "Inbox", pipeline = "Pipeline", records = "Records", business = "My business", team = "Team", automations = "Automations", connect = "Connect WhatsApp"
     var id: String { rawValue }
     var icon: String {
         switch self {
         case .today: return "sun.max.fill"
         case .inbox: return "tray.full.fill"
         case .pipeline: return "rectangle.split.3x1.fill"
+        case .records: return "tablecells.fill"
+        case .business: return "building.2.fill"
         case .team: return "person.3.fill"
         case .automations: return "bolt.fill"
         case .connect: return "link"
@@ -139,6 +141,8 @@ struct BusinessDashboardView: View {
                     case .today: BizTodayView()
                     case .inbox: BizInboxView()
                     case .pipeline: BizPipelineView()
+                    case .records: BizRecordsView()
+                    case .business: BizBusinessView()
                     case .team: BizTeamView()
                     case .automations: BizAutomationsView()
                     case .connect: BizConnectView()
@@ -183,7 +187,7 @@ struct BusinessDashboardView: View {
                 ZuffiMini(state: AppState.shared, height: 40).frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(biz.businessName.isEmpty ? "My business" : biz.businessName).font(.system(size: 14, weight: .heavy, design: .rounded)).lineLimit(1)
-                    Text(biz.pack == .salon ? "Salon / shop" : biz.pack == .realEstate ? "Estate agent" : "Zuffi Business").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.55))
+                    Text(biz.pack?.label ?? "Pick your business ↓").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.55)).lineLimit(1)
                 }
             }
             .padding(.top, 34).padding(.bottom, 14).padding(.horizontal, 6)
@@ -195,6 +199,7 @@ struct BusinessDashboardView: View {
                         Spacer()
                         if t == .inbox, crm.drafts.count > 0 { Pill(text: "\(crm.drafts.count)", color: Biz.pink, filled: true) }
                         if t == .today { let d = crm.leads.filter(\.dueToday).count; if d > 0 { Pill(text: "\(d)", color: Biz.amber) } }
+                        if t == .business { Pill(text: crm.isOn(.autopilot) ? "auto" : "off", color: crm.isOn(.autopilot) ? Biz.green : .white.opacity(0.5)) }
                     }
                     .padding(.horizontal, 10).frame(height: 34)
                     .background(RoundedRectangle(cornerRadius: 10).fill(nav.tab == t ? Color.white.opacity(0.13) : .clear))
@@ -204,10 +209,7 @@ struct BusinessDashboardView: View {
             Spacer()
             if biz.pack == nil {
                 Text("Pick your business:").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.6))
-                HStack {
-                    BizSoftButton(title: "Estate", icon: "house.fill") { Task { nav.say(await biz.install(.realEstate)); crm.reload() } }
-                    BizSoftButton(title: "Salon", icon: "scissors") { Task { nav.say(await biz.install(.salon)); crm.reload() } }
-                }
+                BizTypeMenu()
             }
             // Talk to Zuffi about the business
             HStack(spacing: 8) {
@@ -293,7 +295,8 @@ struct BizTodayView: View {
                     tile("Follow up today", "\(crm.leads.filter(\.dueToday).count)", "phone.fill", Biz.amber)
                     tile("Hot leads", "\(crm.leads.filter { $0.isOpen && $0.priority.lowercased() == "hot" }.count)", "flame.fill", Biz.pink)
                     tile("Overdue", "\(crm.leads.filter(\.overdue).count)", "exclamationmark.triangle.fill", Biz.red)
-                    tile("Won · 30 days", "\(crm.leads.filter { $0.stage == "Won" && $0.lastContact >= monthAgo }.count)", "trophy.fill", Biz.green)
+                    tile("Sales · 30 days", "\(crm.leads.filter { $0.isSale && $0.lastContact >= monthAgo }.count)", "trophy.fill", Biz.green)
+                    tile("Revenue · 30 days", crm.currency + " " + Int(crm.leads.filter { $0.isSale && $0.lastContact >= monthAgo }.reduce(0) { $0 + $1.valueNumber }).formatted(), "banknote.fill", Biz.green)
                 }
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 14) {
@@ -423,6 +426,7 @@ struct BizInboxView: View {
         case "Needs reply": l = l.filter { crm.drafts[$0.key] != nil }
         case "WhatsApp": l = l.filter { $0.source.lowercased().contains("whatsapp") }
         case "Mine due": l = l.filter(\.dueToday)
+        case "Needs you": l = l.filter { $0.isOpen && $0.priority == "Hot" && crm.drafts[$0.key] != nil }
         default: break
         }
         let q = nav.search.lowercased()
@@ -437,7 +441,7 @@ struct BizInboxView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 8) {
-                Picker("", selection: $filter) { ForEach(["All", "Needs reply", "WhatsApp", "Mine due"], id: \.self) { Text($0) } }
+                Picker("", selection: $filter) { ForEach(["All", "Needs reply", "Needs you", "WhatsApp", "Mine due"], id: \.self) { Text($0) } }
                     .pickerStyle(.segmented).labelsHidden()
                 ScrollView {
                     LazyVStack(spacing: 4) {
@@ -533,7 +537,7 @@ struct BizLeadDetail: View {
                 // What they want
                 GlassBox {
                     HStack(alignment: .top, spacing: 18) {
-                        fact("Wants", lead.interest); fact("Area", lead.area); fact("Budget", lead.budget)
+                        fact(crm.labels.interest, lead.interest); fact(crm.labels.area, lead.area); fact(crm.labels.budget, lead.budget); fact(crm.labels.value, lead.value.isEmpty ? "" : crm.currency + " " + lead.value)
                         fact("Added", lead.added); fact("Last contact", lead.lastContact)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Follow up").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.5))
@@ -655,9 +659,10 @@ struct BizLeadEditor: View {
                 TextField("Name", text: $l.name)
                 TextField("Phone (WhatsApp)", text: $l.phone)
                 TextField("Source (Facebook, Zameen, walk-in…)", text: $l.source)
-                TextField(crm.isEstate ? "Wants (e.g. 10 marla house)" : "Service", text: $l.interest)
-                TextField("Area", text: $l.area)
-                TextField("Budget", text: $l.budget)
+                TextField(crm.isEstate ? "Wants (e.g. 10 marla house)" : crm.labels.interest, text: $l.interest)
+                TextField(crm.labels.area, text: $l.area)
+                TextField(crm.labels.budget, text: $l.budget)
+                TextField("\(crm.labels.value) (\(crm.currency))", text: $l.value)
                 Picker("Stage", selection: $l.status) { ForEach(crm.stages, id: \.self) { Text($0).tag($0) } }
                 Picker("Assigned to", selection: $l.assigned) { Text("Nobody").tag(""); ForEach(crm.team) { Text($0.name).tag($0.name) } }
                 TextField("Notes", text: $l.notes)
@@ -669,7 +674,7 @@ struct BizLeadEditor: View {
                 Button("Save") {
                     if lead == nil {
                         let key = crm.addLead(["name": l.name, "phone": l.phone, "source": l.source, "interest": l.interest, "area": l.area, "budget": l.budget,
-                                               "status": l.status, "assigned": l.assigned, "notes": l.notes])
+                                               "status": l.status, "assigned": l.assigned, "notes": l.notes, "value": l.value])
                         BizNav.shared.selected = key; BizNav.shared.tab = .inbox
                     } else { crm.update(l) }
                     dismiss()
@@ -881,6 +886,8 @@ struct BizAutomationsView: View {
     }
     private func icon(_ a: ZuffiCRM.Auto) -> String {
         switch a {
+        case .autopilot: return "airplane"
+        case .morningAsk: return "sunrise.fill"
         case .watchWhatsApp: return "message.badge.filled.fill"
         case .draftReplies: return "text.bubble.fill"
         case .autoReply: return "paperplane.fill"
@@ -908,9 +915,25 @@ struct BizConnectView: View {
                         HStack { header("1 · WhatsApp on this Mac", "laptopcomputer"); Spacer(); Pill(text: "works now", color: Biz.green) }
                         Text("Zuffi reads new chats in the WhatsApp app on this Mac, makes them leads and writes replies. Nothing extra to set up — but it only works while the Mac is awake and WhatsApp is open.")
                             .font(.system(size: 11.5)).foregroundColor(.white.opacity(0.7)).fixedSize(horizontal: false, vertical: true)
-                        check("WhatsApp app open", NSWorkspace.shared.runningApplications.contains(where: WhatsAppAgent.isWhatsApp))
-                        check("Accessibility allowed for Zuffi", AXIsProcessTrusted())
-                        check("Turning chats into leads", crm.isOn(.watchWhatsApp))
+                        TimelineView(.periodic(from: .now, by: 2)) { _ in
+                            let running = NSWorkspace.shared.runningApplications.contains(where: WhatsAppAgent.isWhatsApp)
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    check(running ? "WhatsApp app open" : WhatsAppAgent.installed ? "WhatsApp installed but not open" : "WhatsApp for Mac not installed", running)
+                                    Spacer()
+                                    if !running {
+                                        BizMainButton(title: WhatsAppAgent.installed ? "Open WhatsApp" : "Get WhatsApp for Mac", icon: "arrow.up.forward.app") { WhatsAppAgent.openApp() }
+                                    }
+                                }
+                                check("Accessibility allowed for Zuffi", AXIsProcessTrusted())
+                                check("Turning chats into leads", crm.isOn(.watchWhatsApp))
+                                check("Autopilot replies (Business → My business)", crm.isOn(.autopilot))
+                                if !running {
+                                    Text(WhatsAppAgent.installed ? "Open WhatsApp and keep it open (you can minimise it)." : "Messages you see from your iPhone (notifications) are saved as leads, but to send replies Zuffi needs the WhatsApp app on this Mac: install it, open it, and link it to your phone (WhatsApp on the phone → Settings → Linked devices → Link a device).")
+                                        .font(.system(size: 11)).foregroundColor(Biz.amber).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
                         HStack {
                             Text(crm.whatsAppStatus + (crm.lastWhatsAppCheck.map { " · \(ZuffiPA.hm($0))" } ?? "")).font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
                             Spacer()
@@ -961,5 +984,217 @@ struct BizConnectView: View {
             Text(n).font(.system(size: 11, weight: .heavy)).frame(width: 20, height: 20).background(Circle().fill(Color.white.opacity(0.12)))
             Text(t).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+// MARK: - Business type picker
+
+struct BizTypeMenu: View {
+    @ObservedObject private var biz = ZuffiBusiness.shared
+    var body: some View {
+        Menu {
+            ForEach(ZuffiBusiness.Pack.allCases) { p in
+                Button { Task { BizNav.shared.say(await biz.install(p)); ZuffiCRM.shared.reload() } } label: { Label(p.label + (biz.pack == p ? "  ✓" : ""), systemImage: p.icon) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: biz.pack?.icon ?? "briefcase.fill")
+                Text(biz.pack?.label ?? "Pick your business").lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+            }
+            .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(.white)
+            .padding(.horizontal, 11).frame(height: 30)
+            .background(Capsule().fill(Color.white.opacity(0.1))).overlay(Capsule().stroke(Biz.stroke, lineWidth: 0.7))
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    }
+}
+
+// MARK: - My business: what Zuffi tells clients + autopilot
+
+struct BizBusinessView: View {
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var biz = ZuffiBusiness.shared
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                // Autopilot
+                GlassBox {
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: "airplane").font(.system(size: 22)).foregroundColor(crm.isOn(.autopilot) ? Biz.green : .white.opacity(0.5))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(crm.isOn(.autopilot) ? "Autopilot is ON — Zuffi is chatting with your clients" : "Autopilot is off — Zuffi only writes drafts")
+                                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                            Text("Zuffi answers WhatsApp messages by itself using what you write below and today's update. When someone wants to bargain, complains, asks for a person or asks something you haven't told Zuffi, it doesn't guess: it says the team will reply, marks the chat 🔥 and tells you.")
+                                .font(.system(size: 11.5)).foregroundColor(.white.opacity(0.7)).fixedSize(horizontal: false, vertical: true)
+                            if crm.businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count < 40 {
+                                Label("Write about your business below first, so Zuffi answers correctly.", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 11, weight: .semibold)).foregroundColor(Biz.amber)
+                            }
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(get: { crm.isOn(.autopilot) }, set: { crm.set(.autopilot, $0); if $0 { crm.set(.watchWhatsApp, true) } }))
+                            .toggleStyle(.switch).labelsHidden().controlSize(.large)
+                    }
+                }
+                HStack(alignment: .top, spacing: 14) {
+                    // Today's update
+                    GlassBox {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                header("Today's update", "sunrise.fill")
+                                Spacer()
+                                Text(Date().formatted(date: .abbreviated, time: .omitted)).font(.system(size: 10.5)).foregroundColor(.white.opacity(0.5))
+                            }
+                            Text("Offers, new items, who's in, what's available — Zuffi mentions it in replies today only.")
+                                .font(.system(size: 11)).foregroundColor(.white.opacity(0.6)).fixedSize(horizontal: false, vertical: true)
+                            editor(Binding(get: { crm.todaysUpdate }, set: { crm.todayUpdate = $0 }), minHeight: 110)
+                            Text(example(for: "today")).font(.system(size: 10.5)).foregroundColor(.white.opacity(0.45)).fixedSize(horizontal: false, vertical: true)
+                            Text("Tip: in the morning just say or type “today's update: …” to Zuffi.").font(.system(size: 10.5)).foregroundColor(Biz.pink)
+                        }
+                    }
+                    // Recently sent by autopilot
+                    GlassBox {
+                        VStack(alignment: .leading, spacing: 6) {
+                            header("Sent by Zuffi", "paperplane.fill")
+                            if crm.autoSent.isEmpty { empty("Nothing yet. Replies Zuffi sends by itself show here (and in each client's history).") }
+                            ForEach(crm.autoSent.prefix(10), id: \.self) { t in
+                                Text(t).font(.system(size: 11)).foregroundColor(.white.opacity(0.8)).lineLimit(2)
+                            }
+                        }
+                    }
+                    .frame(width: 300)
+                }
+                // About the business
+                GlassBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            header("About your business", "building.2.fill")
+                            Spacer()
+                            BizTypeMenu()
+                        }
+                        TextField("Business name (used in messages)", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
+                            .textFieldStyle(.roundedBorder)
+                        Text("Write it like you'd brief a new receptionist: what you sell, prices, address, opening hours, how booking / buying works, delivery, payment, and anything clients always ask. Zuffi only uses what's written here.")
+                            .font(.system(size: 11)).foregroundColor(.white.opacity(0.6)).fixedSize(horizontal: false, vertical: true)
+                        editor($crm.businessInfo, minHeight: 220)
+                        HStack {
+                            if crm.businessInfo.isEmpty { BizSoftButton(title: "Start from an example", icon: "text.badge.plus") { crm.businessInfo = example(for: "info") } }
+                            BizSoftButton(title: "Open as a file", icon: "doc.text") { NSWorkspace.shared.open(ZuffiCRM.infoURL) }
+                            Spacer()
+                            Text("Saved automatically").font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 22).padding(.bottom, 22)
+        }
+    }
+
+    private func editor(_ text: Binding<String>, minHeight: CGFloat) -> some View {
+        TextEditor(text: text).font(.system(size: 12.5)).scrollContentBackground(.hidden)
+            .frame(minHeight: minHeight).padding(8)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.3)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Biz.stroke))
+    }
+
+    private func example(for part: String) -> String {
+        let name = biz.businessName.isEmpty ? "" : biz.businessName
+        switch (crm.kind, part) {
+        case (.realEstate, "today"): return "e.g. New: 5 marla plots in DHA Phase 9, Rs 1.6 crore. Bahria Town 10 marla house reduced to 3.1 crore. Site visits today till 6pm."
+        case (.realEstate, _): return "\(name.isEmpty ? "We are a property agency" : name) in Lahore (DHA, Bahria Town, Johar Town).\nWe deal in plots, houses and apartments — buying, selling and rent.\nOffice: [address]. Open 10am–8pm, Monday to Saturday.\nSite visits are free — clients choose a day and time.\nCommission: 1% from buyer and 1% from seller.\nWe need: area, size (marla / sq ft) and budget to suggest options.\nWe speak Urdu and English."
+        case (.salon, "today"): return "e.g. 20% off all colour today. Jade is in till 4pm. Free fringe trim with any cut."
+        case (.salon, _): return "\(name.isEmpty ? "Our salon" : name), [address]. Open Tue–Sat 9am–6pm, Thursday till 8pm.\nPrices: Cut & blow dry £45 · Colour from £85 · Highlights from £95 · Gel nails £30.\nBooking: tell us the service and a day; we'll offer times. £10 deposit for colour.\nPatch test needed 48 hours before a first colour.\nParking behind the salon. Card and cash."
+        case (.clinic, "today"): return "e.g. Dr Khan is in until 2pm. Teeth whitening offer: £199 this week."
+        case (.clinic, _): return "\(name.isEmpty ? "Our clinic" : name), [address]. Open Mon–Fri 9am–5pm.\nServices and prices: Check-up £50 · Hygienist £65 · Whitening £250.\nNew patients: bring ID; arrive 10 minutes early.\nEmergencies: call [number]. We can't give medical advice on WhatsApp."
+        case (.shop, "today"): return "e.g. New stock: summer lawn suits. Free delivery over £50 today."
+        case (.shop, _): return "\(name.isEmpty ? "Our shop" : name). We sell [products].\nPrices: [main items and prices].\nDelivery: UK 2–3 days, £3.99, free over £50. Collection from [address].\nPayment: card, bank transfer, cash on collection.\nReturns within 14 days, unused with tags."
+        case (.restaurant, "today"): return "e.g. Today's special: lamb karahi £12.99. Fully booked 7–9pm, tables free after 9."
+        case (.restaurant, _): return "\(name.isEmpty ? "Our restaurant" : name), [address]. Open daily 12pm–11pm.\nBookings for up to 12 people; bigger groups call us.\nMenu highlights and prices: [dishes].\nHalal. Vegetarian options. Takeaway and delivery via [apps]."
+        case (.services, "today"): return "e.g. Free quotes this week. Available for jobs from Thursday."
+        case (_, _): return "\(name.isEmpty ? "We" : name) do [services] in [areas].\nPrices: [typical prices or how quotes work].\nHours: [days and times]. Free quotes: send photos and your postcode.\nPayment: [terms]. Guarantee: [details]."
+        }
+    }
+}
+
+// MARK: - Records: every client in one table (sort, filter, open in Excel)
+
+struct BizRecordsView: View {
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var nav = BizNav.shared
+    @State private var sort = [KeyPathComparator(\CRMLead.added, order: .reverse)]
+    @State private var stage = "All"
+    @State private var selection = Set<String>()
+
+    private var rows: [CRMLead] {
+        let q = nav.search.lowercased()
+        return crm.leads.filter { l in
+            (stage == "All" || l.stage == stage) &&
+            (q.isEmpty || (l.name + l.phone + l.area + l.interest + l.notes + l.source).lowercased().contains(q))
+        }.sorted(using: sort)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Picker("", selection: $stage) {
+                    Text("All stages").tag("All")
+                    ForEach(crm.stages, id: \.self) { Text($0).tag($0) }
+                }.labelsHidden().frame(width: 160)
+                Text("\(rows.count) record\(rows.count == 1 ? "" : "s")").font(.system(size: 11.5)).foregroundColor(.white.opacity(0.6))
+                Spacer()
+                BizSoftButton(title: "Open in Excel / Numbers", icon: "tablecells") { NSWorkspace.shared.open(ZuffiPA.url("Leads")) }
+                BizSoftButton(title: "Save a copy", icon: "square.and.arrow.down") { saveCopy() }
+                BizSoftButton(title: "Import", icon: "square.and.arrow.up") { importFile() }
+            }
+            .padding(.horizontal, 22)
+            Table(rows, selection: $selection, sortOrder: $sort) {
+                TableColumn("Name", value: \.display) { l in Text((l.priority == "Hot" ? "🔥 " : "") + l.display).fontWeight(.semibold) }
+                TableColumn("Phone", value: \.phone)
+                TableColumn("Stage", value: \.status) { l in Text(l.stage).foregroundColor(Biz.stageColor(l.stage)) }
+                TableColumn(crm.labels.interest, value: \.interest)
+                TableColumn(crm.labels.area, value: \.area)
+                TableColumn(crm.labels.budget, value: \.budget)
+                TableColumn(crm.labels.value, value: \.value)
+                TableColumn("Assigned", value: \.assigned)
+                TableColumn("Next follow-up", value: \.nextFollowUp) { l in Text(l.nextFollowUp).foregroundColor(l.overdue ? Biz.red : .white) }
+                TableColumn("Source", value: \.source)
+            }
+            .contextMenu(forSelectionType: String.self) { keys in
+                Button("Open") { if let k = keys.first { nav.selected = k; nav.tab = .inbox } }
+                Menu("Move to stage") { ForEach(crm.stages, id: \.self) { s in Button(s) { for k in keys { crm.setStage(k, s) } } } }
+                Menu("Assign to") {
+                    Button("Nobody") { for k in keys { crm.assign(k, to: "") } }
+                    ForEach(crm.team) { t in Button(t.name) { for k in keys { crm.assign(k, to: t.name) } } }
+                }
+                Button("Delete", role: .destructive) { for k in keys { crm.delete(k) } }
+            } primaryAction: { keys in
+                if let k = keys.first { nav.selected = k; nav.tab = .inbox }
+            }
+            .scrollContentBackground(.hidden)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.25)))
+            .padding(.horizontal, 22).padding(.bottom, 18)
+        }
+    }
+
+    private func saveCopy() {
+        let p = NSSavePanel()
+        p.nameFieldStringValue = "Zuffi clients \(ZuffiBusiness.iso(Date())).csv"
+        p.allowedContentTypes = [.commaSeparatedText]
+        NSApp.activate(ignoringOtherApps: true)
+        guard p.runModal() == .OK, let u = p.url else { return }
+        try? FileManager.default.removeItem(at: u)
+        try? FileManager.default.copyItem(at: ZuffiPA.url("Leads"), to: u)
+        nav.say("Saved \(u.lastPathComponent)")
+    }
+
+    private func importFile() {
+        let p = NSOpenPanel()
+        p.allowedContentTypes = ["csv", "xlsx", "tsv"].compactMap { UTType(filenameExtension: $0) }
+        p.message = "Pick a list of clients or leads (Excel or CSV) — Zuffi adds the new people"
+        NSApp.activate(ignoringOtherApps: true)
+        guard p.runModal() == .OK, let u = p.url else { return }
+        Task { await BusinessFiles.take(u) }
     }
 }

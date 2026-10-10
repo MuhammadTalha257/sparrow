@@ -28,7 +28,7 @@ final class ZuffiPA {
     private var pendingSends: [(name: String, phone: String, text: String)] = []
     private var pendingWhat = ""
 
-    static let leadHeader = ["Name", "Phone", "Source", "Interest", "Area", "Budget", "Status", "Priority", "Assigned to", "Added", "Last contact", "Next follow-up", "Last message", "Last message at", "Notes"]
+    static let leadHeader = ["Name", "Phone", "Source", "Interest", "Area", "Budget", "Value", "Status", "Priority", "Assigned to", "Added", "Last contact", "Next follow-up", "Last message", "Last message at", "Notes"]
     static let apptHeader = ["Date", "Time", "Client", "Phone", "Service", "Staff", "Price", "Status"]
     static let clientHeader = ["Name", "Phone", "Last visit", "Usual service", "Notes"]
 

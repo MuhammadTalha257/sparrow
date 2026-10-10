@@ -70,7 +70,7 @@ final class IslandWindowController: NSWindowController {
         var panelY = position == .notch ? sf.maxY - panelH : sf.maxY - menuBarH - panelH - 4
         var panelX = defaultX
         // Wherever the person dragged it last time
-        if position != .notch, let o = IslandDrag.savedOrigin,
+        if position != .notch || IslandDock.docked, let o = IslandDrag.savedOrigin,
            sf.insetBy(dx: -60, dy: -60).contains(NSPoint(x: o.x + panelW / 2, y: o.y + panelH - 20)) {
             panelX = o.x; panelY = o.y
         }
@@ -451,7 +451,7 @@ final class IslandWindowController: NSWindowController {
                 self.botHoverTimer?.cancel()
                 self.botHovering = false
                 // Drag only starts when clicking directly on the bot head
-                guard self.isBotHit(event.locationInWindow) else { return }
+                guard self.state.mode == .expanded, self.isBotHit(event.locationInWindow) else { return }
                 self.attachDragStart = NSEvent.mouseLocation
                 // Post slap only when expanded
                 guard self.state.mode == .expanded else { return }
@@ -501,7 +501,7 @@ final class IslandWindowController: NSWindowController {
                     finishDrag()
                 } else {
                     self.attachDragStart = nil
-                    if hadPendingClick && self.state.mode != .expanded {
+                    if hadPendingClick && self.state.mode != .expanded && !IslandDrag.isDragging {
                         if self.fsm.state == .home {
                             // FSM already thinks it's open (e.g. the view folded it): just reopen.
                             self.expand(to: self.defaultView())
@@ -729,7 +729,7 @@ final class IslandWindowController: NSWindowController {
     func windowToIsland(_ loc: CGPoint) -> CGPoint {
         let panelH = window?.frame.height ?? 320
         let panelW = window?.frame.width  ?? 720
-        let islandLeft = (panelW - IslandConst.expandedWidth) / 2
+        let islandLeft = IslandDock.islandX(panelWidth: panelW, islandWidth: IslandConst.expandedWidth)
         // Island is glued to panel top; its bottom in AppKit = panelH - 176
         return CGPoint(
             x: loc.x - islandLeft,
@@ -811,7 +811,7 @@ final class IslandWindowController: NSWindowController {
         } else {
             islandH = fixedH
         }
-        let islandMinX = (panelW - islandW) / 2
+        let islandMinX = IslandDock.islandX(panelWidth: panelW, islandWidth: islandW)
         let (cx, cy, diameter, _) = botPosition(mode: s.mode, view: s.view,
                                                   islandW: islandW, islandH: islandH,
                                                   uploadProgress: s.uploadProgress, hasNotch: s.hasNotch)
@@ -876,7 +876,7 @@ final class IslandPanel: NSPanel {
         } else {
             h = fixedH
         }
-        return CGRect(x: (frame.width - w) / 2, y: frame.height - h, width: w, height: h)
+        return CGRect(x: IslandDock.islandX(panelWidth: frame.width, islandWidth: w), y: frame.height - h, width: w, height: h)
     }
 }
 
@@ -927,7 +927,9 @@ func islandSize(mode: IslandMode, view: IslandView,
                 nh: CGFloat = IslandConst.notchHeight) -> (CGFloat, CGFloat) {
     switch mode {
     case .hidden:   return (nw, nh)
-    case .compact:  return (nw + 36, nh + IslandConst.compactDrop)   // Zuffi's face hangs just under the notch
+    case .compact:
+        if IslandDock.docked { return (IslandConst.dockedCompact.width, IslandConst.dockedCompact.height) }
+        return (nw + 24, nh + IslandConst.compactDrop)   // Zuffi's face hangs just under the notch
     case .expanded:
         let layout = IslandConst.viewLayouts[view]!
         return (IslandConst.width(for: view), layout.height)

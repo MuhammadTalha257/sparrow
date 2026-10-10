@@ -139,6 +139,7 @@ final class AIService {
         var context = context
         // 0) Your data: daily messages, and spreadsheets you hand over.
         if let r = ZuffiTeam.shared.handle(query) { finish(r, state: state, emote: .happy); return }
+        if let r = ZuffiCRM.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiData.shared.handleCommand(query) { finish(r, state: state, emote: .happy); return }
         if case .file(_, let fileURL)? = context, let fileURL, ZuffiData.isSheet(fileURL) {
             let saved = await ZuffiData.shared.importSheet(fileURL)
