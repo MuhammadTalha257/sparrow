@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS = {
   keys: { gemini: '', openai: '', claude: '', grok: '', deepseek: '', mistral: '', groq: '', openrouter: '', perplexity: '' },
   models: {},
   lastBriefDay: '', morningOn: true, morningTime: '08:30', nightOn: true, nightTime: '21:30', lead: 5, lastMorning: '', lastNight: '',
-  theme: 'blossom', lang: 'en', simple: false,
+  theme: 'space', lang: 'en', simple: false,
   wake: true, micButton: true, conversation: true, musicApp: 'spotify',
   prayer: { on: false, method: 'Auto', asr: 'Hanafi', before: 10, speak: true },
   // Water, coffee and medicine reminders: every N minutes or at set times, only between start and end.
@@ -33,6 +33,7 @@ function mergeSettings(saved) {
   const s = Object.assign({}, DEFAULT_SETTINGS, saved || {});
   if (!s.lookV3) { s.theme = 'sunset'; s.lookV3 = true; }
   if (!s.lookV4) { if (!s.theme || s.theme === 'sunset') s.theme = 'blossom'; s.lookV4 = true; }   // the pink sparrow look
+  if (!s.lookV5) { if (!s.theme || s.theme === 'blossom') s.theme = 'space'; s.lookV5 = true; }    // Zuffi's night-sky look
   for (const k of ['keys', 'prayer', 'business', 'memory']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
   // health: one object per reminder kind (older versions stored water/meds as simple switches)
   const oh = (saved || {}).health || {};

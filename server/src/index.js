@@ -326,9 +326,18 @@ async function ai(env, system, user, wantJSON) {
 function jsonIn(t) {
   if (!t) return {};
   const s = String(t).replace(/```json|```/g, "");
-  const a = s.indexOf("{"), b = s.lastIndexOf("}");
-  if (a < 0 || b <= a) return {};
-  try { return JSON.parse(s.slice(a, b + 1)); } catch { return {}; }
+  const a = s.indexOf("{");
+  if (a < 0) return {};
+  // Walk to the matching brace (ignoring braces inside strings) so trailing junk like an extra "}" doesn't break it.
+  let depth = 0, inStr = false, esc = false;
+  for (let i = a; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) { if (esc) esc = false; else if (c === "\\") esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) { try { return JSON.parse(s.slice(a, i + 1)); } catch { break; } }
+  }
+  try { return JSON.parse(s.slice(a, s.lastIndexOf("}") + 1)); } catch { return {}; }
 }
 
 export async function extract(env, cfg, text) {
@@ -380,7 +389,8 @@ Return {"reply":"...","handoff":""}`, true);
     return { reply: String(j.reply).trim(), handoff: h && !/^(false|no|none|null)$/i.test(h) ? h : "" };
   }
   const clean = (r || "").trim().replace(/^["“]|["”]$/g, "");
-  return { reply: clean || fallback, handoff: clean ? "" : (first ? "" : "no AI answer") };
+  if (!clean || clean.startsWith("{") || clean.includes('"reply"')) return { reply: fallback, handoff: first ? "" : "no clear AI answer" };
+  return { reply: clean, handoff: "" };
 }
 
 export async function transcribeMedia(env, mediaId) {

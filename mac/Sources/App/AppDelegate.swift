@@ -6,6 +6,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     private(set) var islandController: IslandWindowController?
 
+    /// Opening Zuffi again (Finder, Spotlight, Launchpad) brings the island back to where you can see it and opens it.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        IslandDrag.rescueIfLost()
+        islandController?.window?.orderFrontRegardless()
+        islandController?.expand(to: .overview)
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Ignore SIGPIPE — prevents crash when nb-hook closes socket before we write response
         signal(SIGPIPE, SIG_IGN)

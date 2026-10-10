@@ -36,7 +36,7 @@ final class BusinessDashboard {
 }
 
 enum BizTab: String, CaseIterable, Identifiable {
-    case today = "Today", inbox = "Inbox", pipeline = "Pipeline", records = "Records", business = "My business", team = "Team", automations = "Automations", connect = "Connect WhatsApp"
+    case today = "Today", inbox = "Inbox", pipeline = "Pipeline", properties = "Properties", records = "Records", money = "Money", team = "Team & staff", business = "My business", automations = "Automations", connect = "Connect WhatsApp"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -44,6 +44,8 @@ enum BizTab: String, CaseIterable, Identifiable {
         case .inbox: return "tray.full.fill"
         case .pipeline: return "rectangle.split.3x1.fill"
         case .records: return "tablecells.fill"
+        case .properties: return "house.lodge.fill"
+        case .money: return "banknote.fill"
         case .business: return "building.2.fill"
         case .team: return "person.3.fill"
         case .automations: return "bolt.fill"
@@ -142,6 +144,8 @@ struct BusinessDashboardView: View {
                     case .inbox: BizInboxView()
                     case .pipeline: BizPipelineView()
                     case .records: BizRecordsView()
+                    case .properties: BizPropertiesView()
+                    case .money: BizMoneyView()
                     case .business: BizBusinessView()
                     case .team: BizTeamView()
                     case .automations: BizAutomationsView()
@@ -191,7 +195,7 @@ struct BusinessDashboardView: View {
                 }
             }
             .padding(.top, 34).padding(.bottom, 14).padding(.horizontal, 6)
-            ForEach(BizTab.allCases) { t in
+            ForEach(BizTab.allCases.filter { $0 != .properties || crm.isEstate }) { t in
                 Button { nav.tab = t } label: {
                     HStack(spacing: 10) {
                         Image(systemName: t.icon).frame(width: 18)
@@ -298,6 +302,7 @@ struct BizTodayView: View {
                     tile("Sales · 30 days", "\(crm.leads.filter { $0.isSale && $0.lastContact >= monthAgo }.count)", "trophy.fill", Biz.green)
                     tile("Revenue · 30 days", crm.currency + " " + Int(crm.leads.filter { $0.isSale && $0.lastContact >= monthAgo }.reduce(0) { $0 + $1.valueNumber }).formatted(), "banknote.fill", Biz.green)
                 }
+                BizTodayExtras()
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 14) {
                         GlassBox {
@@ -320,7 +325,7 @@ struct BizTodayView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         GlassBox {
                             VStack(alignment: .leading, spacing: 8) {
-                                header("Who isn't following up", "person.fill.questionmark")
+                                header(crm.team.isEmpty ? "Your team" : "Who isn't following up", "person.fill.questionmark")
                                 if crm.team.isEmpty { empty("Add your team in the Team tab to see this.") }
                                 ForEach(crm.reports()) { r in
                                     HStack {
@@ -771,6 +776,10 @@ struct BizTeamView: View {
     @State private var name = ""
     @State private var phone = ""
     @State private var role = "Agent"
+    @State private var payType = "Commission"
+    @State private var rate = ""
+    @State private var editing: CRMStaff?
+    @ObservedObject private var money = ZuffiMoney.shared
 
     var body: some View {
         ScrollView {
@@ -781,9 +790,14 @@ struct BizTeamView: View {
                         HStack {
                             TextField("Name", text: $name).textFieldStyle(.roundedBorder)
                             TextField("WhatsApp number", text: $phone).textFieldStyle(.roundedBorder)
-                            Picker("", selection: $role) { ForEach(["Agent", "Manager", "Receptionist", "Stylist"], id: \.self) { Text($0) } }.labelsHidden().frame(width: 130)
+                            Picker("", selection: $role) { ForEach(["Agent", "Manager", "Receptionist", "Stylist", "Assistant", "Accountant"], id: \.self) { Text($0) } }.labelsHidden().frame(width: 120)
+                        }
+                        HStack {
+                            Picker("Paid by", selection: $payType) { ForEach(["Commission", "Monthly", "Hourly"], id: \.self) { Text($0) } }.frame(width: 200)
+                            TextField(payType == "Commission" ? "Commission %" : payType == "Hourly" ? "Pay per hour (\(crm.currency))" : "Salary per month (\(crm.currency))", text: $rate).textFieldStyle(.roundedBorder).frame(width: 200)
+                            Spacer()
                             BizMainButton(title: "Add", icon: "plus") {
-                                crm.addStaff(name: name, phone: phone, role: role); name = ""; phone = ""
+                                crm.addStaff(name: name, phone: phone, role: role, payType: payType, rate: rate); name = ""; phone = ""; rate = ""
                             }
                         }
                         Toggle("Share new leads among the team (round robin)", isOn: Binding(get: { crm.isOn(.roundRobin) }, set: { crm.set(.roundRobin, $0) }))
@@ -823,6 +837,7 @@ struct BizTeamView: View {
                                     Group { if r.overdue > 0 { Pill(text: "\(r.overdue)", color: Biz.red, filled: true) } else { Pill(text: "0", color: Biz.green) } }.frame(width: 80)
                                     Spacer()
                                     Menu {
+                                        if let s { Button("Edit \(s.name)'s details & pay") { editing = s } }
                                         Button("Show their leads") { nav.search = ""; nav.tab = .pipeline }
                                         if let s { Button("Remove \(s.name)", role: .destructive) { crm.removeStaff(s) } }
                                     } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
@@ -836,8 +851,10 @@ struct BizTeamView: View {
                         }
                     }
                 }
+                BizPayrollBox(editing: $editing)
             }.padding(.horizontal, 22).padding(.bottom, 22)
         }
+        .sheet(item: $editing) { st in StaffEditor(staff: st) }
     }
 }
 
@@ -993,8 +1010,14 @@ struct BizTypeMenu: View {
     @ObservedObject private var biz = ZuffiBusiness.shared
     var body: some View {
         Menu {
-            ForEach(ZuffiBusiness.Pack.allCases) { p in
+            ForEach(ZuffiCRM.shared.packsForCountry) { p in
                 Button { Task { BizNav.shared.say(await biz.install(p)); ZuffiCRM.shared.reload() } } label: { Label(p.label + (biz.pack == p ? "  ✓" : ""), systemImage: p.icon) }
+            }
+            let others = ZuffiBusiness.Pack.allCases.filter { !ZuffiCRM.shared.packsForCountry.contains($0) }
+            if !others.isEmpty {
+                Menu("Other types") {
+                    ForEach(others) { p in Button { Task { BizNav.shared.say(await biz.install(p)); ZuffiCRM.shared.reload() } } label: { Label(p.label, systemImage: p.icon) } }
+                }
             }
         } label: {
             HStack(spacing: 6) {
@@ -1074,8 +1097,21 @@ struct BizBusinessView: View {
                             Spacer()
                             BizTypeMenu()
                         }
-                        TextField("Business name (used in messages)", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
-                            .textFieldStyle(.roundedBorder)
+                        HStack {
+                            TextField("Business name (used in messages)", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
+                                .textFieldStyle(.roundedBorder)
+                            Picker("Country", selection: $crm.country) {
+                                Text("🇵🇰 Pakistan").tag("PK"); Text("🇬🇧 United Kingdom").tag("GB"); Text("🌍 Other").tag("OTHER")
+                            }.frame(width: 210)
+                            Picker("Currency", selection: $crm.currencyChoice) {
+                                Text("Auto (\(crm.country == "PK" ? "Rs" : crm.country == "GB" ? "£" : "local"))").tag("")
+                                ForEach(ZuffiCRM.currencies, id: \.self) { Text($0).tag($0) }
+                            }.frame(width: 170)
+                        }
+                        Text(crm.country == "PK" ? "Pakistan: set up for estate agencies — properties, agents on commission, installments, Zameen / Facebook leads, Urdu replies."
+                             : crm.country == "GB" ? "United Kingdom: set up for small businesses — bookings, staff hours and wages, deposits, expenses and VAT categories."
+                             : "Pick the business type that fits you.")
+                            .font(.system(size: 10.5)).foregroundColor(Biz.pink)
                         Text("Write it like you'd brief a new receptionist: what you sell, prices, address, opening hours, how booking / buying works, delivery, payment, and anything clients always ask. Zuffi only uses what's written here.")
                             .font(.system(size: 11)).foregroundColor(.white.opacity(0.6)).fixedSize(horizontal: false, vertical: true)
                         editor($crm.businessInfo, minHeight: 220)
@@ -1196,5 +1232,298 @@ struct BizRecordsView: View {
         NSApp.activate(ignoringOtherApps: true)
         guard p.runModal() == .OK, let u = p.url else { return }
         Task { await BusinessFiles.take(u) }
+    }
+}
+
+// MARK: - Today: visits and money to collect
+
+struct BizTodayExtras: View {
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var props = ZuffiProperties.shared
+    @ObservedObject private var money = ZuffiMoney.shared
+    var body: some View {
+        let visits = props.upcomingVisits.prefix(6)
+        let dues = money.dueOpen.filter { $0.due <= ZuffiBusiness.iso(Date().addingTimeInterval(3 * 86400)) }.prefix(6)
+        if (crm.isEstate && !visits.isEmpty) || !dues.isEmpty {
+            HStack(alignment: .top, spacing: 14) {
+                if crm.isEstate && !visits.isEmpty {
+                    GlassBox {
+                        VStack(alignment: .leading, spacing: 6) {
+                            header("Site visits", "figure.walk")
+                            ForEach(Array(visits)) { v in
+                                Text("\(v.date == ZuffiBusiness.iso(Date()) ? "Today" : v.date) \(v.time) · \(v.client) · \(v.property)").font(.system(size: 12))
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                if !dues.isEmpty {
+                    GlassBox {
+                        VStack(alignment: .leading, spacing: 6) {
+                            header("Money to collect", "banknote.fill")
+                            ForEach(Array(dues)) { d in
+                                HStack {
+                                    Text("\(d.client) · \(d.what) · \(crm.currency) \(ZuffiMoney.pretty(d.amount))").font(.system(size: 12))
+                                    Spacer()
+                                    Text(d.overdue ? "overdue" : d.due).font(.system(size: 10.5, weight: .bold)).foregroundColor(d.overdue ? Biz.red : Biz.amber)
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Team & staff: pay, hours, commission
+
+struct BizPayrollBox: View {
+    @Binding var editing: CRMStaff?
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var money = ZuffiMoney.shared
+    @ObservedObject private var nav = BizNav.shared
+    @State private var hoursFor: String?
+    @State private var hoursText = ""
+
+    var body: some View {
+        GlassBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    header("Pay this month · \(money.monthName(money.month))", "creditcard.fill")
+                    Spacer()
+                    let unpaid = money.payLines(money.month).filter { !$0.paid && $0.net > 0 }
+                    if !unpaid.isEmpty {
+                        BizMainButton(title: "Pay \(unpaid.count) · \(crm.currency) \(ZuffiMoney.pretty(unpaid.reduce(0) { $0 + $1.net }))", icon: "checkmark.seal.fill") {
+                            nav.say(money.paySalaries())
+                        }
+                    }
+                }
+                if crm.team.isEmpty { empty("Add your team above. Set how each person is paid: commission %, monthly salary or per hour.") }
+                else {
+                    HStack {
+                        Text("Name").frame(width: 150, alignment: .leading)
+                        ForEach(["Paid by", "Rate", "Hours", "Commission", "Advances", "To pay", ""], id: \.self) { Text($0).frame(width: 88, alignment: .leading) }
+                    }.font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.5))
+                    ForEach(money.payLines(money.month)) { p in
+                        HStack {
+                            Text(p.name).font(.system(size: 12.5, weight: .bold)).frame(width: 150, alignment: .leading)
+                            Text(p.payType).frame(width: 88, alignment: .leading)
+                            Text(p.rate == 0 ? "—" : p.payType == "Commission" ? "\(ZuffiMoney.plain(p.rate))%" : "\(crm.currency) \(ZuffiMoney.pretty(p.rate))").frame(width: 88, alignment: .leading)
+                            Button { hoursFor = p.name; hoursText = "" } label: { Text("\(ZuffiMoney.plain(p.hours)) h ＋").underline() }.buttonStyle(.plain).frame(width: 88, alignment: .leading)
+                            Text(p.commission == 0 ? "—" : "\(crm.currency) \(ZuffiMoney.pretty(p.commission))").frame(width: 88, alignment: .leading)
+                            Text(p.advances == 0 ? "—" : "−\(ZuffiMoney.pretty(p.advances))").foregroundColor(p.advances > 0 ? Biz.red : .white).frame(width: 88, alignment: .leading)
+                            Text("\(crm.currency) \(ZuffiMoney.pretty(p.net))").fontWeight(.bold).frame(width: 88, alignment: .leading)
+                            Group {
+                                if p.paid { Pill(text: "paid", color: Biz.green) }
+                                else if p.net > 0 { Button("Pay") { nav.say(money.paySalaries(p.name)) }.controlSize(.small) }
+                                else if crm.team.first(where: { $0.name == p.name })?.rate.isEmpty ?? true {
+                                    Button("Set pay") { editing = crm.team.first { $0.name == p.name } }.controlSize(.small)
+                                }
+                            }.frame(width: 88, alignment: .leading)
+                        }.font(.system(size: 12, design: .rounded))
+                    }
+                    Text("Commission is worked out from the value of deals each agent won this month (set the deal value on the client). Advances you give (expense “Advance to staff”) are taken off. Paying adds a salaries expense in Money.")
+                        .font(.system(size: 10.5)).foregroundColor(.white.opacity(0.5)).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .sheet(item: Binding(get: { hoursFor.map { HoursTarget(name: $0) } }, set: { hoursFor = $0?.name })) { t in
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Hours for \(t.name) today").font(.system(size: 15, weight: .bold))
+                TextField("e.g. 7.5", text: $hoursText).textFieldStyle(.roundedBorder)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { hoursFor = nil }
+                    Button("Save") { money.logHours(t.name, ZuffiMoney.number(hoursText)); hoursFor = nil }.keyboardShortcut(.defaultAction)
+                }
+            }.padding(20).frame(width: 300)
+        }
+    }
+}
+
+struct HoursTarget: Identifiable { var id: String { name }; let name: String }
+
+struct StaffEditor: View {
+    let staff: CRMStaff
+    @Environment(\.dismiss) private var dismiss
+    @State private var s = CRMStaff(name: "", phone: "", role: "", pin: "")
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(s.name).font(.system(size: 17, weight: .heavy, design: .rounded))
+            Form {
+                TextField("WhatsApp number", text: $s.phone)
+                TextField("Role", text: $s.role)
+                Picker("Paid by", selection: $s.payType) { ForEach(["Commission", "Monthly", "Hourly"], id: \.self) { Text($0).tag($0) } }
+                TextField(s.payType == "Commission" ? "Commission %" : s.payType == "Hourly" ? "Pay per hour" : "Salary per month", text: $s.rate)
+                TextField("Start date (yyyy-mm-dd)", text: $s.start)
+                TextField("Notes (ID / NI number, bank, emergency contact…)", text: $s.notes)
+                TextField("PIN for the team page", text: $s.pin)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Save") { ZuffiCRM.shared.updateStaff(s); dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 440)
+        .onAppear { s = staff }
+    }
+}
+
+// MARK: - Money tab
+
+struct BizMoneyView: View {
+    @ObservedObject private var money = ZuffiMoney.shared
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var nav = BizNav.shared
+    @State private var month = ZuffiMoney.shared.month
+    @State private var type = "Expense"
+    @State private var amount = ""
+    @State private var category = ""
+    @State private var party = ""
+    @State private var method = ""
+    @State private var note = ""
+    @State private var dueClient = ""
+    @State private var dueWhat = "Installment"
+    @State private var dueAmount = ""
+    @State private var dueDate = Date().addingTimeInterval(7 * 86400)
+
+    private var months: [String] {
+        let all = Set(money.entries.map { String($0.date.prefix(7)) } + [money.month])
+        return all.sorted(by: >)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Picker("", selection: $month) { ForEach(months, id: \.self) { Text(money.monthName($0)).tag($0) } }.labelsHidden().frame(width: 180)
+                    Spacer()
+                    BizSoftButton(title: "Open in Excel / Numbers", icon: "tablecells") { NSWorkspace.shared.open(ZuffiPA.url("Money")) }
+                }
+                let inc = money.income(month), exp = money.expenses(month)
+                HStack(spacing: 12) {
+                    tile("Income", inc, Biz.green, "arrow.down.circle.fill")
+                    tile("Expenses", exp, Biz.red, "arrow.up.circle.fill")
+                    tile(inc - exp >= 0 ? "Profit" : "Loss", abs(inc - exp), inc - exp >= 0 ? Biz.green : Biz.red, "chart.line.uptrend.xyaxis")
+                    tile("To collect", money.dueOpen.reduce(0) { $0 + $1.amount }, Biz.amber, "hourglass")
+                }
+                HStack(alignment: .top, spacing: 14) {
+                    // Add an entry
+                    GlassBox {
+                        VStack(alignment: .leading, spacing: 8) {
+                            header("Add income or expense", "plus.circle.fill")
+                            Picker("", selection: $type) { Text("Expense").tag("Expense"); Text("Income").tag("Income") }.pickerStyle(.segmented).labelsHidden()
+                            HStack {
+                                TextField("Amount (\(crm.currency)) — “2 lakh”, “45”", text: $amount).textFieldStyle(.roundedBorder)
+                                Picker("", selection: $category) {
+                                    Text("Category").tag("")
+                                    ForEach(type == "Income" ? money.incomeCategories : money.expenseCategories, id: \.self) { Text($0).tag($0) }
+                                }.labelsHidden().frame(width: 190)
+                            }
+                            HStack {
+                                TextField(type == "Income" ? "From (client)" : "To (supplier / staff)", text: $party).textFieldStyle(.roundedBorder)
+                                Picker("", selection: $method) { Text("Paid by").tag(""); ForEach(money.methods, id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(width: 130)
+                            }
+                            TextField("Note", text: $note).textFieldStyle(.roundedBorder)
+                            HStack {
+                                BizMainButton(title: "Save", icon: "checkmark") {
+                                    let a = ZuffiMoney.number(amount)
+                                    guard a > 0 else { nav.say("Type an amount first."); return }
+                                    nav.say(money.add(type: type, category: category.isEmpty ? (type == "Income" ? money.incomeCategories[0] : "Other") : category, amount: a, party: party, method: method, note: note))
+                                    amount = ""; party = ""; note = ""
+                                }
+                                Text("Or just tell Zuffi: “expense 5000 petrol”, “income 2 lakh commission from Ali”.").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.5))
+                            }
+                        }
+                    }
+                    // Breakdown
+                    GlassBox {
+                        VStack(alignment: .leading, spacing: 6) {
+                            header("Where the money went", "chart.pie.fill")
+                            let cats = money.byCategory(month, type: "Expense")
+                            if cats.isEmpty { empty("No expenses this month.") }
+                            let top = cats.first?.1 ?? 1
+                            ForEach(cats.prefix(8), id: \.0) { c in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack { Text(c.0).font(.system(size: 11.5)); Spacer(); Text("\(crm.currency) \(ZuffiMoney.pretty(c.1))").font(.system(size: 11.5, weight: .semibold)) }
+                                    GeometryReader { g in Capsule().fill(Biz.red.opacity(0.7)).frame(width: max(4, g.size.width * c.1 / top)) }.frame(height: 5)
+                                }
+                            }
+                        }
+                    }.frame(width: 300)
+                }
+                // Payments due (installments, tokens, invoices)
+                GlassBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        header(crm.isEstate ? "Installments & payments to collect" : "Payments to collect", "calendar.badge.clock")
+                        HStack {
+                            TextField("Client", text: $dueClient).textFieldStyle(.roundedBorder)
+                            Picker("", selection: $dueWhat) { ForEach(crm.isEstate ? ["Installment", "Token", "Advance", "Balance", "Rent"] : ["Invoice", "Deposit", "Balance"], id: \.self) { Text($0) } }.labelsHidden().frame(width: 120)
+                            TextField("Amount", text: $dueAmount).textFieldStyle(.roundedBorder).frame(width: 120)
+                            DatePicker("", selection: $dueDate, displayedComponents: .date).labelsHidden()
+                            BizSoftButton(title: "Add", icon: "plus") {
+                                let a = ZuffiMoney.number(dueAmount)
+                                guard a > 0, !dueClient.isEmpty else { return }
+                                let phone = crm.leads.first { $0.name.lowercased().hasPrefix(dueClient.lowercased()) }?.phone ?? ""
+                                money.addDue(client: dueClient, phone: phone, what: dueWhat, amount: a, due: ZuffiBusiness.iso(dueDate))
+                                dueClient = ""; dueAmount = ""
+                            }
+                        }
+                        let open = money.dueOpen
+                        if open.isEmpty { empty("Nothing to collect. Zuffi reminds you the day before each payment is due.") }
+                        ForEach(open) { d in
+                            HStack {
+                                Text(d.client).font(.system(size: 12.5, weight: .semibold)).frame(width: 150, alignment: .leading)
+                                Text(d.what).frame(width: 100, alignment: .leading)
+                                Text("\(crm.currency) \(ZuffiMoney.pretty(d.amount))").frame(width: 130, alignment: .leading)
+                                Text(d.due).foregroundColor(d.overdue ? Biz.red : .white).frame(width: 100, alignment: .leading)
+                                Spacer()
+                                if !d.phone.isEmpty {
+                                    Button("Remind on WhatsApp") {
+                                        let biz = ZuffiBusiness.shared.businessName
+                                        let text = "Assalam o Alaikum \(d.client.split(separator: " ").first ?? ""), a gentle reminder that your \(d.what.lowercased()) of \(crm.currency) \(ZuffiMoney.pretty(d.amount)) is due on \(d.due). Thank you\(biz.isEmpty ? "" : " — \(biz)")."
+                                        let fixed = crm.isEstate ? text : text.replacingOccurrences(of: "Assalam o Alaikum", with: "Hi")
+                                        Task { nav.say(await WhatsAppAgent.shared.sendScheduled(to: d.phone, text: fixed)) }
+                                    }.controlSize(.small)
+                                }
+                                Button("Mark paid") { money.markPaid(d); nav.say("Marked paid and added to income ✅") }.controlSize(.small)
+                            }.font(.system(size: 12, design: .rounded))
+                        }
+                    }
+                }
+                // Entries
+                GlassBox {
+                    VStack(alignment: .leading, spacing: 6) {
+                        header("Entries · \(money.monthName(month))", "list.bullet.rectangle")
+                        let list = money.inMonth(month).reversed()
+                        if list.isEmpty { empty("No entries yet.") }
+                        ForEach(Array(list)) { e in
+                            HStack {
+                                Text(e.date).frame(width: 90, alignment: .leading).foregroundColor(.white.opacity(0.6))
+                                Text(e.category).frame(width: 170, alignment: .leading)
+                                Text(e.party).frame(width: 130, alignment: .leading).lineLimit(1)
+                                Text(e.note).foregroundColor(.white.opacity(0.6)).lineLimit(1)
+                                Spacer()
+                                Text("\(e.type == "Income" ? "+" : "−")\(crm.currency) \(ZuffiMoney.pretty(e.amount))").fontWeight(.bold).foregroundColor(e.type == "Income" ? Biz.green : Biz.red)
+                                Button { money.delete(e) } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundColor(.white.opacity(0.4))
+                            }.font(.system(size: 12, design: .rounded))
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 22).padding(.bottom, 22)
+        }
+        .onAppear { money.reload() }
+    }
+
+    private func tile(_ t: String, _ v: Double, _ c: Color, _ icon: String) -> some View {
+        GlassBox(padding: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Image(systemName: icon).foregroundColor(c)
+                Text("\(crm.currency) \(ZuffiMoney.pretty(v))").font(.system(size: 21, weight: .heavy, design: .rounded)).lineLimit(1).minimumScaleFactor(0.6)
+                Text(t).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }

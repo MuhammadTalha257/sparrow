@@ -1352,8 +1352,12 @@ struct AppearanceSettings: View {
                     ForEach(SparrowPosition.allCases) { Text($0.label).tag($0.rawValue) }
                 }
                 .onChange(of: position) { _, _ in UserDefaults.standard.removeObject(forKey: "islandOrigin") }
-                Text("Tip: drag the top bar of the island to put Zuffi anywhere you like.")
-                    .font(.system(size: 11)).foregroundColor(.secondary)
+                HStack {
+                    Text("Tip: drag Zuffi anywhere — drop it at the left or right edge to park it there.")
+                        .font(.system(size: 11)).foregroundColor(.secondary)
+                    Spacer()
+                    Button("Put Zuffi back at the top") { IslandDrag.resetPosition() }.controlSize(.small)
+                }
                 if position != startPosition {
                     HStack {
                         Text("Restart Zuffi to move it.").font(.system(size: 11)).foregroundColor(.orange)

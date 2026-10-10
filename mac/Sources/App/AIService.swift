@@ -140,6 +140,8 @@ final class AIService {
         // 0) Your data: daily messages, and spreadsheets you hand over.
         if let r = ZuffiTeam.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiCRM.shared.handle(query) { finish(r, state: state, emote: .happy); return }
+        if let r = ZuffiMoney.shared.handle(query) { finish(r, state: state, emote: .happy); return }
+        if let r = await ZuffiProperties.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiData.shared.handleCommand(query) { finish(r, state: state, emote: .happy); return }
         if case .file(_, let fileURL)? = context, let fileURL, ZuffiData.isSheet(fileURL) {
             let saved = await ZuffiData.shared.importSheet(fileURL)
@@ -454,9 +456,48 @@ final class AIService {
     static func jsonIn(_ text: String) -> Any? {
         let t = text.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
         guard let a = t.firstIndex(where: { $0 == "{" || $0 == "[" }) else { return nil }
-        let close: Character = t[a] == "{" ? "}" : "]"
-        guard let b = t.lastIndex(of: close), a < b else { return nil }
-        return try? JSONSerialization.jsonObject(with: Data(t[a...b].utf8))
+        // Walk to the matching bracket (ignoring brackets inside strings), so extra text or a stray "}" after it doesn't break parsing.
+        let open = t[a], close: Character = open == "{" ? "}" : "]"
+        var depth = 0, inString = false, escaped = false, end: String.Index?
+        var i = a
+        while i < t.endIndex {
+            let c = t[i]
+            if inString {
+                if escaped { escaped = false } else if c == "\\" { escaped = true } else if c == "\"" { inString = false }
+            } else if c == "\"" { inString = true }
+            else if c == open { depth += 1 }
+            else if c == close { depth -= 1; if depth == 0 { end = i; break } }
+            i = t.index(after: i)
+        }
+        if let end, let v = try? JSONSerialization.jsonObject(with: Data(t[a...end].utf8)) { return v }
+        if let b = t.lastIndex(of: close), a < b { return try? JSONSerialization.jsonObject(with: Data(t[a...b].utf8)) }
+        return nil
+    }
+
+    /// A quick JSON answer for business chats: Groq (fastest) → Gemini Flash → OpenAI mini → whatever else is set up.
+    func fastJSON(_ prompt: String, system: String) async -> [String: Any]? {
+        func parse(_ s: String?) -> [String: Any]? { s.flatMap { Self.jsonIn($0) as? [String: Any] } }
+        let msgs: [[String: Any]] = [["role": "system", "content": system], ["role": "user", "content": prompt]]
+        if let k = KeychainStore.shared.get("groq-api-key"), !k.isEmpty,
+           let j = try? await postJSON(URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
+                                       body: ["model": UserDefaults.standard.string(forKey: "groqResolved") ?? "llama-3.3-70b-versatile", "temperature": 0.3, "max_tokens": 500,
+                                              "response_format": ["type": "json_object"], "messages": msgs], headers: ["Authorization": "Bearer \(k)"], timeout: 15),
+           let r = parse(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return r }
+        if let k = KeychainStore.shared.get("gemini-api-key"), !k.isEmpty {
+            let model = UserDefaults.standard.string(forKey: "geminiResolved") ?? AppState.defaultGeminiModel
+            if let j = try? await postJSON(URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!,
+                                           body: ["system_instruction": ["parts": [["text": system]]], "contents": [["role": "user", "parts": [["text": prompt]]]],
+                                                  "generationConfig": ["temperature": 0.3, "responseMimeType": "application/json"]], headers: ["x-goog-api-key": k], timeout: 15) {
+                let parts = (((j["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
+                if let r = parse(parts.compactMap { $0["text"] as? String }.joined()) { return r }
+            }
+        }
+        if let k = KeychainStore.shared.get("openai-api-key"), !k.isEmpty,
+           let j = try? await postJSON(URL(string: "https://api.openai.com/v1/chat/completions")!,
+                                       body: ["model": "gpt-4o-mini", "temperature": 0.3, "response_format": ["type": "json_object"], "messages": msgs],
+                                       headers: ["Authorization": "Bearer \(k)"], timeout: 15),
+           let r = parse(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return r }
+        return parse(await oneShot(prompt, system: system))
     }
 
     // MARK: Grok, DeepSeek, Mistral, Perplexity, OpenRouter (all OpenAI-style)

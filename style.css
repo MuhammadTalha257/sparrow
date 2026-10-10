@@ -50,6 +50,13 @@
   --grad: linear-gradient(135deg, #F48CA6, #DC5A7C);
   color-scheme: light;
 }
+[data-theme="space"] {
+  --bg: #0B0A1F; --shape: #2A1647; --card: rgba(255, 255, 255, .07); --line: rgba(255, 255, 255, .12); --text: #FFFFFF; --muted: #C9C3E6; --faint: #8E88B3;
+  --accent: #F58FA8; --accent2: #7C5CFF; --ink: #1A1008; --soft: rgba(245,143,168,.14); --good: #34D399; --bad: #FF7A85;
+  --shadow: 0 12px 34px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.07); --tab: rgba(16,13,40,.86); --input: rgba(0,0,0,.3);
+  --grad: linear-gradient(135deg, #FBC56A, #F28A3C);
+  color-scheme: dark;
+}
 :root { --r: 22px; --bw: 1px; --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
   --font: ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, Roboto, "Noto Sans", sans-serif; }
 [data-theme="pop"] { --bw: 2.5px; }
@@ -644,3 +651,29 @@ html.mac-host .no-mac { display: none; }
 .mac-key { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 4px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(245,143,168,.12); color: inherit; font-size: 11px; font-weight: 600; }
 .mac-key span { font-size: 20px; }
 .mac-key:active { transform: scale(.95); background: rgba(245,143,168,.28); }
+
+/* =====================================================================
+   Space look (Zuffi's new style) — night sky, drifting coloured orbs, twinkling stars, glass cards
+   ===================================================================== */
+[data-theme="space"] body { background: linear-gradient(160deg, #0B0A1F 0%, #1B1240 55%, #2A1235 100%) fixed; }
+[data-theme="space"] .bg-shape { width: 460px; height: 460px; top: -160px; right: -150px; opacity: .95;
+  background: radial-gradient(closest-side, rgba(226,100,138,.42), rgba(124,92,255,.18) 55%, transparent); filter: blur(14px); animation: drift 16s ease-in-out infinite alternate; }
+[data-theme="space"] body::before { content: ""; position: fixed; z-index: 0; pointer-events: none; width: 420px; height: 420px; left: -170px; top: 42vh;
+  border-radius: 50%; background: radial-gradient(closest-side, rgba(59,168,255,.30), rgba(124,92,255,.12) 60%, transparent); filter: blur(14px); animation: drift 20s ease-in-out -5s infinite alternate-reverse; }
+[data-theme="space"] body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: .75;
+  background-image:
+    radial-gradient(1.4px 1.4px at 12% 18%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 28% 72%, #fff 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 44% 34%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 63% 12%, #fff 50%, transparent 51%),
+    radial-gradient(1.6px 1.6px at 78% 58%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 90% 26%, #fff 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 8% 88%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 54% 92%, #fff 50%, transparent 51%),
+    radial-gradient(1.3px 1.3px at 35% 52%, #fff 50%, transparent 51%), radial-gradient(1px 1px at 70% 80%, #fff 50%, transparent 51%);
+  animation: twinkle 4s ease-in-out infinite alternate; }
+@keyframes twinkle { from { opacity: .35; } to { opacity: .85; } }
+[data-theme="space"] .card, [data-theme="space"] details, [data-theme="space"] .seg, [data-theme="space"] .ask, [data-theme="space"] .tabs {
+  backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%); }
+[data-theme="space"] .ask { background: rgba(16,13,40,.82); }
+[data-theme="space"] .sheet { background: rgba(14,11,34,.94); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+[data-theme="space"] .sheet-head { background: transparent; }
+[data-theme="space"] .up-next { background: linear-gradient(135deg, rgba(245,143,168,.85), rgba(124,92,255,.75)); color: #fff; }
+[data-theme="space"] .tabs button.on { color: #fff; }
+[data-theme="space"] .tabs button.on svg { color: var(--accent); }

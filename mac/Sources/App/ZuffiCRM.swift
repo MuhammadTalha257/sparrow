@@ -45,6 +45,10 @@ struct CRMStaff: Identifiable, Hashable {
     var phone: String
     var role: String
     var pin: String
+    var payType = "Monthly"     // Monthly · Hourly · Commission
+    var rate = ""               // salary per month, pay per hour, or commission %
+    var start = ""
+    var notes = ""
 }
 
 struct CRMActivity: Identifiable, Hashable {
@@ -175,9 +179,27 @@ final class ZuffiCRM: ObservableObject {
         case .services: return ("Job", "Location", "Budget", "Job value")
         }
     }
-    var currency: String { Locale.current.region?.identifier == "PK" ? "Rs" : Locale.current.currencySymbol ?? "£" }
+    /// "PK", "GB" or "OTHER" — picked in My business; decides currency and which business types show.
+    @Published var country: String = UserDefaults.standard.string(forKey: "bizCountry")
+        ?? (Locale.current.region?.identifier == "PK" ? "PK" : Locale.current.region?.identifier == "GB" ? "GB" : "OTHER") {
+        didSet { UserDefaults.standard.set(country, forKey: "bizCountry"); if UserDefaults.standard.string(forKey: "bizCurrency") == nil { objectWillChange.send() } }
+    }
+    @Published var currencyChoice: String = UserDefaults.standard.string(forKey: "bizCurrency") ?? "" { didSet { UserDefaults.standard.set(currencyChoice, forKey: "bizCurrency") } }
+    var currency: String {
+        if !currencyChoice.isEmpty { return currencyChoice }
+        switch country { case "PK": return "Rs"; case "GB": return "£"; default: return Locale.current.currencySymbol ?? "$" }
+    }
+    static let currencies = ["Rs", "£", "$", "€", "AED", "SAR", "₹"]
+    /// Business types that fit the country.
+    var packsForCountry: [ZuffiBusiness.Pack] {
+        switch country {
+        case "PK": return [.realEstate]
+        case "GB": return [.salon, .clinic, .shop, .restaurant, .services, .realEstate]
+        default: return ZuffiBusiness.Pack.allCases
+        }
+    }
     var businessWord: String {
-        let country = Locale.current.region?.identifier == "GB" ? "UK" : Locale.current.region?.identifier == "PK" ? "Pakistani" : ""
+        let country = self.country == "GB" ? "UK" : self.country == "PK" ? "Pakistani" : ""
         switch kind {
         case .realEstate: return "\(country.isEmpty ? "" : country + " ")property agent"
         case .salon: return "\(country.isEmpty ? "" : country + " ")salon / beauty business"
@@ -217,8 +239,11 @@ final class ZuffiCRM: ObservableObject {
             l.key = Self.key(name: l.name, phone: l.phone, row: i)
             return l
         }
-        let t = ZuffiPA.load("Team", header: ["Name", "Phone", "Role", "PIN"])
-        team = t.rows.map { CRMStaff(name: t.get($0, ["name"]), phone: t.get($0, ["phone"]), role: t.get($0, ["role"]), pin: t.get($0, ["pin"])) }.filter { !$0.name.isEmpty }
+        let t = ZuffiPA.load("Team", header: Self.teamHeader)
+        team = t.rows.map {
+            CRMStaff(name: t.get($0, ["name"]), phone: t.get($0, ["phone"]), role: t.get($0, ["role"]), pin: t.get($0, ["pin"]),
+                     payType: t.get($0, ["pay type"]).ifBlank("Monthly"), rate: t.get($0, ["rate"]), start: t.get($0, ["start"]), notes: t.get($0, ["notes"]))
+        }.filter { !$0.name.isEmpty }
         let a = ZuffiPA.load("Activity", header: ["Date", "Time", "Lead", "Staff", "Kind", "Detail"])
         activity = a.rows.suffix(3000).map { CRMActivity(date: a.get($0, ["date"]), time: a.get($0, ["time"]), lead: a.get($0, ["lead"]), staff: a.get($0, ["staff"]), kind: a.get($0, ["kind"]), detail: a.get($0, ["detail"])) }
         stamp = ZuffiBusiness.mtime(ZuffiPA.url("Leads"))
@@ -308,15 +333,19 @@ final class ZuffiCRM: ObservableObject {
     // MARK: Team
 
     func saveTeam(_ list: [CRMStaff]) {
-        ZuffiPA.save("Team", ZuffiPA.Book(header: ["Name", "Phone", "Role", "PIN"], rows: list.map { [$0.name, $0.phone, $0.role, $0.pin] }))
+        ZuffiPA.save("Team", ZuffiPA.Book(header: Self.teamHeader, rows: list.map { [$0.name, $0.phone, $0.role, $0.pin, $0.payType, $0.rate, $0.start, $0.notes] }))
         team = list
         if !serverURL.isEmpty { Task { await self.pushTeam() } }
     }
-    func addStaff(name: String, phone: String, role: String) {
+    static let teamHeader = ["Name", "Phone", "Role", "PIN", "Pay type", "Rate", "Start date", "Notes"]
+
+    func addStaff(name: String, phone: String, role: String, payType: String = "Monthly", rate: String = "") {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty, !team.contains(where: { $0.name.lowercased() == n.lowercased() }) else { return }
-        saveTeam(team + [CRMStaff(name: n, phone: phone, role: role, pin: String(format: "%04d", Int.random(in: 1000...9999)))])
+        saveTeam(team + [CRMStaff(name: n, phone: phone, role: role, pin: String(format: "%04d", Int.random(in: 1000...9999)),
+                                  payType: payType, rate: rate, start: ZuffiBusiness.iso(Date()))])
     }
+    func updateStaff(_ s: CRMStaff) { saveTeam(team.map { $0.name == s.name ? s : $0 }) }
     func removeStaff(_ s: CRMStaff) {
         saveTeam(team.filter { $0.name != s.name })
         for l in leads where l.assigned == s.name { edit(l.key) { b, i in b.set(i, ["assigned"], "") } }
@@ -388,7 +417,8 @@ final class ZuffiCRM: ObservableObject {
         if let m = ZuffiBusiness.mtime(ZuffiPA.url("Leads")), m != stamp { reload() }
         let now = Date()
         NotificationReader.shared.refresh()
-        if isOn(.watchWhatsApp), now.timeIntervalSince(lastWatch) > 25 { lastWatch = now; Task { await self.watchWhatsApp() } }
+        ZuffiMoney.shared.tick()
+        if isOn(.watchWhatsApp), now.timeIntervalSince(lastWatch) > 8 { lastWatch = now; Task { await self.watchWhatsApp() } }
         if isOn(.voiceNotes) { scanVoiceNotes() }
         if !serverURL.isEmpty, now.timeIntervalSince(lastSync) > 60 { lastSync = now; Task { await self.pullServer() } }
         if isOn(.quietFollowUp) { draftQuietFollowUps() }
@@ -454,7 +484,9 @@ final class ZuffiCRM: ObservableObject {
         let existing = leads.first { (!phone.isEmpty && ZuffiPA.samePhone($0.phone, phone)) || (!name.isEmpty && $0.name.lowercased() == name.lowercased()) }
         var f: [String: String] = ["name": name, "phone": phone, "last message": voice ? "🎤 Voice note" : text, "last message at": Self.now()]
         if existing == nil { f["source"] = source }
-        if !voice, text.count > 6 {
+        let pilot = isOn(.autopilot), wantsReply = pilot || isOn(.draftReplies) || isOn(.autoReply)
+        // Without replies we still fill in the lead (one quick AI call).
+        if !voice, !wantsReply, text.count > 6 {
             let found = await extract(text)
             for (k, v) in found where (f[k] ?? "").isEmpty {
                 if existing != nil && !["interest", "area", "budget", "priority"].contains(k) { continue }
@@ -467,10 +499,17 @@ final class ZuffiCRM: ObservableObject {
             SoundEngine.shared.play("chime")
             NotificationCenter.default.post(name: .petSay, object: "New WhatsApp lead: \(name.isEmpty ? phone : name)")
         }
-        guard !voice, let lead = leads.first(where: { $0.key == key }) else { return }
-        let pilot = isOn(.autopilot)
-        guard pilot || isOn(.draftReplies) || isOn(.autoReply) else { return }
+        guard !voice, wantsReply, let lead = leads.first(where: { $0.key == key }) else { return }
         let r = await smartReply(for: lead, incoming: text, first: existing == nil)
+        // Details the AI picked up in the same call go into the lead.
+        if !r.details.isEmpty {
+            edit(key) { b, i in
+                for (k, v) in r.details where !v.isEmpty {
+                    if k == "priority" { if b.get(b.rows[i], ["priority"]).isEmpty || v == "Hot" { b.set(i, ["priority"], v) } }
+                    else if b.get(b.rows[i], [k]).isEmpty { b.set(i, [k], v) }
+                }
+            }
+        }
         guard !r.reply.isEmpty else { return }
         drafts[key] = r.reply
         if let why = r.handoff {
@@ -501,7 +540,7 @@ final class ZuffiCRM: ObservableObject {
             while !self.outbox.isEmpty {
                 let idle = [CGEventType.keyDown, .leftMouseDown, .mouseMoved, .scrollWheel]
                     .map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 99
-                if idle >= 10 || Date().timeIntervalSince(self.outbox[0].queued) > 120 {
+                if idle >= 4 || Date().timeIntervalSince(self.outbox[0].queued) > 30 {
                     let item = self.outbox.removeFirst()
                     let front = NSWorkspace.shared.frontmostApplication
                     let res = await self.send(item.key, item.text, auto: true)
@@ -514,9 +553,9 @@ final class ZuffiCRM: ObservableObject {
                         try? await Task.sleep(nanoseconds: 700_000_000)
                         front.bringForward()
                     }
-                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
                 } else {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
                 }
             }
             self.outboxRunning = false
@@ -562,9 +601,9 @@ final class ZuffiCRM: ObservableObject {
         await smartReply(for: l, incoming: incoming, first: first).reply
     }
 
-    /// A reply that uses the business info, today's update, the listings / diary and the conversation so far.
-    /// handoff = why a person should answer instead (then autopilot doesn't send).
-    func smartReply(for l: CRMLead, incoming: String, first: Bool) async -> (reply: String, handoff: String?) {
+    /// One fast AI call: the reply (using business info, today's update, listings / diary and the conversation so far),
+    /// whether a person must answer instead, and any lead details in the message.
+    func smartReply(for l: CRMLead, incoming: String, first: Bool) async -> (reply: String, handoff: String?, details: [String: String]) {
         let biz = ZuffiBusiness.shared.businessName
         let firstName = l.name.split(separator: " ").first.map(String.init) ?? ""
         let fallback = !welcomeText.isEmpty ? welcomeText.replacingOccurrences(of: "{name}", with: firstName)
@@ -572,40 +611,46 @@ final class ZuffiCRM: ObservableObject {
             : "Hi\(firstName.isEmpty ? "" : " \(firstName)")! Thanks for messaging \(biz.isEmpty ? "us" : biz). How can we help you today?"
         var context = ""
         if isEstate, let s = ZuffiData.shared.sheets.first(where: { $0.name.lowercased().hasPrefix("listings") }) {
-            context = "Available listings (CSV):\n" + ZuffiData.shared.rows(s).prefix(40).map { $0.joined(separator: ", ") }.joined(separator: "\n")
+            context = "AVAILABLE LISTINGS:\n" + ZuffiData.shared.rows(s).prefix(30).map { $0.joined(separator: ", ") }.joined(separator: "\n")
         } else if kind.usesAppointments {
-            let upcoming = ZuffiPA.load("Appointments", header: ZuffiPA.apptHeader).rows.filter { ($0.first ?? "") >= ZuffiBusiness.iso(Date()) }.prefix(40)
-            context = "Already booked (so these times are taken):\n" + upcoming.map { $0.prefix(3).joined(separator: " ") }.joined(separator: "\n")
+            let upcoming = ZuffiPA.load("Appointments", header: ZuffiPA.apptHeader).rows.filter { ($0.first ?? "") >= ZuffiBusiness.iso(Date()) }.prefix(30)
+            if !upcoming.isEmpty { context = "TIMES ALREADY TAKEN:\n" + upcoming.map { $0.prefix(2).joined(separator: " ") }.joined(separator: "\n") }
         }
-        let past = history(l.key).dropLast().map { ($0.dir == "in" ? "Client: " : "Us: ") + $0.text }.joined(separator: "\n")
-        let prompt = """
-        You answer WhatsApp messages for \(biz.isEmpty ? "a business" : biz), a \(businessWord).
-        ABOUT THE BUSINESS (only facts you may use):
-        \(businessInfo.isEmpty ? "(nothing written yet)" : String(businessInfo.prefix(6000)))
-        \(todaysUpdate.isEmpty ? "" : "TODAY'S UPDATE (offers, new items, availability — mention it when it fits):\n\(todaysUpdate)")
-        \(context)
-        CLIENT: \(l.display). Known: \([l.interest, l.area, l.budget].filter { !$0.isEmpty }.joined(separator: ", ").ifBlank("nothing yet"))
-        \(past.isEmpty ? "" : "CONVERSATION SO FAR:\n\(past)")
-        NEW MESSAGE FROM CLIENT: \(incoming)
-
-        Write the reply in the client's own language and script (English, Urdu or Roman Urdu). 1-3 short, warm, human sentences.
-        \(first ? "It's their first message: greet them and ask only for what's missing." : "")
-        Use ONLY the facts above — never invent prices, discounts, stock, listings or free times.
-        Set "handoff" to a short reason (and still write a polite holding reply like "Let me check with the team and get back to you shortly") when:
-        they want to bargain or ask for a discount not in today's update, they complain or are upset, they ask for a person / a call,
-        it's about payment problems, refunds or legal matters, or the answer isn't in the facts above.
-        Return JSON only: {"reply":"...","handoff":""}
+        let past = history(l.key).dropLast().suffix(8).map { ($0.dir == "in" ? "Client: " : "Business: ") + $0.text }.joined(separator: "\n")
+        let system = """
+        You are the WhatsApp assistant of \(biz.isEmpty ? "a small business" : biz) (a \(businessWord)). You write as the business ("we").
+        Never give yourself a personal name, never say you are an AI, never invent facts. Reply with one JSON object only.
         """
-        guard let r = await AIService.shared.oneShot(prompt, system: "You answer WhatsApp messages for a business. Reply with JSON only.") else {
-            return (fallback, first ? nil : "no AI is connected, so I can't answer this one")
+        let prompt = """
+        BUSINESS FACTS (the only facts you may use):
+        \(businessInfo.isEmpty ? "(none written yet — just greet politely and ask how you can help)" : String(businessInfo.prefix(5000)))
+        \(todaysUpdate.isEmpty ? "" : "TODAY'S UPDATE: \(todaysUpdate)")
+        \(context)
+        CLIENT: \(l.display.isEmpty ? "unknown" : l.display)
+        \(past.isEmpty ? "" : "EARLIER IN THIS CHAT:\n\(past)")
+        CLIENT'S NEW MESSAGE: \(incoming)
+
+        Write "reply": 1-2 short, natural WhatsApp sentences in the same language and script the client used (English, Urdu or Roman Urdu). \(first ? "Greet them; ask only for what's missing." : "Don't greet again.")
+        Set "needs_human" true ONLY if: they bargain or ask for a discount not in today's update, complain, ask for a person or a call, raise payment / refund / legal issues, or the answer isn't in the facts. Then make "reply" a short holding message ("Thanks! Someone from our team will reply shortly.") and put a 3-6 word reason in "why".
+        Also fill "lead" with anything the client said: name, interest (\(labels.interest.lowercased())), area, budget, priority (Hot = ready now / asks price, visit or availability; Warm; Cold = just looking). Use "" when not said.
+        JSON: {"reply":"","needs_human":false,"why":"","lead":{"name":"","interest":"","area":"","budget":"","priority":""}}
+        """
+        guard let j = await AIService.shared.fastJSON(prompt, system: system) else {
+            return (fallback, first ? nil : "no AI is connected", [:])
         }
-        if let j = AIService.jsonIn(r) as? [String: Any], let reply = (j["reply"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !reply.isEmpty {
-            let h = (j["handoff"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let isHand = !h.isEmpty && !["false", "no", "none", "null"].contains(h.lowercased())
-            return (reply, isHand ? h : nil)
+        var reply = (j["reply"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Never send JSON or code by mistake.
+        if reply.hasPrefix("{") || reply.contains("\"reply\"") || reply.contains("needs_human") { reply = "" }
+        let human = (j["needs_human"] as? Bool) ?? ((j["needs_human"] as? String)?.lowercased() == "true")
+        let why = (j["why"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var details: [String: String] = [:]
+        if let lead = j["lead"] as? [String: Any] {
+            for k in ["name", "interest", "area", "budget", "priority"] {
+                if let v = (lead[k] as? String)?.trimmingCharacters(in: .whitespaces), !v.isEmpty { details[k] = k == "priority" ? v.capitalized : v }
+            }
         }
-        let clean = r.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"“”"))
-        return (clean.isEmpty ? fallback : clean, nil)
+        if reply.isEmpty { return (fallback, first ? nil : "couldn't write a good reply", details) }
+        return (reply, human ? (why.isEmpty ? "needs a person" : why) : nil, details)
     }
 
     /// Sends a WhatsApp message to a lead (via the server when connected, else WhatsApp on this Mac) and logs it.

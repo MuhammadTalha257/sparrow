@@ -91,6 +91,9 @@ final class AgentRouter {
     private func single(_ raw: String) async -> String? {
         let base = Translit.toCommand(raw)
         let lowered = base.lowercased()
+        if lowered.range(of: #"^(reset|fix) (zuffi'?s? )?(position|place)$|^(bring|put) zuffi back( to the top)?$|^where (are you|is zuffi)\??$"#, options: .regularExpression) != nil {
+            IslandDrag.resetPosition(); return "I'm back at the top of your screen 🐰"
+        }
         if SparrowBubble.shared.isHidden,
            lowered.range(of: #"^(come back|show (yourself|sparrow|up)|bring (sparrow|yourself) back|wapas aao|where are you|sparrow)$"#, options: .regularExpression) != nil {
             SparrowBubble.shared.restore(); return "I'm back! 🐰"

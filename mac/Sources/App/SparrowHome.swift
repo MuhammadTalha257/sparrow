@@ -226,17 +226,36 @@ enum IslandDrag {
     static var panel: NSWindow? { NSApp.windows.first { $0 is IslandPanel } }
 
     static func changed() {
-        guard let p = panel else { return }
+        guard let p = panel as? IslandPanel else { return }
         let m = NSEvent.mouseLocation
         if startMouse == nil { startMouse = m; startOrigin = p.frame.origin }
         guard let sm = startMouse, let so = startOrigin else { return }
         var o = NSPoint(x: so.x + m.x - sm.x, y: so.y + m.y - sm.y)
         if let s = p.screen ?? NSScreen.main {
-            let f = s.frame
-            o.x = min(max(o.x, f.minX - p.frame.width + 60), f.maxX - 60)
-            o.y = min(max(o.y, f.minY), f.maxY - p.frame.height)
+            // Keep the whole island on the screen while it moves.
+            let f = s.frame, isl = p.currentIslandFrame(nw: p.notchWidth, nh: p.notchHeight)
+            o.x = min(max(o.x, f.minX - isl.minX), f.maxX - isl.maxX)
+            o.y = min(max(o.y, f.minY - isl.minY), f.maxY - p.frame.height)
         }
         p.setFrameOrigin(o)
+    }
+
+    /// Back to the default place (top centre) — also used when it got lost off screen.
+    static func resetPosition() {
+        IslandDock.side = .none
+        UserDefaults.standard.set("none", forKey: "islandDock")
+        UserDefaults.standard.removeObject(forKey: "islandOrigin")
+        AppState.shared.dockSide = "none"
+        guard let p = panel, let s = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main else { return }
+        p.setFrameOrigin(NSPoint(x: s.frame.midX - p.frame.width / 2, y: s.frame.maxY - p.frame.height))
+        p.orderFrontRegardless()
+    }
+
+    static func rescueIfLost() {
+        guard !isDragging, let p = panel as? IslandPanel else { return }
+        let isl = p.currentIslandFrame(nw: p.notchWidth, nh: p.notchHeight).offsetBy(dx: p.frame.minX, dy: p.frame.minY)
+        let visible = NSScreen.screens.contains { $0.frame.insetBy(dx: 8, dy: 8).intersection(isl).width >= min(30, isl.width) }
+        if !visible || !p.isVisible { resetPosition() }
     }
 
     static func ended() {

@@ -12,6 +12,7 @@ final class IslandWindowController: NSWindowController {
     let fsm = IslandStateMachine()
 
     private var wasInIsland = false
+    private var rescueTick = 0
     private var frameTimer: Timer?
     private var keyMonitor: Any?
     private var viewSubscription: AnyCancellable?
@@ -99,6 +100,7 @@ final class IslandWindowController: NSWindowController {
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 3)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false        // stay on screen when you switch to another app
 
         // Propagate real notch dimensions to AppState
         AppState.shared.notchWidth  = notchW
@@ -242,7 +244,10 @@ final class IslandWindowController: NSWindowController {
         let inIsland = hoverRect.contains(local)
 
         // Toggle click-through
-        let shouldAcceptMouse = inIsland || inAttachDrag || attachDragStart != nil
+        let shouldAcceptMouse = inIsland || inAttachDrag || attachDragStart != nil || IslandDrag.isDragging
+        // Every couple of seconds: if the island ended up off screen, bring it back.
+        rescueTick += 1
+        if rescueTick % 120 == 0 { IslandDrag.rescueIfLost() }
         if panel.ignoresMouseEvents == shouldAcceptMouse {
             panel.ignoresMouseEvents = !shouldAcceptMouse
             if shouldAcceptMouse, let cv = panel.contentView {
@@ -515,6 +520,7 @@ final class IslandWindowController: NSWindowController {
         }
         NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { _ in
             finishDrag()
+            Task { @MainActor in if IslandDrag.isDragging { IslandDrag.ended() } }
         }
 
         // Global hotkey to show island

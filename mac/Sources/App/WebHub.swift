@@ -87,7 +87,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         w.level = .floating
         w.contentMinSize = NSSize(width: 340, height: 420)
         w.isOpaque = false
-        w.backgroundColor = NSColor(red: 0.105, green: 0.055, blue: 0.075, alpha: 0.97)   // Blossom rose
+        w.backgroundColor = NSColor(red: 0.043, green: 0.039, blue: 0.122, alpha: 0.97)   // Zuffi night sky
         if let v = w.contentView?.superview { v.wantsLayer = true; v.layer?.cornerRadius = 18; v.layer?.masksToBounds = true }
         w.contentView = wv
         w.delegate = self
