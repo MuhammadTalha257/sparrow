@@ -96,7 +96,8 @@ final class ZuffiProperties: ObservableObject {
 
     func delete(_ p: Property) {
         var b = ZuffiPA.load("Listings", header: Self.header)
-        b.rows.removeAll { b.get($0, ["property id", "id"]).lowercased() == p.id.lowercased() }
+        let header = b
+        b.rows.removeAll { header.get($0, ["property id", "id"]).lowercased() == p.id.lowercased() }
         ZuffiPA.save("Listings", b); reload()
     }
 
