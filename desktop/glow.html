@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Charging</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
+  @property --ang { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+  .edge { position: fixed; inset: 0; border-radius: 14px; padding: 6px; opacity: 0; transition: opacity .5s;
+    background: conic-gradient(from var(--ang), #34D399, #A7F3D0, #22D3EE, #34D399 35%, transparent 50%, #34D399 85%, #34D399);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+    filter: blur(2px) drop-shadow(0 0 14px #34D399); animation: spin 2.4s linear infinite; }
+  .off .edge { background: conic-gradient(from var(--ang), #9CA3AF, transparent 50%, #9CA3AF); filter: blur(2px); }
+  .full .edge { background: conic-gradient(from var(--ang), #FBC56A, #F58FA8, #7C5CFF, #FBC56A); filter: blur(2px) drop-shadow(0 0 14px #F58FA8); }
+  @keyframes spin { to { --ang: 360deg; } }
+  .pill { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%) scale(.8); opacity: 0; transition: all .5s cubic-bezier(.34,1.56,.64,1);
+    display: flex; align-items: center; gap: 14px; padding: 14px 26px 14px 16px; border-radius: 999px; color: #fff;
+    background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.04)), rgba(10,14,24,.82);
+    box-shadow: 0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.3), 0 0 0 1px rgba(255,255,255,.14); }
+  .on .edge { opacity: 1; } .on .pill { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .pill img { width: 44px; height: 80px; object-fit: contain; animation: hop 1s ease-in-out infinite; }
+  @keyframes hop { 50% { transform: translateY(-7px) rotate(-4deg); } }
+  .pill b { display: block; font-size: 30px; font-weight: 800; line-height: 1; }
+  .pill small { font-size: 14px; opacity: .75; }
+  .bat { width: 56px; height: 26px; border: 2.5px solid rgba(255,255,255,.85); border-radius: 7px; padding: 3px; position: relative; margin-left: 6px; box-sizing: border-box; }
+  .bat::after { content: ""; position: absolute; right: -7px; top: 7px; width: 4px; height: 7px; border-radius: 0 2px 2px 0; background: rgba(255,255,255,.85); }
+  .bat i { display: block; height: 100%; border-radius: 3px; width: 0; transition: width 1.2s ease; background: linear-gradient(90deg, #34D399, #A7F3D0); box-shadow: 0 0 10px #34D399; }
+  .off .bat i { background: #9CA3AF; box-shadow: none; }
+</style></head>
+<body><div class="edge"></div><div class="pill"><img src="mascots/zuffi-side-2.webp" alt=""><div><b id="pct">–</b><small id="st"></small></div><div class="bat"><i id="lvl"></i></div></div>
+<script>
+  const charging = new URLSearchParams(location.search).get('c') === '1';
+  const show = lvl => {
+    const pct = Math.round(lvl * 100);
+    document.body.className = (charging ? (pct >= 100 ? 'full' : '') : 'off');
+    document.getElementById('pct').textContent = pct + '%';
+    document.getElementById('st').textContent = !charging ? 'Unplugged' : pct >= 100 ? 'Fully charged 💗' : 'Charging ⚡';
+    requestAnimationFrame(() => { document.body.classList.add('on'); document.getElementById('lvl').style.width = Math.max(6, pct) + '%'; });
+    setTimeout(() => document.body.classList.remove('on'), charging ? 3900 : 2300);
+  };
+  (navigator.getBattery ? navigator.getBattery().then(b => show(b.level)) : Promise.reject()).catch(() => show(1));
+</script></body></html>

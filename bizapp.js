@@ -270,7 +270,8 @@ function editLead(k) {
   const team = bs.rows('Team').map(({ r }) => f(r, 'Name')).filter(Boolean);
   let status = f(old, 'Status') || 'New', pri = f(old, 'Priority');
   const phone = f(old, 'Phone').replace(/[^\d+]/g, '');
-  const wa = phone ? 'https://wa.me/' + phone.replace(/^\+/, '').replace(/^0(?=3\d{9}$)/, '92') : '';
+  const intl = phone.replace(/^\+/, '').replace(/^0(?=3\d{9}$)/, '92').replace(/^0(?=7\d{9}$)/, '44');
+  const wa = phone ? (window.SparrowDesktop ? 'whatsapp://send?phone=' + intl : 'https://wa.me/' + intl) : '';
   const html = `${field('lName', 'Name', f(old, 'Name'), 'autocomplete="off"')}
     ${field('lPhone', 'Phone / WhatsApp', f(old, 'Phone'), 'inputmode="tel"')}
     ${phone ? `<div class="bz-btns tight"><a class="bz-btn ghost" href="tel:${esc(phone)}">📞 Call</a><a class="bz-btn ghost" href="${esc(wa)}" target="_blank" rel="noopener">💬 WhatsApp</a></div>` : ''}

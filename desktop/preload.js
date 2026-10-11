@@ -25,6 +25,16 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   location: () => inv('location'),
   http: (url, headers, body) => inv('http', url, headers, body),
   saveFile: (name, base64) => inv('save-file', name, base64),
+  openBusiness: tab => ipcRenderer.send('open-business', tab),
+  openWindows: () => inv('open-windows'),
+  focusWindow: pid => ipcRenderer.send('focus-window', pid),
+  askIsland: text => ipcRenderer.send('ask-island', text),
+  // Zuffi walking on the desktop
+  pet: (kind, data) => ipcRenderer.send('pet', kind, data || {}),
+  petMouse: inside => ipcRenderer.send('pet-mouse', inside),
+  petAction: a => ipcRenderer.send('pet-action', a),
+  petNext: () => inv('pet-next'),
+  onPet: f => ipcRenderer.on('pet', (_e, v) => f(v)),
   onCommand: f => ipcRenderer.on('command', (_e, c) => f(c)),
   onEvent: f => ipcRenderer.on('event', (_e, ev) => f(ev)),
   // Mac speech engine (Apple): listening + natural voices

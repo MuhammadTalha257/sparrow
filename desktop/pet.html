@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Zuffi</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
+  #pet { position: absolute; bottom: 0; left: 0; width: 92px; height: 168px; cursor: grab; will-change: transform; }
+  #pet img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: bottom; transform-origin: 50% 100%;
+    filter: drop-shadow(0 6px 10px rgba(0,0,0,.28)); pointer-events: none; }
+  #pet.idle img { animation: breathe 2.8s ease-in-out infinite; }
+  #pet.left img { transform: scaleX(-1); }
+  #pet.hop { animation: hop .42s cubic-bezier(.3,.7,.4,1); }
+  #pet.hidden { display: none; }
+  @keyframes breathe { 50% { transform: scaleY(1.03); } }
+  @keyframes hop { 40% { margin-bottom: 24px; } }
+  #card { position: absolute; bottom: 176px; left: 0; min-width: 190px; max-width: 320px; padding: 12px 16px; border-radius: 20px; color: #fff;
+    background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)), rgba(22,16,52,.9);
+    box-shadow: 0 18px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.3), 0 0 0 1px rgba(255,255,255,.14);
+    backdrop-filter: blur(20px); opacity: 0; transform: translateY(8px) scale(.92); transition: opacity .2s, transform .25s cubic-bezier(.34,1.56,.64,1); pointer-events: none; }
+  #card.on { opacity: 1; transform: none; pointer-events: auto; }
+  #card::after { content: ""; position: absolute; bottom: -7px; left: var(--tail, 40px); width: 14px; height: 14px; background: rgba(22,16,52,.95); transform: rotate(45deg); border-radius: 3px; }
+  #card .h { color: #F58FA8; font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+  #card .t { font-size: 15px; font-weight: 650; line-height: 1.3; }
+  #card .b { display: flex; gap: 8px; margin-top: 10px; }
+  #card button { font: inherit; font-size: 13px; font-weight: 700; border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer; color: #fff; background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+  #card button.solid { color: #1A1008; background: linear-gradient(180deg, #FBC56A, #F28A3C); box-shadow: none; }
+</style></head>
+<body><div id="card"><div class="h" id="cH"></div><div class="t" id="cT"></div><div class="b" id="cB"></div></div>
+<div id="pet" class="idle"><img id="img" src="mascots/zuffi-body.webp" alt="Zuffi"></div>
+<script src="pet.js"></script></body></html>

@@ -1,8 +1,8 @@
-// Zuffi for Mac and Windows — one friendly panel that drops down from the top of
+// Zuffi for Windows (and the old Mac build) — one friendly panel that drops down from the top of
 // the screen, a tiny bar that stays there, and a menu-bar / tray icon. It keeps running
 // in the background so reminders, the morning briefing and the check-in always happen.
 const { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, globalShortcut, protocol, net, nativeImage,
-  session, clipboard, dialog, systemPreferences } = require('electron');
+  session, clipboard, dialog, systemPreferences, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -16,11 +16,13 @@ const MODEL = app.isPackaged ? path.join(process.resourcesPath, 'model') : path.
 const dataFile = n => path.join(app.getPath('userData'), n);
 
 let panel = null, tray = null, quitting = false;
-let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'right' };
+let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'right', pet: true, chargeLight: true };
 
 function loadSettings() { try { settings = Object.assign(settings, JSON.parse(fs.readFileSync(dataFile('sparrow-settings.json'), 'utf8'))); } catch {} }
 function saveSettings() { try { fs.writeFileSync(dataFile('sparrow-settings.json'), JSON.stringify(settings)); } catch {} }
 
+// Keep everything people already saved when the app was still called "Sparrow".
+try { const old = path.join(app.getPath('appData'), 'Sparrow'); if (fs.existsSync(old)) app.setPath('userData', old); } catch {}
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', () => showPanel());
 app.setAppUserModelId('app.sparrowai.sparrow');
@@ -89,7 +91,10 @@ function createTray() {
   const menu = () => Menu.buildFromTemplate([
     { label: 'Open Zuffi', accelerator: 'CommandOrControl+Shift+Space', click: showPanel },
     { label: 'Talk to Zuffi', click: () => { showPanel(); toPanel('command', 'listen'); } },
+    { label: 'Business dashboard', click: () => openBusiness() },
     { type: 'separator' },
+    { label: 'Zuffi walks on my desktop', type: 'checkbox', checked: settings.pet !== false, click: i => setSetting('pet', i.checked) },
+    { label: 'Charging light (laptops)', type: 'checkbox', checked: settings.chargeLight !== false, click: i => setSetting('chargeLight', i.checked) },
     { label: 'Show the island when closed', type: 'checkbox', checked: settings.pill, click: i => setSetting('pill', i.checked) },
     { label: isMac ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: settings.login, click: i => setSetting('login', i.checked) },
     { type: 'separator' },
@@ -105,6 +110,7 @@ function setSetting(k, v) {
   if (k === 'pill') toPanel('island', v ? 'show-cap' : 'hide-cap');
   if (k === 'position' && panel) { panel.setBounds(islandBounds()); toPanel('island', 'pos:' + v); }
   if (k === 'clipboard') v ? startClipboard() : stopClipboard();
+  if (k === 'pet') v ? createPet() : destroyPet();
   tray && tray.refresh && tray.refresh();
 }
 
@@ -407,7 +413,101 @@ ipcMain.on('nv', (e, o) => { e.returnValue = nvSend(o); });
 ipcMain.on('nv-available', e => { e.returnValue = isMac && fs.existsSync(nvPath()); });
 app.on('will-quit', () => { try { nv && nv.kill(); } catch {} });
 
+// ---------- Business dashboard (big window, same data as the phone and the Mac) ----------
+let biz = null;
+function openBusiness(tab) {
+  if (biz && !biz.isDestroyed()) { biz.show(); biz.focus(); if (tab) biz.webContents.send('command', 'biz:' + tab); return; }
+  const wa = screen.getPrimaryDisplay().workArea;
+  const W = Math.min(1280, wa.width - 80), H = Math.min(820, wa.height - 60);
+  biz = new BrowserWindow({
+    width: W, height: H, minWidth: 820, minHeight: 560, x: wa.x + Math.round((wa.width - W) / 2), y: wa.y + Math.round((wa.height - H) / 2),
+    show: false, title: 'Zuffi Business', icon: path.join(WWW, 'icons', 'icon-512.png'), autoHideMenuBar: true,
+    backgroundColor: isWin ? '#00000000' : '#0D0B1E',
+    // Windows 11: real frosted glass behind the dashboard
+    ...(isWin ? { backgroundMaterial: 'acrylic', titleBarStyle: 'hidden', titleBarOverlay: { color: '#00000000', symbolColor: '#FFFFFF', height: 36 } } : {}),
+    ...(isMac ? { vibrancy: 'under-window', visualEffectState: 'active', titleBarStyle: 'hiddenInset' } : {}),
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
+  });
+  biz.loadURL('app://sparrow/index.html?dash=business' + (tab ? '&tab=' + encodeURIComponent(tab) : ''));
+  biz.once('ready-to-show', () => biz.show());
+  biz.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  biz.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://')) { e.preventDefault(); shell.openExternal(url); } });
+  biz.on('closed', () => { biz = null; });
+}
+
+// ---------- Zuffi walking on the desktop (like the Mac) ----------
+// A see-through strip along the bottom of the screen, just above the taskbar. Only the bunny and her
+// speech card catch the mouse — everything else clicks straight through.
+let pet = null;
+function petBounds() { const wa = screen.getPrimaryDisplay().workArea; return { x: wa.x, y: wa.y + wa.height - 310, width: wa.width, height: 310 }; }
+function createPet() {
+  if (pet || settings.pet === false) return;
+  pet = new BrowserWindow({
+    ...petBounds(), show: false, frame: false, transparent: true, backgroundColor: '#00000000', resizable: false, movable: false, focusable: false,
+    minimizable: false, maximizable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true, fullscreenable: false,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+  });
+  pet.setAlwaysOnTop(true, 'floating');
+  pet.setIgnoreMouseEvents(true, { forward: true });
+  pet.loadURL('app://sparrow/pet.html');
+  pet.once('ready-to-show', () => pet && pet.showInactive());
+  pet.on('closed', () => { pet = null; });
+}
+function destroyPet() { if (pet) { pet.destroy(); pet = null; } }
+const toPet = (ch, v) => pet && !pet.isDestroyed() && pet.webContents.send(ch, v);
+ipcMain.on('pet', (_e, kind, data) => { if (settings.pet !== false) { createPet(); toPet('pet', { kind, ...data }); } });
+ipcMain.on('pet-mouse', (_e, inside) => pet && pet.setIgnoreMouseEvents(!inside, { forward: true }));
+ipcMain.on('pet-action', (_e, a) => { if (a.action === 'open') showPanel(); else toPanel('event', { type: 'pet-action', ...a }); });
+ipcMain.handle('pet-next', () => panel ? panel.webContents.executeJavaScript('window.zuffiNext ? window.zuffiNext() : ""').catch(() => '') : '');
+
+// ---------- charging light (laptops) ----------
+let glow = null;
+function showGlow(charging) {
+  if (settings.chargeLight === false) return;
+  if (glow && !glow.isDestroyed()) glow.destroy();
+  const b = screen.getPrimaryDisplay().bounds;
+  glow = new BrowserWindow({ ...b, show: false, frame: false, transparent: true, backgroundColor: '#00000000', focusable: false, resizable: false, movable: false,
+    hasShadow: false, alwaysOnTop: true, skipTaskbar: true, enableLargerThanScreen: true, webPreferences: { contextIsolation: true } });
+  glow.setAlwaysOnTop(true, 'screen-saver');
+  glow.setIgnoreMouseEvents(true);
+  glow.loadURL('app://sparrow/glow.html?c=' + (charging ? 1 : 0));
+  glow.once('ready-to-show', () => glow && glow.showInactive());
+  const g = glow; setTimeout(() => { if (!g.isDestroyed()) g.destroy(); if (glow === g) glow = null; }, charging ? 4600 : 3000);
+  toPet('pet', { kind: 'charge', charging });
+}
+
+// ---------- open apps row (Windows): see your open windows, click one to jump to it ----------
+const WIN_LIST = `Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $_.ProcessName -notin @('Zuffi','Sparrow','ApplicationFrameHost','TextInputHost','SystemSettings','ShellExperienceHost') } | ` +
+  `Select-Object Id, ProcessName, MainWindowTitle, @{n='Path';e={try{$_.MainModule.FileName}catch{''}}}, @{n='Name';e={try{$_.MainModule.FileVersionInfo.FileDescription}catch{$_.ProcessName}}} | ConvertTo-Json -Compress`;
+const iconCache = new Map();
+async function openWindows() {
+  if (!isWin) return [];
+  let list = [];
+  try { list = [].concat(JSON.parse(await ps(WIN_LIST) || '[]')); } catch { return []; }
+  const out = [];
+  for (const w of list.slice(0, 14)) {
+    let icon = iconCache.get(w.Path);
+    if (icon === undefined && w.Path) { try { icon = (await app.getFileIcon(w.Path, { size: 'normal' })).toDataURL(); } catch { icon = ''; } iconCache.set(w.Path, icon); }
+    out.push({ pid: w.Id, name: (w.Name || w.ProcessName || '').trim() || w.ProcessName, title: w.MainWindowTitle, icon: icon || '' });
+  }
+  return out;
+}
+function focusWindow(pid) {
+  if (!isWin) return;
+  const n = parseInt(pid, 10); if (!n) return;
+  ps(`Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class ZW { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); [DllImport("user32.dll")] public static extern void keybd_event(byte k, byte s, uint f, UIntPtr e); }
+"@
+$h=(Get-Process -Id ${n}).MainWindowHandle; if([ZW]::IsIconic($h)){[ZW]::ShowWindow($h,9)}; [ZW]::keybd_event(0x12,0,0,[UIntPtr]::Zero); [ZW]::SetForegroundWindow($h); [ZW]::keybd_event(0x12,0,2,[UIntPtr]::Zero)`);
+}
+
 // ---------- IPC ----------
+ipcMain.on('open-business', (_e, tab) => openBusiness(tab));
+ipcMain.handle('open-windows', () => openWindows());
+ipcMain.on('focus-window', (_e, pid) => focusWindow(pid));
+ipcMain.on('ask-island', (_e, text) => { showPanel(); toPanel('command', 'ask:' + text); });
 ipcMain.on('open-app', (e, name) => { try { e.returnValue = openApp(name); } catch { e.returnValue = false; } });
 ipcMain.on('media', (_e, cmd) => media(cmd));
 ipcMain.on('window', () => toPanel('island', 'collapse'));
@@ -470,12 +570,15 @@ app.whenReady().then(async () => {
   }
   if (isMac) { try { await systemPreferences.askForMediaAccess('microphone'); } catch {} }
   createPanel(); createTray(); loadApps();
+  if (settings.pet !== false) setTimeout(createPet, 4000);
+  powerMonitor.on('on-ac', () => showGlow(true));
+  powerMonitor.on('on-battery', () => showGlow(false));
   if (settings.clipboard) startClipboard();
   (settings.watch || []).forEach(startWatch);
   const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin;
   if (!hidden) panel.webContents.once('did-finish-load', () => setTimeout(showPanel, 1600));
   globalShortcut.register('CommandOrControl+Shift+Space', togglePanel);
-  screen.on('display-metrics-changed', () => panel && panel.setBounds(islandBounds()));
+  screen.on('display-metrics-changed', () => { panel && panel.setBounds(islandBounds()); pet && pet.setBounds(petBounds()); });
 });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());

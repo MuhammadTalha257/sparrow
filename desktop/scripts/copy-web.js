@@ -19,8 +19,8 @@ const copy = (from, to) => {
 for (const f of fs.readdirSync(root)) {
   if (/\.(html|js|css|webmanifest)$/.test(f) && f !== 'sw.js' && f !== 'get.html') copy(path.join(root, f), path.join(out, f));
 }
-for (const d of ['lib', 'icons']) copy(path.join(root, d), path.join(out, d));
-copy(path.join(__dirname, '..', 'desktop.js'), path.join(out, 'desktop.js'));
+for (const d of ['lib', 'icons', 'mascots']) copy(path.join(root, d), path.join(out, d));
+for (const f of ['desktop.js', 'pet.html', 'pet.js', 'glow.html']) copy(path.join(__dirname, '..', f), path.join(out, f));
 // Offline speech recogniser (runs in the app, no internet)
 const vosk = path.resolve(__dirname, '..', 'node_modules', 'vosk-browser', 'dist', 'vosk.js');
 if (fs.existsSync(vosk)) copy(vosk, path.join(out, 'lib', 'vosk.js'));

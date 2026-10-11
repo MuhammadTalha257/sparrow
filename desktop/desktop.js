@@ -1,4 +1,4 @@
-// The Sparrow island for Mac + Windows: a black glass island at the top of the screen that springs open.
+// The Zuffi island for Windows (and the old Mac build): a black glass island at the top of the screen that springs open.
 // Loaded only in the computer app, never on phones.
 import { store } from './store.js';
 import { greetingWord, fmtTime, tasksForDay } from './brain.js';
@@ -14,9 +14,9 @@ html.classList.add('desktop', 'island-mode', 'isl-collapsed', 'os-' + plat);
 const island = document.createElement('div'); island.id = 'island';
 const body = document.createElement('div'); body.className = 'isl-body';
 [...document.body.children].forEach(el => { if (el.tagName !== 'SCRIPT') body.appendChild(el); });
-const cap = document.createElement('button'); cap.className = 'cap'; cap.setAttribute('aria-label', 'Open Sparrow');
-cap.innerHTML = `<span class="cap-bird"><img src="icons/icon-192.png" alt=""></span>
-  <span class="cap-txt"><b id="capT1">Sparrow</b><small id="capT2">Say “Sparrow…”</small></span>
+const cap = document.createElement('button'); cap.className = 'cap'; cap.setAttribute('aria-label', 'Open Zuffi');
+cap.innerHTML = `<span class="cap-bird"><i class="cap-face"></i></span>
+  <span class="cap-txt"><b id="capT1">Zuffi</b><small id="capT2">Say “Zuffi…”</small></span>
   <span class="cap-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>`;
 const glow = document.createElement('div'); glow.className = 'isl-glow';
 island.append(glow, cap, body);
@@ -28,6 +28,24 @@ const shrink = document.createElement('button');
 shrink.className = 'icon-btn isl-shrink'; shrink.setAttribute('aria-label', 'Close'); shrink.title = 'Close (Esc)';
 shrink.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
 top.appendChild(shrink);
+// Business dashboard button in the header (opens the big window)
+const bizBtn = document.createElement('button');
+bizBtn.className = 'icon-btn isl-biz'; bizBtn.title = 'Business dashboard'; bizBtn.setAttribute('aria-label', 'Business dashboard');
+bizBtn.innerHTML = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg>';
+bizBtn.onclick = () => D.openBusiness?.();
+top.insertBefore(bizBtn, shrink);
+
+// ---------- open apps row (Windows): your open windows — click one to jump to it ----------
+const appsRow = document.createElement('div'); appsRow.className = 'isl-apps'; appsRow.hidden = true;
+top.after(appsRow);
+let appsT = null;
+async function refreshApps() {
+  if (!D.openWindows || state !== 'expanded') return;
+  const list = await D.openWindows().catch(() => []);
+  appsRow.hidden = !list.length;
+  appsRow.innerHTML = list.map(w => `<button data-pid="${w.pid}" title="${(w.name + ' · ' + w.title).replace(/"/g, '&quot;')}">${w.icon ? `<img src="${w.icon}" alt="">` : '<span>🪟</span>'}<em>${(w.name || '').replace(/</g, '&lt;').slice(0, 14)}</em></button>`).join('');
+}
+appsRow.onclick = e => { const b = e.target.closest('[data-pid]'); if (b) { b.classList.add('go'); D.focusWindow(b.dataset.pid); setTimeout(() => b.classList.remove('go'), 600); } };
 
 // ---------- states: collapsed · peek · expanded ----------
 let state = 'collapsed', peekTimer = null;
@@ -38,6 +56,8 @@ function setState(s) {
   html.classList.toggle('isl-expanded', s === 'expanded');
   D.islandState(s === 'expanded' ? 'expanded' : 'collapsed');
   if (s === 'expanded') setTimeout(() => document.querySelector('#askInput')?.focus({ preventScroll: true }), 380);
+  clearInterval(appsT);
+  if (s === 'expanded' && plat === 'windows') { refreshApps(); appsT = setInterval(refreshApps, 6000); }
   if (s !== 'peek') clearTimeout(peekTimer);
   mouseInside(s === 'expanded');
 }
@@ -84,7 +104,7 @@ function pushCap() {
     .sort((a, b) => new Date(a.when) - new Date(b.when))[0];
   const left = tasksForDay(new Date()).length;
   capText(`${greetingWord()}${S().name ? ', ' + S().name : ''}`,
-    next ? `${next.title} · ${fmtTime(next.when)}` : left ? `${left} task${left > 1 ? 's' : ''} today` : (Voice.wakeOn ? 'Say “Sparrow…”' : 'All clear today'));
+    next ? `${next.title} · ${fmtTime(next.when)}` : left ? `${left} task${left > 1 ? 's' : ''} today` : (Voice.wakeOn ? 'Say “Zuffi…”' : 'All clear today'));
 }
 store.onChange(pushCap); setInterval(pushCap, 60000); setTimeout(pushCap, 300);
 
@@ -99,19 +119,33 @@ window.SparrowIsland = {
   },
 };
 
+// What's next (the walking bunny asks this when you tap her)
+window.zuffiNext = () => {
+  const now = Date.now();
+  const next = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now)
+    .sort((a, b) => new Date(a.when) - new Date(b.when))[0];
+  return next ? `Next: ${next.title} · ${fmtTime(next.when)}` : '';
+};
+
 // ---------- settings: this computer ----------
 const sec = document.createElement('details');
 sec.innerHTML = `<summary>💻 This ${plat === 'mac' ? 'Mac' : 'computer'}</summary>
-  <label class="row"><input type="checkbox" id="dLogin"> 🚀 Start Sparrow when I log in</label>
-  <label class="row"><input type="checkbox" id="dPill"> 🐰 Show the island at the top when Sparrow is closed</label>
+  <label class="row"><input type="checkbox" id="dLogin"> 🚀 Start Zuffi when I log in</label>
+  <label class="row"><input type="checkbox" id="dPill"> 🐰 Show the island at the top when Zuffi is closed</label>
   <label class="row"><input type="checkbox" id="dClip"> 📎 Keep a clipboard history (on this computer only)</label>
-  <label class="field"><span>Where Sparrow lives</span><select id="dPos"><option value="right">Top right corner</option><option value="center">Top centre (notch)</option><option value="left">Top left corner</option></select></label>
-  <p class="small-text">Open Sparrow: click the island, press <b>${plat === 'mac' ? '⌘' : 'Ctrl'} + Shift + Space</b>, or just say “Sparrow…”. Close: <b>Esc</b> or click anywhere else.</p>
+  <label class="row"><input type="checkbox" id="dPet"> 🐰 Zuffi walks along the bottom of my screen (shows reminders)</label>
+  <label class="row"><input type="checkbox" id="dCharge"> ⚡ Charging light round the screen when I plug in (laptops)</label>
+  <label class="field"><span>Where Zuffi lives</span><select id="dPos"><option value="right">Top right corner</option><option value="center">Top centre (notch)</option><option value="left">Top left corner</option></select></label>
+  <p class="small-text">Open Zuffi: click the island, press <b>${plat === 'mac' ? '⌘' : 'Ctrl'} + Shift + Space</b>, or just say “Zuffi…”. Close: <b>Esc</b> or click anywhere else.</p>
   <p class="small-text" id="dNote"></p>`;
 body.querySelector('#desktopSection').appendChild(sec);
 const dLogin = sec.querySelector('#dLogin'), dPill = sec.querySelector('#dPill'), dClip = sec.querySelector('#dClip');
 const dPos = sec.querySelector('#dPos');
-D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !== false; dClip.checked = s.clipboard !== false; dPos.value = s.position || 'right'; setPos(s.position || 'right'); });
+const dPet = sec.querySelector('#dPet'), dCharge = sec.querySelector('#dCharge');
+D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !== false; dClip.checked = s.clipboard !== false; dPos.value = s.position || 'right'; setPos(s.position || 'right');
+  dPet.checked = s.pet !== false; dCharge.checked = s.chargeLight !== false; });
+dPet.onchange = () => D.setSetting('pet', dPet.checked);
+dCharge.onchange = () => D.setSetting('chargeLight', dCharge.checked);
 dPos.onchange = () => D.setSetting('position', dPos.value);
 dLogin.onchange = () => D.setSetting('login', dLogin.checked);
 dPill.onchange = () => D.setSetting('pill', dPill.checked);
@@ -119,6 +153,12 @@ dClip.onchange = () => D.setSetting('clipboard', dClip.checked);
 
 // ---------- folder watcher ----------
 D.onEvent(ev => {
+  if (ev.type === 'pet-action') {
+    // Done / Snooze tapped on the bunny's card
+    const btn = document.querySelector(ev.action === 'done' ? '#alertDone' : '#alertSnooze');
+    if (btn) { btn.dataset.id = ev.id || ''; btn.click(); }
+    return;
+  }
   if (ev.type === 'file-arrived') {
     mem.remember('file', ev.name, '', { folder: ev.folder, path: ev.path });
     peek(`📥 ${ev.name}`, `New file in ${ev.folder}`);
@@ -177,7 +217,7 @@ const Voice = {
       if (ev.ev === 'partial') this.onText(ev.text, false);
       else if (ev.ev === 'final') this.onText(ev.text, true);
       else if (ev.ev === 'speaking') send({ type: 'speaking', on: ev.on });
-      else if (ev.ev === 'auth' && !(ev.speech && ev.mic)) sec.querySelector('#dNote').textContent = 'Sparrow needs Microphone and Speech Recognition: System Settings → Privacy & Security → Microphone / Speech Recognition → turn on Sparrow.';
+      else if (ev.ev === 'auth' && !(ev.speech && ev.mic)) sec.querySelector('#dNote').textContent = 'Zuffi needs Microphone and Speech Recognition: System Settings → Privacy & Security → Microphone / Speech Recognition → turn on Zuffi.';
       else if (ev.ev === 'voices') this.voiceList = ev;
     });
     nvx.send({ cmd: 'voices' });
@@ -210,10 +250,10 @@ const Voice = {
     text = (text || '').replace(/\[unk\]/g, '').trim().toLowerCase().replace(/[.,!?]+$/, '');
     if (this.mode === 'dictate') { if (text) this.dictateCb?.(text, final); return; }
     if (!text) return;
-    const wake = /^(hey |ok |okay )?(sparrow|spar row|sparo|sparrows|sparrow's)\b/;
+    const wake = /^(hey |ok |okay )?(zuffi|zuffy|zoffee|sophie|zoofi|sparrow|spar row|sparo|sparrows|sparrow's)\b/;
     if (this.mode === 'wake') {
       // the wake word can come anywhere: "…hey Sparrow, open Gmail"
-      const m = text.match(/\b(?:hey |ok |okay )?(sparrow's|sparrows|sparrow|sparro|sparo|spar row)\b[,\s]*(.*)$/);
+      const m = text.match(/\b(?:hey |ok |okay )?(zuffi|zuffy|zoffee|zoofi|sophie|sparrow's|sparrows|sparrow|sparro|sparo|spar row)\b[,\s]*(.*)$/);
       if (!m) return;
       const rest = m[2].trim();
       if (!final) { capText('Listening…', rest || 'Go ahead'); return; }
@@ -261,7 +301,7 @@ const Voice = {
     try {
       this.wakeOn = true; await this.ensureMic();
       if (this.mode === 'off') this.mode = 'wake';
-      sec.querySelector('#dNote').textContent = this.native ? 'Listening for “Sparrow…” with your Mac’s own speech recognition.' : 'Listening for “Sparrow…” — understood on this computer, never uploaded.';
+      sec.querySelector('#dNote').textContent = this.native ? 'Listening for “Zuffi…” with your Mac’s own speech recognition.' : 'Listening for “Zuffi…” — understood on this computer, never uploaded.';
       pushCap();
     } catch (e) {
       this.wakeOn = false;
@@ -279,4 +319,7 @@ const Voice = {
 };
 window.SparrowVoice = Voice;
 if (S().wake !== false) setTimeout(() => Voice.startWake(), 2500);
-D.onCommand(cmd => { if (cmd === 'listen') Voice.toggle(); });
+D.onCommand(cmd => {
+  if (cmd === 'listen') Voice.toggle();
+  else if (typeof cmd === 'string' && cmd.startsWith('ask:')) send({ type: 'speech', text: cmd.slice(4) });   // typed in the Business window
+});

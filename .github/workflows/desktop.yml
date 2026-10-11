@@ -2,7 +2,7 @@ name: Build Windows app
 
 on:
   push:
-    branches: [main]
+    branches: [main, test]
     paths-ignore: ["android/**", ".github/workflows/android.yml", ".github/workflows/pages.yml", "README.md", "website/**", "mac/**", ".github/workflows/mac.yml"]
   workflow_dispatch: {}
 
@@ -28,21 +28,39 @@ jobs:
         working-directory: desktop
         shell: bash
         env: { CSC_IDENTITY_AUTO_DISCOVERY: "false" }
-        run: npm run dist:win 2>&1 | tee build.log; test -f dist/Sparrow-Setup.exe
+        run: npm run dist:win 2>&1 | tee build.log; test -f dist/Zuffi-Setup.exe
       - name: Rename
         shell: bash
-        run: cp desktop/dist/Sparrow-Setup.exe Sparrow-Setup.exe && ls -la Sparrow-Setup.exe
-      - uses: softprops/action-gh-release@v2
+        run: cp desktop/dist/Zuffi-Setup.exe Zuffi-Setup.exe && cp Zuffi-Setup.exe Sparrow-Setup.exe && ls -la Zuffi-Setup.exe
+      - name: Publish test download (test branch)
+        if: github.ref_name == 'test'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-test
+          name: Zuffi for Windows (test)
+          prerelease: true
+          make_latest: false
+          files: Zuffi-Setup.exe
+          body: |
+            **Test Zuffi on Windows 10 / 11**
+            1. Download `Zuffi-Setup.exe` below.
+            2. Open it. If Windows shows "Windows protected your PC", click **More info → Run anyway** (Zuffi is free and not yet signed).
+            3. Zuffi opens at the top of your screen 🐰 — press **Ctrl + Shift + Space** any time, or just say "Zuffi…".
+      - name: Publish download (main)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: windows-latest
-          name: Sparrow for Windows
+          name: Zuffi for Windows
           make_latest: false
-          files: Sparrow-Setup.exe
+          files: |
+            Zuffi-Setup.exe
+            Sparrow-Setup.exe
           body: |
-            **Install Sparrow on Windows 10 / 11**
-            1. Download `Sparrow-Setup.exe` below.
-            2. Open it. If Windows shows "Windows protected your PC", click **More info → Run anyway** (Sparrow is free and not yet signed).
-            3. Sparrow opens at the top of your screen 🐦 — press **Ctrl + Shift + Space** any time, or just say "Sparrow…".
+            **Install Zuffi on Windows 10 / 11**
+            1. Download `Zuffi-Setup.exe` below.
+            2. Open it. If Windows shows "Windows protected your PC", click **More info → Run anyway** (Zuffi is free and not yet signed).
+            3. Zuffi opens at the top of your screen 🐰 — press **Ctrl + Shift + Space** any time, or just say "Zuffi…".
       - name: Report build errors
         if: failure()
         shell: bash

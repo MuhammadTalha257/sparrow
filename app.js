@@ -29,6 +29,9 @@ const D = window.SparrowDesktop || null;    // Windows app
 const M = window.SparrowHost === 'mac' ? window.SparrowMac : null;   // inside the native Mac island app
 const S = () => store.settings;
 const dayKey = () => new Date().toDateString();
+// The big Business window on Windows (the island keeps doing reminders, voice and the relay).
+const DASH = new URLSearchParams(location.search).get('dash') === 'business';
+if (DASH) document.documentElement.classList.add('biz-dash');
 if (N) document.documentElement.classList.add('android-app');
 if (D) document.documentElement.classList.add('desktop');
 if (M) document.documentElement.classList.add('mac-host');
@@ -277,6 +280,11 @@ let activeDocs = [];        // file ids the conversation is about
 let lastWasVoice = false, replyKind = 'cmd', followUps = 0;
 async function submit(text, fromVoice = false) {
   text = text.trim();
+  if (DASH && text) {                    // Business window: business commands here, everything else goes to the island
+    const br = bizapp.command(text);
+    if (br) toast(br, 4000); else { D?.askIsland?.(text); toast('🐰 Sent to Zuffi'); }
+    return;
+  }
   if (!text && !attachments.length) return;
   lastWasVoice = fromVoice;
   const files = attachments; attachments = []; renderAttached();
@@ -701,6 +709,8 @@ function showAlert(title, sub, itemId) {
   // On the Mac, a reminder or meeting brings Zuffi walking across the screen with a banner.
   const item = itemId && store.items.find(i => i.id === itemId);
   if (M && item) M.post('reminder', { itemId, kind: item.type || 'reminder', title: item.title || title, sub: sub || '' });
+  // Windows: Zuffi walks to the middle of the screen with it
+  if (D?.pet) D.pet('remind', { id: itemId || '', title: item?.title || title.replace(/^[^\p{L}\p{N}]+/u, ''), head: item?.type === 'meeting' ? 'Meeting' : 'Reminder' });
   else if (M) M.post('note', { title, sub: sub || '' });
   window.SparrowIsland?.peek(title, sub || '', 9000);
   $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
@@ -717,6 +727,7 @@ function alertNow(spoken, shown, tag, itemId) {
 }
 const who = () => S().name ? S().name + ', ' : '';
 async function checkDue() {
+  if (DASH) return;                     // the island window rings reminders, not the dashboard
   const now = Date.now(), lead = (+S().lead || 0) * 60000;
   const missed = [];
   for (const it of store.items) {
@@ -1321,7 +1332,14 @@ if (N) {
 }
 
 // ---------------- computer app extras ----------------
-if (D) import('./desktop.js').catch(e => console.error('desktop', e));
+if (D && !DASH) import('./desktop.js').catch(e => console.error('desktop', e));
+if (DASH) {
+  document.title = 'Zuffi Business';
+  const bar = document.createElement('div'); bar.className = 'dash-drag'; bar.innerHTML = '<span>🐰 Zuffi Business</span>'; document.body.prepend(bar);
+  go('biz'); bizapp.show(new URLSearchParams(location.search).get('tab') || undefined);
+  D?.onCommand?.(c => { if (typeof c === 'string' && c.startsWith('biz:')) bizapp.show(c.slice(4)); });
+  $('#askInput').removeAttribute('data-i18n-ph'); $('#askInput').placeholder = 'Tell Zuffi… e.g. “new lead Ali 0333 1234567 wants 10 marla” or “expense 2500 fuel”';
+}
 
 // ---------------- start ----------------
 renderAll(); installHint(); updateTimerLabel();

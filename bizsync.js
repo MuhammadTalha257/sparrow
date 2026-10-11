@@ -40,7 +40,7 @@ function load() {
   return blank();
 }
 let saveT = null;
-function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(LS, JSON.stringify(db)); } catch (e) { console.warn('biz save', e); } }, 150); }
+function save() { if (NO_RELAY) return saveNow(); clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(LS, JSON.stringify(db)); } catch (e) { console.warn('biz save', e); } }, 150); }
 function saveNow() { clearTimeout(saveT); try { localStorage.setItem(LS, JSON.stringify(db)); } catch {} }
 
 const listeners = new Set();
@@ -242,7 +242,21 @@ async function handle(raw) {
   save(); emit('peers');
 }
 
+// The Business window on Windows shares this data with the island window: it reads the island's
+// saves instead of opening a second relay connection.
+const NO_RELAY = new URLSearchParams(location.search).get('dash') === 'business';
+addEventListener('storage', e => {
+  if (e.key !== LS || !e.newValue) return;
+  try {
+    const d = JSON.parse(e.newValue); if (!d?.sheets) return;
+    const was = db.group?.topic;
+    db = { ...blank(), ...d };
+    if (was !== db.group?.topic) { stop(); start(); }      // linked / unlinked from the other window
+    emit('all'); emit('status');
+  } catch {}
+});
 export function start() {
+  if (NO_RELAY) { if (db.group) setStatus({ connected: true }); return; }
   if (!db.group || es) return;
   const since = db.lastId || '12h';
   try {

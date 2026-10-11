@@ -1,8 +1,8 @@
 {
   "name": "sparrow",
-  "productName": "Sparrow",
+  "productName": "Zuffi",
   "version": "2.0.0",
-  "description": "Sparrow — a friendly little AI helper at the top of your screen.",
+  "description": "Zuffi — your friendly AI helper and business assistant at the top of your screen.",
   "author": "Muhammad Talha",
   "license": "MIT",
   "main": "main.js",
@@ -21,8 +21,8 @@
   },
   "build": {
     "appId": "app.sparrowai.sparrow",
-    "productName": "Sparrow",
-    "artifactName": "Sparrow-Setup.exe",
+    "productName": "Zuffi",
+    "artifactName": "Zuffi-Setup.exe",
     "files": ["main.js", "preload.js", "www/**", "package.json"],
     "extraResources": [{ "from": "model", "to": "model", "filter": ["**/*"] }],
     "win": { "target": "nsis", "icon": "build/icon.png" },
@@ -32,7 +32,7 @@
       "runAfterFinish": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Sparrow"
+      "shortcutName": "Zuffi"
     },
     "mac": {
       "icon": "build/icon.png",
