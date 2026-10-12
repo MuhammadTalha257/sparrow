@@ -1230,3 +1230,24 @@ html.biz-dash[data-theme="graphite"] body { background: #0F1013 !important; }
 .webpet.is-blob .webpet-b { bottom: 70px; }
 body.biz-on .webpet { display: none; }
 html.biz-dash[data-theme="graphite"] .bz-tabs { border-bottom: 0; }
+
+/* Business: the wake-word hint pill sat on top of client rows — Business has its own + button and header */
+body.biz-on .listen-hint { display: none !important; }
+html:not(.biz-dash) body.biz-on #view-biz { padding-bottom: 150px; }
+
+/* Windows island: toasts sat on top of the greeting — show them just above the ask bar instead */
+html.island-mode .toast { top: auto; bottom: 86px; max-width: 86%; font-size: 13.5px; }
+/* four money tiles in a row: keep "Rs 7 lac" whole */
+@media (min-width: 560px) { .bz-tiles:not(.three) .bz-tile b { font-size: 23px; } }
+/* Tablets: use the width — wider page, and cards side by side like the computer dashboard */
+@media (min-width: 760px) { html:not(.biz-dash) body.biz-on main { max-width: 820px; } }
+@media (min-width: 1000px) {
+  html:not(.biz-dash) body.biz-on main { max-width: 1180px; padding-left: 28px; padding-right: 28px; }
+  html:not(.biz-dash) body.biz-on .bz-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; align-content: start; align-items: start; }
+  html:not(.biz-dash) body.biz-on .bz-body > * { margin: 0; min-width: 0; }
+  html:not(.biz-dash) body.biz-on .bz-body > .bz-tiles, html:not(.biz-dash) body.biz-on .bz-body > .bz-search, html:not(.biz-dash) body.biz-on .bz-body > .bz-chips,
+  html:not(.biz-dash) body.biz-on .bz-body > .bz-props, html:not(.biz-dash) body.biz-on .bz-body > .bz-hello, html:not(.biz-dash) body.biz-on .bz-body > .bz-hero,
+  html:not(.biz-dash) body.biz-on .bz-body > .bz-lost, html:not(.biz-dash) body.biz-on .bz-body > h2, html:not(.biz-dash) body.biz-on .bz-body > .bz-p { grid-column: 1 / -1; }
+  html:not(.biz-dash) body.biz-on .bz-tiles:not(.three) { grid-template-columns: repeat(4, 1fr); }
+  html:not(.biz-dash) body.biz-on .bz-props { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+}

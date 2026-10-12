@@ -745,6 +745,11 @@ function editLead(k) {
     const row = { ...old, Name: name, Phone: ph, Status: status, Priority: pri, Interest: read(w, 'lInt'), Area: read(w, 'lArea'), Budget: read(w, 'lBud'), Value: read(w, 'lVal'),
       Source: read(w, 'lSrc'), 'Next follow-up': read(w, 'lNext'), Notes: read(w, 'lNotes'), Added: f(old, 'Added') || iso() };
     if (w.querySelector('#lAsg')) row['Assigned to'] = read(w, 'lAsg');
+    // Same phone number already in Leads? Update that client instead of making a duplicate.
+    let dupe = null;
+    if (!k) { const d = ph.replace(/\D/g, '').slice(-9); if (d.length >= 9) dupe = bs.rows('Leads').find(x => f(x.r, 'Phone').replace(/\D/g, '').slice(-9) === d); }
+    if (dupe) { const keep = {}; for (const c in row) if (String(row[c] ?? '').trim()) keep[c] = row[c]; delete keep.Added; if (keep.Status === 'New') delete keep.Status;
+      bs.put('Leads', { ...dupe.r, ...keep }, dupe.k); toast(`${f(dupe.r, 'Name') || 'This number'} is already in your leads — updated ✓`); return; }
     if (!k && !row['Assigned to'] && LS.get('zuffiAgent')) row['Assigned to'] = LS.get('zuffiAgent');
     if (status !== prevStage) { row['Last contact'] = iso(); if (prevStage === 'New') row['Replied at'] = new Date().toISOString().slice(0, 16).replace('T', ' '); }
     bs.put('Leads', row, k || undefined);
