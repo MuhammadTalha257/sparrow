@@ -1229,3 +1229,4 @@ html.biz-dash[data-theme="graphite"] body { background: #0F1013 !important; }
 .webpet .wpblob, .webpet .wpblob svg { width: 64px; height: 64px; display: block; }
 .webpet.is-blob .webpet-b { bottom: 70px; }
 body.biz-on .webpet { display: none; }
+html.biz-dash[data-theme="graphite"] .bz-tabs { border-bottom: 0; }
