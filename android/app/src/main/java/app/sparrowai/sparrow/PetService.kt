@@ -64,17 +64,43 @@ class PetService : Service() {
     private fun dp(v: Float) = (v * dm.density).toInt()
     private val petOn get() = Prefs.sp(this).getBoolean("pet", false)
     private val glowOn get() = Prefs.sp(this).getBoolean("chargeLight", false)
+    private val overlay get() = Settings.canDrawOverlays(this)
+    private val scale get() = when (Prefs.sp(this).getString("petSize", "medium")) { "small" -> 0.75f; "large" -> 1.3f; else -> 1f }
+    private val mode get() = Prefs.sp(this).getString("petMode", "walk") ?: "walk"
+    private var wake: android.os.PowerManager.WakeLock? = null
+    private val bizTick = object : Runnable {
+        override fun run() {
+            try { BizWatch.checkWaiting(this@PetService) } catch (_: Exception) {}
+            keepAwake()
+            h.postDelayed(this, 60_000)
+        }
+    }
+    /** "Keep working while charging": hold the CPU awake on the charger (the screen still turns off). */
+    private fun keepAwake() {
+        val sp = Prefs.sp(this)
+        val bm = getSystemService(BATTERY_SERVICE) as android.os.BatteryManager
+        val want = (sp.getBoolean("biz_workCharging", false) || sp.getBoolean("biz_hub", false)) && bm.isCharging
+        if (want && wake?.isHeld != true) {
+            wake = (getSystemService(POWER_SERVICE) as android.os.PowerManager).newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "zuffi:charging").apply { setReferenceCounted(false); acquire(2 * 60 * 60 * 1000L) }
+        } else if (!want && wake?.isHeld == true) { try { wake?.release() } catch (_: Exception) {} }
+    }
+    private fun serviceText(): String = when {
+        Prefs.sp(this).getBoolean("biz_hub", false) -> "Office hub — answering WhatsApp for your business"
+        Prefs.sp(this).getBoolean("biz_speedAlarm", false) -> "Watching for new enquiries"
+        else -> "Zuffi is on your screen"
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        val n = Notifs.service(this, "Zuffi is on your screen")
+        val n = Notifs.service(this, serviceText())
         if (Build.VERSION.SDK_INT >= 34) startForeground(4, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(4, n)
-        if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
+        if (!overlay && !bizNeeds(this)) { stopSelf(); return }
         instance = this
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        if (petOn) addPet()
+        if (petOn && overlay) addPet()
+        h.postDelayed(bizTick, 20_000)
         val f = IntentFilter().apply { addAction(Intent.ACTION_POWER_CONNECTED); addAction(Intent.ACTION_POWER_DISCONNECTED); addAction(Intent.ACTION_BATTERY_CHANGED) }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(power, f, RECEIVER_NOT_EXPORTED) else registerReceiver(power, f)
     }
@@ -83,11 +109,14 @@ class PetService : Service() {
         if (intent?.action == "remind") {
             showReminder(intent.getStringExtra("id") ?: "r", intent.getStringExtra("head") ?: "Reminder", intent.getStringExtra("title") ?: "")
         } else if (intent?.action == "refresh") {
-            if (petOn && pet == null) addPet()
-            if (!petOn && pet != null) removePet()
-            if (!petOn && !glowOn) stopSelf()
+            if (pet != null) removePet()          // size / mode may have changed
+            if (petOn && overlay) addPet()
+            applyTint()
+            if (!petOn && !glowOn && !bizNeeds(this)) stopSelf()
         } else if (intent?.action == "say") {
             say(intent.getStringExtra("text") ?: "", 6000)
+        } else if (intent?.action == "island") {
+            showIsland(intent.getStringExtra("title") ?: "", intent.getStringExtra("text") ?: "")
         }
         return START_STICKY
     }
@@ -96,7 +125,7 @@ class PetService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun addPet() {
-        val w = dp(74f); val hgt = dp(132f)
+        val w = dp(74f * scale); val hgt = dp(132f * scale)
         val p = WindowManager.LayoutParams(w, hgt, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -132,6 +161,8 @@ class PetService : Service() {
         }
         try { wm.addView(box, p) } catch (_: Exception) { return }
         pet = box; img = iv; lp = p
+        applyTint()
+        if (mode == "alerts") box.visibility = View.GONE
         breathe()
         h.postDelayed(life, 3000)
     }
@@ -152,7 +183,7 @@ class PetService : Service() {
 
     private fun breathe() {
         img?.let { iv ->
-            iv.pivotY = dp(132f).toFloat(); iv.pivotX = dp(37f).toFloat()
+            iv.pivotY = dp(132f * scale).toFloat(); iv.pivotX = dp(37f * scale).toFloat()
             iv.animate().scaleY(1.03f).setDuration(1400).withEndAction { iv.animate().scaleY(1f).setDuration(1400).withEndAction { if (!walking) breathe() }.start() }.start()
         }
     }
@@ -168,7 +199,9 @@ class PetService : Service() {
         override fun run() {
             if (pet == null) return
             if (System.currentTimeMillis() < hiddenUntil) { pet?.visibility = View.GONE; h.postDelayed(this, 30_000); return }
+            if (mode == "alerts") { pet?.visibility = if (card != null) View.VISIBLE else View.GONE; h.postDelayed(this, 10_000); return }
             pet?.visibility = View.VISIBLE
+            if (mode == "sit") { if (card == null && Random.nextInt(6) == 0) hop(); h.postDelayed(this, 12_000); return }
             if (card == null) when (Random.nextInt(10)) {
                 in 0..5 -> walkTo(Random.nextInt(dp(8f), dm.widthPixels - dp(82f)))
                 6 -> hop()
@@ -236,9 +269,58 @@ class PetService : Service() {
 
     fun say(text: String, ms: Long, hide: Boolean = false) {
         if (text.isBlank()) return
-        if (pet == null && petOn) addPet()
+        if (pet == null && petOn && overlay) addPet()
+        if (pet == null) { showIsland("Zuffi", text); return }
+        pet?.visibility = View.VISIBLE
         showCard(text, null, null, ms, hide)
     }
+
+    // ───────────────────────── Zuffi island: a glass pill that drops from the top (like a notch) ─────────────────────────
+    private var island: View? = null
+    private fun showIsland(title: String, text: String) {
+        if (!overlay || title.isBlank()) return
+        island?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10f), dp(8f), dp(18f), dp(8f))
+            background = GradientDrawable().apply { cornerRadius = dp(28f).toFloat(); setColor(Color.parseColor("#F20B0A1F")); setStroke(dp(1f), Color.parseColor("#40FFFFFF")) }
+            elevation = dp(14f).toFloat()
+        }
+        row.addView(ImageView(this).apply { setImageResource(R.drawable.bubble); applyTintTo(this) }, LinearLayout.LayoutParams(dp(38f), dp(38f)))
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10f), 0, 0, 0) }
+        col.addView(TextView(this).apply { this.text = title; setTextColor(Color.WHITE); textSize = 14f; typeface = Typeface.DEFAULT_BOLD; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+        if (text.isNotBlank()) col.addView(TextView(this).apply { this.text = text; setTextColor(Color.parseColor("#CCFFFFFF")); textSize = 12.5f; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+        row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.setOnClickListener { try { wm.removeView(row) } catch (_: Exception) {}; island = null; Commands.startSafely(this, Intent(this, MainActivity::class.java).putExtra("open", "biz").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        val p = WindowManager.LayoutParams(dm.widthPixels - dp(32f), WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp(10f)
+            if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        row.translationY = -dp(90f).toFloat(); row.scaleX = 0.6f; row.alpha = 0f
+        try { wm.addView(row, p) } catch (_: Exception) { return }
+        island = row
+        row.animate().translationY(0f).scaleX(1f).alpha(1f).setDuration(420).setInterpolator(android.view.animation.OvershootInterpolator(1.1f)).start()
+        h.postDelayed({
+            if (island === row) row.animate().translationY(-dp(90f).toFloat()).scaleX(0.6f).alpha(0f).setDuration(320).withEndAction { try { wm.removeView(row) } catch (_: Exception) {}; if (island === row) island = null }.start()
+        }, 7000)
+        if (pet != null && mode != "alerts") hop()
+    }
+
+    // Zuffi's colour (chosen in the app) — rotate the hue of the pink parts
+    private fun hueFilter(): android.graphics.ColorMatrixColorFilter? {
+        val deg = when (Prefs.sp(this).getString("accent", "rose")) { "violet" -> 55f; "sky" -> 115f; "mint" -> 170f; "amber" -> 230f; "coral" -> 330f; else -> 0f }
+        if (deg == 0f) return null
+        val a = Math.toRadians(deg.toDouble()); val c = Math.cos(a).toFloat(); val s = Math.sin(a).toFloat()
+        val lr = 0.213f; val lg = 0.715f; val lb = 0.072f
+        return android.graphics.ColorMatrixColorFilter(floatArrayOf(
+            lr + c * (1 - lr) + s * (-lr), lg + c * (-lg) + s * (-lg), lb + c * (-lb) + s * (1 - lb), 0f, 0f,
+            lr + c * (-lr) + s * 0.143f, lg + c * (1 - lg) + s * 0.140f, lb + c * (-lb) + s * (-0.283f), 0f, 0f,
+            lr + c * (-lr) + s * (-(1 - lr)), lg + c * (-lg) + s * lg, lb + c * (1 - lb) + s * lb, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f))
+    }
+    private fun applyTintTo(v: ImageView) { v.colorFilter = hueFilter() }
+    private fun applyTint() { img?.let { applyTintTo(it) } }
 
     private fun showReminder(id: String, head: String, title: String) {
         if (pet == null) { if (petOn) addPet() else return }
@@ -411,6 +493,8 @@ class PetService : Service() {
 
     override fun onDestroy() {
         instance = null
+        try { wake?.release() } catch (_: Exception) {}
+        island?.let { try { wm.removeView(it) } catch (_: Exception) {} }
         try { unregisterReceiver(power) } catch (_: Exception) {}
         removePet()
         glow?.let { try { wm.removeView(it) } catch (_: Exception) {} }
@@ -425,7 +509,7 @@ class PetService : Service() {
         /** Start / stop to match the settings (pet on screen, charging light). */
         fun refresh(c: Context) {
             val sp = Prefs.sp(c)
-            val want = (sp.getBoolean("pet", false) || sp.getBoolean("chargeLight", false)) && Settings.canDrawOverlays(c)
+            val want = ((sp.getBoolean("pet", false) || sp.getBoolean("chargeLight", false)) && Settings.canDrawOverlays(c)) || bizNeeds(c)
             if (want) Commands.startFgSafely(c, Intent(c, PetService::class.java).setAction("refresh"))
             else c.stopService(Intent(c, PetService::class.java))
         }
@@ -440,6 +524,13 @@ class PetService : Service() {
 
         fun say(c: Context, text: String) {
             if (instance != null) Commands.startFgSafely(c, Intent(c, PetService::class.java).setAction("say").putExtra("text", text))
+        }
+        /** Business watching needs this service running (speed alarm, office hub, keep working while charging). */
+        fun bizNeeds(c: Context): Boolean { val sp = Prefs.sp(c); return sp.getBoolean("biz_speedAlarm", false) || sp.getBoolean("biz_hub", false) || sp.getBoolean("biz_workCharging", false) }
+        /** The glass pill that drops from the top of the screen. */
+        fun island(c: Context, title: String, text: String) {
+            if (instance != null || bizNeeds(c) || Prefs.sp(c).getBoolean("pet", false))
+                Commands.startFgSafely(c, Intent(c, PetService::class.java).setAction("island").putExtra("title", title).putExtra("text", text))
         }
     }
 }

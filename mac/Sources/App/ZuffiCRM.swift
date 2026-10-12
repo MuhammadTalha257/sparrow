@@ -39,6 +39,8 @@ struct CRMLead: Identifiable, Hashable {
     var initials: String { String(display.split(separator: " ").prefix(2).compactMap(\.first)).uppercased() }
 }
 
+struct CountryRow: Identifiable, Sendable { let code: String; let name: String; let flag: String; var id: String { code } }
+
 struct CRMStaff: Identifiable, Hashable {
     var id: String { name }
     var name: String
@@ -189,9 +191,20 @@ final class ZuffiCRM: ObservableObject {
     @Published var currencyChoice: String = UserDefaults.standard.string(forKey: "bizCurrency") ?? "" { didSet { UserDefaults.standard.set(currencyChoice, forKey: "bizCurrency") } }
     var currency: String {
         if !currencyChoice.isEmpty { return currencyChoice }
-        switch country { case "PK": return "Rs"; case "GB": return "£"; default: return Locale.current.currencySymbol ?? "$" }
+        switch country {
+        case "PK": return "Rs"
+        case "GB": return "£"
+        case "OTHER", "": return Locale.current.currencySymbol ?? "$"
+        default: return Locale(identifier: "en_" + country).currencySymbol ?? Locale.current.currencySymbol ?? "$"
+        }
     }
     static let currencies = ["Rs", "£", "$", "€", "AED", "SAR", "₹"]
+    /// Every country (same list as the phone app), sorted by name.
+    nonisolated static let allCountries: [CountryRow] = Locale.Region.isoRegions
+        .map(\.identifier).filter { $0.count == 2 && $0.allSatisfy(\.isLetter) }
+        .map { code in CountryRow(code: code, name: Locale.current.localizedString(forRegionCode: code) ?? code,
+                                  flag: String(String.UnicodeScalarView(code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127397 + $0.value) }))) }
+        .sorted { $0.name < $1.name }
     /// Business types that fit the country.
     var packsForCountry: [ZuffiBusiness.Pack] {
         switch country {
@@ -420,6 +433,7 @@ final class ZuffiCRM: ObservableObject {
         let now = Date()
         NotificationReader.shared.refresh()
         ZuffiMoney.shared.tick()
+        MacPower.shared.tick()
         if isOn(.watchWhatsApp), now.timeIntervalSince(lastWatch) > 8 { lastWatch = now; Task { await self.watchWhatsApp() } }
         if isOn(.voiceNotes) { scanVoiceNotes() }
         if !serverURL.isEmpty, now.timeIntervalSince(lastSync) > 60 { lastSync = now; Task { await self.pullServer() } }

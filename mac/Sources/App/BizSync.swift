@@ -25,8 +25,8 @@ final class BizSync: ObservableObject {
     static let shared = BizSync()
 
     static let relay = "https://ntfy.sh"
-    static let sheets = ["Leads", "Team", "Money", "Due", "Hours", "Payroll", "Listings", "Visits", "Appointments", "Clients"]
-    static let cfgKeys = ["name", "kind", "country", "currency", "info", "today"]
+    static let sheets = ["Leads", "Team", "Money", "Due", "Hours", "Payroll", "Listings", "Visits", "Appointments", "Clients", "Wins"]
+    static let cfgKeys = ["name", "kind", "country", "currency", "info", "today"]   // others (accent, avgDeal…) are kept by the phone apps
 
     @Published private(set) var connected = false
     @Published private(set) var lastSync: Date?
@@ -237,6 +237,7 @@ final class BizSync: ObservableObject {
             case "Hours": cols = ["date", "name"]
             case "Payroll": cols = ["month", "name"]
             case "Money": cols = ["date", "type", "category", "amount", "party", "method", "note"]
+            case "Wins": cols = ["date", "kind", "detail"]
             default: cols = []
             }
             let parts = cols.map(get)
@@ -427,6 +428,7 @@ final class BizSync: ObservableObject {
         case "Visits": return ZuffiProperties.visitHeader
         case "Appointments": return ZuffiPA.apptHeader
         case "Clients": return ZuffiPA.clientHeader
+        case "Wins": return ["Date", "Kind", "Detail", "Minutes", "Value"]
         default: return []
         }
     }

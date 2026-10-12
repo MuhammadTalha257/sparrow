@@ -984,6 +984,7 @@ struct BizConnectView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 GlassBox { BizSyncBox() }
+                GlassBox { BizPowerBox() }
                 GlassBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { header("1 · WhatsApp on this Mac", "laptopcomputer"); Spacer(); Pill(text: "works now", color: Biz.green) }
@@ -1158,8 +1159,9 @@ struct BizBusinessView: View {
                             TextField("Business name (used in messages)", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
                                 .textFieldStyle(.roundedBorder)
                             Picker("Country", selection: $crm.country) {
-                                Text("🇵🇰 Pakistan").tag("PK"); Text("🇬🇧 United Kingdom").tag("GB"); Text("🌍 Other").tag("OTHER")
-                            }.frame(width: 210)
+                                Text("🌍 Another country").tag("OTHER")
+                                ForEach(ZuffiCRM.allCountries) { c in Text("\(c.flag) \(c.name)").tag(c.code) }
+                            }.frame(width: 260)
                             Picker("Currency", selection: $crm.currencyChoice) {
                                 Text("Auto (\(crm.country == "PK" ? "Rs" : crm.country == "GB" ? "£" : "local"))").tag("")
                                 ForEach(ZuffiCRM.currencies, id: \.self) { Text($0).tag($0) }

@@ -2,7 +2,7 @@
 // the screen, a tiny bar that stays there, and a menu-bar / tray icon. It keeps running
 // in the background so reminders, the morning briefing and the check-in always happen.
 const { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, globalShortcut, protocol, net, nativeImage,
-  session, clipboard, dialog, systemPreferences, powerMonitor } = require('electron');
+  session, clipboard, dialog, systemPreferences, powerMonitor, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -16,7 +16,7 @@ const MODEL = app.isPackaged ? path.join(process.resourcesPath, 'model') : path.
 const dataFile = n => path.join(app.getPath('userData'), n);
 
 let panel = null, tray = null, quitting = false;
-let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'right', pet: true, chargeLight: true };
+let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'right', pet: true, chargeLight: true, awakeCharging: false, lidCharging: false, accent: 'rose' };
 
 function loadSettings() { try { settings = Object.assign(settings, JSON.parse(fs.readFileSync(dataFile('sparrow-settings.json'), 'utf8'))); } catch {} }
 function saveSettings() { try { fs.writeFileSync(dataFile('sparrow-settings.json'), JSON.stringify(settings)); } catch {} }
@@ -95,6 +95,8 @@ function createTray() {
     { type: 'separator' },
     { label: 'Zuffi walks on my desktop', type: 'checkbox', checked: settings.pet !== false, click: i => setSetting('pet', i.checked) },
     { label: 'Charging light (laptops)', type: 'checkbox', checked: settings.chargeLight !== false, click: i => setSetting('chargeLight', i.checked) },
+    { label: 'Keep working while charging', type: 'checkbox', checked: !!settings.awakeCharging, click: i => setSetting('awakeCharging', i.checked) },
+    { label: 'Keep working with the lid closed (plugged in)', type: 'checkbox', checked: !!settings.lidCharging, click: i => setSetting('lidCharging', i.checked) },
     { label: 'Show the island when closed', type: 'checkbox', checked: settings.pill, click: i => setSetting('pill', i.checked) },
     { label: isMac ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: settings.login, click: i => setSetting('login', i.checked) },
     { type: 'separator' },
@@ -111,6 +113,9 @@ function setSetting(k, v) {
   if (k === 'position' && panel) { panel.setBounds(islandBounds()); toPanel('island', 'pos:' + v); }
   if (k === 'clipboard') v ? startClipboard() : stopClipboard();
   if (k === 'pet') v ? createPet() : destroyPet();
+  if (k === 'awakeCharging') updateAwake();
+  if (k === 'lidCharging') setLid(v);
+  if (k === 'accent') toPet('pet', { kind: 'accent', v });
   tray && tray.refresh && tray.refresh();
 }
 
@@ -460,6 +465,25 @@ ipcMain.on('pet-mouse', (_e, inside) => pet && pet.setIgnoreMouseEvents(!inside,
 ipcMain.on('pet-action', (_e, a) => { if (a.action === 'open') showPanel(); else toPanel('event', { type: 'pet-action', ...a }); });
 ipcMain.handle('pet-next', () => panel ? panel.webContents.executeJavaScript('window.zuffiNext ? window.zuffiNext() : ""').catch(() => '') : '');
 
+// ---------- keep working while charging / with the lid closed ----------
+let awakeId = null;
+function updateAwake() {
+  const want = (settings.awakeCharging || settings.lidCharging) && !powerMonitor.isOnBatteryPower();
+  if (want && awakeId === null) awakeId = powerSaveBlocker.start('prevent-app-suspension');
+  if (!want && awakeId !== null) { try { powerSaveBlocker.stop(awakeId); } catch {} awakeId = null; }
+}
+/** Windows: "When I close the lid (plugged in): Do nothing" — only on mains power, so a laptop in a bag on battery still sleeps. */
+async function setLid(on) {
+  if (!isWin) return;
+  const r1 = await run('powercfg.exe', ['/setacvalueindex', 'SCHEME_CURRENT', 'SUB_BUTTONS', 'LIDACTION', on ? '0' : '1'], { timeout: 10000 });
+  await run('powercfg.exe', ['/setactive', 'SCHEME_CURRENT'], { timeout: 10000 });
+  const check = await run('powercfg.exe', ['/query', 'SCHEME_CURRENT', 'SUB_BUTTONS', 'LIDACTION'], { timeout: 10000 });
+  const ok = new RegExp(`Current AC Power Setting Index: 0x0+${on ? '0' : '1'}\\b`, 'i').test(check);
+  if (!ok) { shell.openExternal('ms-settings:powersleep'); detached('control.exe', ['/name', 'Microsoft.PowerOptions', '/page', 'pageGlobalSettings']); }
+  toPanel('event', { type: 'toast', text: ok ? (on ? '💻 Zuffi keeps working when you close the lid (while plugged in)' : 'Closing the lid puts the laptop to sleep again') : 'Windows needs you to change this: set “When I close the lid — Plugged in” to “Do nothing”.' });
+  updateAwake();
+}
+
 // ---------- charging light (laptops) ----------
 let glow = null;
 function showGlow(charging) {
@@ -571,8 +595,9 @@ app.whenReady().then(async () => {
   if (isMac) { try { await systemPreferences.askForMediaAccess('microphone'); } catch {} }
   createPanel(); createTray(); loadApps();
   if (settings.pet !== false) setTimeout(createPet, 4000);
-  powerMonitor.on('on-ac', () => showGlow(true));
-  powerMonitor.on('on-battery', () => showGlow(false));
+  powerMonitor.on('on-ac', () => { showGlow(true); updateAwake(); });
+  powerMonitor.on('on-battery', () => { showGlow(false); updateAwake(); });
+  updateAwake();
   if (settings.clipboard) startClipboard();
   (settings.watch || []).forEach(startWatch);
   const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin;

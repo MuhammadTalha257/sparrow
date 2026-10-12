@@ -8,7 +8,7 @@
 
 const RELAY = 'https://ntfy.sh';
 const LS = 'zuffiBiz';
-export const SHEETS = ['Leads', 'Team', 'Money', 'Due', 'Hours', 'Payroll', 'Listings', 'Visits', 'Appointments', 'Clients'];
+export const SHEETS = ['Leads', 'Team', 'Money', 'Due', 'Hours', 'Payroll', 'Listings', 'Visits', 'Appointments', 'Clients', 'Wins'];
 export const HEADERS = {
   Leads: ['Name', 'Phone', 'Source', 'Interest', 'Area', 'Budget', 'Value', 'Status', 'Priority', 'Assigned to', 'Added', 'Last contact', 'Next follow-up', 'Last message', 'Last message at', 'Notes'],
   Team: ['Name', 'Phone', 'Role', 'PIN', 'Pay type', 'Rate', 'Start date', 'Notes'],
@@ -19,12 +19,14 @@ export const HEADERS = {
   Listings: ['Property ID', 'Title', 'Purpose', 'Type', 'Area', 'Block / Phase', 'Size', 'Beds', 'Baths', 'Price', 'Status', 'Owner', 'Owner phone', 'Agent', 'Features', 'Added', 'Notes'],
   Visits: ['Date', 'Time', 'Client', 'Phone', 'Property ID', 'Staff', 'Status', 'Notes'],
   Appointments: ['Date', 'Time', 'Client', 'Phone', 'Service', 'Staff', 'Price', 'Status'],
-  Clients: ['Name', 'Phone', 'Last visit', 'Usual service', 'Notes'],
+  Clients: ['Name', 'Phone', 'Last visit', 'Usual service', 'Notes', 'Every (days)'],
+  Wins: ['Date', 'Kind', 'Detail', 'Minutes', 'Value'],
 };
 const KEYCOLS = {
   Team: ['name'], Listings: ['property id'], Due: ['client', 'for', 'due date'], Appointments: ['date', 'time', 'client'],
   Visits: ['date', 'time', 'client', 'property id'], Hours: ['date', 'name'], Payroll: ['month', 'name'],
   Money: ['date', 'type', 'category', 'amount', 'party', 'method', 'note'],
+  Wins: ['date', 'kind', 'detail'],
 };
 
 const b64u = {

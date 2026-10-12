@@ -40,7 +40,7 @@ object WhatsAppPilot {
         val n = sbn.notification
         if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
         val ex = n.extras
-        if (ex.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)) return
+        val isGroupConv = ex.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
         // The newest message in the chat (MessagingStyle), else the plain text.
         var sender = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         var text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
@@ -53,6 +53,14 @@ object WhatsAppPilot {
         }
         if (sender.isBlank() || text.isBlank()) return
         if (Regex("(?i)^(whatsapp|whatsapp business)$").matches(sender)) return
+        // Group chats: never answered — but dealer posts can become stock
+        if (isGroupConv || sender.contains(" @ ") || Regex("^[^:]{1,30}:\\s").containsMatchIn(text)) {
+            val group = ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString() ?: sender.substringAfter(" @ ", sender)
+            val who = if (sender.contains(" @ ")) sender.substringBefore(" @ ") else Regex("^([^:]{1,30}):\\s").find(text)?.groupValues?.get(1) ?: sender
+            val body = text.replace(Regex("^[^:]{1,30}:\\s"), "")
+            try { BizWatch.groupPost(c, group, who, body) } catch (_: Exception) {}
+            return
+        }
         if (Regex("(?i)\\d+ new messages|checking for new messages|^(you|aap)$").containsMatchIn(text + " " + sender)) return
         if (sender.contains(" @ ") || Regex("^[^:]{1,30}:\\s").containsMatchIn(text)) return   // a group chat line
         if (Regex("(?i)\\b(community|group|alumni|official|announcements?|channel|broadcast|class|batch|society|members)\\b").containsMatchIn(sender)) return
@@ -85,10 +93,13 @@ object WhatsAppPilot {
                 return@Thread
             }
             if (reply == null) { updateLead(c, sender, r.first, "draft (no reply button)"); notifyOwner(c, "Reply ready for $sender", r.first); return@Thread }
-            if (send(c, reply, r.first)) {
-                sp.edit().putInt(countKey, count + 1).apply()
-                updateLead(c, sender, r.first, "sent")
-            } else updateLead(c, sender, r.first, "draft")
+            updateLead(c, sender, r.first, "sending")
+            BizWatch.sendWithUndo(c, sender, r.first) {
+                if (send(c, reply, r.first)) {
+                    sp.edit().putInt(countKey, count + 1).apply()
+                    updateLead(c, sender, r.first, "sent")
+                } else updateLead(c, sender, r.first, "draft")
+            }
         }.start()
     }
 
@@ -111,11 +122,30 @@ object WhatsAppPilot {
         var found: JSONObject? = null
         for (i in 0 until list.length()) if (list.getJSONObject(i).optString("name") == sender) { found = list.getJSONObject(i); break }
         val lead = found ?: JSONObject().put("name", sender).put("added", stamp).put("history", JSONArray()).also { list.put(it) }
-        lead.put("last", text).put("at", stamp)
+        lead.put("last", text).put("at", stamp).put("inAt", System.currentTimeMillis()).put("answered", false).put("told", 0)
+        if (!lead.has("source")) lead.put("source", "WhatsApp")
         lead.getJSONArray("history").put(JSONObject().put("in", text).put("at", stamp))
         trim(lead.getJSONArray("history"), 12)
         store(c, list)
         return lead
+    }
+
+    /** Missed calls (and other sources) become leads the same way. */
+    fun addLead(c: Context, name: String, phone: String, text: String, source: String) {
+        val l = saveLead(c, name, text)
+        val list = leads(c)
+        for (i in 0 until list.length()) if (list.getJSONObject(i).optString("name") == name) { list.getJSONObject(i).put("source", source).put("phone", phone) }
+        store(c, list)
+    }
+
+    /** The owner opened the chat (WhatsApp cleared its notification) → stop the speed alarm for it. */
+    fun seen(c: Context, sbn: StatusBarNotification) {
+        val ex = sbn.notification.extras
+        val name = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().ifBlank { return }
+        val list = leads(c)
+        var hit = false
+        for (i in 0 until list.length()) { val l = list.getJSONObject(i); if (l.optString("name") == name && !l.optBoolean("answered")) { l.put("answered", true); hit = true } }
+        if (hit) store(c, list)
     }
 
     private fun updateLead(c: Context, sender: String, reply: String, status: String) {

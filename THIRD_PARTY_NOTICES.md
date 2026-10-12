@@ -38,3 +38,7 @@ The specialist agent prompts in `mac/Resources/agents/agency-agents.json` come f
 ## liquidGL (liquid glass effect on the phone / web app)
 
 `lib/liquidGL.js` is liquidGL by NaughtyDuk (https://github.com/naughtyduk/liquidGL), used under the MIT License — see `lib/LICENSE-liquidGL.txt`.
+
+## blobatar (client & staff avatars in Zuffi Business)
+
+`lib/blobatar.js` is blobatar 2.7.0 by Alain (https://github.com/Alain00/blobatar), used under the MIT License — see `lib/LICENSE-blobatar.txt`.

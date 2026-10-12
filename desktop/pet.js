@@ -65,6 +65,7 @@ D.onPet(v => {
       say(v.title || 'Reminder', '⏰ ' + (v.head || 'Reminder'), btns, 120000);
     });
   } else if (v.kind === 'say') { hop(); say(v.text || '', v.head || '', [], v.ms || 6000); }
+  else if (v.kind === 'accent') { const deg = { violet: 55, sky: 115, mint: 170, amber: 230, coral: 330 }[v.v] || 0; img.style.filter = `drop-shadow(0 6px 10px rgba(0,0,0,.28)) hue-rotate(${deg}deg)`; }
   else if (v.kind === 'charge') { hop(); say(v.charging ? 'Yum, charging ⚡' : 'Unplugged — I’ll save energy 🌙', '', [], 3500); }
 });
 

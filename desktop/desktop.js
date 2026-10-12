@@ -135,6 +135,9 @@ sec.innerHTML = `<summary>💻 This ${plat === 'mac' ? 'Mac' : 'computer'}</summ
   <label class="row"><input type="checkbox" id="dClip"> 📎 Keep a clipboard history (on this computer only)</label>
   <label class="row"><input type="checkbox" id="dPet"> 🐰 Zuffi walks along the bottom of my screen (shows reminders)</label>
   <label class="row"><input type="checkbox" id="dCharge"> ⚡ Charging light round the screen when I plug in (laptops)</label>
+  <label class="row"><input type="checkbox" id="dAwake"> 🔌 Keep Zuffi working while charging (the screen can still turn off)</label>
+  <label class="row"><input type="checkbox" id="dLid"> 💼 Keep working with the lid closed — only while plugged in</label>
+  <p class="small-text">Don't leave a closed, plugged-in laptop inside a bag for long — it can get hot. On battery it still goes to sleep.</p>
   <label class="field"><span>Where Zuffi lives</span><select id="dPos"><option value="right">Top right corner</option><option value="center">Top centre (notch)</option><option value="left">Top left corner</option></select></label>
   <p class="small-text">Open Zuffi: click the island, press <b>${plat === 'mac' ? '⌘' : 'Ctrl'} + Shift + Space</b>, or just say “Zuffi…”. Close: <b>Esc</b> or click anywhere else.</p>
   <p class="small-text" id="dNote"></p>`;
@@ -146,6 +149,10 @@ D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !==
   dPet.checked = s.pet !== false; dCharge.checked = s.chargeLight !== false; });
 dPet.onchange = () => D.setSetting('pet', dPet.checked);
 dCharge.onchange = () => D.setSetting('chargeLight', dCharge.checked);
+const dAwake = sec.querySelector('#dAwake'), dLid = sec.querySelector('#dLid');
+D.getSettings().then(s => { dAwake.checked = !!s.awakeCharging; dLid.checked = !!s.lidCharging; });
+dAwake.onchange = () => D.setSetting('awakeCharging', dAwake.checked);
+dLid.onchange = () => D.setSetting('lidCharging', dLid.checked);
 dPos.onchange = () => D.setSetting('position', dPos.value);
 dLogin.onchange = () => D.setSetting('login', dLogin.checked);
 dPill.onchange = () => D.setSetting('pill', dPill.checked);
@@ -153,6 +160,7 @@ dClip.onchange = () => D.setSetting('clipboard', dClip.checked);
 
 // ---------- folder watcher ----------
 D.onEvent(ev => {
+  if (ev.type === 'toast') { window.sparrowEvent?.({ type: 'toast', text: ev.text }); peek(ev.text.slice(0, 80), '', 6000); return; }
   if (ev.type === 'pet-action') {
     // Done / Snooze tapped on the bunny's card
     const btn = document.querySelector(ev.action === 'done' ? '#alertDone' : '#alertSnooze');

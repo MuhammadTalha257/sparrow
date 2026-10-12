@@ -182,6 +182,21 @@ class Bridge(private val a: MainActivity) {
     }
 
     @JavascriptInterface fun waLeads(): String = WhatsAppPilot.leads(a).toString()
+    // Zuffi Business on this phone
+    @JavascriptInterface fun bizPhone(): String = BizWatch.status(a)
+    @JavascriptInterface fun setBizPhone(json: String) {
+        BizWatch.set(a, json)
+        val o = try { JSONObject(json) } catch (_: Exception) { JSONObject() }
+        if ((o.optBoolean("speedAlarm") || o.optBoolean("missedCall") || o.optBoolean("groupListings") || o.optBoolean("hub")) && !hasNotificationAccess()) a.runOnUiThread {
+            Commands.startSafely(a, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+    }
+    @JavascriptInterface fun waListings(): String = BizWatch.listings(a).toString()
+    @JavascriptInterface fun waListingsClear() = BizWatch.clearListings(a)
+    @JavascriptInterface fun openBatterySettings() {
+        a.runOnUiThread { if (!Commands.startSafely(a, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) Commands.startSafely(a, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + a.packageName))) }
+    }
+    @JavascriptInterface fun setAccent(name: String) { Prefs.sp(a).edit().putString("accent", name).apply(); if (PetService.running) PetService.refresh(a) }
     @JavascriptInterface fun waClear() { Prefs.sp(a).edit().putString("waLeadList", "[]").apply() }
     @JavascriptInterface fun hasNotifAccess(): Boolean = hasNotificationAccess()
 

@@ -1267,7 +1267,7 @@ window.sparrowEvent = raw => {
   else if (e.type === 'speaking') { setBird('talking', e.on); if (!e.on) afterSpeech(); }
   else if (e.type === 'toast') toast(e.text);
   else if (e.type === 'status') refreshAndroid();
-  else if (e.type === 'open') { if (e.what === 'checkin') openCheckIn(false); else if (e.what === 'briefing') showBriefing(false); else if (e.what === 'whatsapp') openWhatsAppLeads(); else if (e.what === 'live') openLive(); }
+  else if (e.type === 'open') { if (e.what === 'checkin') openCheckIn(false); else if (e.what === 'briefing') showBriefing(false); else if (e.what === 'whatsapp') { go('biz'); bizapp.show('leads'); } else if (e.what === 'biz') { go('biz'); bizapp.show('today'); } else if (e.what === 'live') openLive(); }
   else if (e.type === 'http') window.dispatchEvent(new CustomEvent('sparrow-http', { detail: e }));
 };
 function refreshAndroid() {
@@ -1470,6 +1470,13 @@ if (bizsync.join(location.hash)) {
   setTimeout(() => { go('biz'); bizapp.show('devices'); toast('💗 Linked! Getting your business data…', 4000); }, 600);
 }
 bizapp.mount($('#bizRoot'), { toast: (t, ms) => toast(t, ms) });
+// Walking Zuffi inside the app on iPhone / web (Android, Windows and Mac have their own pets)
+if (!N && !D && !M && !DASH) import('./petweb.js').then(p => p.start(() => {
+  const now = Date.now(), nx = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now).sort((a, b) => new Date(a.when) - new Date(b.when))[0];
+  const f = bizapp.followUpsToday();
+  return nx ? `Next: ${nx.title} · ${new Date(nx.when).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : f.length ? `📞 Call today: ${f.slice(0, 3).join(', ')}` : '';
+})).catch(() => {});
+bizapp.applyAccent(); bizsync.onChange(w => { if (w === 'cfg' || w === 'all') bizapp.applyAccent(); });
 if (!M && maclink.takeLink(location.hash)) {
   history.replaceState(null, '', location.pathname + location.search);   // the key never stays in the address bar
   setTimeout(afterLink, 800);
