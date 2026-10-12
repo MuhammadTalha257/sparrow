@@ -123,6 +123,11 @@ nhome.addEventListener('click', e => {
 });
 nhome.addEventListener('mouseover', e => { const b = e.target.closest('[title]'); if (b && nhome.contains(b)) { nhTip.textContent = b.title; nhTip.hidden = false; } });
 nhome.addEventListener('mouseout', e => { const b = e.target.closest('[title]'); if (b && !b.contains(e.relatedTarget)) nhTip.hidden = true; });
+// pop-up messages on the home show as Zuffi's words instead of covering them
+const toastEl = document.querySelector('#toast');
+if (toastEl) new MutationObserver(() => { if (state !== 'expanded' || html.classList.contains('isl-full') || toastEl.hidden || !toastEl.textContent.trim()) return;
+  setWords(toastEl.textContent.trim().slice(0, 160), 8000); head.react('surprised', 700); })
+  .observe(toastEl, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
 // a reply or alert while the island is open shows in Zuffi's words
 document.addEventListener('zuffi-said', e => { setWords(String(e.detail || '').slice(0, 160), 20000); head.react('delighted', 700); });
 async function homeApps() {

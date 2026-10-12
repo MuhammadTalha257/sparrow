@@ -1381,3 +1381,6 @@ html.biz-dash .bz-body > .bz-top, html.biz-dash .bz-body > .bz-tips, html.biz-da
 .bz-sw { appearance: none; -webkit-appearance: none; flex: none; width: 40px; height: 24px; border-radius: 12px; background: rgba(255,255,255,.14); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
 .bz-sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s var(--ease); }
 .bz-sw:checked { background: var(--accent); } .bz-sw:checked::after { transform: translateX(16px); }
+
+/* Windows notch home: pop-ups become Zuffi's words (see desktop.js), not a box over them */
+html.island-mode.isl-expanded:not(.isl-full) .toast { display: none !important; }
