@@ -534,14 +534,14 @@ struct BizSyncBox: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "qrcode").foregroundColor(Color(hex: "#F58FA8"))
-                Text("Same business on your phone, tablet & other computers").font(.system(size: 14, weight: .bold, design: .rounded))
+                Text("Same business on your phone, tablet & other computers").font(.system(size: 14, weight: .bold))
                 Spacer()
                 if sync.linked {
                     HStack(spacing: 5) {
                         Circle().fill(sync.connected ? Color(hex: "#34D399") : Color(hex: "#FBBF24")).frame(width: 7, height: 7)
-                        Text(sync.connected ? "Live" : "Connecting…").font(.system(size: 11, weight: .bold, design: .rounded))
+                        Text(sync.connected ? "Live" : "Connecting…").font(.system(size: 11, weight: .bold))
                     }
-                    .padding(.horizontal, 9).frame(height: 22).liquidGlass(Capsule())
+                    .padding(.horizontal, 9).frame(height: 22).inkPanel(Capsule())
                 }
             }
             Text("Scan the code with Zuffi on your phone (Business → Devices → Scan). Leads, money, staff, properties and your business info stay the same on every device — change something on one and the others update by themselves.")
@@ -549,12 +549,12 @@ struct BizSyncBox: View {
             if !sync.linked {
                 HStack(spacing: 8) {
                     Button { sync.create(); showCode = true } label: {
-                        Label("Link my phone", systemImage: "qrcode").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(Color(hex: "#1A1008"))
+                        Label("Link my phone", systemImage: "qrcode").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#1A1008"))
                             .padding(.horizontal, 14).frame(height: 31)
-                            .background(Capsule().fill(LinearGradient(colors: [Color(hex: "#FBC56A"), Color(hex: "#F28A3C")], startPoint: .top, endPoint: .bottom)))
+                            .background(Capsule().fill(Ink.accent))
                     }.buttonStyle(.plain)
                     TextField("…or paste a link code from another device", text: $paste).textFieldStyle(.plain)
-                        .padding(.horizontal, 12).frame(height: 31).liquidGlass(Capsule())
+                        .padding(.horizontal, 12).frame(height: 31).inkPanel(Capsule())
                         .onSubmit { if sync.join(paste) { paste = "" } }
                 }
             } else {
@@ -570,7 +570,7 @@ struct BizSyncBox: View {
                         ForEach(sync.devices.sorted { $0.value > $1.value }, id: \.key) { d in
                             HStack(spacing: 6) {
                                 Image(systemName: d.key.lowercased().contains("mac") ? "laptopcomputer" : "iphone").frame(width: 16)
-                                Text(d.key).font(.system(size: 12, weight: .semibold, design: .rounded))
+                                Text(d.key).font(.system(size: 12, weight: .semibold))
                                 Text(d.value.formatted(.relative(presentation: .named))).font(.system(size: 10.5)).foregroundColor(.white.opacity(0.5))
                             }
                         }

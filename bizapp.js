@@ -4,6 +4,7 @@
 //   rose = people waiting · amber = money & stock · violet = time & linked · green = done.
 import * as bs from './bizsync.js';
 import * as C from './countries.js';
+import * as Z from './zblob.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -130,6 +131,65 @@ function weekStats() {
   return { minutes, hours: Math.round(minutes / 6) / 10, earned, actions, newLeads, moneyIn };
 }
 
+// Zuffi's mood follows the business: someone waiting → surprised, a sale today → happy, late night → sleepy.
+function zMood() {
+  const h = new Date().getHours();
+  if (h >= 23 || h < 6) return 'sleepy';
+  if (waiting().length) return 'surprised';
+  if (bs.rows('Wins').some(({ r }) => f(r, 'Kind') === 'deal' && (f(r, 'Date') || '').startsWith(iso()))) return 'happy';
+  return 'idle';
+}
+const HUES = { rose: 350, violet: 262, sky: 205, mint: 155, amber: 40, coral: 15 };
+const zHue = () => { const a = bs.cfg('accent'); return a && HUES[a] != null ? { hue: HUES[a] } : {}; };
+
+// ---------------- security: PIN lock, auto-lock, privacy mode ----------------
+let unlockedAt = 0, lastTouch = Date.now();
+const pinSet = () => !!LS.get('zuffiPinHash');
+const lockMins = () => +(LS.get('zuffiLockMins', '5')) || 5;
+function locked() { return pinSet() && (!unlockedAt || Date.now() - lastTouch > lockMins() * 60000); }
+async function pinHash(pin, salt) {
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations: 150000, hash: 'SHA-256' }, k, 256);
+  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+}
+let pinTries = 0, pinWaitUntil = 0;
+function renderLock() {
+  unlockedAt = 0;
+  const fab = document.getElementById('bzFab'); if (fab) fab.hidden = true;
+  let entry = '';
+  root.innerHTML = `<div class="bz-lock"><div class="bz-lockface">${Z.svg('shy', zHue())}</div><b>Business is locked</b><small>Enter your PIN</small>
+    <div class="bz-dots">${'<i></i>'.repeat(6)}</div><div class="bz-pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map(k => `<button data-k="${k}" ${k === '' ? 'disabled' : ''}>${k}</button>`).join('')}</div><small class="bz-lockmsg"></small></div>`;
+  const dots = [...root.querySelectorAll('.bz-dots i')], msg = root.querySelector('.bz-lockmsg');
+  const show = () => dots.forEach((d, i) => d.classList.toggle('on', i < entry.length));
+  root.onclick = async e => {
+    const b = e.target.closest('[data-k]'); if (!b) return;
+    if (Date.now() < pinWaitUntil) { msg.textContent = `Too many tries — wait ${Math.ceil((pinWaitUntil - Date.now()) / 1000)} s`; return; }
+    const k = b.dataset.k;
+    if (k === '⌫') entry = entry.slice(0, -1); else if (entry.length < 6) entry += k;
+    show();
+    if (entry.length >= 4 && entry.length === +(LS.get('zuffiPinLen', '4'))) {
+      const ok = (await pinHash(entry, LS.get('zuffiPinSalt'))) === LS.get('zuffiPinHash');
+      if (ok) { pinTries = 0; unlockedAt = lastTouch = Date.now(); root.onclick = null; render(); }
+      else { pinTries++; entry = ''; show(); root.querySelector('.bz-dots').classList.add('shake'); setTimeout(() => root.querySelector('.bz-dots')?.classList.remove('shake'), 400);
+        if (pinTries >= 5) { pinWaitUntil = Date.now() + 30000 * (pinTries - 4); msg.textContent = 'Too many tries — wait a little'; } else msg.textContent = 'Wrong PIN'; }
+    }
+  };
+}
+['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (unlockedAt) lastTouch = Date.now(); }, true));
+setInterval(() => { if (pinSet() && unlockedAt && Date.now() - lastTouch > lockMins() * 60000 && root) { unlockedAt = 0; document.querySelector('.bz-sheet')?.remove(); render(); } }, 15000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && pinSet()) lastTouch = Math.min(lastTouch, Date.now()); });
+function setPin() {
+  const { w } = sheet(pinSet() ? 'Change PIN' : 'Lock Business with a PIN', `<p class="bz-p">Business opens only with this PIN on this device. It locks again after ${lockMins()} idle minutes.</p>
+    ${field('pin1', 'New PIN (4–6 digits)', '', 'type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"')}${field('pin2', 'Type it again', '', 'type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"')}`, async w => {
+    const a = read(w, 'pin1'), b = read(w, 'pin2');
+    if (!/^\d{4,6}$/.test(a)) { toast('Use 4 to 6 digits'); return false; }
+    if (a !== b) { toast('The two PINs are different'); return false; }
+    const salt = crypto.getRandomValues(new Uint32Array(4)).join('-');
+    LS.set('zuffiPinSalt', salt); LS.set('zuffiPinLen', String(a.length)); LS.set('zuffiPinHash', await pinHash(a, salt));
+    unlockedAt = lastTouch = Date.now(); toast('🔒 PIN set'); render();
+  });
+}
+
 // ---------------- view ----------------
 let root = null, tab = 'today', search = '', stageFilter = '', toast = t => console.log(t), propFilter = '';
 const TABS = () => [['today', 'Today', VIOLET], ['leads', 'Leads', ROSE], estate() ? ['stock', 'Stock', AMBER] : ['clients', 'Clients', AMBER], ['money', 'Money', AMBER], ['team', 'Team', VIOLET], ['more', 'More', GREY]];
@@ -149,6 +209,8 @@ export function show(t) {
 
 function render() {
   if (!root) return;
+  if (locked()) return renderLock();
+  root.classList.toggle('bz-private', LS.get('zuffiPrivate') === '1');
   const tabs = TABS();
   if (!tabs.some(t => t[0] === tab)) tab = 'today';
   root.innerHTML = `
@@ -175,9 +237,11 @@ function renderHead() {
   const chip = bs.linked()
     ? `<button class="bz-sync ${bs.status.connected ? 'live' : ''}" data-go="devices"><i></i>${bs.status.connected ? 'Live' : 'Linking'}${peers ? ' · ' + (peers + 1) + ' devices' : ''}</button>`
     : `<button class="bz-sync off" data-go="devices"><i></i>Link devices</button>`;
-  h.innerHTML = `<button class="bz-logo" data-go="biz" title="My business">${p.icon}</button>
+  const blobLook = (bs.cfg('zstyle') || 'blob') === 'blob';
+  h.innerHTML = `<button class="bz-logo ${blobLook ? 'blob' : ''}" data-go="biz" title="${blobLook ? 'Zuffi' : 'My business'}">${blobLook ? '' : p.icon}</button>
     <div class="bz-ttl"><b>${esc(bizName() || 'My business')}</b><small>${esc(p.label)} · ${C.flag(country())} ${esc(C.name(country()))}</small></div>${chip}`;
   h.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { tab = 'more'; moreFocus = b.dataset.go; render(); });
+  if (blobLook) { const lg = h.querySelector('.bz-logo'); lg.innerHTML = Z.svg(zMood(), zHue()); lg.onclick = e => { e.stopPropagation(); Z.react(lg, 'happy'); }; }
 }
 
 const plane = (label, value, c, sub = '', act = '') => `<${act ? 'button' : 'div'} class="bz-tile glass" style="--c:${c}" ${act}><i></i><b>${esc(String(value))}</b><small>${esc(label)}</small>${sub ? `<em>${esc(sub)}</em>` : ''}</${act ? 'button' : 'div'}>`;
@@ -228,11 +292,22 @@ function viewToday() {
       ${plane('Owed to you', owedSum ? money(owedSum) : '—', AMBER, owed.length ? owed.length + ' unpaid' : '', 'data-bt="money"')}
     </div>
     ${alerts.join('')}
+    ${dayCard()}
     ${card('Who to call', due.length ? due.slice(0, 12).map(l => leadRow(l)).join('') : empty('Nobody to chase today 🎉 New enquiries appear here automatically.'), `<span class="r">${due.length}</span>`)}
     ${card('This month', `<b class="bz-big" style="color:${m.inc - m.exp >= 0 ? AMBER : ROSE}">${money(m.inc - m.exp)}</b><small class="bz-sub">profit · in ${money(m.inc)} · out ${money(m.exp)}</small>${bars()}`)}
     ${estate() ? stockMini() : ''}
     ${extras}
     ${card('Today’s update for clients', `<textarea class="bz-in" data-cfg="today" rows="2" placeholder="e.g. 10% off colour today · new plots in Phase 8 · closed at 4pm">${esc(bs.cfg('today'))}</textarea><small class="bz-hint">Zuffi’s replies use this today, on every linked device.</small>`)}`;
+}
+
+/** Your day as a timeline: viewings, bookings, follow-ups and reminders, in time order. */
+function dayCard() {
+  const today = iso(), items = [];
+  for (const { r } of [...bs.rows('Visits'), ...bs.rows('Appointments')]) if (f(r, 'Date') === today) items.push({ t: f(r, 'Time') || '—', what: (estate() ? 'Viewing · ' : 'Booking · ') + (f(r, 'Client') || ''), sub: f(r, 'Property ID') || f(r, 'Service') || f(r, 'Staff'), c: VIOLET });
+  for (const { r } of bs.rows('Due')) if (!/paid/i.test(f(r, 'Status')) && f(r, 'Due date') === today) items.push({ t: 'today', what: 'Payment due · ' + f(r, 'Client'), sub: money(num(f(r, 'Amount'))), c: AMBER });
+  if (!items.length) return '';
+  items.sort((a, b) => (/^\d/.test(a.t) ? a.t : 'zz' + a.t).localeCompare(/^\d/.test(b.t) ? b.t : 'zz' + b.t));
+  return card('Your day', `<ol class="bz-timeline">${items.slice(0, 10).map(x => `<li style="--c:${x.c}"><time>${esc(x.t)}</time><span class="bz-rt"><b>${esc(x.what)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span></li>`).join('')}</ol>`, `<span class="r">${items.length}</span>`);
 }
 
 function bars() {
@@ -463,7 +538,7 @@ export function applyAccent() {
 function viewMore() {
   const p = feats();
   const phone = N?.setBizPhone ? phoneSettings() : '';
-  return `<div id="more-biz"></div>${card('My business', `
+  return `${learnCard()}<div id="more-biz"></div>${card('My business', `
       <label class="bz-lbl">Business name<input class="bz-in" data-cfg="name" value="${esc(bs.cfg('name'))}" placeholder="e.g. Al-Noor Estate, Glow Salon"></label>
       <label class="bz-lbl">Your name<input class="bz-in" data-cfg="owner" value="${esc(bs.cfg('owner'))}" placeholder="for greetings and messages"></label>
       <button class="bz-pick" data-act="pickCountry"><span>${C.flag(country())}</span><span class="bz-rt"><b>${esc(C.name(country()))}</b><small>Country · features & currency</small></span><span>›</span></button>
@@ -475,6 +550,9 @@ function viewMore() {
         ${!estate() ? `<label class="bz-lbl">Invite clients back every (days)<input class="bz-in" data-cfg="rebookDays" inputmode="numeric" value="${esc(bs.cfg('rebookDays'))}" placeholder="${rebookDays()}"></label>` : ''}
       </div>
       ${p.lateInterest ? `<label class="bz-check"><input type="checkbox" data-cfgchk="lateInterest" ${bs.cfg('lateInterest') === '1' ? 'checked' : ''}> Mention statutory late-payment interest in chasers (business clients)</label>` : ''}`)}
+    ${card('Zuffi’s look', `<div class="bz-looks">
+        <button class="${(bs.cfg('zstyle') || 'blob') === 'blob' ? 'on' : ''}" data-zstyle="blob"><span class="lk">${Z.svg('happy', zHue())}</span><b>Animated blob</b><small>Blinks, looks around, shows moods</small></button>
+        <button class="${bs.cfg('zstyle') === 'bunny' ? 'on' : ''}" data-zstyle="bunny"><span class="lk"><img src="mascots/zuffi-body.webp" alt=""></span><b>Classic bunny</b><small>The original Zuffi</small></button></div>`)}
     ${card('Zuffi’s colour', `<div class="bz-themes">${THEMES.map(([id, c, , n]) => `<button class="${(bs.cfg('accent') || 'rose') === id ? 'on' : ''}" data-theme="${id}" style="--c:${c}"><i></i><span>${n}</span></button>`).join('')}</div>
       <small class="bz-hint">Changes the app colour and Zuffi’s fur on all your linked devices.</small>`)}
     ${card('Business info for replies', `<textarea class="bz-in" data-cfg="info" rows="6" placeholder="Opening hours, prices, location, what you sell, how to book…">${esc(bs.cfg('info'))}</textarea>
@@ -483,6 +561,7 @@ function viewMore() {
       <small class="bz-hint">Follow-ups, chasers and invite-backs are written for you each time — you see them before they go.</small>`)}
     ${phone}
     <div id="more-devices"></div>${viewDevices()}
+    <div id="more-security"></div>${securityCard()}
     ${!N && !window.SparrowDesktop ? card('Zuffi on screen', `<label class="bz-check"><input type="checkbox" data-webpet ${LS.get('zuffiWebPet', '1') === '1' ? 'checked' : ''}> Let Zuffi walk along the bottom of the app and show reminders</label>`) : ''}`;
 }
 
@@ -501,6 +580,35 @@ function phoneSettings() {
       <label class="bz-lbl">On screen<select class="bz-in" data-phonesel="petMode">${[['walk', 'Walks around'], ['sit', 'Sits in a corner'], ['alerts', 'Only for alerts']].map(([v, t]) => `<option value="${v}" ${(st.petMode || 'walk') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>
     <button class="bz-btn ghost" data-act="battery">Let Zuffi run in the background (battery settings)</button>
     <small class="bz-hint">Phones like Xiaomi, Oppo, Infinix and Tecno stop apps to save battery — allow Zuffi so alerts arrive on time.</small>`);
+}
+
+// ---------------- learn: how it all works, step by step (guides.json is shared with the Mac app) ----------------
+let guides = null;
+fetch('guides.json').then(r => r.json()).then(j => { guides = j.guides || []; if (root && tab === 'more') render(); }).catch(() => { guides = []; });
+function learnCard() {
+  if (!guides) return card('Learn Zuffi Business', '<p class="bz-hint">Loading guides…</p>');
+  return card('Learn Zuffi Business', `<div class="bz-guides">${guides.map(g => `<button data-guide="${g.id}"><span class="gi">${g.icon}</span><span class="bz-rt"><b>${esc(g.title)}</b><small>${esc(g.summary)}</small></span><span class="chev">›</span></button>`).join('')}</div>`, `<span class="r">${guides.length} guides</span>`);
+}
+function openGuide(id) {
+  const g = (guides || []).find(x => x.id === id); if (!g) return;
+  const { w } = sheet(`${g.icon} ${esc(g.title)}`, `<p class="bz-p">${esc(g.summary)}</p><ol class="bz-steps">${g.steps.map(([t, d]) => `<li><b>${esc(t)}</b><span>${esc(d).replace(/\n/g, '<br>').replace(/(ollama (?:pull|run) [\w.:-]+)/g, '<code>$1</code>')}</span></li>`).join('')}</ol>`, () => {});
+  w.querySelector('[data-save]').textContent = 'Got it';
+}
+function securityCard() {
+  const lockOn = pinSet();
+  return card('Security & privacy', `
+    <div class="bz-sec">
+      <div><i class="ok">✓</i><span class="bz-rt"><b>Data stays on your devices</b><small>No Zuffi servers. Sync is end-to-end encrypted (AES-256).</small></span></div>
+      <div><i class="${lockOn ? 'ok' : 'warn'}">${lockOn ? '✓' : '!'}</i><span class="bz-rt"><b>${lockOn ? 'Business is locked with a PIN' : 'No lock on this device'}</b><small>${lockOn ? `Locks after ${lockMins()} idle minutes.` : 'Anyone holding this phone can see your clients and money.'}</small></span>
+        <button class="bz-mini ${lockOn ? 'ghost' : ''}" data-act="pin">${lockOn ? 'Change' : 'Set PIN'}</button></div>
+      <div><i class="${bs.linked() ? 'ok' : 'idle'}">${bs.linked() ? '✓' : '–'}</i><span class="bz-rt"><b>${bs.linked() ? (Object.keys(bs.peers()).length + 1) + ' linked devices' : 'Not linked to other devices'}</b><small>Lost a phone or someone left? Make a new link code — old devices are cut off.</small></span>
+        ${bs.linked() ? '<button class="bz-mini ghost" data-act="rotate">New code</button>' : ''}</div>
+    </div>
+    ${lockOn ? `<div class="bz-grid2"><label class="bz-lbl">Lock after<select class="bz-in" data-lockmins="1">${[1, 5, 15, 60].map(m => `<option value="${m}" ${lockMins() === m ? 'selected' : ''}>${m} min idle</option>`).join('')}</select></label>
+      <label class="bz-lbl">&nbsp;<button class="bz-btn ghost" data-act="lockNow" style="margin-top:4px">Lock now</button></label></div>` : ''}
+    <label class="bz-check"><input type="checkbox" data-private ${LS.get('zuffiPrivate') === '1' ? 'checked' : ''}><span><b>Hide amounts</b><small>Blurs money on screen — tap a number to peek.</small></span></label>
+    ${lockOn ? '<button class="bz-link-x" data-act="pinOff">Remove PIN</button>' : ''}
+    <button class="bz-link-x" data-act="wipe">Remove all business data from this device</button>`);
 }
 
 // ---------------- devices ----------------
@@ -605,7 +713,7 @@ function sheet(title, html, onSave, extra = '') {
   requestAnimationFrame(() => w.classList.add('on'));
   const close = () => { w.classList.remove('on'); setTimeout(() => w.remove(), 260); };
   w.querySelector('.bz-sheet-bg').onclick = close; w.querySelector('[data-close]').onclick = close;
-  w.querySelector('[data-save]').onclick = () => { if (onSave(w) !== false) close(); };
+  w.querySelector('[data-save]').onclick = () => Promise.resolve(onSave(w)).then(r => { if (r !== false) close(); });
   return { w, close };
 }
 const field = (id, label, value = '', attrs = '') => `<label class="bz-lbl">${label}<input class="bz-in" id="${id}" value="${esc(value)}" ${attrs}></label>`;
@@ -736,6 +844,8 @@ function onClick(e) {
   if (d.stage !== undefined) { stageFilter = d.stage; return render(); }
   if (d.pf !== undefined) { propFilter = d.pf; return render(); }
   if (d.mt) { moneyType = d.mt; return render(); }
+  if (d.guide) return openGuide(d.guide);
+  if (d.zstyle) { bs.setCfg('zstyle', d.zstyle); render(); return; }
   if (d.theme) { bs.setCfg('accent', d.theme); LS.set('zuffiAccent', d.theme); applyAccent(); render(); return; }
   if (d.delmoney) { if (confirmDel()) bs.del('Money', d.delmoney); return; }
   if (d.chase) {
@@ -775,6 +885,11 @@ function onClick(e) {
     case 'followAll': return followAll();
     case 'pickCountry': return onboarding(true);
     case 'battery': N?.openBatterySettings?.(); return;
+    case 'pin': return setPin();
+    case 'pinOff': if (confirmDel()) { ['zuffiPinHash', 'zuffiPinSalt', 'zuffiPinLen'].forEach(k => { try { localStorage.removeItem(k); } catch {} }); render(); toast('PIN removed'); } return;
+    case 'lockNow': unlockedAt = 0; render(); return;
+    case 'rotate': if (confirmDel()) { bs.create(); qrShown = true; render(); toast('New link code made — scan it on the devices you still use'); } return;
+    case 'wipe': if (confirmDel()) { bs.unlink(); try { localStorage.removeItem('zuffiBiz'); } catch {} toast('Business data removed from this device'); setTimeout(() => location.reload(), 900); } return;
     case 'addMoney': {
       const a = $('#mAmt', root).value.trim(); if (!num(a)) return toast('Type the amount');
       bs.put('Money', { Date: iso(), Type: moneyType, Category: $('#mCat', root).value, Amount: a, Party: $('#mParty', root).value.trim(), Method: $('#mMethod', root).value, Note: $('#mNote', root).value.trim(), 'Added by': bs.deviceName() });
@@ -814,6 +929,8 @@ function onChangeEv(e) {
     try { N?.setBizPhone?.(JSON.stringify(o)); } catch {}
     toast('Saved ✓');
   }
+  if (t.dataset.lockmins) { LS.set('zuffiLockMins', t.value); toast('Saved ✓'); }
+  if (t.dataset.private !== undefined) { LS.set('zuffiPrivate', t.checked ? '1' : '0'); render(); }
   if (t.dataset.webpet !== undefined) { LS.set('zuffiWebPet', t.checked ? '1' : '0'); window.zuffiWebPet?.(t.checked); }
   if (t.dataset.act2 === 'paste') { if (bs.join(t.value)) { toast('Linked! Getting your business data…'); render(); } else toast('That code doesn’t look right.'); }
 }

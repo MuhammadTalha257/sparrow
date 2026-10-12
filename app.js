@@ -1471,11 +1471,11 @@ if (bizsync.join(location.hash)) {
 }
 bizapp.mount($('#bizRoot'), { toast: (t, ms) => toast(t, ms) });
 // Walking Zuffi inside the app on iPhone / web (Android, Windows and Mac have their own pets)
-if (!N && !D && !M && !DASH) import('./petweb.js').then(p => p.start(() => {
+if (!N && !D && !M && !DASH) Promise.all([import('./petweb.js'), import('./zblob.js')]).then(([p, Z]) => p.start(() => {
   const now = Date.now(), nx = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now).sort((a, b) => new Date(a.when) - new Date(b.when))[0];
   const f = bizapp.followUpsToday();
   return nx ? `Next: ${nx.title} · ${new Date(nx.when).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : f.length ? `📞 Call today: ${f.slice(0, 3).join(', ')}` : '';
-})).catch(() => {});
+}, { blob: (bizsync.cfg('zstyle') || 'blob') === 'blob' ? () => Z.svg('idle') : null })).catch(() => {});
 bizapp.applyAccent(); bizsync.onChange(w => { if (w === 'cfg' || w === 'all') bizapp.applyAccent(); });
 if (!M && maclink.takeLink(location.hash)) {
   history.replaceState(null, '', location.pathname + location.search);   // the key never stays in the address bar

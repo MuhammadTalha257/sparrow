@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "guides": [
+    {
+      "id": "how",
+      "icon": "🧭",
+      "title": "How Zuffi Business works",
+      "summary": "From the first message to money in the bank — in one picture.",
+      "steps": [
+        ["A client gets in touch", "A WhatsApp message, a missed call, a portal enquiry or a walk-in. Zuffi saves them as a lead with their name, number and what they want."],
+        ["Zuffi helps you answer fast", "It writes a reply in the client's language using your business info. You approve it, or let Autopilot send it. If nobody answers in 5 minutes, Zuffi buzzes you."],
+        ["Nobody is forgotten", "Every lead gets a next follow-up date. “Who to call” on the Today page is your list for the day. The Lost money report finds people nobody followed up."],
+        ["Deals and money", "Move a lead to Won (or Visited / Delivered). Add the value — it counts towards “Zuffi helped you earn”. Record money in and out; profit is worked out for you."],
+        ["Your team", "Add staff or agents. Leads can be given to a person; you see who is late to reply. Salaries, hours and commission are paid from the Team page and added to Money."],
+        ["Your data stays yours", "Everything is saved on your own devices. Phone, Mac and Windows share it through end-to-end encrypted sync — the relay in between can't read it."]
+      ]
+    },
+    {
+      "id": "setup",
+      "icon": "🚀",
+      "title": "Set up in 5 minutes",
+      "summary": "The first things to do, in order.",
+      "steps": [
+        ["Pick your country", "Business → More → Country (on Mac: My business → Country). Zuffi switches on the right currency, payment apps, property portals and local rules."],
+        ["Choose your business type", "Estate agent, salon, clinic, shop, restaurant or trades. The stages, labels and money categories change to fit."],
+        ["Write your business info", "Prices, opening hours, location, how to book, what you sell. Write it like briefing a new receptionist. Zuffi only uses these facts — it never invents prices."],
+        ["Connect WhatsApp", "See the guide “Connect WhatsApp” for your device."],
+        ["Link your phone and computer", "Scan one QR code and the same business appears everywhere. See “Link your devices”."],
+        ["Add your staff (optional)", "Team → Add. Pick how each person is paid: monthly, hourly or commission."]
+      ]
+    },
+    {
+      "id": "whatsapp",
+      "icon": "💬",
+      "title": "Connect WhatsApp",
+      "summary": "How Zuffi reads enquiries and replies on each device.",
+      "steps": [
+        ["Android phone (easiest)", "Business → More → This phone: turn on the options you want. Allow “Notification access” for Zuffi when Android asks. Zuffi reads new WhatsApp messages as they arrive and can reply with the notification’s Reply button."],
+        ["Mac", "Install WhatsApp for Mac and link it to your phone (WhatsApp on the phone → Settings → Linked devices → Link a device). Keep it open. Allow Zuffi in System Settings → Privacy & Security → Accessibility."],
+        ["iPhone", "Apple doesn't let apps read WhatsApp. Use a “hub”: link WhatsApp to an office Mac, or to a cheap Android phone as a second device, and turn on Office hub mode there. Leads sync to your iPhone."],
+        ["Windows", "Windows shows the same leads through sync. Replies open WhatsApp Desktop with the message ready — press Enter to send."],
+        ["Fully automatic (paid, official)", "Bigger offices can use the WhatsApp Business Platform through a provider. Replies within 24 hours of the client's message are free; messages you start cost a few pence each."],
+        ["Stay safe", "Keep “approve before send” on until you trust the replies, and let Autopilot answer only people who messaged first. Zuffi never replies in group chats."]
+      ]
+    },
+    {
+      "id": "devices",
+      "icon": "🔗",
+      "title": "Link your devices (QR code)",
+      "summary": "One business on your phone, tablet, Mac and Windows PC.",
+      "steps": [
+        ["On the first device, show a code", "Mac: Business → Connect & devices → Link my phone. Phone or Windows: Business → More → Show a code."],
+        ["On the other device, scan it", "Business → More → Scan the code. Or copy the link and paste it into the box."],
+        ["That's it", "Add a lead or an expense on one device — it appears on the others within seconds. A device that was off catches up when it opens."],
+        ["Keep the code private", "Anyone who scans it can see your business data. If a phone is lost or a staff member leaves, make a new code (Security) — every old device is unlinked."]
+      ]
+    },
+    {
+      "id": "localai",
+      "icon": "🧠",
+      "title": "Use a free AI model on your own computer",
+      "summary": "Private AI with no account and no monthly cost — runs on your Mac or PC.",
+      "steps": [
+        ["Why a local model?", "Your messages never leave your computer, it works without internet once downloaded, and it costs nothing. It is a bit slower and less clever than the big cloud AIs."],
+        ["Check your computer", "8 GB of memory: use a small model (about 3 billion parameters). 16 GB or more: a 7–8 billion parameter model gives better replies, including Urdu."],
+        ["Install Ollama", "Go to ollama.com, download Ollama for Mac or Windows, install it and open it once. A small llama icon appears in your menu bar / system tray."],
+        ["Download a model", "Open Terminal (Mac) or PowerShell (Windows) and type:\nollama pull llama3.2:3b\nFor better quality on 16 GB: ollama pull qwen2.5:7b\nWait for the download to finish (2–5 GB)."],
+        ["Choose it in Zuffi", "Mac: Zuffi Settings → AI → “Ollama — free, runs on your computer” → pick the model. Windows: Zuffi finds Ollama by itself and uses it when no cloud key is set."],
+        ["On a phone", "Settings → AI → “Download free AI” runs a small model inside the app (on recent phones, over Wi-Fi). For business replies on Android, a free cloud key (next guide) is faster."],
+        ["Test it", "Ask Zuffi “write a reply to Ali asking about 10 marla in DHA”. If it answers, the local model is working."]
+      ]
+    },
+    {
+      "id": "keys",
+      "icon": "🔑",
+      "title": "Free cloud AI keys (Groq, Gemini)",
+      "summary": "Fast, smart replies — free tiers are enough for a small business.",
+      "steps": [
+        ["Groq (fastest)", "Go to console.groq.com, sign in, open “API Keys”, create a key and copy it."],
+        ["Google Gemini", "Go to aistudio.google.com, sign in, click “Get API key”, create a key and copy it."],
+        ["Paste it into Zuffi", "Settings → AI → paste the key → Save. On Android, also open Business → More so WhatsApp replies can use it."],
+        ["Keep keys secret", "A key is like a password: never send it on WhatsApp or post it online. Zuffi keeps it on your device (in the Mac’s Keychain) and only sends it to that AI company."]
+      ]
+    },
+    {
+      "id": "money",
+      "icon": "💸",
+      "title": "Speed alarm, lost money & chasers",
+      "summary": "The three features that pay for Zuffi.",
+      "steps": [
+        ["Speed-to-lead alarm", "If a new enquiry waits 5 minutes, Zuffi buzzes you (phone, Windows island, Mac notch). At 15 minutes it buzzes again. Fast replies win deals."],
+        ["Lost money report", "Today shows people who asked and never got a follow-up. Tap “Follow them up” — each one gets a ready-written WhatsApp you can check before sending."],
+        ["Money chasers", "Money → Owed to you. When a payment is late, tap Chase: friendly first, then firm, then final. When they pay, tap Paid ✓ — it's added to Money in."],
+        ["Invite back", "Salons, garages and trades: Clients shows who is due to come back (e.g. every 5 weeks). One tap sends an invitation."]
+      ]
+    },
+    {
+      "id": "country",
+      "icon": "🌍",
+      "title": "What changes by country",
+      "summary": "Zuffi adapts to where you work.",
+      "steps": [
+        ["Everywhere", "Currency, payment methods, where leads come from, reply language, speed alarm, lost money report, chasers and rebooking."],
+        ["Pakistan, India, Gulf & other WhatsApp-first markets", "WhatsApp group posts become stock and are matched to buyers. Tokens and installments with due dates. Urdu and Roman Urdu replies in Pakistan."],
+        ["United Kingdom", "Rental reminders for England: gas safety (yearly), electrical check (every 5 years), deposit protection (30 days), pet requests (28 days) and the earliest rent rise. Making Tax Digital quarterly export. Optional late-payment interest wording."],
+        ["Not legal advice", "Rules change. Zuffi reminds you; check GOV.UK or a professional before acting."]
+      ]
+    },
+    {
+      "id": "screen",
+      "icon": "🐰",
+      "title": "Zuffi on your screen",
+      "summary": "The pet, the notch / island and the charging light.",
+      "steps": [
+        ["Pet", "Zuffi walks along the bottom of the screen and brings your reminders. Android: Settings → Zuffi walks on your screen. Windows: tray menu. Mac: built in. iPhone/web: inside the app."],
+        ["Notch / island", "Alerts drop down from the top: the Mac notch, the Windows island, and a glass pill on Android."],
+        ["Charging light", "A light runs round the screen edge when you plug in, with the battery level."],
+        ["Look", "More → Zuffi’s look and colour: classic bunny or animated blob, and six colours. All your linked devices follow."]
+      ]
+    },
+    {
+      "id": "power",
+      "icon": "🔌",
+      "title": "Keep working while charging or with the lid closed",
+      "summary": "So replies and alerts keep happening.",
+      "steps": [
+        ["Mac", "Business → Connect & devices → Keep Zuffi working. “While charging, don't sleep” keeps it running (the screen can turn off). “Lid closed” needs your Mac password; turn it off before putting a running Mac in a bag."],
+        ["Windows", "Tray menu or Settings → This computer: “Keep working while charging” and “with the lid closed” (only while plugged in)."],
+        ["Android", "Business → More → This phone: “Keep working while charging”. Also tap “Let Zuffi run in the background” — phones like Xiaomi, Oppo, Infinix and Tecno stop apps otherwise."]
+      ]
+    },
+    {
+      "id": "security",
+      "icon": "🛡️",
+      "title": "Security & privacy",
+      "summary": "What Zuffi protects, and what you can switch on.",
+      "steps": [
+        ["Your data stays on your devices", "Leads, money and staff are saved on your phone and computer — not on Zuffi's servers. On Mac they are normal files in Documents → Zuffi."],
+        ["Encrypted sync", "Devices talk through an end-to-end encrypted channel (AES-256). The relay only carries scrambled bytes."],
+        ["Lock Business", "More → Security: set a PIN (phone / Windows) or Touch ID / password (Mac). It locks again after a few idle minutes."],
+        ["Hide amounts", "Privacy mode blurs money on screen — handy in front of clients or staff."],
+        ["Lost phone or staff left?", "Security → Make a new link code. Every device that had the old code is unlinked straight away."],
+        ["AI keys", "Stored only on your device and sent only to the AI company you chose."]
+      ]
+    },
+    {
+      "id": "help",
+      "icon": "🩺",
+      "title": "Something not working?",
+      "summary": "Quick fixes for the usual problems.",
+      "steps": [
+        ["WhatsApp messages don't become leads", "Android: check Notification access for Zuffi is on, and WhatsApp notifications are not muted. Mac: WhatsApp for Mac must be open, and Zuffi allowed in Accessibility."],
+        ["Alerts arrive late", "Android: allow Zuffi to run in the background (battery settings). Mac: turn on “While charging, don't sleep”."],
+        ["Other device doesn't update", "Open Zuffi on it — it catches up. Still nothing? Business → More → Sync now. Both devices need internet."],
+        ["Replies sound wrong", "Improve your business info (prices, hours, area). Add today's update each morning. Keep “approve before send” on."]
+      ]
+    }
+  ]
+}

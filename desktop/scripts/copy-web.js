@@ -17,7 +17,7 @@ const copy = (from, to) => {
 };
 
 for (const f of fs.readdirSync(root)) {
-  if (/\.(html|js|css|webmanifest)$/.test(f) && f !== 'sw.js' && f !== 'get.html') copy(path.join(root, f), path.join(out, f));
+  if (/\.(html|js|css|webmanifest)$|^guides\.json$/.test(f) && f !== 'sw.js' && f !== 'get.html') copy(path.join(root, f), path.join(out, f));
 }
 for (const d of ['lib', 'icons', 'mascots']) copy(path.join(root, d), path.join(out, d));
 for (const f of ['desktop.js', 'pet.html', 'pet.js', 'glow.html']) copy(path.join(__dirname, '..', f), path.join(out, f));

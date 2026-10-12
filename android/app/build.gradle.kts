@@ -45,7 +45,7 @@ android {
 
 val copyWeb by tasks.registering(Copy::class) {
     from(rootProject.file("..")) {
-        include("index.html", "*.js", "*.css", "manifest.webmanifest", "lib/**", "icons/**", "mascots/**")
+        include("index.html", "*.js", "*.css", "guides.json", "manifest.webmanifest", "lib/**", "icons/**", "mascots/**")
         exclude("sw.js")
     }
     into(layout.buildDirectory.dir("generated/web/www"))

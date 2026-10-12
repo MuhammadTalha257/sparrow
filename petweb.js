@@ -3,14 +3,16 @@
 const FR = ['mascots/zuffi-side-1.webp', 'mascots/zuffi-side-2.webp', 'mascots/zuffi-side-3.webp', 'mascots/zuffi-side-2.webp'];
 let el = null, img = null, bub = null, x = 40, target = null, step = 0, stepT = 0, last = 0, raf = 0, life = 0, getNext = () => '';
 const W = 46;
-export function start(next) {
-  getNext = next || getNext;
+let blobSvg = null;
+export function start(next, opts = {}) {
+  getNext = next || getNext; blobSvg = opts.blob || null;
   let on = '1'; try { on = localStorage.getItem('zuffiWebPet') ?? '1'; } catch {}
   if (on !== '1' || el) return;
   el = document.createElement('div'); el.className = 'webpet idle';
-  el.innerHTML = '<img alt="Zuffi" src="mascots/zuffi-body.webp"><div class="webpet-b" hidden></div>';
+  el.innerHTML = (blobSvg ? `<span class="wpblob">${blobSvg()}</span>` : '<img alt="Zuffi" src="mascots/zuffi-body.webp">') + '<div class="webpet-b" hidden></div>';
+  if (blobSvg) el.classList.add('is-blob');
   document.body.appendChild(el);
-  img = el.querySelector('img'); bub = el.querySelector('.webpet-b');
+  img = el.querySelector('img') || { set src(v) {} }; bub = el.querySelector('.webpet-b');
   FR.forEach(s => { const i = new Image(); i.src = s; });
   try { x = +localStorage.getItem('webPetX') || innerWidth - W - 30; } catch { x = innerWidth - W - 30; }
   place();
@@ -26,8 +28,8 @@ function tick(t) {
   const dt = Math.min(0.05, (t - last) / 1000 || 0); last = t;
   if (target !== null) {
     const d = target - x, v = 56 * dt;
-    if (Math.abs(d) <= v) { x = target; target = null; el.classList.add('idle'); el.classList.remove('left'); img.src = 'mascots/zuffi-body.webp'; try { localStorage.setItem('webPetX', String(Math.round(x))); } catch {} }
-    else { x += Math.sign(d) * v; if (t - stepT > 140) { stepT = t; step = (step + 1) % 4; img.src = FR[step]; } }
+    if (Math.abs(d) <= v) { x = target; target = null; el.classList.add('idle'); el.classList.remove('left'); if (!blobSvg) img.src = 'mascots/zuffi-body.webp'; try { localStorage.setItem('webPetX', String(Math.round(x))); } catch {} }
+    else { x += Math.sign(d) * v; if (!blobSvg && t - stepT > 140) { stepT = t; step = (step + 1) % 4; img.src = FR[step]; } }
     place();
   }
   raf = requestAnimationFrame(tick);

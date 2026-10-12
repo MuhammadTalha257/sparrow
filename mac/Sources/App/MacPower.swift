@@ -101,10 +101,10 @@ struct BizPowerBox: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "bolt.batteryblock.fill").foregroundColor(Color(hex: "#FBC56A"))
-                Text("Keep Zuffi working").font(.system(size: 14, weight: .bold, design: .rounded))
+                Text("Keep Zuffi working").font(.system(size: 14, weight: .bold))
                 Spacer()
-                Text(power.onAC ? "Charging" : "On battery").font(.system(size: 11, weight: .bold, design: .rounded))
-                    .padding(.horizontal, 9).frame(height: 22).liquidGlass(Capsule())
+                Text(power.onAC ? "Charging" : "On battery").font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 9).frame(height: 22).inkPanel(Capsule())
             }
             Toggle(isOn: $power.awakeCharging) {
                 VStack(alignment: .leading, spacing: 1) {
