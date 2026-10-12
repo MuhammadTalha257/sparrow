@@ -16,9 +16,13 @@ const MODEL = app.isPackaged ? path.join(process.resourcesPath, 'model') : path.
 const dataFile = n => path.join(app.getPath('userData'), n);
 
 let panel = null, tray = null, quitting = false;
-let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'right', pet: true, chargeLight: true, awakeCharging: false, lidCharging: false, accent: 'rose' };
+let settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'center', pet: true, chargeLight: true, awakeCharging: false, lidCharging: false, accent: 'rose' };
 
-function loadSettings() { try { settings = Object.assign(settings, JSON.parse(fs.readFileSync(dataFile('sparrow-settings.json'), 'utf8'))); } catch {} }
+function loadSettings() {
+  try { settings = Object.assign(settings, JSON.parse(fs.readFileSync(dataFile('sparrow-settings.json'), 'utf8'))); } catch {}
+  // v2.1: Zuffi lives in a notch at the top centre, like on the Mac (once — you can still move it in Settings)
+  if (!settings.notchV2) { settings.position = 'center'; settings.notchV2 = true; try { saveSettings(); } catch {} }
+}
 function saveSettings() { try { fs.writeFileSync(dataFile('sparrow-settings.json'), JSON.stringify(settings)); } catch {} }
 
 // Keep everything people already saved when the app was still called "Sparrow".
@@ -50,7 +54,7 @@ const detached = (cmd, args) => { try { spawn(cmd, args, { detached: true, windo
 let expanded = false;
 function islandBounds() {
   const d = screen.getPrimaryDisplay(), b = d.bounds, wa = d.workArea;
-  const pos = settings.position || 'right';
+  const pos = settings.position || 'center';
   const W = 470, top = pos === 'center' && isMac ? b.y : wa.y + (pos === 'center' ? 0 : 6);
   const H = Math.min(640, wa.y + wa.height - top - 8);
   const x = pos === 'center' ? Math.round(b.x + (b.width - W) / 2) : pos === 'left' ? wa.x + 8 : wa.x + wa.width - W - 8;

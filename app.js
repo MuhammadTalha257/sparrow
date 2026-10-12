@@ -240,6 +240,7 @@ function downloadICS(ics, title) {
 let zcAwait = false;   // waiting for an answer while Zuffi Live is open
 function addMsg(role, text, extra = {}) {
   const m = { role, text, ts: Date.now(), ...extra };
+  if (role === 'bot') document.dispatchEvent(new CustomEvent('zuffi-said', { detail: text }));
   if (zc.isOpen()) {
     if (role === 'bot') { zcAwait = false; zc.say(text); zc.agent(zc.agentFor(text)); zc.setState('idle'); }
     else { zc.user(text); zcAwait = true; zc.setState('thinking'); }

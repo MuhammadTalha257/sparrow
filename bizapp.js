@@ -192,7 +192,38 @@ function setPin() {
 
 // ---------------- view ----------------
 let root = null, tab = 'today', search = '', stageFilter = '', toast = t => console.log(t), propFilter = '';
-const TABS = () => [['today', 'Today', VIOLET], ['leads', 'Leads', ROSE], estate() ? ['stock', 'Stock', AMBER] : ['clients', 'Clients', AMBER], ['money', 'Money', AMBER], ['team', 'Team', VIOLET], ['more', 'More', GREY]];
+const DASH = () => document.documentElement.classList.contains('biz-dash');
+// The computer dashboard (Windows) has the same sections as the Mac one.
+const SVG = {
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>',
+  cols: '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/>',
+  house: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2 21c0-3.9 3.1-7 7-7s7 3.1 7 7M16 4.5a3.5 3.5 0 0 1 0 7M22 21c0-3.2-2-5.9-5-6.7"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+  cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v.01M18 15v.01"/>',
+  team: '<circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.2"/><circle cx="19" cy="10" r="2.2"/><path d="M7 20c0-2.8 2.2-5 5-5s5 2.2 5 5M1.5 19c0-2 1.6-3.6 3.5-3.6M22.5 19c0-2-1.6-3.6-3.5-3.6"/>',
+  building: '<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01M10 21v-3h4v3"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  learn: '<path d="M22 10 12 5 2 10l10 5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
+};
+const icon = (n, sz = 16) => `<svg viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${SVG[n]}</svg>`;
+const SECTIONS = () => [
+  ['today', 'Today', 'sun', 'What needs you today', ['The people to call, who is waiting and money owed — all on one page.', 'Click a number to jump to the list behind it.', 'Write today’s offer at the bottom; Zuffi uses it in replies.']],
+  ['inbox', 'Inbox', 'inbox', 'WhatsApp messages & replies', ['New WhatsApp messages land here and become clients by themselves.', 'Click Reply — WhatsApp opens with the chat ready.', 'Red means someone has waited more than 5 minutes.']],
+  ['pipeline', 'Pipeline', 'cols', 'Where each client is up to', ['Each column is a step: New → Contacted → … → Won.', 'Drag a client to the next column when things move on.', 'Click a client to see everything about them.']],
+  estate() ? ['stock', 'Properties', 'house', 'Plots, houses & shops you’re selling', ['Add a property once — Zuffi matches it to buyers.', 'WhatsApp group posts become stock on Android.', 'Mark it Sold / Let when it’s done.']]
+    : ['clients', 'Clients', 'users', 'Regulars & who to invite back', ['Everyone who visited, with their usual service.', 'Zuffi shows who is due to come back.', 'One click sends a friendly invite on WhatsApp.']],
+  ['records', 'Records', 'table', 'Every client in one table', ['Everyone who ever contacted you, like a spreadsheet.', 'Click a column title to sort; search at the top.', 'Export to Excel (CSV) any time — it’s your data.']],
+  ['money', 'Money', 'cash', 'Money in, money out, profit', ['Add money in or out in two clicks — or type “expense 2500 fuel” below.', 'Owed to you: chase late payments with a ready message.', 'Profit is worked out for you.']],
+  ['team', 'Team & staff', 'team', 'Staff, salaries & hours', ['Add each person and how they are paid.', 'Pay salary or commission — it goes into Money by itself.', 'See who is slow to follow up their leads.']],
+  ['business', 'My business', 'building', 'Your details Zuffi uses to reply', ['Write your prices, hours and location — Zuffi uses them when replying.', 'Pick your country and currency here.', 'Choose Zuffi’s look and colour for every device.']],
+  ['automations', 'Automations', 'bolt', 'Jobs Zuffi does for you', ['Switch on the jobs you want Zuffi to do.', 'Each switch says exactly what it does.', 'They work on all your linked devices.']],
+  ['connect', 'Connect & devices', 'link', 'WhatsApp, your phone & other devices', ['Link your phone or tablet with the QR code.', 'Changes on one device appear on the others by themselves.', 'Lock Business with a PIN and hide amounts here.']],
+  ['learn', 'Learn & help', 'learn', 'How Zuffi works, step by step', ['Short guides for every part of Zuffi.', 'Includes setting up a free AI model on this computer.', 'Something not working? Open “Something not working?”.']],
+];
+const TABS = () => DASH() ? SECTIONS().map(([id, lb]) => [id, lb, GREY]) : [['today', 'Today', VIOLET], ['leads', 'Leads', ROSE], estate() ? ['stock', 'Stock', AMBER] : ['clients', 'Clients', AMBER], ['money', 'Money', AMBER], ['team', 'Team', VIOLET], ['more', 'More', GREY]];
 
 export function mount(el, opts = {}) {
   root = el; toast = opts.toast || toast;
@@ -212,22 +243,26 @@ function render() {
   if (locked()) return renderLock();
   root.classList.toggle('bz-private', LS.get('zuffiPrivate') === '1');
   const tabs = TABS();
+  if (DASH() && ({ leads: 1, more: 1 })[tab]) tab = tab === 'leads' ? 'inbox' : 'business';
   if (!tabs.some(t => t[0] === tab)) tab = 'today';
   root.innerHTML = `
     <div class="bz-head" id="bzHead"></div>
-    <div class="bz-tabs" role="tablist">${tabs.map(([id, lb, c]) => `<button class="${tab === id ? 'on' : ''}" data-bt="${id}" style="--c:${c}"><i></i>${lb}</button>`).join('')}</div>
-    <div class="bz-body">${({ today: viewToday, leads: viewLeads, stock: viewStock, clients: viewClients, money: viewMoney, team: viewTeam, more: viewMore }[tab] || viewToday)()}</div>`;
+    ${DASH() ? sideNav() : `<div class="bz-tabs" role="tablist">${tabs.map(([id, lb, c]) => `<button class="${tab === id ? 'on' : ''}" data-bt="${id}" style="--c:${c}"><i></i>${lb}</button>`).join('')}</div>`}
+    <div class="bz-body">${DASH() ? topBar() : ''}${({ today: viewToday, leads: viewLeads, stock: viewStock, clients: viewClients, money: viewMoney, team: viewTeam, more: viewMore,
+      inbox: viewInbox, pipeline: viewPipeline, records: viewRecords, business: viewBusiness, automations: viewAutomations, connect: viewConnect, learn: viewLearn }[tab] || viewToday)()}</div>`;
   let fab = document.getElementById('bzFab');
   if (!fab) { fab = document.createElement('button'); fab.id = 'bzFab'; fab.className = 'bz-fab'; document.body.appendChild(fab); }
-  const fa = ['today', 'leads'].includes(tab) ? 'addLead' : tab === 'stock' ? 'addProp' : tab === 'clients' ? 'addClient' : '';
+  const fa = DASH() ? '' : ['today', 'leads'].includes(tab) ? 'addLead' : tab === 'stock' ? 'addProp' : tab === 'clients' ? 'addClient' : '';
   fab.hidden = !fa; fab.textContent = '＋'; fab.setAttribute('aria-label', { addLead: 'Add lead', addProp: 'Add property', addClient: 'Add client' }[fa] || '');
   fab.onclick = () => fa === 'addProp' ? editProp(null) : fa === 'addClient' ? editClient(null) : editLead(null);
   renderHead();
   root.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => { tab = b.dataset.bt; moreFocus = ''; render(); });
   root.onclick = onClick; root.oninput = onInput; root.onchange = onChangeEv;
   root.querySelector('.bz-tabs .on')?.scrollIntoView?.({ inline: 'center', block: 'nearest' });
+  if (moreFocus && tab === 'more' && DASH()) { tab = moreFocus === 'devices' ? 'connect' : 'business'; moreFocus = ''; return render(); }
   if (moreFocus && tab === 'more') setTimeout(() => root.querySelector('#more-' + moreFocus)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60);
-  if (qrShown && tab === 'more') drawQr();
+  if (qrShown && (tab === 'more' || tab === 'connect')) drawQr();
+  if (tab === 'pipeline') wirePipeline();
 }
 
 function renderHead() {
@@ -535,10 +570,114 @@ export function applyAccent() {
   de.style.setProperty('--accent', t[1]); de.style.setProperty('--zfur', t[2] + 'deg');
   try { window.SparrowNative?.setAccent?.(t[0]); window.SparrowDesktop?.setSetting?.('accent', t[0]); } catch {}
 }
-function viewMore() {
+// ---------------- computer dashboard: sidebar, top bar and the extra Mac sections ----------------
+function sideNav() {
+  const W = waiting().length, due = leads().filter(dueToday).length;
+  const badge = { today: due ? pill(String(due), AMBER) : '', inbox: W ? `<span class="bz-cnt">${W}</span>` : '' };
+  return `<nav class="bz-side" role="tablist">${SECTIONS().map(([id, lb, ic, sub]) => `<button class="${tab === id ? 'on' : ''}" data-bt="${id}" title="${esc(sub)}">
+    <span class="si">${icon(ic)}</span><span class="st"><b>${esc(lb)}</b>${tab === id ? `<small>${esc(sub)}</small>` : ''}</span>${badge[id] || ''}</button>`).join('')}</nav>`;
+}
+let tipsOpen = false;
+function topBar() {
+  const sec = SECTIONS().find(x => x[0] === tab) || SECTIONS()[0];
+  let title = sec[1], sub = sec[3];
+  if (tab === 'today') { const due = leads().filter(dueToday).length, W = waiting().length; title = greeting() + (bs.cfg('owner') ? ', ' + first(bs.cfg('owner')) : ''); sub = (due ? `${due} ${due === 1 ? 'person' : 'people'} to call today` : 'Nobody to chase today') + (W ? ` · ${W} waiting` : ''); }
+  const main = ['today', 'inbox', 'pipeline', 'records'].includes(tab) ? ['addLead', '＋ New lead'] : tab === 'stock' ? ['addProp', '＋ Property'] : tab === 'clients' ? ['addClient', '＋ Client'] : tab === 'team' ? ['addStaff', '＋ Staff'] : tab === 'records' ? ['csv', 'Export'] : null;
+  return `<div class="bz-top"><div class="bz-tt"><b>${esc(title)}</b><small>${esc(sub)}</small></div>
+    <button class="bz-btn ghost sm" data-act="tips">${tipsOpen ? 'Hide tips' : 'What is this page?'}</button>
+    ${tab === 'records' ? '<button class="bz-btn ghost sm" data-act="csv">Export (CSV)</button>' : ''}
+    ${main ? `<button class="bz-btn sm" data-act="${main[0]}">${main[1]}</button>` : ''}</div>
+    ${tipsOpen ? `<div class="bz-tips">${sec[4].map((t, i) => `<div><i>${i + 1}</i><span>${esc(t)}</span></div>`).join('')}</div>` : ''}`;
+}
+const agoMin = t => { const m = mins(t); return m < 1 ? 'now' : m < 60 ? m + ' min' : m < 1440 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'; };
+function viewInbox() {
+  const W = new Set(waiting().map(l => l.k));
+  const L = leads().filter(l => f(l.r, 'Last message') || l.msgAt).sort((a, b) => when(b.msgAt) - when(a.msgAt));
+  if (!L.length) return card('No WhatsApp messages yet', `<p class="bz-p">When a client writes on WhatsApp, the message appears here and the client is saved by themselves.</p>
+    <p class="bz-hint">On Windows, messages come from your Android phone or office Mac (linked under Connect & devices). Leads you add by hand are in Pipeline and Records.</p>
+    <button class="bz-btn ghost" data-bt="connect">Connect WhatsApp</button>`);
+  return card('', L.map(l => `<div class="bz-msg ${W.has(l.k) ? 'wait' : ''}">${face(l.name, W.has(l.k) ? ROSE : VIOLET, (l.name || '?').charAt(0))}
+      <button class="bz-rt" data-lead="${esc(l.k)}"><b>${esc(l.name || l.phone)}</b><small>“${esc(f(l.r, 'Last message') || '…')}”</small></button>
+      <span class="bz-when">${l.msgAt ? agoMin(when(l.msgAt)) : ''}</span>
+      ${W.has(l.k) ? pill('waiting', ROSE) : pill(l.status, stageColor(l.status))}
+      <button class="bz-mini" data-reply="${esc(l.k)}">Reply</button></div>`).join(''), '', 'flush');
+}
+function viewPipeline() {
+  const L = leads();
+  return `<div class="bz-pipe">${stages().map(st => { const col = L.filter(l => l.status === st); const sum = col.reduce((a, l) => a + num(l.value || f(l.r, 'Budget')), 0);
+    return `<section class="bz-col" data-col="${esc(st)}" style="--c:${stageColor(st)}"><h5><i></i>${esc(st)}<span>${col.length}</span></h5>${sum && SALE.concat(['Negotiating', 'Quoted']).includes(st) ? `<small class="bz-colsum">${money(sum)}</small>` : ''}
+      <div class="bz-colb">${col.map(l => `<button class="bz-kcard" draggable="true" data-lead="${esc(l.k)}"><b>${esc(l.name || l.phone)}${l.pri.toLowerCase() === 'hot' ? ' <span class="hot">●</span>' : ''}</b>
+        <small>${esc([f(l.r, 'Interest'), f(l.r, 'Area')].filter(Boolean).join(' · ') || l.phone)}</small>${overdue(l) ? pill('overdue', ROSE) : dueToday(l) ? pill('today', AMBER) : ''}</button>`).join('') || '<p class="bz-empty">Drop here</p>'}</div></section>`; }).join('')}</div>`;
+}
+function wirePipeline() {
+  const P = root.querySelector('.bz-pipe'); if (!P) return;
+  let dragK = '';
+  P.addEventListener('dragstart', e => { const c = e.target.closest('[data-lead]'); if (!c) return; dragK = c.dataset.lead; c.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragK); });
+  P.addEventListener('dragend', e => { e.target.closest('[data-lead]')?.classList.remove('drag'); P.querySelectorAll('.over').forEach(x => x.classList.remove('over')); });
+  P.addEventListener('dragover', e => { const col = e.target.closest('[data-col]'); if (!col) return; e.preventDefault(); P.querySelectorAll('.over').forEach(x => x !== col && x.classList.remove('over')); col.classList.add('over'); });
+  P.addEventListener('drop', e => {
+    const col = e.target.closest('[data-col]'); if (!col || !dragK) return; e.preventDefault();
+    const x = bs.rows('Leads').find(r => r.k === dragK); if (!x) return;
+    const prev = f(x.r, 'Status') || 'New', st = col.dataset.col; if (prev === st) return render();
+    const row = { ...x.r, Status: st, 'Last contact': iso() };
+    if (prev === 'New') row['Replied at'] = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    bs.put('Leads', row, x.k); stageWon(row, prev); toast(`${f(x.r, 'Name') || 'Client'} → ${st}`);
+  });
+}
+let recSort = ['Added', -1];
+const REC_COLS = () => [['Name', 'Name'], ['Phone', 'Phone'], ['Status', 'Stage'], ['Interest', labels()[0]], ['Area', labels()[1]], ['Budget', labels()[2]], ['Value', labels()[3]], ['Source', 'Source'], ['Next follow-up', 'Next follow-up'], ['Assigned to', 'Agent'], ['Added', 'Added']];
+function recRows() {
+  const q = search.toLowerCase(), [col, dir] = recSort;
+  return leads().filter(l => !q || JSON.stringify(l.r).toLowerCase().includes(q)).sort((a, b) => {
+    const x = f(a.r, col), y = f(b.r, col);
+    const nx = num(x), ny = num(y);
+    return (['Budget', 'Value'].includes(col) ? nx - ny : String(x).localeCompare(String(y))) * dir;
+  });
+}
+function viewRecords() {
+  const R = recRows();
+  return `<div class="bz-search glass"><span>⌕</span><input class="bz-q" placeholder="Search name, number, area…" value="${esc(search)}"></div>
+    <section class="bz-card glass flush bz-tablewrap"><table class="bz-table"><thead><tr>${REC_COLS().map(([k, lb]) => `<th data-sort="${esc(k)}" class="${recSort[0] === k ? 'on' : ''}">${esc(lb)}${recSort[0] === k ? (recSort[1] > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+    <tbody>${R.map(l => `<tr data-lead="${esc(l.k)}">${REC_COLS().map(([k]) => k === 'Status' ? `<td>${pill(l.status, stageColor(l.status))}</td>` : `<td>${esc(f(l.r, k))}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${REC_COLS().length}" class="bz-empty">No clients yet.</td></tr>`}</tbody></table></section>
+    <small class="bz-hint">${R.length} of ${leads().length} clients</small>`;
+}
+function exportRecords() {
+  const cols = REC_COLS(), q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [cols.map(c => q(c[1])).join(','), ...recRows().map(l => cols.map(([k]) => q(k === 'Status' ? l.status : f(l.r, k))).join(','))].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = `zuffi-clients-${iso()}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  toast('Saved ' + a.download);
+}
+function viewBusiness() { return moreBusiness(); }
+const AUTOS = [
+  ['auto_speed', 'Speed-to-lead alarm', 'If someone waits 5 minutes for a reply, Zuffi buzzes you — and again at 15 minutes.', true],
+  ['auto_brief', 'Morning summary', 'Every morning: who to call, who is waiting, viewings and payments due — in one message.', true],
+  ['auto_late', 'Late payment nudge', 'When a payment is overdue, Zuffi reminds you each morning with a ready-written chaser.', true],
+  ['auto_lost', 'Monday lost-money report', 'Every Monday: people who asked and never got a follow-up, and what they could be worth.', true],
+];
+const autoOn = k => { const v = bs.cfg(k); const d = AUTOS.find(a => a[0] === k); return v === '' ? !!d?.[3] : v === '1'; };
+function viewAutomations() {
+  return card('Jobs Zuffi does for you', AUTOS.map(([k, t, sub]) => `<label class="bz-auto"><span class="bz-rt"><b>${esc(t)}</b><small>${esc(sub)}</small></span><input type="checkbox" class="bz-sw" data-auto="${k}" ${autoOn(k) ? 'checked' : ''}></label>`).join('')
+    + '<small class="bz-hint">Switches are shared with your phone and other linked devices.</small>')
+    + card('Automatic WhatsApp replies', `<p class="bz-p">Zuffi can answer new WhatsApp enquiries by itself (with a 10-second Stop button). This runs on the device that has WhatsApp: your <b>Android phone</b> (Business → More → This phone) or your <b>Mac</b>.</p>
+      <p class="bz-hint">Windows shows the same leads and replies through sync. Replying from here opens WhatsApp Desktop with the chat ready.</p>`);
+}
+function viewConnect() {
+  const D = window.SparrowDesktop;
+  const power = D ? card('Keep Zuffi working', `<label class="bz-auto"><span class="bz-rt"><b>While charging, don’t sleep</b><small>Zuffi keeps alerts and sync going. The screen can still turn off.</small></span><input type="checkbox" class="bz-sw" data-dset="awakeCharging"></label>
+      <label class="bz-auto"><span class="bz-rt"><b>Keep working with the lid closed</b><small>Only while plugged in. Don’t leave a closed, running laptop in a bag.</small></span><input type="checkbox" class="bz-sw" data-dset="lidCharging"></label>`) : '';
+  if (D) setTimeout(() => D.getSettings?.().then(st => root.querySelectorAll('[data-dset]').forEach(i => { i.checked = !!st[i.dataset.dset]; })), 0);
+  return card('WhatsApp', `<div class="bz-sec">
+      <div><i class="ok">1</i><span class="bz-rt"><b>Android phone</b><small>Business → More → This phone: allow Notification access. New chats become leads and sync here.</small></span></div>
+      <div><i class="ok">2</i><span class="bz-rt"><b>Windows</b><small>Install WhatsApp Desktop. Reply buttons open the chat with the message ready — press Enter to send.</small></span></div>
+      <div><i class="ok">3</i><span class="bz-rt"><b>iPhone</b><small>Use an office Mac or a spare Android as the WhatsApp hub, then link it here.</small></span></div></div>
+      <button class="bz-btn ghost" data-guide="whatsapp">Step-by-step guide</button>`)
+    + `<div id="more-devices"></div>${viewDevices()}<div id="more-security"></div>${securityCard()}${power}`;
+}
+function viewLearn() { return learnCard(); }
+
+function moreBusiness() {
   const p = feats();
-  const phone = N?.setBizPhone ? phoneSettings() : '';
-  return `${learnCard()}<div id="more-biz"></div>${card('My business', `
+  return `${card('My business', `
       <label class="bz-lbl">Business name<input class="bz-in" data-cfg="name" value="${esc(bs.cfg('name'))}" placeholder="e.g. Al-Noor Estate, Glow Salon"></label>
       <label class="bz-lbl">Your name<input class="bz-in" data-cfg="owner" value="${esc(bs.cfg('owner'))}" placeholder="for greetings and messages"></label>
       <button class="bz-pick" data-act="pickCountry"><span>${C.flag(country())}</span><span class="bz-rt"><b>${esc(C.name(country()))}</b><small>Country · features & currency</small></span><span>›</span></button>
@@ -558,7 +697,12 @@ function viewMore() {
     ${card('Business info for replies', `<textarea class="bz-in" data-cfg="info" rows="6" placeholder="Opening hours, prices, location, what you sell, how to book…">${esc(bs.cfg('info'))}</textarea>
       <small class="bz-hint">Zuffi only uses these facts when it answers clients. It never invents prices.</small>`)}
     ${card('Messages Zuffi sends', `<label class="bz-lbl">Missed call → WhatsApp<textarea class="bz-in" data-cfg="missedText" rows="2" placeholder="Sorry I missed your call — I’m with a client. How can I help? 🙂">${esc(bs.cfg('missedText'))}</textarea></label>
-      <small class="bz-hint">Follow-ups, chasers and invite-backs are written for you each time — you see them before they go.</small>`)}
+      <small class="bz-hint">Follow-ups, chasers and invite-backs are written for you each time — you see them before they go.</small>`)}`;
+}
+function viewMore() {
+  const p = feats();
+  const phone = N?.setBizPhone ? phoneSettings() : '';
+  return `${learnCard()}<div id="more-biz"></div>${moreBusiness()}
     ${phone}
     <div id="more-devices"></div>${viewDevices()}
     <div id="more-security"></div>${securityCard()}
@@ -685,7 +829,7 @@ function followAll() {
 
 // ---------------- alerts: speed-to-lead (all devices), checked every minute ----------------
 function watch() {
-  const W = waiting(); let told = {};
+  const W = autoOn('auto_speed') ? waiting() : []; let told = {};
   try { told = JSON.parse(LS.get('zuffiTold', '{}')); } catch {}
   for (const l of W) {
     const stage = l.waitMin >= 15 ? 15 : l.waitMin >= 5 ? 5 : 0; if (!stage) continue;
@@ -700,7 +844,33 @@ function watch() {
   }
   const keys = Object.keys(told); if (keys.length > 300) keys.slice(0, 100).forEach(k => delete told[k]);
   LS.set('zuffiTold', JSON.stringify(told));
+  if (!DASH()) morningJobs();
   if (isVisible() && tab === 'today') render();
+}
+// Automations: morning summary, late payments, Monday lost-money report — once a day, from 9am, on this device.
+function nudge(msg, sub = '') {
+  try { window.SparrowIsland?.peek(msg, sub, 12000); } catch {}
+  try { N?.petSay?.(msg); } catch {}
+  if (document.visibilityState === 'visible') toast(msg, 7000);
+  else if ('Notification' in window && Notification.permission === 'granted' && !N) { try { new Notification('Zuffi', { body: msg + (sub ? '\n' + sub : ''), icon: 'icons/icon-192.png' }); } catch {} }
+}
+function morningJobs() {
+  const d = new Date(); if (d.getHours() < 9 || !leads().length && !bs.rows('Due').length) return;
+  const today = iso(); let done = {}; try { done = JSON.parse(LS.get('zuffiJobs', '{}')); } catch {}
+  const run = (k, fn) => { if (done[k] === today || !autoOn(k)) return; done[k] = today; fn(); };
+  run('auto_brief', () => {
+    const due = leads().filter(dueToday).length, W = waiting().length;
+    const visits = [...bs.rows('Visits'), ...bs.rows('Appointments')].filter(({ r }) => f(r, 'Date') === today).length;
+    const pay = bs.rows('Due').filter(({ r }) => !/paid/i.test(f(r, 'Status')) && f(r, 'Due date') === today).length;
+    const parts = [due && `${due} to call`, W && `${W} waiting`, visits && `${visits} ${estate() ? 'viewing' : 'booking'}${visits > 1 ? 's' : ''}`, pay && `${pay} payment${pay > 1 ? 's' : ''} due`].filter(Boolean);
+    nudge(`☀️ ${greeting()}! ${parts.length ? 'Today: ' + parts.join(' · ') : 'Nothing urgent today.'}`, 'Open Business → Today');
+  });
+  run('auto_late', () => {
+    const late = bs.rows('Due').filter(({ r }) => !/paid/i.test(f(r, 'Status')) && f(r, 'Due date') && f(r, 'Due date') < today);
+    if (late.length) nudge(`💸 ${late.length} payment${late.length > 1 ? 's are' : ' is'} late — ${money(late.reduce((a, { r }) => a + num(f(r, 'Amount')), 0))}`, 'Money → Owed to you → Chase');
+  });
+  if (d.getDay() === 1) run('auto_lost', () => { const L = forgotten(); if (L.length >= 2) nudge(`📉 ${L.length} people never got a follow-up — about ${money(L.length * avgDeal() * 0.25)} you could still win`, 'Today → Follow them up'); });
+  LS.set('zuffiJobs', JSON.stringify(done));
 }
 // ---------------- sheets (editors) ----------------
 function sheet(title, html, onSave, extra = '') {
@@ -833,6 +1003,8 @@ function editClient(k) {
 
 // ---------------- events ----------------
 function onClick(e) {
+  const th = e.target.closest('[data-sort]');
+  if (th && root.contains(th)) { const k = th.dataset.sort; recSort = recSort[0] === k ? [k, -recSort[1]] : [k, 1]; return render(); }
   const t = e.target.closest('button, [data-lead], [data-prop]'); if (!t || !root.contains(t)) return;
   const d = t.dataset;
   if (d.bt) return;
@@ -886,6 +1058,11 @@ function onClick(e) {
     return toast(`Paid ${f(r, 'Name')} ✓`);
   }
   switch (d.act) {
+    case 'tips': tipsOpen = !tipsOpen; return render();
+    case 'csv': return exportRecords();
+    case 'addLead': return editLead(null);
+    case 'addProp': return editProp(null);
+    case 'addClient': return editClient(null);
     case 'addStaff': return editStaff(null);
     case 'followAll': return followAll();
     case 'pickCountry': return onboarding(true);
@@ -934,6 +1111,8 @@ function onChangeEv(e) {
     try { N?.setBizPhone?.(JSON.stringify(o)); } catch {}
     toast('Saved ✓');
   }
+  if (t.dataset.auto) { bs.setCfg(t.dataset.auto, t.checked ? '1' : '0'); toast(t.checked ? 'On ✓' : 'Off'); }
+  if (t.dataset.dset) { window.SparrowDesktop?.setSetting?.(t.dataset.dset, t.checked); toast('Saved ✓'); }
   if (t.dataset.lockmins) { LS.set('zuffiLockMins', t.value); toast('Saved ✓'); }
   if (t.dataset.private !== undefined) { LS.set('zuffiPrivate', t.checked ? '1' : '0'); render(); }
   if (t.dataset.webpet !== undefined) { LS.set('zuffiWebPet', t.checked ? '1' : '0'); window.zuffiWebPet?.(t.checked); }

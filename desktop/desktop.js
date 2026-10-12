@@ -3,6 +3,7 @@
 import { store } from './store.js';
 import { greetingWord, fmtTime, tasksForDay } from './brain.js';
 import * as mem from './memory.js';
+import { mountMascot } from './mascot.js';
 
 const D = window.SparrowDesktop;
 const S = () => store.settings;
@@ -21,6 +22,7 @@ cap.innerHTML = `<span class="cap-bird"><i class="cap-face"></i></span>
 const glow = document.createElement('div'); glow.className = 'isl-glow';
 island.append(glow, cap, body);
 document.body.prepend(island);
+['l', 'r'].forEach(x => { const e = document.createElement('i'); e.className = 'isl-ear ' + x; document.body.appendChild(e); });
 
 // collapse button in the header
 const top = body.querySelector('.top');
@@ -47,21 +49,113 @@ async function refreshApps() {
 }
 appsRow.onclick = e => { const b = e.target.closest('[data-pid]'); if (b) { b.classList.add('go'); D.focusWindow(b.dataset.pid); setTimeout(() => b.classList.remove('go'), 600); } };
 
+// ---------- Mac-style home: what the island shows when it drops open ----------
+// Same layout as the Mac notch: your open apps on top, Zuffi in the middle (her head follows the mouse),
+// four buttons on each side, and Mic · Chat · Business · Talk along the bottom.
+const I = {
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  more: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  pet: '<path d="M9 3c-1 0-1.5 2-1.5 4.5S8 11 8 11M15 3c1 0 1.5 2 1.5 4.5S16 11 16 11"/><circle cx="12" cy="15" r="6"/><path d="M10 15h.01M14 15h.01"/>',
+  today: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  call: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+  whatsapp: '<path d="M3 21l1.7-5A8.5 8.5 0 1 1 8 19.3z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1.2-1.2-1.8-1-1 .7a4 4 0 0 1-2.4-2.4l.7-1-1-1.8z"/>',
+  notes: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  micoff: '<path d="M3 3l18 18M9 9v2a3 3 0 0 0 5.1 2.1M15 10V6a3 3 0 0 0-5.7-1.3M19 11a7 7 0 0 1-1.2 3.9M5 11a7 7 0 0 0 10.4 6.1M12 18v3"/>',
+  biz: '<rect x="3" y="7" width="18" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
+  wave: '<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>',
+  home: '<path d="M15 18l-6-6 6-6"/>',
+};
+const ico = (n, sz = 15) => `<svg viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
+const HOME_BTNS = {
+  chat: ['Chat', 'chat', '#F58FA8'], settings: ['Settings', 'settings', '#A9B2C6'], more: ['More', 'more', '#F7C948'], pet: ['Zuffi on screen', 'pet', '#FFB7C5'],
+  today: ['Today', 'today', '#FBC56A'], call: ['Who to call today', 'call', '#34D399'], whatsapp: ['WhatsApp', 'whatsapp', '#34D399'], notes: ['My notes', 'notes', '#FDE68A'],
+};
+const LEFT = ['chat', 'settings', 'more', 'pet'], RIGHT = ['today', 'call', 'whatsapp', 'notes'];
+const hbtn = (id, round) => { const [label, icon, tint] = HOME_BTNS[id]; return `<button class="nh-b ${round ? 'round' : 'cap2'}" data-h="${id}" title="${label}" aria-label="${label}" style="--t:${tint}">${ico(icon, 14)}</button>`; };
+const nhome = document.createElement('div'); nhome.className = 'nhome';
+nhome.innerHTML = `<div class="nh-apps"><span class="nh-zuffi">Zuffi</span></div>
+  <div class="nh-mid"><div class="nh-col">${LEFT.map(id => hbtn(id, true)).join('')}</div>
+    <div class="nh-c"><div class="nh-head"></div><p class="nh-words"></p></div>
+    <div class="nh-col">${RIGHT.map(id => hbtn(id, false)).join('')}</div></div>
+  <div class="nh-bot"><button class="nh-pill" data-h="mic" title="Turn the microphone on or off">${ico('mic', 13)}<span>Mic</span></button>
+    <button class="nh-pill" data-h="chat">${ico('chat', 13)}<span>Chat</span></button>
+    <button class="nh-pill biz" data-h="business" title="Your leads, money, team and automations">${ico('biz', 13)}<span>Business</span></button>
+    <button class="nh-talk" data-h="talk" title="Talk to Zuffi" aria-label="Talk to Zuffi">${ico('wave', 14)}</button></div>
+  <div class="nh-tip" hidden></div>`;
+island.insertBefore(nhome, body);
+const nhApps = nhome.querySelector('.nh-apps'), nhWords = nhome.querySelector('.nh-words'), nhTip = nhome.querySelector('.nh-tip');
+const head = mountMascot(nhome.querySelector('.nh-head'), { onTap: () => Voice.toggle() });
+let wordsHold = 0;
+function setWords(t, hold = 0) { nhWords.textContent = t; if (hold) wordsHold = Date.now() + hold; }
+function homeWords() {
+  if (Date.now() < wordsHold || html.classList.contains('isl-listening')) return;
+  const now = Date.now();
+  const next = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now)
+    .sort((a, b) => new Date(a.when) - new Date(b.when))[0];
+  const nm = S().name ? ' ' + S().name : '';
+  setWords(next ? `Next: ${next.title} · ${fmtTime(next.when)}` : Voice.wakeOn ? `Hi${nm}! Say “Zuffi…” or click me` : `Hi${nm}! Click me or the mic to talk`);
+}
+function micLabel() { const b = nhome.querySelector('[data-h="mic"]'); const on = Voice.wakeOn; b.classList.toggle('off', !on); b.innerHTML = `${ico(on ? 'mic' : 'micoff', 13)}<span>${on ? 'Mic' : 'Off'}</span>`; }
+/** Show one of the app's pages (chat, plan, settings…) in the big island. */
+function openFull(view) {
+  html.classList.add('isl-full');
+  if (state !== 'expanded') setState('expanded');
+  const b = document.querySelector(`nav.tabs button[data-v="${view}"]`); if (b) b.click();
+  setTimeout(() => document.querySelector('#askInput')?.focus({ preventScroll: true }), 380);
+}
+const backHome = () => { html.classList.remove('isl-full'); homeWords(); };
+nhome.addEventListener('click', e => {
+  const b = e.target.closest('[data-h]'); if (!b) return;
+  const h = b.dataset.h;
+  if (h === 'chat') openFull('chat');
+  else if (h === 'settings') { openFull('home'); setTimeout(() => document.querySelector('#settingsBtn')?.click(), 60); }
+  else if (h === 'more') openFull('tools');
+  else if (h === 'today') openFull('plan');
+  else if (h === 'notes') { openFull('tools'); setTimeout(() => document.querySelector('[data-goto2="memory"]')?.click(), 60); }
+  else if (h === 'call') D.openBusiness?.('today');
+  else if (h === 'business') D.openBusiness?.();
+  else if (h === 'whatsapp') { const ok = D.openApp?.('WhatsApp'); setWords(ok === false ? 'I couldn’t find WhatsApp on this computer — install WhatsApp from the Microsoft Store.' : 'Opening WhatsApp…', 4000); }
+  else if (h === 'pet') D.getSettings().then(s => { const on = s.pet === false; D.setSetting('pet', on); setWords(on ? 'I’ll walk along the bottom of your screen 🐰' : 'Okay — I’ll stay up here.', 3500); head.react(on ? 'delighted' : 'bashful', 900); });
+  else if (h === 'mic') { Voice.wakeOn ? Voice.stopWake() : Voice.startWake(); setTimeout(micLabel, 300); setWords(Voice.wakeOn ? 'Mic off — click Mic to turn it back on' : 'Listening for “Zuffi…”', 3000); }
+  else if (h === 'talk') Voice.toggle();
+});
+nhome.addEventListener('mouseover', e => { const b = e.target.closest('[title]'); if (b && nhome.contains(b)) { nhTip.textContent = b.title; nhTip.hidden = false; } });
+nhome.addEventListener('mouseout', e => { const b = e.target.closest('[title]'); if (b && !b.contains(e.relatedTarget)) nhTip.hidden = true; });
+// a reply or alert while the island is open shows in Zuffi's words
+document.addEventListener('zuffi-said', e => { setWords(String(e.detail || '').slice(0, 160), 20000); head.react('delighted', 700); });
+async function homeApps() {
+  if (!D.openWindows || state !== 'expanded' || html.classList.contains('isl-full')) return;
+  const list = (await D.openWindows().catch(() => [])).slice(0, 7);
+  if (!list.length) { nhApps.innerHTML = '<span class="nh-zuffi">Zuffi</span>'; return; }
+  nhApps.innerHTML = list.map((w, i) => `<button data-pid="${w.pid}" class="${i === 0 ? 'cur' : ''}" title="${(w.name + (w.title ? ' · ' + w.title : '')).replace(/"/g, '&quot;')}">${w.icon ? `<img src="${w.icon}" alt="">` : '<span class="nh-dot"></span>'}${i === 0 ? `<em>${(w.name || '').replace(/</g, '&lt;').slice(0, 16)}</em>` : ''}</button>`).join('');
+}
+nhApps.onclick = e => { const b = e.target.closest('[data-pid]'); if (b) D.focusWindow(b.dataset.pid); };
+setInterval(() => { if (state === 'expanded') { homeApps(); micLabel(); } }, 5000);
+// back-to-home button in the big island's header
+const homeBtn = document.createElement('button');
+homeBtn.className = 'icon-btn isl-home'; homeBtn.title = 'Back'; homeBtn.setAttribute('aria-label', 'Back to Zuffi');
+homeBtn.innerHTML = ico('home', 20); homeBtn.onclick = backHome;
+top.prepend(homeBtn);
+
 // ---------- states: collapsed · peek · expanded ----------
 let state = 'collapsed', peekTimer = null;
 function setState(s) {
   state = s;
+  if (s !== 'expanded') html.classList.remove('isl-full');
   html.classList.toggle('isl-collapsed', s === 'collapsed');
   html.classList.toggle('isl-peek', s === 'peek');
   html.classList.toggle('isl-expanded', s === 'expanded');
   D.islandState(s === 'expanded' ? 'expanded' : 'collapsed');
-  if (s === 'expanded') setTimeout(() => document.querySelector('#askInput')?.focus({ preventScroll: true }), 380);
+  if (s === 'expanded' && html.classList.contains('isl-full')) setTimeout(() => document.querySelector('#askInput')?.focus({ preventScroll: true }), 380);
+  if (s === 'expanded') homeWords();
   clearInterval(appsT);
   if (s === 'expanded' && plat === 'windows') { refreshApps(); appsT = setInterval(refreshApps, 6000); }
   if (s !== 'peek') clearTimeout(peekTimer);
   mouseInside(s === 'expanded');
 }
-const expand = () => setState('expanded');
+const expand = () => { setState('expanded'); homeApps(); micLabel(); };
 const collapse = () => { if (document.querySelector('.sheet:not([hidden])')) document.querySelector('#sheetBg')?.click(); setState('collapsed'); pushCap(); };
 /** Show a short message in the island (alerts, voice replies), then shrink back. */
 function peek(t1, t2 = '', ms = 6000) {
@@ -82,7 +176,7 @@ D.onIsland(v => {
 D.getSettings().then(s => { if (s.pill === false) html.classList.add('cap-hidden'); if (s.notch) html.classList.add('has-notch'); });
 
 function setPos(p) { html.classList.remove('pos-right', 'pos-left', 'pos-center'); html.classList.add('pos-' + p); }
-setPos('right');
+setPos('center');
 
 // Only the island catches the mouse — the rest of the window clicks through to your apps.
 let inside = null;
@@ -96,7 +190,7 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('mouseleave', () => { if (state !== 'expanded') mouseInside(false); html.classList.remove('cap-hover'); });
 
 // ---------- capsule text ----------
-function capText(t1, t2) { cap.querySelector('#capT1').textContent = t1; cap.querySelector('#capT2').textContent = t2; }
+function capText(t1, t2) { cap.querySelector('#capT1').textContent = t1; cap.querySelector('#capT2').textContent = t2; if (/Listening/.test(t1)) setWords(t2 && t2 !== 'Go ahead' ? `“${t2}”` : 'I’m listening…'); }
 function pushCap() {
   if (state === 'peek' || Voice.mode === 'command') return;
   const now = Date.now();
@@ -113,7 +207,7 @@ window.SparrowIsland = {
   peek, expand, collapse, get state() { return state; },
   /** A reply to something said while the island was closed: short ones peek, long ones open the island. */
   reply(text, isCommand) {
-    if (state === 'expanded') return;
+    if (state === 'expanded') { if (!html.classList.contains('isl-full')) setWords(text.slice(0, 160), 20000); return; }
     if (isCommand || text.length < 90) peek(text.split('\n')[0].slice(0, 80), isCommand ? '' : 'Tap to see more', isCommand ? 4000 : 7000);
     else expand();
   },
@@ -145,7 +239,7 @@ body.querySelector('#desktopSection').appendChild(sec);
 const dLogin = sec.querySelector('#dLogin'), dPill = sec.querySelector('#dPill'), dClip = sec.querySelector('#dClip');
 const dPos = sec.querySelector('#dPos');
 const dPet = sec.querySelector('#dPet'), dCharge = sec.querySelector('#dCharge');
-D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !== false; dClip.checked = s.clipboard !== false; dPos.value = s.position || 'right'; setPos(s.position || 'right');
+D.getSettings().then(s => { dLogin.checked = s.login; dPill.checked = s.pill !== false; dClip.checked = s.clipboard !== false; dPos.value = s.position || 'center'; setPos(s.position || 'center');
   dPet.checked = s.pet !== false; dCharge.checked = s.chargeLight !== false; });
 dPet.onchange = () => D.setSetting('pet', dPet.checked);
 dCharge.onchange = () => D.setSetting('chargeLight', dCharge.checked);
