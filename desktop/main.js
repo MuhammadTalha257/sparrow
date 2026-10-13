@@ -120,6 +120,7 @@ function setSetting(k, v) {
   if (k === 'awakeCharging') updateAwake();
   if (k === 'lidCharging') setLid(v);
   if (k === 'accent') toPet('pet', { kind: 'accent', v });
+  if (k === 'outfit') toPet('pet', { kind: 'outfit', v });
   tray && tray.refresh && tray.refresh();
 }
 

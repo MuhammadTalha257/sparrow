@@ -56,6 +56,13 @@
       </div>
     </div>
 
+    <div class="bday-ask card" id="bdayAsk" hidden>
+      <span class="bday-ic" aria-hidden="true">🎂</span>
+      <div class="bday-t"><b>When’s your birthday?</b><small>Zuffi will wish you and dress up for the day.</small></div>
+      <input type="date" id="bdayInput" aria-label="Your birthday">
+      <div class="bday-btns"><button class="chip" id="bdayLater">Not now</button><button class="chip solid" id="bdaySave">Save</button></div>
+    </div>
+
     <div class="up-next card" id="upNext" hidden></div>
 
     <div class="row2">
@@ -184,6 +191,7 @@
 
   <details open><summary>👋 You</summary>
     <label class="field"><span>Your name</span><input id="sName" placeholder="Talha"></label>
+    <label class="field"><span>Your birthday — Zuffi wishes you and dresses up on the day</span><input id="sBirthday" type="date" max="2026-12-31"></label>
     <label class="field"><span>Language</span><select id="sLang"></select></label>
     <div class="field"><span>Look</span><div class="themes" id="sTheme">
       <button data-th="graphite"><i style="background:#18191E;outline:3px solid #EDB24E"></i>Graphite</button>
@@ -201,10 +209,9 @@
   </details>
 
   <details id="lookDetails"><summary>🐰 Zuffi’s outfit &amp; seasons</summary>
-    <p class="small-text">Zuffi can dress up for the season — a scarf and woolly hat in winter, a lantern-lit sky in Ramadan, confetti for Eid and your birthday.</p>
+    <p class="small-text">Zuffi can dress up for the season — a scarf and woolly hat in winter, a lantern-lit sky in Ramadan, confetti for Eid and your birthday (set it under You).</p>
     <div class="outfits" id="sOutfit"></div>
     <label class="row"><input type="checkbox" id="sEventColors"> 🎨 Use the season’s colour for the app</label>
-    <label class="field"><span>Your birthday (Zuffi dresses up on the day)</span><input id="sBirthday" type="date"></label>
   </details>
 
   <details><summary>🗣️ Voice</summary>

@@ -276,6 +276,9 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             // a meeting / task / reminder is due → Zuffi walks across with a banner
             ZuffiWalk.shared.arrive(kind: o["kind"] as? String ?? "reminder", title: o["title"] as? String ?? "Reminder",
                                     sub: o["sub"] as? String ?? "", itemId: o["itemId"] as? String)
+        case "look":
+            // Settings → Zuffi's outfit & seasons, changed in the web part of the app
+            ZuffiLook.shared.fromWebLook(outfit: o["outfit"] as? String ?? "auto", birthday: o["birthday"] as? String ?? "")
         case "health":
             // water / coffee / medicine time → the sparrow flies in carrying it
             PetController.shared.deliver(kind: o["kind"] as? String ?? "water", text: o["text"] as? String ?? "Time for a break")

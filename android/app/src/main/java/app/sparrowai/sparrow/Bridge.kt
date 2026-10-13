@@ -196,6 +196,8 @@ class Bridge(private val a: MainActivity) {
     @JavascriptInterface fun openBatterySettings() {
         a.runOnUiThread { if (!Commands.startSafely(a, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) Commands.startSafely(a, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + a.packageName))) }
     }
+    /** Zuffi's outfit for the walking pet ("none", "winter", "eid"…) — follows the app's season. */
+    @JavascriptInterface fun setOutfit(id: String) { val sp = Prefs.sp(a); if (sp.getString("outfit", "none") == id) return; sp.edit().putString("outfit", id).apply(); if (PetService.running) PetService.refresh(a) }
     @JavascriptInterface fun setAccent(name: String) { Prefs.sp(a).edit().putString("accent", name).apply(); if (PetService.running) PetService.refresh(a) }
     @JavascriptInterface fun waClear() { Prefs.sp(a).edit().putString("waLeadList", "[]").apply() }
     @JavascriptInterface fun hasNotifAccess(): Boolean = hasNotificationAccess()

@@ -37,44 +37,66 @@ enum ZuffiNav {
 
 struct ZuffiSpaceBackground: View {
     var intensity: Double = 1
-    private static let stars: [(CGFloat, CGFloat, CGFloat, Double)] = {
+    @ObservedObject private var look = ZuffiLook.shared
+    private static let dots: [(CGFloat, CGFloat, CGFloat, Double)] = {
         var g = SystemRandomNumberGenerator()
-        return (0..<70).map { _ in
+        return (0..<46).map { _ in
             (CGFloat.random(in: 0...1, using: &g), CGFloat.random(in: 0...1, using: &g),
              CGFloat.random(in: 0.6...1.8, using: &g), Double.random(in: 0...6.28, using: &g))
         }
     }()
 
+    // Graphite on normal days (no more purple); the season's sky, colour and little effects when Zuffi dresses up.
     var body: some View {
+        let s = look.season
+        let top = Color(hex: s.sky.first ?? "#0B0B0D"), bottom = Color(hex: s.sky.last ?? "#16171C")
+        let accent = Color(hex: s.accent ?? "#EDB24E")
         TimelineView(.animation(minimumInterval: 1 / 24, paused: false)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
             Canvas { ctx, size in
-                // deep sky
                 ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(
-                    Gradient(colors: [Color(hex: "#0B0A1F").opacity(0.75 * intensity), Color(hex: "#1B1240").opacity(0.7 * intensity), Color(hex: "#2A1235").opacity(0.7 * intensity)]),
-                    startPoint: .zero, endPoint: CGPoint(x: size.width, y: size.height)))
-                // orbs (soft nebula lights)
-                var orb = ctx
-                orb.addFilter(.blur(radius: min(size.width, size.height) * 0.16))
-                let orbs: [(String, Double, Double, Double)] = [("#E2648A", 0.55, 0.0, 0.62), ("#7C5CFF", 0.42, 2.2, 0.7), ("#3BA8FF", 0.34, 4.1, 0.52), ("#F7A072", 0.27, 1.1, 0.42)]
-                for (hex, sp, ph, r) in orbs {
-                    let x = size.width * (0.5 + 0.42 * cos(t * sp + ph))
-                    let y = size.height * (0.5 + 0.38 * sin(t * sp * 1.3 + ph))
-                    let rad = min(size.width, size.height) * r * 0.5 * (1 + 0.18 * sin(t * sp * 2 + ph))
-                    orb.fill(Path(ellipseIn: CGRect(x: x - rad, y: y - rad, width: rad * 2, height: rad * 2)), with: .color(Color(hex: hex).opacity(0.42 * intensity)))
-                }
-                // stars
-                for (x, y, r, ph) in Self.stars {
-                    let a = 0.35 + 0.65 * abs(sin(t * 1.3 + ph))
-                    ctx.fill(Path(ellipseIn: CGRect(x: x * size.width, y: y * size.height, width: r, height: r)), with: .color(.white.opacity(a * intensity)))
-                }
-                // a shooting star every ~9 s
-                let cyc = t.truncatingRemainder(dividingBy: 9)
-                if cyc < 0.9 {
-                    let p = cyc / 0.9
-                    let sx = size.width * (0.15 + 0.7 * p), sy = size.height * (0.12 + 0.25 * p)
-                    var line = Path(); line.move(to: CGPoint(x: sx, y: sy)); line.addLine(to: CGPoint(x: sx - 34, y: sy - 12))
-                    ctx.stroke(line, with: .linearGradient(Gradient(colors: [.white.opacity(0.9 * (1 - p)), .clear]), startPoint: CGPoint(x: sx, y: sy), endPoint: CGPoint(x: sx - 34, y: sy - 12)), lineWidth: 1.4)
+                    Gradient(colors: [top.opacity(0.92 * intensity), bottom.opacity(0.9 * intensity)]),
+                    startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+                // one soft glow in the season's colour, low behind Zuffi
+                var glow = ctx
+                glow.addFilter(.blur(radius: min(size.width, size.height) * 0.22))
+                let r = min(size.width, size.height) * 0.42 * (1 + 0.06 * sin(t * 0.4))
+                glow.fill(Path(ellipseIn: CGRect(x: size.width * 0.5 - r, y: size.height * 0.78 - r * 0.6, width: r * 2, height: r * 1.2)),
+                          with: .color(accent.opacity((s.id == "none" ? 0.10 : 0.22) * intensity)))
+                for (i, (x, y, sz, ph)) in Self.dots.enumerated() {
+                    switch s.fx ?? "" {
+                    case "snow":
+                        let yy = (y + CGFloat(t * 0.035 * Double(sz))).truncatingRemainder(dividingBy: 1.05)
+                        let xx = x * size.width + CGFloat(sin(t * 0.8 + ph) * 6)
+                        ctx.fill(Path(ellipseIn: CGRect(x: xx, y: yy * size.height, width: sz * 2.2, height: sz * 2.2)), with: .color(.white.opacity(0.8 * intensity)))
+                    case "confetti":
+                        let yy = (y + CGFloat(t * 0.05 * Double(sz))).truncatingRemainder(dividingBy: 1.05)
+                        let cols = s.id == "independence" ? ["#2FA866", "#FFFFFF"] : s.id == "eid" ? ["#E9C46A", "#4FD1A5", "#FFFFFF"] : ["#FFD166", "#F27BA1", "#7FD8BE", "#B79CFF"]
+                        var c = ctx; c.translateBy(x: x * size.width, y: yy * size.height); c.rotate(by: .radians(t * 2 + ph))
+                        c.fill(Path(roundedRect: CGRect(x: -2.5, y: -4, width: 5, height: 8), cornerRadius: 1.5), with: .color(Color(hex: cols[i % cols.count]).opacity(0.85 * intensity)))
+                    case "hearts", "embers":
+                        let yy = 1 - (y + CGFloat(t * 0.03 * Double(sz))).truncatingRemainder(dividingBy: 1.1)
+                        if s.fx == "hearts" && i % 3 == 0 {
+                            ctx.draw(Text("♥").font(.system(size: 8 + sz * 4)).foregroundColor(Color(hex: "#FF8FB1").opacity(0.55 * intensity)), at: CGPoint(x: x * size.width, y: yy * size.height))
+                        } else if s.fx == "embers" && i % 2 == 0 {
+                            ctx.fill(Path(ellipseIn: CGRect(x: x * size.width, y: yy * size.height, width: sz * 2, height: sz * 2)), with: .color(Color(hex: "#FFB067").opacity(0.7 * intensity)))
+                        }
+                    case "stars":
+                        let a = 0.3 + 0.7 * abs(sin(t * 1.1 + ph))
+                        ctx.fill(Path(ellipseIn: CGRect(x: x * size.width, y: y * size.height * 0.7, width: sz, height: sz)), with: .color(Color(hex: "#FFF6D8").opacity(a * intensity)))
+                    case "sun":
+                        if i == 0 {
+                            var sun = ctx; sun.addFilter(.blur(radius: 30))
+                            let rr = size.width * 0.32 * (1 + 0.05 * sin(t * 0.5))
+                            sun.fill(Path(ellipseIn: CGRect(x: size.width * 0.86 - rr, y: -rr * 0.6, width: rr * 2, height: rr * 2)), with: .color(Color(hex: "#FFD66E").opacity(0.35 * intensity)))
+                        }
+                    default:
+                        // everyday: a few very quiet stars
+                        if i % 3 == 0 {
+                            let a = 0.15 + 0.35 * abs(sin(t * 0.9 + ph))
+                            ctx.fill(Path(ellipseIn: CGRect(x: x * size.width, y: y * size.height, width: sz, height: sz)), with: .color(.white.opacity(a * intensity)))
+                        }
+                    }
                 }
             }
         }

@@ -57,6 +57,9 @@ export function apply() {
   const e = current(), de = document.documentElement;
   de.dataset.event = e.id;
   const sh = sheetsFor(e.id); setSheets(sh.directions, sh.reactions);
+  window.zuffiOutfitId = e.id;                                                   // the walking pet on the web / iPhone
+  try { window.SparrowNative?.setOutfit?.(e.id); } catch {}                     // Android: the bunny walking over other apps
+  try { window.SparrowDesktop?.setSetting?.('outfit', e.id); } catch {}          // Windows: the desktop pet
   const acc = eventAccent();
   window.zuffiEventAccent = acc;
   if (acc) de.style.setProperty('--accent', acc);

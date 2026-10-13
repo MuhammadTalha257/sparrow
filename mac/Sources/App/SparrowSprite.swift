@@ -13,13 +13,14 @@ import ImageIO
 @MainActor
 final class SparrowSprites {
     static let shared = SparrowSprites()
-    let directions: [CGImage]
-    let reactions: [CGImage]
+    private(set) var directions: [CGImage] = []
+    private(set) var reactions: [CGImage] = []
 
-    private init() {
+    private init() { reload() }
+    /// (Re)load the two sheets — in the current outfit (ZuffiSeasons).
+    func reload() {
         func cut(_ name: String) -> [CGImage] {
-            let base = Bundle.main.resourceURL?.appendingPathComponent("web/mascots")
-            guard let url = base?.appendingPathComponent(name),
+            guard let url = ZuffiSeasons.file(name),
                   let src = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return [] }
             let w = img.width / 3, h = img.height / 3

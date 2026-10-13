@@ -45,6 +45,36 @@ final class ZuffiLook: ObservableObject {
     @Published private(set) var photo: CGImage?
     /// Softly shifting colours behind the chat (on by default).
     @Published var animatedBackground: Bool { didSet { save() } }
+    /// Outfit & season: "auto" (follows the calendar) or one look's id. The phone and Windows use the same looks.
+    @Published var outfit: String { didSet { save(); refreshSeason(push: true) } }
+    /// "yyyy-MM-dd" — Zuffi dresses up and wishes you happy birthday on the day.
+    @Published var birthday: String { didSet { save(); refreshSeason(push: true) } }
+    /// What Zuffi is wearing right now.
+    @Published private(set) var season: ZuffiSeason = ZuffiSeasons.all[0]
+    private var seasonTimer: Timer?
+    private var fromWeb = false
+
+    /// Re-dress Zuffi when the outfit or the date changes; tell the web app (and so the phone-style settings) too.
+    func refreshSeason(push: Bool = false) {
+        let now = ZuffiSeasons.find(ZuffiSeasons.activeId())
+        if now.id != season.id {
+            season = now
+            SparrowSprites.shared.reload(); ZuffiBodyArt.shared.reload(); ZuffiBustArt.shared.reload()
+            objectWillChange.send()
+        }
+        if push && !fromWeb {
+            let o = outfit, b = birthday
+            Task { @MainActor in _ = await WebHub.shared.callJS("return window.Sparrow.setLook ? window.Sparrow.setLook(o, b) : false", ["o": o, "b": b]) }
+        }
+    }
+    /// The web app (Settings → Zuffi's outfit) changed it.
+    func fromWebLook(outfit o: String, birthday b: String) {
+        fromWeb = true
+        if o != outfit { outfit = o }
+        if b != birthday { birthday = b }
+        fromWeb = false
+        refreshSeason()
+    }
 
     private let ud = UserDefaults.standard
     private static var folder: URL {
@@ -59,8 +89,13 @@ final class ZuffiLook: ObservableObject {
         fur = UserDefaults.standard.string(forKey: "zuffiFur") ?? "snow"
         emoji = UserDefaults.standard.string(forKey: "zuffiEmoji") ?? "🐰"
         animatedBackground = UserDefaults.standard.object(forKey: "zuffiAnimatedBg") as? Bool ?? true
+        outfit = UserDefaults.standard.string(forKey: "zuffiOutfit") ?? "auto"
+        birthday = UserDefaults.standard.string(forKey: "zuffiBirthday") ?? ""
         photo = Self.load(Self.photoURL)
         if kind == .photo && photo == nil { kind = .bunny }
+        season = ZuffiSeasons.find(ZuffiSeasons.activeId())
+        // the season changes at midnight (and Ramadan / Eid start on their own day)
+        seasonTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { _ in MainActor.assumeIsolated { ZuffiLook.shared.refreshSeason() } }
     }
 
     private func save() {
@@ -68,6 +103,8 @@ final class ZuffiLook: ObservableObject {
         ud.set(fur, forKey: "zuffiFur")
         ud.set(emoji, forKey: "zuffiEmoji")
         ud.set(animatedBackground, forKey: "zuffiAnimatedBg")
+        ud.set(outfit, forKey: "zuffiOutfit")
+        ud.set(birthday, forKey: "zuffiBirthday")
     }
 
     var currentFur: Fur { Self.furs.first { $0.id == fur } ?? Self.furs[0] }
@@ -110,13 +147,14 @@ final class ZuffiLook: ObservableObject {
 @MainActor
 final class ZuffiBodyArt {
     static let shared = ZuffiBodyArt()
-    let top: CGImage?, legL: CGImage?, legR: CGImage?, armL: CGImage?, armR: CGImage?, paw: CGImage?
+    private(set) var top: CGImage?, legL: CGImage?, legR: CGImage?, armL: CGImage?, armR: CGImage?, paw: CGImage?
     /// Side-view walk: three drawn poses (passing, contact, push-off).
-    let side: [CGImage]
-    private init() {
+    private(set) var side: [CGImage] = []
+    private init() { reload() }
+    /// (Re)load — in the current outfit where one exists (ZuffiSeasons).
+    func reload() {
         func load(_ n: String) -> CGImage? {
-            guard let u = Bundle.main.resourceURL?.appendingPathComponent("web/mascots/\(n)"),
-                  let s = CGImageSourceCreateWithURL(u as CFURL, nil) else { return nil }
+            guard let u = ZuffiSeasons.file(n), let s = CGImageSourceCreateWithURL(u as CFURL, nil) else { return nil }
             return CGImageSourceCreateImageAtIndex(s, 0, nil)
         }
         top = load("zuffi-walk-top.webp"); legL = load("zuffi-walk-legL.webp"); legR = load("zuffi-walk-legR.webp")
@@ -325,6 +363,7 @@ struct ZuffiLookSettings: View {
             }
             .padding(6)
         }
+        ZuffiSeasonSettings()
     }
 
     private var preview: some View {
@@ -395,9 +434,10 @@ struct ZuffiExtrasSettings: View {
 @MainActor
 final class ZuffiBustArt {
     static let shared = ZuffiBustArt()
-    let frames: [CGImage]
-    private init() {
-        guard let u = Bundle.main.resourceURL?.appendingPathComponent("web/mascots/zuffi-bust.webp"),
+    private(set) var frames: [CGImage] = []
+    private init() { reload() }
+    func reload() {
+        guard let u = ZuffiSeasons.file("zuffi-bust.webp"),
               let s = CGImageSourceCreateWithURL(u as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(s, 0, nil) else { frames = []; return }
         let w = img.width / 3, h = img.height / 3
         frames = (0..<9).compactMap { i in img.cropping(to: CGRect(x: (i % 3) * w, y: (i / 3) * h, width: w, height: h)) }

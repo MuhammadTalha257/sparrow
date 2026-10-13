@@ -1439,3 +1439,12 @@ html[data-event]:not([data-event="none"]) .hero::before { background: radial-gra
 .outfits button.on { border-color: var(--ev, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ev, var(--accent)) 25%, transparent); }
 .outfits b { font-size: 12.5px; font-weight: 650; } .outfits small { font-size: 10.5px; color: var(--muted); }
 .of-face { width: 64px; height: 64px; background-size: 300% 300%; background-position: 50% 50%; background-repeat: no-repeat; }
+
+/* Home: "When's your birthday?" (asked once) */
+.bday-ask { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; padding: 14px 16px; margin-top: 10px; }
+.bday-ask[hidden] { display: none; }
+.bday-ic { font-size: 28px; grid-row: span 2; }
+.bday-t { display: flex; flex-direction: column; } .bday-t b { font-family: var(--display); font-size: 16px; font-weight: 650; } .bday-t small { color: var(--muted); font-size: 13px; }
+.bday-ask input { grid-column: 2; min-height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--input); color: var(--text); padding: 0 10px; font: inherit; }
+.bday-btns { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.chip.solid { background: var(--accent); color: var(--ink); border-color: transparent; }

@@ -64,14 +64,41 @@ function renderOutfits() {
 }
 $('#sOutfit')?.addEventListener('click', e => {
   const b = e.target.closest('[data-of]'); if (!b) return;
-  S().outfit = b.dataset.of; store.save(); bizapp.applyAccent(); const ev = seasons.apply(); renderOutfits();
+  S().outfit = b.dataset.of; store.save(); bizapp.applyAccent(); const ev = seasons.apply(); renderOutfits(); M?.post('look', { outfit: S().outfit, birthday: S().birthday || '' });
   sparrow?.react?.('delighted', 900);
   toast(ev.id === 'none' ? 'Zuffi’s everyday look' : `${ev.icon} ${ev.name} look on`);
 });
 $('#sEventColors')?.addEventListener('change', e => { S().eventColors = e.target.checked; store.save(); bizapp.applyAccent(); seasons.apply(); });
-$('#sBirthday')?.addEventListener('change', e => { S().birthday = e.target.value; store.save(); seasons.apply(); renderOutfits(); });
+$('#sBirthday')?.addEventListener('change', e => { S().birthday = e.target.value; S().bdayAskDone = true; store.save(); seasons.apply(); renderOutfits(); renderBirthdayAsk(); syncAlarms(); M?.post('look', { outfit: S().outfit || 'auto', birthday: S().birthday }); });
 $('#lookTag')?.addEventListener('click', () => openSettings('look'));
+
+// ---------------- birthday: ask once, then wish on the day ----------------
+function renderBirthdayAsk() {
+  const el = $('#bdayAsk'); if (!el) return;
+  el.hidden = !!S().birthday || !!S().bdayAskDone || DASH || !!document.documentElement.classList.contains('island-mode');
+}
+$('#bdayLater')?.addEventListener('click', () => { S().bdayAskDone = true; store.save(); renderBirthdayAsk(); toast('You can add it any time in Settings → You'); });
+$('#bdaySave')?.addEventListener('click', () => {
+  const v = $('#bdayInput').value; if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return toast('Pick your date of birth first');
+  S().birthday = v; S().bdayAskDone = true; store.save(); renderBirthdayAsk(); seasons.apply(); syncAlarms();
+  M?.post('look', { outfit: S().outfit || 'auto', birthday: v });
+  sparrow?.react?.('delighted', 900); toast('🎂 Saved — I’ll remember!');
+});
+function isBirthday(d = new Date()) { const b = S().birthday || ''; return b.length === 10 && b.slice(5) === `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function hello() { return isBirthday() ? `Happy birthday${S().name ? ', ' + S().name : ''}! 🎂` : `${greetingWord()}${S().name ? ', ' + S().name : ''}!`; }
+function birthdayWords() {
+  const age = new Date().getFullYear() - +S().birthday.slice(0, 4);
+  return { title: `Happy birthday${S().name ? ', ' + S().name : ''}! 🎂`, sub: age > 0 && age < 120 ? `${age} today — have a wonderful day` : 'Have a wonderful day', say: `Happy birthday${S().name ? ', ' + S().name : ''}! I dressed up for you. Have a wonderful day!` };
+}
+function checkBirthday() {
+  if (DASH || !isBirthday() || S().bdayWished === dayKey() || new Date().getHours() < 8) return;
+  S().bdayWished = dayKey(); store.save();
+  const w = birthdayWords();
+  seasons.apply(); chime(); showAlert(w.title, w.sub); sparrow?.react?.('delighted', 1500);
+  if (!N) { speakSoon(w.say); notify(w.title, 'birthday'); }
+}
 setInterval(() => { bizapp.applyAccent(); seasons.apply(); }, 30 * 60000);     // the season changes at midnight
+setTimeout(renderBirthdayAsk, 0);
 
 // ---------------- navigation ----------------
 let planType = 'task';
@@ -243,7 +270,7 @@ function addQuick() {
 function renderAll() { applyLook(); renderHeader(); renderToday(); renderPlan(); renderQuick(); renderChat(); renderWeather(); renderPrayer(); }
 store.onChange(() => {
   renderToday(); renderPlan(); syncAlarms();
-  $('#brief').textContent = `${greetingWord()}${S().name ? ', ' + S().name : ''}! ${daySummary(new Date(), true)}`;
+  $('#brief').textContent = `${hello()} ${daySummary(new Date(), true)}`;
 });
 
 // ---------------- calendar ----------------
@@ -710,8 +737,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) stopW
 
 // ---------------- briefing ----------------
 async function showBriefing(speakIt) {
-  $('#brief').textContent = `${greetingWord()}${S().name ? ', ' + S().name : ''}! ${daySummary(new Date(), true)}`;
-  const text = await briefing();
+  $('#brief').textContent = `${hello()} ${daySummary(new Date(), true)}`;
+  let text = await briefing();
+  if (isBirthday()) text = text.replace(/^[^!.]*[!.]\s*/, hello() + ' ');      // "Good morning, Talha!" → "Happy birthday, Talha! 🎂"
   $('#brief').textContent = text;
   if (speakIt) speakSoon(text);
 }
@@ -735,12 +763,14 @@ function showAlert(title, sub, itemId) {
   if (D?.pet) D.pet('remind', { id: itemId || '', title: item?.title || title.replace(/^[^\p{L}\p{N}]+/u, ''), head: item?.type === 'meeting' ? 'Meeting' : 'Reminder' });
   else if (M) M.post('note', { title, sub: sub || '' });
   window.SparrowIsland?.peek(title, sub || '', 9000);
+  $('#alert').dataset.health = '';
   $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
   $('#alert').hidden = false;
   $('#alertSnooze').hidden = !itemId; $('#alertSnooze').dataset.id = itemId || ''; $('#alertDone').dataset.id = itemId || '';
   clearTimeout(showAlert.t); showAlert.t = setTimeout(() => $('#alert').hidden = true, 60000);
 }
 $('#alertSnooze').onclick = () => { const id = $('#alertSnooze').dataset.id; const it = store.items.find(i => i.id === id); if (it) { store.update(id, { snoozeUntil: Date.now() + 10 * 60000, snoozed: false, done: false }); toast('😴 Snoozed for 10 minutes'); } $('#alert').hidden = true; };
+$('#alertDone').addEventListener('click', () => { const k = $('#alert').dataset.health; if (k && S().health?.[k]) { S().health[k].last = Date.now(); store.save(); } $('#alert').dataset.health = ''; });
 $('#alertDone').onclick = () => { const id = $('#alertDone').dataset.id; const it = store.items.find(i => i.id === id); if (it && !it.repeat) store.update(id, { done: true, doneAt: new Date().toISOString() }); $('#alert').hidden = true; };
 function alertNow(spoken, shown, tag, itemId) {
   chime(); showAlert(shown, itemId ? 'Or say “snooze”' : '', itemId); birdMood('happy');
@@ -775,7 +805,7 @@ async function checkDue() {
     const msg = `While your Mac was asleep you missed: ${missed.slice(0, 4).join(', ')}.`;
     chime(); showAlert('⏰ You missed ' + missed.length + (missed.length > 1 ? ' reminders' : ' reminder'), missed.slice(0, 3).join(' · ')); speakSoon(`${who()}${msg}`);
   }
-  checkPrayer(); checkHabits(); checkDaily(); checkFocus(); checkHealth();
+  checkPrayer(); checkHabits(); checkDaily(); checkFocus(); checkHealth(); checkBirthday();
 }
 let prayerCache = { day: '', times: null };
 function checkPrayer() {
@@ -836,7 +866,7 @@ function checkHealth() {
     h.last = Date.now(); store.save();
     const def = HEALTH[kind], shown = typeof def.show === 'function' ? def.show(h) : def.show;
     if (M) M.post('health', { kind, text: shown });      // the Mac: the pet sparrow flies in carrying it
-    chime(); showAlert(`${def.icon} ${shown}`, def.sub); speakSoon(def.say(who(), h));
+    chime(); showAlert(`${def.icon} ${shown}`, def.sub); $('#alert').dataset.health = kind; speakSoon(def.say(who(), h));
   }
 }
 function renderHealthSettings(hl) {
@@ -1337,6 +1367,12 @@ function syncAlarms() {
       for (const n of PRAYERS) if (n !== 'Sunrise') { const at = tms[n].getTime() - (+s.prayer.before || 0) * 60000; if (at > Date.now()) list.push({ id: `pr-${n}-${day}`, title: `${n} prayer`, type: 'prayer', at, head: `🕌 ${n}`, say: +s.prayer.before ? `${w}${n} prayer in ${s.prayer.before} minutes.` : `${w}it's time for ${n} prayer.` }); }
     }
   }
+  if (s.birthday && s.birthday.length === 10) {
+    const d = new Date(); d.setHours(9, 0, 0, 0);
+    for (let k = 0; k < 370; k++) { if (isBirthday(d) && d.getTime() > Date.now() && s.bdayWished !== d.toDateString()) break; d.setDate(d.getDate() + 1); }
+    const w = birthdayWords();
+    list.push({ id: 'birthday-' + d.getFullYear(), title: w.title, type: 'birthday', at: d.getTime(), head: '🎂 Happy birthday', say: w.say });
+  }
   try { N.syncAlarms(JSON.stringify(list)); } catch {}
 }
 if (N) {
@@ -1439,6 +1475,10 @@ window.Sparrow = {
   },
   removeItem: id => { const it = store.items.find(i => i.id === id); if (!it) return null; store.remove(id); renderAll(); return it.title; },
   snoozeItem: (id, mins = 10) => { const it = store.items.find(i => i.id === id); if (!it) return null; store.update(id, { snoozeUntil: Date.now() + mins * 60000, snoozed: false, done: false }); renderAll(); return it.title; },
+  /** The Mac's own settings changed Zuffi's outfit or the birthday. */
+  setLook: (outfit, birthday) => { S().outfit = outfit || 'auto'; S().birthday = birthday || ''; store.save(); bizapp.applyAccent(); seasons.apply(); return true; },
+  /** Water / coffee / medicine taken on the Mac: the next reminder counts from now. */
+  healthTaken: kind => { const h = S().health?.[kind]; if (!h) return false; h.last = Date.now(); store.save(); if ($('#alert').dataset.health === kind) $('#alert').hidden = true; return true; },
   completeItem: id => { const it = store.items.find(i => i.id === id); if (!it) return null; store.update(id, { done: true, doneAt: new Date().toISOString() }); mem.remember('done', it.title); renderAll(); return it.title; },
   // "Zuffi, type my email" (Mac): the value comes from your CV profile / latest cover letter.
   jobField: name => jobs.field(name),

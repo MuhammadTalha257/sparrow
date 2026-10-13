@@ -38,8 +38,19 @@ final class ZuffiWalk {
     private var timeout: DispatchWorkItem?
     private let size = NSSize(width: 360, height: 400)
 
+    /// Water, coffee and medicine: only one of each is ever waiting (they used to pile up while the Mac slept or you were away).
+    private static let health: Set<String> = ["water", "coffee", "meds"]
+    private var laterWork: [String: DispatchWorkItem] = [:]
+    private func isHealth(_ v: Visit) -> Bool { v.itemId == nil && Self.health.contains(v.kind) }
+
     func arrive(kind: String, title: String, sub: String = "", itemId: String? = nil) {
-        queue.append(Visit(kind: kind, title: title, sub: sub, itemId: itemId))
+        let v = Visit(kind: kind, title: title, sub: sub, itemId: itemId)
+        if isHealth(v) {
+            if let c = current, isHealth(c), c.kind == kind { return }          // already here with it
+            queue.removeAll { isHealth($0) && $0.kind == kind }                // keep just the newest
+            laterWork[kind]?.cancel(); laterWork[kind] = nil
+        }
+        queue.append(v)
         if current == nil { next() }
     }
 
@@ -99,6 +110,12 @@ final class ZuffiWalk {
             model.bubble = ["water": "Yay! Stay fresh 💗", "coffee": "Enjoy! ☕", "meds": "Well done! 💊", "meeting": "Good luck! ✨"][v.kind] ?? "Done! ✨"
             SoundEngine.shared.play("approve")
             if let id = v.itemId { Task { _ = await WebHub.shared.callJS("return window.Sparrow.completeItem(id)", ["id": id]) } }
+            if isHealth(v) {
+                // taken: forget any extra ones and start the timer again from now, so the next one comes after your interval
+                queue.removeAll { isHealth($0) && $0.kind == v.kind }
+                laterWork[v.kind]?.cancel(); laterWork[v.kind] = nil
+                Task { _ = await WebHub.shared.callJS("return window.Sparrow.healthTaken(kind)", ["kind": v.kind]) }
+            }
         } else {
             if !quiet {
                 model.cross = true
@@ -107,10 +124,11 @@ final class ZuffiWalk {
             }
             if let id = v.itemId {
                 Task { _ = await WebHub.shared.callJS("return window.Sparrow.snoozeItem(id, 10)", ["id": id]) }
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 600) {
-                    MainActor.assumeIsolated { ZuffiWalk.shared.arrive(kind: v.kind, title: v.title, sub: v.sub) }
-                }
+            } else if !(quiet && isHealth(v)) {
+                // "Later" → back in 10 minutes (once). No answer at all → the next normal reminder comes on time instead.
+                let w = DispatchWorkItem { MainActor.assumeIsolated { ZuffiWalk.shared.arrive(kind: v.kind, title: v.title, sub: v.sub) } }
+                laterWork[v.kind]?.cancel(); laterWork[v.kind] = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: w)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + (quiet ? 0.1 : 1.7)) {

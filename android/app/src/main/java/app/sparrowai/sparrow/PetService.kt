@@ -133,7 +133,7 @@ class PetService : Service() {
             y = groundY(hgt)
         }
         val box = FrameLayout(this)
-        val iv = ImageView(this).apply { setImageResource(R.drawable.pet_stand); scaleType = ImageView.ScaleType.FIT_END; contentDescription = "Zuffi" }
+        val iv = ImageView(this).apply { petPic(this, R.drawable.pet_stand, "zuffi-body"); scaleType = ImageView.ScaleType.FIT_END; contentDescription = "Zuffi" }
         box.addView(iv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         var downX = 0f; var downY = 0f; var sx = 0; var sy = 0; var moved = false; var downAt = 0L
         box.setOnTouchListener { v, e ->
@@ -216,7 +216,7 @@ class PetService : Service() {
         override fun run() {
             if (!walking) return
             frame = (frame + 1) % 4
-            img?.setImageResource(when (frame) { 0 -> R.drawable.pet_walk1; 1 -> R.drawable.pet_walk2; 2 -> R.drawable.pet_walk3; else -> R.drawable.pet_walk2 })
+            img?.let { when (frame) { 0 -> petPic(it, R.drawable.pet_walk1, "zuffi-side-1"); 1 -> petPic(it, R.drawable.pet_walk2, "zuffi-side-2"); 2 -> petPic(it, R.drawable.pet_walk3, "zuffi-side-3"); else -> petPic(it, R.drawable.pet_walk2, "zuffi-side-2") } }
             img?.translationY = if (frame % 2 == 0) 0f else -dp(3f).toFloat()
             h.postDelayed(this, 130)
         }
@@ -244,7 +244,7 @@ class PetService : Service() {
     private fun stopWalk() { walkAnim?.removeAllListeners(); walkAnim?.cancel(); walkAnim = null; if (walking) stand() }
     private fun stand() {
         walking = false; h.removeCallbacks(stepTick)
-        img?.apply { setImageResource(R.drawable.pet_stand); scaleX = 1f; translationY = 0f }
+        img?.apply { petPic(this, R.drawable.pet_stand, "zuffi-body"); scaleX = 1f; translationY = 0f }
         breathe()
     }
 
@@ -305,6 +305,16 @@ class PetService : Service() {
             if (island === row) row.animate().translationY(-dp(90f).toFloat()).scaleX(0.6f).alpha(0f).setDuration(320).withEndAction { try { wm.removeView(row) } catch (_: Exception) {}; if (island === row) island = null }.start()
         }, 7000)
         if (pet != null && mode != "alerts") hop()
+    }
+
+    // Zuffi's outfit (winter, Ramadan, Eid… chosen or automatic in the app): the dressed-up pictures ship with the app (assets/www/mascots/outfits)
+    private val outfitPics = HashMap<String, android.graphics.Bitmap?>()
+    private fun petPic(v: ImageView, res: Int, name: String) {
+        val o = Prefs.sp(this).getString("outfit", "none") ?: "none"
+        val b = if (o == "none") null else outfitPics.getOrPut("$name-$o") {
+            try { assets.open("www/mascots/outfits/$name-$o.webp").use { android.graphics.BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
+        }
+        if (b != null) v.setImageBitmap(b) else v.setImageResource(res)
     }
 
     // Zuffi's colour (chosen in the app) — rotate the hue of the pink parts
@@ -442,7 +452,7 @@ class PetService : Service() {
             background = GradientDrawable().apply { cornerRadius = dp(40f).toFloat(); setColor(Color.parseColor("#E00A0E18")); setStroke(dp(1f), Color.parseColor("#40FFFFFF")) }
             elevation = dp(16f).toFloat()
         }
-        pill.addView(ImageView(this).apply { setImageResource(R.drawable.pet_walk2) }, LinearLayout.LayoutParams(dp(34f), dp(56f)))
+        pill.addView(ImageView(this).apply { petPic(this, R.drawable.pet_walk2, "zuffi-side-2") }, LinearLayout.LayoutParams(dp(34f), dp(56f)))
         val txt = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10f), 0, dp(14f), 0) }
         txt.addView(TextView(this).apply { text = "$pct%"; setTextColor(Color.WHITE); textSize = 24f; typeface = Typeface.DEFAULT_BOLD })
         txt.addView(TextView(this).apply { text = when { full -> "Fully charged 💗"; charging -> "Charging ⚡"; else -> "Unplugged" }; setTextColor(Color.parseColor("#CCFFFFFF")); textSize = 12.5f })

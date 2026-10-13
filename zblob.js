@@ -16,7 +16,10 @@ export function svg(mood = 'idle', opts = {}) {
   const expression = E[mood] || E.idle;
   const p = _parts(NAME, { animate: 'always', expression, background: false, ...opts });
   const style = p.vars ? serializeVars(p.vars) : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="${p.cls || ''}" style="${style}" role="img" aria-label="Zuffi">${p.inner}</svg>`;
+  // Zuffi's outfit (seasons.js): a hat / scarf layer that bobs with her
+  const o = opts.outfit ?? window.zuffiOutfitId;
+  const dress = o && o !== 'none' ? `<g><image href="mascots/outfits/blob-${o}.webp" x="0" y="0" width="100" height="100"/></g>` : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="${p.cls || ''}" style="${style};overflow:visible" role="img" aria-label="Zuffi">${p.inner}${dress}</svg>`;
 }
 /** Put Zuffi into an element and let the mood follow the time of day (or a one-off reaction). */
 export function mount(el, mood) {

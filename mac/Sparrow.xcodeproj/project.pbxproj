@@ -15,6 +15,8 @@
 		7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 573E04989084923B39144398 /* SetupWizard.swift */; };
 		2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */; };
 		D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */; };
+		E95699A5A2349554CF18F587 /* ZuffiSeasons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 615D14191B71A5DD487AD0B0 /* ZuffiSeasons.swift */; };
+		022EA8E11F8BA3F14E49EF9D /* ZuffiSeasons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 615D14191B71A5DD487AD0B0 /* ZuffiSeasons.swift */; };
 		DD5E0C2C506D9227E89362B5 /* BizExtras.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19517AAFD3B8D69FE223C1DD /* BizExtras.swift */; };
 		AC515A488454374012716145 /* MacPower.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC98C537A71F010055F8207 /* MacPower.swift */; };
 		6D51465A42D25FD952BCBCAE /* BizSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F538B3D8757803733A027CD /* BizSync.swift */; };
@@ -164,6 +166,7 @@
 		573E04989084923B39144398 /* SetupWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizard.swift; sourceTree = "<group>"; };
 		3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledAI.swift; sourceTree = "<group>"; };
 		CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiWalk.swift; sourceTree = "<group>"; };
+		615D14191B71A5DD487AD0B0 /* ZuffiSeasons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZuffiSeasons.swift; sourceTree = "<group>"; };
 		19517AAFD3B8D69FE223C1DD /* BizExtras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BizExtras.swift; sourceTree = "<group>"; };
 		9EC98C537A71F010055F8207 /* MacPower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPower.swift; sourceTree = "<group>"; };
 		1F538B3D8757803733A027CD /* BizSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BizSync.swift; sourceTree = "<group>"; };
@@ -247,6 +250,7 @@
 				573E04989084923B39144398 /* SetupWizard.swift */,
 				3C31F5F2B18F1A1BAE6B6118 /* InstalledAI.swift */,
 				CE0ECC89F3ED23B9BB78E2B1 /* ZuffiWalk.swift */,
+				615D14191B71A5DD487AD0B0 /* ZuffiSeasons.swift */,
 				19517AAFD3B8D69FE223C1DD /* BizExtras.swift */,
 				9EC98C537A71F010055F8207 /* MacPower.swift */,
 				1F538B3D8757803733A027CD /* BizSync.swift */,
@@ -467,6 +471,7 @@
 				7753FCDB2A6259A650C60C83 /* SetupWizard.swift in Sources */,
 				2FD658FA367EEFBE7D5306B4 /* InstalledAI.swift in Sources */,
 				D6762A7AEF76D140F372C195 /* ZuffiWalk.swift in Sources */,
+				E95699A5A2349554CF18F587 /* ZuffiSeasons.swift in Sources */,
 				DD5E0C2C506D9227E89362B5 /* BizExtras.swift in Sources */,
 				AC515A488454374012716145 /* MacPower.swift in Sources */,
 				6D51465A42D25FD952BCBCAE /* BizSync.swift in Sources */,
@@ -540,6 +545,7 @@
 				EC9F164883A3250BB9FDDC35 /* SetupWizard.swift in Sources */,
 				AEE9FFFAAAD838DA5EB86EC0 /* InstalledAI.swift in Sources */,
 				D12BE8443642E6CC7641F7B0 /* ZuffiWalk.swift in Sources */,
+				022EA8E11F8BA3F14E49EF9D /* ZuffiSeasons.swift in Sources */,
 				354B74616CEE60B8AD896526 /* BizExtras.swift in Sources */,
 				D7998E2D239C8C9C052DF534 /* MacPower.swift in Sources */,
 				744597F76CBD99C39D5CD244 /* BizSync.swift in Sources */,

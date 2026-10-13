@@ -4,8 +4,13 @@
 const D = window.SparrowDesktop;
 const pet = document.getElementById('pet'), img = document.getElementById('img'), card = document.getElementById('card');
 const W = 92;
-const FRAMES = ['mascots/zuffi-side-1.webp', 'mascots/zuffi-side-2.webp', 'mascots/zuffi-side-3.webp', 'mascots/zuffi-side-2.webp'];
-FRAMES.concat('mascots/zuffi-body.webp').forEach(s => { const i = new Image(); i.src = s; });
+// Zuffi's outfit (winter, Eid…) — set by the island window through the main process
+let outfit = 'none';
+const pic = n => outfit && outfit !== 'none' ? `mascots/outfits/${n}-${outfit}.webp` : `mascots/${n}.webp`;
+const FRN = ['zuffi-side-1', 'zuffi-side-2', 'zuffi-side-3', 'zuffi-side-2'];
+const preload = () => FRN.concat('zuffi-body').forEach(n => { const i = new Image(); i.src = pic(n); });
+preload();
+D.getSettings?.().then(st => { if (st?.outfit && st.outfit !== outfit) { outfit = st.outfit; preload(); if (target === null) img.src = pic('zuffi-body'); } }).catch(() => {});
 let x = Number(localStorage.getItem('petX')) || innerWidth - W - 80, target = null, then = null, last = 0, step = 0, stepT = 0, busy = false, hiddenUntil = 0;
 const place = () => { pet.style.transform = `translateX(${x}px)`; placeCard(); };
 place();
@@ -14,13 +19,13 @@ function walkTo(nx, cb) {
   target = Math.max(4, Math.min(innerWidth - W - 4, nx)); then = cb || null;
   pet.classList.remove('idle'); pet.classList.toggle('left', target < x);
 }
-function stand() { target = null; pet.classList.add('idle'); pet.classList.remove('left'); img.src = 'mascots/zuffi-body.webp'; try { localStorage.setItem('petX', String(Math.round(x))); } catch {} }
+function stand() { target = null; pet.classList.add('idle'); pet.classList.remove('left'); img.src = pic('zuffi-body'); try { localStorage.setItem('petX', String(Math.round(x))); } catch {} }
 function tick(t) {
   const dt = Math.min(0.05, (t - last) / 1000 || 0); last = t;
   if (target !== null) {
     const d = target - x, v = 74 * dt;
     if (Math.abs(d) <= v) { x = target; place(); stand(); const f = then; then = null; f && f(); }
-    else { x += Math.sign(d) * v; place(); if (t - stepT > 130) { stepT = t; step = (step + 1) % 4; img.src = FRAMES[step]; } }
+    else { x += Math.sign(d) * v; place(); if (t - stepT > 130) { stepT = t; step = (step + 1) % 4; img.src = pic(FRN[step]); } }
   }
   requestAnimationFrame(tick);
 }
@@ -65,6 +70,7 @@ D.onPet(v => {
       say(v.title || 'Reminder', '⏰ ' + (v.head || 'Reminder'), btns, 120000);
     });
   } else if (v.kind === 'say') { hop(); say(v.text || '', v.head || '', [], v.ms || 6000); }
+  else if (v.kind === 'outfit') { outfit = v.v || 'none'; preload(); if (target === null) img.src = pic('zuffi-body'); }
   else if (v.kind === 'accent') { const deg = { violet: 55, sky: 115, mint: 170, amber: 230, coral: 330 }[v.v] || 0; img.style.filter = `drop-shadow(0 6px 10px rgba(0,0,0,.28)) hue-rotate(${deg}deg)`; }
   else if (v.kind === 'charge') { hop(); say(v.charging ? 'Yum, charging ⚡' : 'Unplugged — I’ll save energy 🌙', '', [], 3500); }
 });
