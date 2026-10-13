@@ -9,7 +9,7 @@ import {
   spokenPlan, spokenList, tasksForDay, moveToTomorrow, nextOccurrence, repeatText, weather, location as getLocation, prayerToday, habitCount, bumpHabit,
   setLastAlert, lastAlert, findCustomer,
 } from './brain.js';
-import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels } from './ai.js';
+import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
@@ -353,7 +353,7 @@ async function submit(text, fromVoice = false) {
   box.appendChild(typing); window.scrollTo({ top: document.body.scrollHeight });
   setBird('talking', true);
   try {
-    const res = await ask(text, partial => { typing.classList.remove('typing'); typing.textContent = partial; window.scrollTo({ top: document.body.scrollHeight }); }, { context });
+    const res = await ask(text, partial => { typing.classList.remove('typing'); typing.textContent = partial; window.scrollTo({ top: document.body.scrollHeight }); }, { context, onStatus: st => { if (st) { typing.classList.remove('typing'); typing.textContent = '🐰 ' + st; } } });
     typing.remove();
     replyKind = 'ai';
     addMsg('bot', res.text || '…', { src: res.source });
@@ -1228,20 +1228,25 @@ $('#mWipe').onclick = async () => { if (confirm('Forget everything Zuffi remembe
 async function refreshAiStatus() {
   if (D) return;
   const st = $('#aiStatus'), btn = $('#aiDownload');
+  if (S().aiReady && !(await localDownloaded())) { S().aiReady = false; store.save(); }      // the phone cleared it — offer the download again
   if (S().aiReady) { st.textContent = '✅ Free on-device AI is downloaded. It works offline.'; btn.hidden = true; return; }
   const sup = await deviceSupport();
   if (!sup.ok) { st.textContent = '⚠️ ' + sup.why; btn.disabled = true; return; }
   btn.disabled = false; btn.hidden = false;
-  st.textContent = 'Your device can run a free AI. It downloads once (use Wi-Fi), then works offline. Nothing you say leaves your device.';
+  st.textContent = /iPhone|iPad/.test(navigator.userAgent)
+    ? 'Your iPhone can run a free AI. It downloads once (use Wi-Fi, keep Zuffi open and the screen on — about 1–3 minutes for “Fast”), then works offline. Nothing you say leaves your phone.'
+    : 'Your device can run a free AI. It downloads once (use Wi-Fi), then works offline. Nothing you say leaves your device.';
 }
 $('#aiDownload').onclick = async () => {
   const bar = $('#aiProgress'), btn = $('#aiDownload');
   S().model = $('#sModel').value; store.save();
   bar.hidden = false; btn.disabled = true; btn.textContent = 'Downloading…';
+  let wake = null; try { wake = await navigator.wakeLock?.request('screen'); } catch {}
   try {
     await loadLocal((p, txt) => { bar.firstElementChild.style.width = Math.round(p * 100) + '%'; $('#aiStatus').textContent = txt.slice(0, 90); });
     btn.textContent = 'Ready ✅'; toast('Free AI ready 🐰'); refreshAiStatus();
   } catch (e) { btn.disabled = false; btn.textContent = '⬇️ Try again'; $('#aiStatus').textContent = '⚠️ ' + e.message; }
+  try { wake?.release(); } catch {}
 };
 
 // ---------------- toast ----------------

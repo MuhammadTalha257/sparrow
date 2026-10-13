@@ -1,5 +1,5 @@
-// Sparrow offline cache: always tries the network first (so updates arrive), falls back to the cache offline.
-const VERSION = 'sparrow-v19';
+// Sparrow offline cache (only clears its own old copies — the downloaded AI model stays): always tries the network first (so updates arrive), falls back to the cache offline.
+const VERSION = 'sparrow-v20';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'brain.js', 'store.js', 'ai.js', 'i18n.js', 'prayer.js', 'memory.js', 'tools.js', 'sync.js', 'jobs.js', 'live.js', 'mascot.js', 'bird.js', 'maclink.js', 'companion.js', 'bizapp.js', 'bizsync.js', 'countries.js', 'petweb.js', 'zblob.js', 'guides.json', 'mascots/zuffi-directions.webp', 'mascots/zuffi-reactions.webp',
   'lib/chrono.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
@@ -7,7 +7,7 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('sparrow-') && k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);

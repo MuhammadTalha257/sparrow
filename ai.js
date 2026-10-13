@@ -36,15 +36,33 @@ export async function deviceSupport() {
 export function aiReady() { return !!engine || hasKey() || !!window.SparrowDesktop; }
 export const hasKey = () => Object.values(store.settings.keys || {}).some(Boolean);
 
+const modelId = (sup) => { const ids = MODELS[store.settings.model] || MODELS['Qwen2.5-0.5B-Instruct']; return sup.f16 ? ids[0] : ids[1]; };
+/** Is the on-device model really saved on this phone? (iPhone can clear website storage; old app updates also did.) */
+export async function localDownloaded() {
+  try {
+    const sup = await deviceSupport(); if (!sup.ok) return false;
+    const webllm = await import('./lib/web-llm.js');
+    return await webllm.hasModelInCache(modelId(sup));
+  } catch { return false; }
+}
+function friendly(e) {
+  const m = String(e?.message || e || '');
+  if (/quota|QuotaExceeded|storage/i.test(m)) return 'Not enough space for the AI on this device. Free some space, or choose the “Fast” model, then try again.';
+  if (/device.*lost|out of memory|OOM|memory/i.test(m)) return 'The phone ran out of memory for this model. Choose the “Fast” model and try again.';
+  if (/fetch|network|Load failed|NetworkError/i.test(m)) return 'The download stopped (internet dropped or the app went to the background). Tap Try again — it carries on where it stopped.';
+  return m || 'Something went wrong — tap Try again.';
+}
 export async function loadLocal(onProgress) {
   if (engine) return engine;
   if (loading) return loading;
   loading = (async () => {
     const sup = await deviceSupport();
     if (!sup.ok) throw new Error(sup.why);
+    try { await navigator.storage?.persist?.(); } catch {}          // ask the phone to keep the model
     const webllm = await import('./lib/web-llm.js');
-    const ids = MODELS[store.settings.model] || MODELS['Qwen2.5-0.5B-Instruct'];
-    engine = await webllm.CreateMLCEngine(sup.f16 ? ids[0] : ids[1], { initProgressCallback: r => onProgress?.(r.progress ?? 0, r.text ?? '') });
+    try {
+      engine = await webllm.CreateMLCEngine(modelId(sup), { initProgressCallback: r => onProgress?.(r.progress ?? 0, r.text ?? '') });
+    } catch (e) { store.settings.aiReady = false; store.save(); throw new Error(friendly(e)); }
     store.settings.aiReady = true; store.save();
     return engine;
   })();
@@ -169,7 +187,7 @@ export async function ask(question, onToken, opts = {}) {
         return { text: text.trim(), source: 'Ollama · ' + model };
       }
       if (p === 'local') {
-        if (!engine) await loadLocal();
+        if (!engine) await loadLocal((p, txt) => opts.onStatus?.(p >= 1 ? '' : `Getting the free AI ready… ${Math.round(p * 100)}%`));
         let text = '';
         const stream = await engine.chat.completions.create({ messages, stream: true, temperature: 0.6, max_tokens: Math.min(opts.maxTokens || 500, 1500) });
         for await (const chunk of stream) { text += chunk.choices[0]?.delta?.content || ''; onToken?.(text); }
