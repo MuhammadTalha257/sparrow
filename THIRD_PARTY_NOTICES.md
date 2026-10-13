@@ -42,3 +42,6 @@ The specialist agent prompts in `mac/Resources/agents/agency-agents.json` come f
 ## blobatar (client & staff avatars in Zuffi Business)
 
 `lib/blobatar.js` is blobatar 2.7.0 by Alain (https://github.com/Alain00/blobatar), used under the MIT License — see `lib/LICENSE-blobatar.txt`.
+
+## Bricolage Grotesque (font)
+fonts/bricolage.woff2 — Copyright 2022 The Bricolage Grotesque Project Authors. SIL Open Font License 1.1 (fonts/LICENSE-bricolage.txt).

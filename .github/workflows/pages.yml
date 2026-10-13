@@ -39,10 +39,11 @@ jobs:
           cp -r index.html get.html *.js *.css manifest.webmanifest lib icons _site/
           for f in guides.json; do [ -f "$f" ] && cp "$f" _site/ || true; done
           [ -d mascots ] && cp -r mascots _site/ || true
+          [ -d fonts ] && cp -r fonts _site/ || true
           # the test copy lives at /test/ so new features can be tried on a phone before they reach everyone
           if [ -f _test/index.html ]; then
             mkdir -p _site/test
-            (cd _test && cp -r index.html *.js *.css manifest.webmanifest lib icons ../_site/test/ && { [ -f guides.json ] && cp guides.json ../_site/test/ || true; } && { [ -d mascots ] && cp -r mascots ../_site/test/ || true; })
+            (cd _test && cp -r index.html *.js *.css manifest.webmanifest lib icons ../_site/test/ && { [ -f guides.json ] && cp guides.json ../_site/test/ || true; } && { [ -d mascots ] && cp -r mascots ../_site/test/ || true; } && { [ -d fonts ] && cp -r fonts ../_site/test/ || true; })
           fi
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3

@@ -27,19 +27,30 @@ function listen() {
   window.addEventListener('scroll', aimAll, { passive: true });
 }
 
+// Zuffi's outfit: every mascot that didn't ask for its own pictures follows these (see seasons.js).
+const SHEETS = { directions: 'mascots/zuffi-directions.webp', reactions: 'mascots/zuffi-reactions.webp' };
+const dressed = new Set();
+export function setSheets(directions, reactions) {
+  if (SHEETS.directions === directions && SHEETS.reactions === reactions) return;
+  SHEETS.directions = directions; SHEETS.reactions = reactions;
+  for (const m of dressed) m.dress();
+}
+
 /** Turns `host` into the sparrow. Returns { react(name, ms), look(direction), el }. */
-export function mountMascot(host, { directions = 'mascots/zuffi-directions.webp', reactions = 'mascots/zuffi-reactions.webp', label = 'Zuffi', onTap } = {}) {
+export function mountMascot(host, { directions, reactions, label = 'Zuffi', onTap } = {}) {
+  const own = !!directions;
   host.classList.add('mascot');
   host.innerHTML = `<span class="mascot-squash"><span class="mascot-layer mascot-dir"></span><span class="mascot-layer mascot-react"></span></span>`;
   host.setAttribute('role', 'button'); host.setAttribute('aria-label', `Boop ${label}`); host.tabIndex = 0;
   const squash = host.firstElementChild, dir = squash.children[0], react = squash.children[1];
-  dir.style.backgroundImage = `url(${directions})`; react.style.backgroundImage = `url(${reactions})`;
+  const dress = () => { dir.style.backgroundImage = `url(${own ? directions : SHEETS.directions})`; react.style.backgroundImage = `url(${own ? reactions || SHEETS.reactions : SHEETS.reactions})`; };
+  dress();
   let sector = -1, timers = [], boops = { count: 0, at: 0 }, locked = null;
   const setDir = d => { dir.style.backgroundPosition = cell(DIRECTIONS.indexOf(d)); };
   const setReact = r => { react.style.opacity = r ? 1 : 0; dir.style.opacity = r ? 0 : 1; if (r) react.style.backgroundPosition = cell(REACTIONS.indexOf(r)); };
   setDir('center'); setReact(null);
   const api = {
-    el: host,
+    el: host, dress,
     aim() {
       if (locked || !pointer || !host.isConnected) return;
       const b = host.getBoundingClientRect(); if (!b.width) return;
@@ -70,7 +81,7 @@ export function mountMascot(host, { directions = 'mascots/zuffi-directions.webp'
   };
   host.addEventListener('click', e => { api.boop(); onTap?.(e); });
   host.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); api.boop(); onTap?.(e); } });
-  all.add(api);
+  all.add(api); if (!own) dressed.add(api);
   if (matchMedia('(hover: hover) and (pointer: fine)').matches) listen();
   return api;
 }

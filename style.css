@@ -1384,3 +1384,58 @@ html.biz-dash .bz-body > .bz-top, html.biz-dash .bz-body > .bz-tips, html.biz-da
 
 /* Windows notch home: pop-ups become Zuffi's words (see desktop.js), not a box over them */
 html.island-mode.isl-expanded:not(.isl-full) .toast { display: none !important; }
+
+/* ================= Home: Zuffi's window =================
+   One bold thing: the Home card is a little window onto Zuffi's world. The sky and the outfit follow the
+   season (seasons.js); everything else on the page stays quiet. */
+@font-face { font-family: 'Bricolage'; src: url(fonts/bricolage.woff2) format('woff2'); font-weight: 200 800; font-display: swap; }
+:root { --display: 'Bricolage', ui-rounded, system-ui, sans-serif; }
+.hello { font-family: var(--display); font-weight: 700; font-size: 28px; letter-spacing: -.6px; font-variation-settings: "wdth" 92; }
+.today { font-weight: 500; letter-spacing: .1px; }
+.brief { font-family: var(--display); font-size: 17px; font-weight: 500; line-height: 1.35; letter-spacing: -.1px; }
+.section-title > span:first-child, .bz-tt b, .bz-hello b, .bz-top b { font-family: var(--display); letter-spacing: -.3px; }
+.section-title > span:first-child { font-size: 19px; font-weight: 650; }
+
+.hero { min-height: 168px; padding: 18px 18px 18px 8px; border-radius: 28px; isolation: isolate; align-items: center; }
+.hero::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 90% at 18% 100%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%); }
+html[data-event]:not([data-event="none"]) .hero { background: linear-gradient(172deg, var(--sky1), var(--sky2)); border-color: color-mix(in srgb, var(--accent) 28%, transparent); color: #F4F6FA; }
+html[data-event]:not([data-event="none"]) .hero .brief { color: #F4F6FA; }
+html[data-event]:not([data-event="none"]) .hero .chip { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.18); color: #fff; }
+html[data-event]:not([data-event="none"]) .hero::before { background: radial-gradient(90% 70% at 20% 105%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 65%); }
+.hero .bird-wrap { width: 132px; height: 124px; }
+.hero .bird-wrap::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: -2px; height: 14px; border-radius: 50%; background: rgba(0,0,0,.28); filter: blur(6px); z-index: -1; }
+.hero .bird { width: 132px; height: 124px; }
+.hero-fx { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; border-radius: inherit;
+  -webkit-mask-image: linear-gradient(90deg, #000 0 36%, rgba(0,0,0,.28) 52%, rgba(0,0,0,.28) 100%); mask-image: linear-gradient(90deg, #000 0 36%, rgba(0,0,0,.28) 52%, rgba(0,0,0,.28) 100%); }
+.look-tag { position: absolute; top: 10px; right: 12px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 13px;
+  font-size: 11.5px; font-weight: 650; color: #fff; background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.16); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.look-tag span { font-size: 12px; }
+.hero:has(.look-tag:not([hidden])) .hero-text { padding-top: 22px; }
+
+/* season effects */
+.fx-snow { position: absolute; top: -8px; width: calc(6px * var(--s)); height: calc(6px * var(--s)); border-radius: 50%; background: #fff; opacity: .85;
+  animation: fx-fall linear infinite; filter: blur(.3px); }
+@keyframes fx-fall { to { transform: translate(var(--x), 190px); } }
+.fx-conf { position: absolute; top: -10px; width: 7px; height: 11px; border-radius: 2px; transform: rotate(var(--r)); animation: fx-conf linear infinite; opacity: .9; }
+@keyframes fx-conf { to { transform: translate(var(--x), 190px) rotate(calc(var(--r) + 540deg)); } }
+.fx-heart { position: absolute; bottom: -18px; font-style: normal; font-size: calc(16px * var(--s)); color: #FF8FB1; opacity: .7; animation: fx-rise linear infinite; }
+.fx-ember { position: absolute; bottom: -6px; width: calc(5px * var(--s)); height: calc(5px * var(--s)); border-radius: 50%; background: #FFB067; box-shadow: 0 0 8px #FF8A3C; animation: fx-rise linear infinite; }
+@keyframes fx-rise { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: .85; } 100% { transform: translate(var(--x), -200px); opacity: 0; } }
+.fx-lantern { position: absolute; top: 0; width: 2px; height: var(--h); background: rgba(233,196,106,.55); transform-origin: top center; animation: fx-sway 4s ease-in-out infinite alternate; }
+.fx-lantern b { position: absolute; left: -9px; bottom: -24px; width: 20px; height: 26px; border-radius: 6px 6px 9px 9px; background: linear-gradient(#FFE9A8, #E9A93A);
+  box-shadow: 0 0 18px 4px rgba(255,200,90,.45); }
+.fx-lantern b::before { content: ""; position: absolute; left: 3px; right: 3px; top: -4px; height: 5px; border-radius: 3px; background: #B8862B; }
+@keyframes fx-sway { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+.fx-star { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #FFF6D8; box-shadow: 0 0 4px #FFF1B8; animation: fx-twinkle 3.5s ease-in-out infinite; }
+@keyframes fx-twinkle { 50% { opacity: .2; } }
+.fx-sun { position: absolute; right: -40px; top: -50px; width: 170px; height: 170px; border-radius: 50%; background: radial-gradient(circle, rgba(255,214,110,.55), rgba(255,214,110,0) 68%); animation: fx-glow 6s ease-in-out infinite alternate; }
+@keyframes fx-glow { to { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .hero-fx * { animation: none !important; } .fx-snow, .fx-conf { top: auto; bottom: calc(10px + 60% * var(--s)); } .fx-heart, .fx-ember { bottom: 40%; opacity: .5; } }
+
+/* outfit picker (Settings → Zuffi's outfit & seasons) */
+.outfits { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin: 10px 0 12px; }
+.outfits button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 9px; border-radius: 16px; background: var(--card); border: 1.5px solid var(--line); color: var(--text); }
+.outfits button.on { border-color: var(--ev, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ev, var(--accent)) 25%, transparent); }
+.outfits b { font-size: 12.5px; font-weight: 650; } .outfits small { font-size: 10.5px; color: var(--muted); }
+.of-face { width: 64px; height: 64px; background-size: 300% 300%; background-position: 50% 50%; background-repeat: no-repeat; }

@@ -566,8 +566,10 @@ const THEMES = [['rose', '#F58FA8', 0, 'Blossom'], ['violet', '#9A84FF', 55, 'La
 export function applyAccent() {
   const t = THEMES.find(x => x[0] === (bs.cfg('accent') || LS.get('zuffiAccent'))) || null;
   const de = document.documentElement;
-  if (!t) { de.style.removeProperty('--accent'); de.style.removeProperty('--zfur'); return; }
-  de.style.setProperty('--accent', t[1]); de.style.setProperty('--zfur', t[2] + 'deg');
+  window.zuffiUserAccent = t ? t[1] : '';
+  const ev = window.zuffiEventAccent;                       // a season's colour wins while the season lasts (seasons.js)
+  if (!t) { de.style.removeProperty('--zfur'); if (ev) de.style.setProperty('--accent', ev); else de.style.removeProperty('--accent'); return; }
+  de.style.setProperty('--accent', ev || t[1]); de.style.setProperty('--zfur', t[2] + 'deg');
   try { window.SparrowNative?.setAccent?.(t[0]); window.SparrowDesktop?.setSetting?.('accent', t[0]); } catch {}
 }
 // ---------------- computer dashboard: sidebar, top bar and the extra Mac sections ----------------

@@ -17,6 +17,7 @@ import * as maclink from './maclink.js';
 import * as zc from './companion.js';
 import * as bizapp from './bizapp.js';
 import * as bizsync from './bizsync.js';
+import * as seasons from './seasons.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
@@ -50,7 +51,27 @@ function applyLook() {
   applyI18n();
   const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
   $('meta[name=theme-color]')?.setAttribute('content', bg || '#EEF4FB');
+  seasons.apply();
 }
+
+// ---------------- Zuffi's outfit & seasons ----------------
+function renderOutfits() {
+  const el = $('#sOutfit'); if (!el) return;
+  const cur = seasons.choice(), auto = seasons.EVENTS.find(e => e.id === seasons.autoEvent());
+  const face = id => `<span class="of-face" style="background-image:url(${seasons.sheetsFor(id).directions})"></span>`;
+  el.innerHTML = `<button data-of="auto" class="${cur === 'auto' ? 'on' : ''}">${face(auto.id)}<b>Automatic</b><small>Today: ${esc(auto.name)}</small></button>`
+    + seasons.EVENTS.map(e => `<button data-of="${e.id}" class="${cur === e.id ? 'on' : ''}" style="--ev:${e.accent || 'var(--accent)'}">${face(e.id)}<b>${esc(e.name)}</b></button>`).join('');
+}
+$('#sOutfit')?.addEventListener('click', e => {
+  const b = e.target.closest('[data-of]'); if (!b) return;
+  S().outfit = b.dataset.of; store.save(); bizapp.applyAccent(); const ev = seasons.apply(); renderOutfits();
+  sparrow?.react?.('delighted', 900);
+  toast(ev.id === 'none' ? 'Zuffi’s everyday look' : `${ev.icon} ${ev.name} look on`);
+});
+$('#sEventColors')?.addEventListener('change', e => { S().eventColors = e.target.checked; store.save(); bizapp.applyAccent(); seasons.apply(); });
+$('#sBirthday')?.addEventListener('change', e => { S().birthday = e.target.value; store.save(); seasons.apply(); renderOutfits(); });
+$('#lookTag')?.addEventListener('click', () => openSettings('look'));
+setInterval(() => { bizapp.applyAccent(); seasons.apply(); }, 30 * 60000);     // the season changes at midnight
 
 // ---------------- navigation ----------------
 let planType = 'task';
@@ -1183,6 +1204,8 @@ function fillSettings() {
 }
 async function openSettings(section) {
   fillSettings(); openSheet('#sheet');
+  renderOutfits(); $('#sEventColors').checked = S().eventColors !== false; $('#sBirthday').value = S().birthday || '';
+  if (section === 'look') { const d = $('#lookDetails'); d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); }
   if (section === 'ai') { const d = $$('#sheet details').find(x => x.querySelector('summary').textContent.includes('AI')); if (d) { d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); } }
   refreshAiStatus(); refreshAndroid();
   if (D) {
