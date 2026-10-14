@@ -62,12 +62,14 @@ jobs:
         if: github.ref_name == 'main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
+          tag_name: android-latest
           name: Zuffi for Android
           make_latest: true
-          files: Sparrow.apk
+          files: |
+            Zuffi.apk
+            Sparrow.apk
           body: |
             **Install Zuffi on Android**
-            1. Download `Sparrow.apk` below on your Android phone.
+            1. Download `Zuffi.apk` below on your Android phone.
             2. Open it. If asked, allow "Install unknown apps" for your browser.
             3. Open Zuffi 🐰

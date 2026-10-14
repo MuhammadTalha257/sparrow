@@ -11,7 +11,7 @@ Free, private (everything stays on your device) and works offline. Just say “S
 |---|---|
 | **Mac** (Intel + Apple silicon) | Download **[Sparrow.dmg](https://github.com/MuhammadTalha257/sparrow/releases/download/mac-latest/Sparrow.dmg)** → drag to Applications → first open: System Settings → Privacy & Security → **Open Anyway** |
 | **Windows 10/11** | Download **[Sparrow-Setup.exe](https://github.com/MuhammadTalha257/sparrow/releases/download/windows-latest/Sparrow-Setup.exe)** → open it → if Windows warns: **More info → Run anyway** |
-| **Android** | Download **[Sparrow.apk](https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk)** → open it → allow “Install unknown apps” if asked |
+| **Android** | Download **[Sparrow.apk](https://github.com/MuhammadTalha257/sparrow/releases/download/android-latest/Zuffi.apk)** → open it → allow “Install unknown apps” if asked |
 | **iPhone / iPad** | Open **https://muhammadtalha257.github.io/sparrow/** in Safari → **Share** → **Add to Home Screen** |
 
 ## ✨ What it does (no AI key needed)

@@ -1373,7 +1373,7 @@ function installHint() {
   if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
   const el = $('#installHint'); el.hidden = false;
   el.innerHTML = isIOS ? '📲 <b>Install Zuffi:</b> tap <b>Share</b> in Safari, then <b>“Add to Home Screen”</b>.'
-    : isAndroid ? '📲 <b>Get the full Android app</b> (floating Zuffi, hands-free voice, alarms): <a href="https://github.com/MuhammadTalha257/sparrow/releases/download/latest/Sparrow.apk">download Zuffi for Android</a>'
+    : isAndroid ? '📲 <b>Get the full Android app</b> (floating Zuffi, hands-free voice, alarms): <a href="https://github.com/MuhammadTalha257/sparrow/releases/download/android-latest/Zuffi.apk">download Zuffi for Android</a>'
     : '💻 <b>Get Zuffi for your computer</b> — hands-free “Zuffi…”, files, clipboard and more: <a href="get.html">download for Mac or Windows</a>';
 }
 
