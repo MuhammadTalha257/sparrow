@@ -61,7 +61,7 @@ struct ZuffiPlanSettings: View {
                 Spacer()
                 Text(p.name).font(.system(size: 11, weight: .bold)).padding(.horizontal, 9).padding(.vertical, 3)
                     .background(Capsule().fill(p.isPaid ? Color(hex: "#E2648A") : Color.secondary.opacity(0.2)))
-                    .foregroundStyle(p.isPaid ? .white : .primary)
+                    .foregroundStyle(p.isPaid ? Color.white : Color.primary)
                 Button(p.email.isEmpty ? "Sign in…" : "Manage…") { p.openAccount() }
             }
             .padding(6)
