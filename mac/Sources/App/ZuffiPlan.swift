@@ -3,6 +3,7 @@ import AppKit
 
 /// Which Zuffi plan this Mac has. The web part of the app signs in and checks the signed licence,
 /// then tells us here ("plan" message), so the native parts can follow the same rules.
+@MainActor
 final class ZuffiPlan: ObservableObject {
     static let shared = ZuffiPlan()
     @Published private(set) var plan: String = UserDefaults.standard.string(forKey: "zuffiPlan") ?? "free"
@@ -15,13 +16,11 @@ final class ZuffiPlan: ObservableObject {
     var name: String { ["pro": "Pro", "business": "Business"][plan] ?? "Free" }
 
     func update(plan: String, email: String, freeLeads: Int) {
-        DispatchQueue.main.async {
-            self.plan = ["pro", "business"].contains(plan) ? plan : "free"
-            self.email = email
-            self.freeLeads = freeLeads > 0 ? freeLeads : 30
-            let d = UserDefaults.standard
-            d.set(self.plan, forKey: "zuffiPlan"); d.set(email, forKey: "zuffiPlanEmail"); d.set(self.freeLeads, forKey: "zuffiFreeLeads")
-        }
+        self.plan = ["pro", "business"].contains(plan) ? plan : "free"
+        self.email = email
+        self.freeLeads = freeLeads > 0 ? freeLeads : 30
+        let d = UserDefaults.standard
+        d.set(self.plan, forKey: "zuffiPlan"); d.set(email, forKey: "zuffiPlanEmail"); d.set(self.freeLeads, forKey: "zuffiFreeLeads")
     }
 
     func leadRoom(current: Int) -> Bool { isBusiness || current < freeLeads }
@@ -29,15 +28,16 @@ final class ZuffiPlan: ObservableObject {
     /// Opens Settings → Zuffi account in the Zuffi panel (sign in / upgrade live there).
     func openAccount() {
         WebHub.shared.show()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
             WebHub.shared.run("window.Sparrow && window.Sparrow.openSettings && window.Sparrow.openSettings('account')")
         }
     }
 
     func askToUpgrade() {
-        DispatchQueue.main.async {
-            guard Date().timeIntervalSince(self.lastAsk) > 20 else { return }   // once, not for every lead in an import
-            self.lastAsk = Date()
+        guard Date().timeIntervalSince(lastAsk) > 20 else { return }   // once, not for every lead in an import
+        lastAsk = Date()
+        Task { @MainActor in                                           // after the current save finishes
             let a = NSAlert()
             a.messageText = "You’ve reached \(self.freeLeads) leads"
             a.informativeText = "The free plan keeps up to \(self.freeLeads) leads. Zuffi Business gives you unlimited leads, the same business on every device and the automations."
