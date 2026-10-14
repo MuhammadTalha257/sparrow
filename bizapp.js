@@ -5,6 +5,7 @@
 import * as bs from './bizsync.js';
 import * as C from './countries.js';
 import * as Z from './zblob.js';
+import * as account from './account.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -227,6 +228,7 @@ const TABS = () => DASH() ? SECTIONS().map(([id, lb]) => [id, lb, GREY]) : [['to
 
 export function mount(el, opts = {}) {
   root = el; toast = opts.toast || toast;
+  document.addEventListener('zuffi-plan', () => { if (root && isVisible()) render(); });
   bs.onChange(what => { if (what === 'status' || what === 'peers') renderHead(); else if (isVisible()) render(); else renderHead(); });
   render();
   setInterval(watch, 60000); setTimeout(watch, 5000);
@@ -282,6 +284,24 @@ function renderHead() {
 const plane = (label, value, c, sub = '', act = '') => `<${act ? 'button' : 'div'} class="bz-tile glass" style="--c:${c}" ${act}><i></i><b>${esc(String(value))}</b><small>${esc(label)}</small>${sub ? `<em>${esc(sub)}</em>` : ''}</${act ? 'button' : 'div'}>`;
 const empty = t => `<p class="bz-empty">${t}</p>`;
 const pill = (t, c) => `<span class="bz-pill" style="--c:${c}">${esc(t)}</span>`;
+// ---------------- plans: Free keeps up to N leads on one device; Business = unlimited, linked devices, automations ----------------
+const leadRoom = () => account.isBusiness() || leads().length < account.freeLeads();
+const openLink = u => (window.zuffiOpenUrl || (x => window.open(x, '_blank', 'noopener')))(u);
+function upgradeSheet(why) {
+  const { w } = sheet('Zuffi Business', `<p class="bz-p">${why}</p>
+    <ul class="bz-perks"><li>Unlimited leads and clients</li><li>The same business on your phone, tablet and computer</li><li>Morning summary, late-payment and lost-money automations</li><li>Built-in AI — nothing to set up</li></ul>
+    <p class="bz-hint">${account.signedIn() ? 'You’ll finish on our website, then come back here — Zuffi switches on by itself.' : 'Sign in first (Settings → Zuffi account), then upgrade on our website.'} Your leads stay safe on this device whatever you choose.</p>`,
+    async () => { if (!account.signedIn()) { (window.zuffiOpenSettings || (() => {}))('account'); return; } openLink(await account.upgradeUrl('business')); });
+  w.querySelector('[data-save]').textContent = account.signedIn() ? 'Get Business' : 'Sign in';
+}
+function planCard() {
+  const p = account.plan(), n = leads().length, max = account.freeLeads();
+  if (p === 'business') return card('Your plan', `<p class="bz-p">Zuffi Business${account.email() ? ' · ' + esc(account.email()) : ''}. Unlimited leads, linked devices and automations.</p>`);
+  return card('Your plan', `<p class="bz-p">${p === 'pro' ? 'Zuffi Pro' : 'Free'} · ${Math.min(n, max)} of ${max} leads used.</p>
+    <div class="bz-meter"><i style="width:${Math.min(100, n / max * 100)}%"></i></div>
+    <button class="bz-btn" data-act="upgrade">Get Business — unlimited leads &amp; linked devices</button>`);
+}
+
 const card = (title, body, extra = '', cls = '') => `<section class="bz-card glass ${cls}"><h4>${title}${extra}</h4>${body}</section>`;
 
 function leadRow(l, opts = {}) {
@@ -656,9 +676,11 @@ const AUTOS = [
   ['auto_late', 'Late payment nudge', 'When a payment is overdue, Zuffi reminds you each morning with a ready-written chaser.', true],
   ['auto_lost', 'Monday lost-money report', 'Every Monday: people who asked and never got a follow-up, and what they could be worth.', true],
 ];
-const autoOn = k => { const v = bs.cfg(k); const d = AUTOS.find(a => a[0] === k); return v === '' ? !!d?.[3] : v === '1'; };
+const autoOn = k => { if (k !== 'auto_speed' && !account.isBusiness()) return false; const v = bs.cfg(k); const d = AUTOS.find(a => a[0] === k); return v === '' ? !!d?.[3] : v === '1'; };
 function viewAutomations() {
-  return card('Jobs Zuffi does for you', AUTOS.map(([k, t, sub]) => `<label class="bz-auto"><span class="bz-rt"><b>${esc(t)}</b><small>${esc(sub)}</small></span><input type="checkbox" class="bz-sw" data-auto="${k}" ${autoOn(k) ? 'checked' : ''}></label>`).join('')
+  const biz = account.isBusiness();
+  return card('Jobs Zuffi does for you', AUTOS.map(([k, t, sub]) => `<label class="bz-auto"><span class="bz-rt"><b>${esc(t)}</b><small>${esc(sub)}${!biz && k !== 'auto_speed' ? ' <em class="bz-tag">Business</em>' : ''}</small></span><input type="checkbox" class="bz-sw" data-auto="${k}" ${autoOn(k) ? 'checked' : ''} ${!biz && k !== 'auto_speed' ? 'disabled' : ''}></label>`).join('')
+    + (biz ? '' : '<button class="bz-btn ghost" data-act="upgrade" style="margin-top:10px">Get Business to switch these on</button>')
     + '<small class="bz-hint">Switches are shared with your phone and other linked devices.</small>')
     + card('Automatic WhatsApp replies', `<p class="bz-p">Zuffi can answer new WhatsApp enquiries by itself (with a 10-second Stop button). This runs on the device that has WhatsApp: your <b>Android phone</b> (Business → More → This phone) or your <b>Mac</b>.</p>
       <p class="bz-hint">Windows shows the same leads and replies through sync. Replying from here opens WhatsApp Desktop with the chat ready.</p>`);
@@ -673,7 +695,7 @@ function viewConnect() {
       <div><i class="ok">2</i><span class="bz-rt"><b>Windows</b><small>Install WhatsApp Desktop. Reply buttons open the chat with the message ready — press Enter to send.</small></span></div>
       <div><i class="ok">3</i><span class="bz-rt"><b>iPhone</b><small>Use an office Mac or a spare Android as the WhatsApp hub, then link it here.</small></span></div></div>
       <button class="bz-btn ghost" data-guide="whatsapp">Step-by-step guide</button>`)
-    + `<div id="more-devices"></div>${viewDevices()}<div id="more-security"></div>${securityCard()}${power}`;
+    + `${planCard()}<div id="more-devices"></div>${viewDevices()}<div id="more-security"></div>${securityCard()}${power}`;
 }
 function viewLearn() { return learnCard(); }
 
@@ -704,7 +726,7 @@ function moreBusiness() {
 function viewMore() {
   const p = feats();
   const phone = N?.setBizPhone ? phoneSettings() : '';
-  return `${learnCard()}<div id="more-biz"></div>${moreBusiness()}
+  return `${planCard()}${learnCard()}<div id="more-biz"></div>${moreBusiness()}
     ${phone}
     <div id="more-devices"></div>${viewDevices()}
     <div id="more-security"></div>${securityCard()}
@@ -920,6 +942,7 @@ function editLead(k) {
     // Same phone number already in Leads? Update that client instead of making a duplicate.
     let dupe = null;
     if (!k) { const d = ph.replace(/\D/g, '').slice(-9); if (d.length >= 9) dupe = bs.rows('Leads').find(x => f(x.r, 'Phone').replace(/\D/g, '').slice(-9) === d); }
+    if (!k && !dupe && !leadRoom()) { upgradeSheet(`The free plan keeps up to ${account.freeLeads()} leads. Upgrade to Business to add ${esc(name || 'this client')} and as many more as you like.`); return false; }
     if (dupe) { const keep = {}; for (const c in row) if (String(row[c] ?? '').trim()) keep[c] = row[c]; delete keep.Added; if (keep.Status === 'New') delete keep.Status;
       bs.put('Leads', { ...dupe.r, ...keep }, dupe.k); toast(`${f(dupe.r, 'Name') || 'This number'} is already in your leads — updated ✓`); return; }
     if (!k && !row['Assigned to'] && LS.get('zuffiAgent')) row['Assigned to'] = LS.get('zuffiAgent');
@@ -1088,8 +1111,9 @@ function onClick(e) {
       bs.put('Hours', { Date: $('#hDate', root).value, Name: $('#hName', root).value, Hours: h, Note: $('#hNote', root).value.trim() }); return toast('Hours saved ✓');
     }
     case 'mtdExport': return exportCsv(d.from, d.to);
-    case 'scan': return doScan();
-    case 'create': bs.create(); qrShown = true; render(); return;
+    case 'scan': if (!account.isBusiness()) return upgradeSheet('Linking your phone, tablet and computer is part of Zuffi Business.'); return doScan();
+    case 'create': if (!account.isBusiness()) return upgradeSheet('Linking your phone, tablet and computer is part of Zuffi Business.'); bs.create(); qrShown = true; render(); return;
+    case 'upgrade': return upgradeSheet('Get the whole business on every device.');
     case 'toggleQr': qrShown = !qrShown; render(); return;
     case 'syncNow': bs.syncNow(); return toast('Syncing…');
     case 'unlink': if (confirmDel()) { bs.unlink(); qrShown = false; render(); toast('Unlinked'); } return;
@@ -1118,6 +1142,7 @@ function onChangeEv(e) {
   if (t.dataset.lockmins) { LS.set('zuffiLockMins', t.value); toast('Saved ✓'); }
   if (t.dataset.private !== undefined) { LS.set('zuffiPrivate', t.checked ? '1' : '0'); render(); }
   if (t.dataset.webpet !== undefined) { LS.set('zuffiWebPet', t.checked ? '1' : '0'); window.zuffiWebPet?.(t.checked); }
+  if (t.dataset.act2 === 'paste' && !account.isBusiness()) { t.value = ''; upgradeSheet('Linking your phone, tablet and computer is part of Zuffi Business.'); return; }
   if (t.dataset.act2 === 'paste') { if (bs.join(t.value)) { toast('Linked! Getting your business data…'); render(); } else toast('That code doesn’t look right.'); }
 }
 // Typing in the big text boxes saves a moment after you stop.
@@ -1156,7 +1181,7 @@ function importPhoneChats(force) {
   if (!N?.waLeads) return 0;
   let list = []; try { list = JSON.parse(N.waLeads()); } catch { return 0; }
   const have = leads(), me = LS.get('zuffiAgent');
-  let n = 0;
+  let n = 0, full = 0;
   for (const c of list) {
     const name = (c.name || '').trim(); if (!name) continue;
     const digits = String(c.phone || (/^[+\d\s-]{9,}$/.test(name) ? name : '')).replace(/\D/g, '');
@@ -1167,12 +1192,14 @@ function importPhoneChats(force) {
       if (c.at && c.at > (ex.msgAt || '')) bs.put('Leads', { ...ex.r, 'Last message': c.last || '', 'Last message at': c.at, ...(sent ? { 'Replied at': c.at, Status: ex.status === 'New' ? 'Contacted' : ex.status } : {}) }, ex.k);
       continue;
     }
+    if (!leadRoom()) { full++; continue; }
     bs.put('Leads', { Name: /^[+\d\s-]+$/.test(name) ? '' : name, Phone: digits ? (c.phone || name) : '', Source: c.source || 'WhatsApp', Status: sent ? 'Contacted' : 'New', Added: (c.added || c.at || iso()).slice(0, 10),
       'Last message': c.last || '', 'Last message at': c.at || '', ...(sent ? { 'Replied at': c.at } : {}), 'Assigned to': me || '', Notes: c.needs ? 'Needs you: ' + c.needs : '' });
     if (sent) logWin('auto-reply', name, 3);
     n++;
   }
   if (n && !force) toast(`${n} new enquir${n > 1 ? 'ies' : 'y'} from this phone added to leads`);
+  if (full && !force) toast(`${full} new WhatsApp enquir${full > 1 ? 'ies' : 'y'} not saved — the free plan is full. Get Business to keep them all.`, 6000);
   return n;
 }
 function importGroupListings() {
@@ -1207,6 +1234,7 @@ export function command(text) {
     const area = (rest.match(/\bin\s+(.+?)(?:\s+(?:budget|from|wants)\s+|$)/i) || [])[1] || '';
     const bud = (rest.match(/\bbudget\s+(.+?)(?:\s+(?:in|from|wants)\s+|$)/i) || [])[1] || '';
     if (!name && !phone) return null;
+    if (!leadRoom()) return `Your free plan is full (${account.freeLeads()} leads). Open Business → More → Get Business to add more.`;
     bs.put('Leads', { Name: name, Phone: phone, Source: src, Interest: want, Area: area, Budget: bud, Status: 'New', Added: iso() });
     return `✨ Added ${name || phone} to your leads${bs.linked() ? ' — on all your devices' : ''}.`;
   }

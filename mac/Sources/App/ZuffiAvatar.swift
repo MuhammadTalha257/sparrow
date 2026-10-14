@@ -364,6 +364,7 @@ struct ZuffiLookSettings: View {
             .padding(6)
         }
         ZuffiSeasonSettings()
+        ZuffiPlanSettings()
     }
 
     private var preview: some View {

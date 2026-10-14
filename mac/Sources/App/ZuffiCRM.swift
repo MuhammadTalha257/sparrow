@@ -297,6 +297,8 @@ final class ZuffiCRM: ObservableObject {
             writeLeads(b)
             return Self.key(name: b.get(b.rows[i], ["name"]), phone: b.get(b.rows[i], ["phone"]), row: i)
         }
+        // Free plan: up to 30 leads. Business: as many as you like.
+        if !ZuffiPlan.shared.leadRoom(current: b.rows.count) { ZuffiPlan.shared.askToUpgrade(); return "" }
         var row = Array(repeating: "", count: b.header.count)
         func put(_ k: String, _ v: String) { if let x = b.i([k]) { row[x] = v } }
         for (k, v) in f { put(k, v) }
@@ -521,6 +523,7 @@ final class ZuffiCRM: ObservableObject {
             }
         }
         let key = addLead(f, note: voice ? "Sent a voice note — save it to Downloads and I'll write it out." : "")
+        if key.isEmpty { return }   // free plan is full
         logMessage(key: key, display: name.isEmpty ? phone : name, dir: "in", text: voice ? "🎤 Voice note" : text)
         if existing == nil {
             SoundEngine.shared.play("chime")
@@ -843,6 +846,7 @@ final class ZuffiCRM: ObservableObject {
             if let v = d["next_follow_up"] as? String, !v.isEmpty { f["next follow"] = v }
             let voiceNote = (d["voice_text"] as? String).flatMap { $0.isEmpty ? nil : "🎤 \"\($0)\"" } ?? ""
             let key = addLead(f, note: leads.contains { ZuffiPA.samePhone($0.phone, f["phone"] ?? "") && $0.notes.contains(voiceNote) } ? "" : voiceNote)
+            if key.isEmpty { continue }   // free plan is full
             // A team member changed it on their phone: their stage / follow-up / notes win.
             if (d["changed_by"] as? String) == "staff" {
                 edit(key) { b, i in

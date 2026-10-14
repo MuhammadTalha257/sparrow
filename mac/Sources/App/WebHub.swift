@@ -279,6 +279,9 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         case "look":
             // Settings → Zuffi's outfit & seasons, changed in the web part of the app
             ZuffiLook.shared.fromWebLook(outfit: o["outfit"] as? String ?? "auto", birthday: o["birthday"] as? String ?? "")
+        case "plan":
+            // Zuffi account: which plan this Mac has (the web part checks the signed licence)
+            ZuffiPlan.shared.update(plan: o["plan"] as? String ?? "free", email: o["email"] as? String ?? "", freeLeads: o["freeLeads"] as? Int ?? 30)
         case "health":
             // water / coffee / medicine time → the sparrow flies in carrying it
             PetController.shared.deliver(kind: o["kind"] as? String ?? "water", text: o["text"] as? String ?? "Time for a break")

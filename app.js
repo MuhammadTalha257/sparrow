@@ -18,6 +18,7 @@ import * as zc from './companion.js';
 import * as bizapp from './bizapp.js';
 import * as bizsync from './bizsync.js';
 import * as seasons from './seasons.js';
+import * as acct from './account.js';
 import { liveUsable, startLive, stopLive, liveActive, liveSendImage, cameraShot } from './live.js';
 
 const $ = s => document.querySelector(s);
@@ -71,6 +72,64 @@ $('#sOutfit')?.addEventListener('click', e => {
 $('#sEventColors')?.addEventListener('change', e => { S().eventColors = e.target.checked; store.save(); bizapp.applyAccent(); seasons.apply(); });
 $('#sBirthday')?.addEventListener('change', e => { S().birthday = e.target.value; S().bdayAskDone = true; store.save(); seasons.apply(); renderOutfits(); renderBirthdayAsk(); syncAlarms(); M?.post('look', { outfit: S().outfit || 'auto', birthday: S().birthday }); });
 $('#lookTag')?.addEventListener('click', () => openSettings('look'));
+
+// ---------------- Zuffi account & plan (Settings → Zuffi account) ----------------
+const PLAN_NAME = { free: 'Free', pro: 'Pro', business: 'Business' };
+let accStep = 'email', accDevices = null;
+async function openSite(promise) { const w = /iPhone|iPad/.test(navigator.userAgent) && !N && !D && !M ? window.open('', '_blank') : null; const url = await promise; if (w) w.location = url; else openUrl(url); }
+function renderAccount() {
+  const box = $('#accBox'); if (!box) return;
+  const a = acct.account(), p = acct.plan();
+  if (acct.signedIn() && a) {
+    const ends = a.renews_at ? new Date(a.renews_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }) : '';
+    const line = p === 'free' ? 'Free plan — upgrade for the built-in AI and the full business tools.'
+      : (a.cancel_at_period_end || a.status === 'canceled') ? `${PLAN_NAME[p]} until ${ends}, then Free (nothing is deleted).`
+      : a.status === 'past_due' ? 'Your last payment didn’t go through — update your card in Manage subscription.'
+      : `${PLAN_NAME[p]} · renews ${ends}`;
+    box.innerHTML = `<div class="acc-head"><b>${esc(a.email)}</b><span class="acc-badge ${p}">${PLAN_NAME[p]}</span></div>
+      <p class="small-text">${esc(line)}</p>
+      ${a.ai?.limit ? `<p class="small-text">Built-in AI: ${a.ai.used} of ${a.ai.limit} this month.</p>` : ''}
+      <p class="small-text">${a.devices.length} of ${a.max_devices} devices signed in.</p>
+      <div class="row-btns">${p === 'free' ? '<button class="btn" data-acc="up-pro">Get Pro</button><button class="btn ghost" data-acc="up-business">Get Business</button>'
+        : p === 'pro' ? '<button class="btn ghost" data-acc="up-business">Upgrade to Business</button><button class="btn ghost" data-acc="manage">Manage subscription</button>'
+        : '<button class="btn ghost" data-acc="manage">Manage subscription</button>'}</div>
+      <div class="row-btns"><button class="btn ghost" data-acc="refresh">Check my plan</button><button class="btn ghost" data-acc="out">Sign out of this device</button></div>`;
+  } else if (accStep === 'code') {
+    box.innerHTML = `<p class="small-text">We emailed a 6-digit code to <b>${esc(acct.email())}</b>.</p>
+      <label class="field"><span>Code</span><input id="accCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
+      ${accDevices ? `<p class="small-text">You’re signed in on ${accDevices.length} devices already. Sign one out to use Zuffi here:</p>${accDevices.map(d => `<div class="acc-dev"><span>${esc(d.name)}<small>${esc(d.platform)}</small></span><button class="btn ghost" data-acc-replace="${esc(d.device_id)}">Sign it out</button></div>`).join('')}` : ''}
+      <div class="row-btns"><button class="btn" data-acc="verify">Sign in</button><button class="btn ghost" data-acc="back">Use another email</button></div><p class="small-text" id="accMsg"></p>`;
+    setTimeout(() => $('#accCode')?.focus(), 50);
+  } else {
+    box.innerHTML = `<p class="small-text">Sign in to use Pro or Business on this device. Zuffi’s free features don’t need an account.</p>
+      <label class="field"><span>Email</span><input id="accEmail" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(acct.email())}"></label>
+      <div class="row-btns"><button class="btn" data-acc="send">Email me a code</button><button class="btn ghost" data-acc="plans">See plans</button></div><p class="small-text" id="accMsg"></p>`;
+  }
+}
+$('#accBox')?.addEventListener('click', async e => {
+  const b = e.target.closest('[data-acc], [data-acc-replace]'); if (!b) return;
+  const msg = t => { const m = $('#accMsg'); if (m) m.textContent = t; };
+  const act = b.dataset.acc;
+  if (act === 'send') { const em = $('#accEmail').value.trim(); if (!/.+@.+\..+/.test(em)) return msg('Type your email address.'); b.disabled = true; msg('Sending…'); const r = await acct.startSignIn(em); b.disabled = false; if (!r.ok) return msg(r.error); accStep = 'code'; accDevices = null; renderAccount(); }
+  else if (act === 'back') { accStep = 'email'; accDevices = null; renderAccount(); }
+  else if (act === 'verify' || b.dataset.accReplace) {
+    const code = ($('#accCode')?.value || '').replace(/\D/g, ''); if (code.length !== 6) return msg('Type the 6-digit code from the email.');
+    b.disabled = true; msg('Signing in…');
+    const r = await acct.finishSignIn(code, b.dataset.accReplace);
+    b.disabled = false;
+    if (r.ok) { accStep = 'email'; accDevices = null; renderAccount(); toast(`Signed in — ${PLAN_NAME[acct.plan()]} plan`); return; }
+    if (r.deviceLimit) { accDevices = r.deviceLimit; renderAccount(); $('#accCode').value = code; return; }
+    msg(r.error);
+  }
+  else if (act === 'plans') openUrl(acct.SITE() + '#pricing');
+  else if (act === 'up-pro' || act === 'up-business') openSite(acct.upgradeUrl(act.slice(3)));
+  else if (act === 'manage') openSite(acct.manageUrl());
+  else if (act === 'refresh') { b.disabled = true; await acct.refresh(true); renderAccount(); toast(`Your plan: ${PLAN_NAME[acct.plan()]}`); }
+  else if (act === 'out') { await acct.signOut(); renderAccount(); toast('Signed out of this device'); }
+});
+document.addEventListener('zuffi-plan', () => { if (!$('#sheet').hidden) renderAccount(); document.documentElement.dataset.plan = acct.plan(); });
+// back from the website after buying: check straight away
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && acct.signedIn()) acct.refresh(true); });
 
 // ---------------- birthday: ask once, then wish on the day ----------------
 function renderBirthdayAsk() {
@@ -411,8 +470,9 @@ async function submit(text, fromVoice = false) {
   } catch (e) {
     typing.remove();
     if (e.message === 'NO_AI') addMsg('bot', D ? "I can do reminders, apps, files, music and lots more right now. To answer open questions, install the free Ollama app on this computer (ollama.com) or add a free key (Groq or Gemini) in Settings → AI."
-      : "I can handle reminders, meetings, tasks, notes, habits, prayer times and more right now. To answer anything else, switch on the free AI (Settings → AI) or add a free key.", { action: 'ai' });
-    else addMsg('bot', '⚠️ ' + e.message);
+      : "I can handle reminders, meetings, tasks, notes, habits, prayer times and more right now. To answer anything else, switch on the free AI (Settings → AI) or add a free key — or get Zuffi Pro for built-in AI with nothing to set up.", { action: 'ai' });
+    else if (/zuffi: limit/.test(e.message)) addMsg('bot', 'You’ve used this month’s built-in AI questions. They reset on the 1st — or add your own free key in Settings → AI to keep going.');
+    else addMsg('bot', '⚠️ ' + e.message.replace(/^zuffi: /, ''));
   } finally { setBird('talking', false); }
 }
 /** Fresh conversation: clears the chat, attached files and the files it was talking about. */
@@ -1234,7 +1294,8 @@ function fillSettings() {
 }
 async function openSettings(section) {
   fillSettings(); openSheet('#sheet');
-  renderOutfits(); $('#sEventColors').checked = S().eventColors !== false; $('#sBirthday').value = S().birthday || '';
+  renderOutfits(); renderAccount(); $('#sEventColors').checked = S().eventColors !== false; $('#sBirthday').value = S().birthday || '';
+  if (section === 'account') { const d = $('#accDetails'); d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); }
   if (section === 'look') { const d = $('#lookDetails'); d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); }
   if (section === 'ai') { const d = $$('#sheet details').find(x => x.querySelector('summary').textContent.includes('AI')); if (d) { d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); } }
   refreshAiStatus(); refreshAndroid();
@@ -1451,6 +1512,7 @@ async function voiceAsk(text) {
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
   catchUp: () => checkDue(),
+  openSettings: section => openSettings(section),
   rememberNote: (title, text) => mem.remember('meeting-notes', title, text),
   rememberFile: async (name, type, base64) => {
     const bin = atob(base64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
@@ -1534,10 +1596,24 @@ async function afterLink() {
   toast((r.ok ? '✅ ' : '⚠️ ') + r.text, 6000);
 }
 // Opened from a business link code (QR on the Mac / another device) → join and fetch the business data.
-if (bizsync.join(location.hash)) {
-  history.replaceState(null, '', location.pathname + location.search);
-  setTimeout(() => { go('biz'); bizapp.show('devices'); toast('💗 Linked! Getting your business data…', 4000); }, 600);
+// Linking devices is part of Business: without it, keep the link for after they sign in / upgrade.
+async function joinFromLink(hash, quiet = false) {
+  if (!/^#biz=/.test(hash || '')) return false;
+  await acct.whenReady();                       // the saved licence is checked first (takes a moment)
+  if (!acct.isBusiness()) {
+    try { sessionStorage.setItem('zuffiPendingJoin', hash); } catch {}
+    if (!quiet) setTimeout(() => { toast('🔗 Linking devices is part of Zuffi Business — sign in with your Business account and it links by itself.', 7000); openSettings('account'); }, 700);
+    return 'later';
+  }
+  if (!bizsync.join(hash)) return false;
+  try { sessionStorage.removeItem('zuffiPendingJoin'); } catch {}
+  setTimeout(() => { closeSheets(); go('biz'); bizapp.show('devices'); toast('💗 Linked! Getting your business data…', 4000); }, 600);
+  return true;
 }
+if (/^#biz=/.test(location.hash)) { const h = location.hash; history.replaceState(null, '', location.pathname + location.search); joinFromLink(h); }
+document.addEventListener('zuffi-plan', () => { let h = null; try { h = sessionStorage.getItem('zuffiPendingJoin'); } catch {} if (h && acct.isBusiness()) joinFromLink(h, true); });
+window.zuffiOpenUrl = u => openUrl(u);
+window.zuffiOpenSettings = section => openSettings(section);
 bizapp.mount($('#bizRoot'), { toast: (t, ms) => toast(t, ms) });
 // Walking Zuffi inside the app on iPhone / web (Android, Windows and Mac have their own pets)
 if (!N && !D && !M && !DASH) Promise.all([import('./petweb.js'), import('./zblob.js')]).then(([p, Z]) => p.start(() => {

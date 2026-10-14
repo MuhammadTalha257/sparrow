@@ -2,6 +2,7 @@
 // Or your own key for Claude, ChatGPT, Gemini, Grok, DeepSeek, Mistral, Groq, OpenRouter or Perplexity.
 import { store } from './store.js';
 import { daySummary, fmtTime } from './brain.js';
+import * as account from './account.js';
 
 let engine = null, loading = null;
 
@@ -33,7 +34,7 @@ export async function deviceSupport() {
     return { ok: true, f16: a.features.has('shader-f16') };
   } catch { return { ok: false, why: 'On-device AI is not available here.' }; }
 }
-export function aiReady() { return !!engine || hasKey() || !!window.SparrowDesktop; }
+export function aiReady() { return !!engine || hasKey() || !!window.SparrowDesktop || account.isPaid(); }
 export const hasKey = () => Object.values(store.settings.keys || {}).some(Boolean);
 
 const modelId = (sup) => { const ids = MODELS[store.settings.model] || MODELS['Qwen2.5-0.5B-Instruct']; return sup.f16 ? ids[0] : ids[1]; };
@@ -163,6 +164,7 @@ async function order() {
   const s = store.settings, k = s.keys || {}, out = [];
   const keyed = Object.keys(PROVIDERS).filter(p => k[p]);
   if (s.provider && s.provider !== 'auto') out.push(s.provider);
+  if (account.isPaid()) out.push('zuffi');                      // Pro / Business: built-in AI, nothing to set up
   if (window.SparrowDesktop && (await ollamaModels()).length) out.push('ollama');
   out.push(...keyed);
   if (engine || s.aiReady) out.push('local');
@@ -192,6 +194,11 @@ export async function ask(question, onToken, opts = {}) {
         const stream = await engine.chat.completions.create({ messages, stream: true, temperature: 0.6, max_tokens: Math.min(opts.maxTokens || 500, 1500) });
         for await (const chunk of stream) { text += chunk.choices[0]?.delta?.content || ''; onToken?.(text); }
         return { text: text.trim(), source: 'on-device AI' };
+      }
+      if (p === 'zuffi') {
+        const text = await account.ai(messages, Math.min(opts.maxTokens || 900, 1500));
+        onToken?.(text);
+        return { text: text.trim(), source: 'Zuffi AI' };
       }
       const key = store.settings.keys?.[p];
       if (!key || !PROVIDERS[p]) continue;

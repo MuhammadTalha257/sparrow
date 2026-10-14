@@ -1448,3 +1448,21 @@ html[data-event]:not([data-event="none"]) .hero::before { background: radial-gra
 .bday-ask input { grid-column: 2; min-height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--input); color: var(--text); padding: 0 10px; font: inherit; }
 .bday-btns { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .chip.solid { background: var(--accent); color: var(--ink); border-color: transparent; }
+
+/* ---------- Zuffi account & plan ---------- */
+.acc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.acc-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--soft); color: inherit; letter-spacing: .02em; }
+.acc-badge.pro { background: var(--accent); color: var(--ink); }
+.acc-badge.business { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: var(--ink); }
+.acc-dev { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(127,127,127,.18); }
+.acc-dev span { flex: 1; display: flex; flex-direction: column; }
+.acc-dev small { opacity: .65; font-size: 12px; text-transform: capitalize; }
+#accBox .row-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.bz-perks { margin: 10px 0 14px; padding: 0; list-style: none; display: grid; gap: 8px; }
+.bz-perks li { position: relative; padding-left: 26px; line-height: 1.35; }
+.bz-perks li::before { content: '✓'; position: absolute; left: 0; top: 0; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--ink); font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.bz-meter { height: 8px; border-radius: 99px; background: rgba(127,127,127,.18); overflow: hidden; margin: 8px 0 4px; }
+.bz-meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .4s; }
+.bz-tag { font-style: normal; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--ink); margin-left: 4px; vertical-align: 1px; }
+.bz-auto input:disabled { opacity: .45; cursor: not-allowed; }

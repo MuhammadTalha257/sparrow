@@ -345,6 +345,10 @@ final class ZuffiPA {
             Self.save("Leads", b)
             return "\(b.get(b.rows[dup], ["name"])) is already in your leads — I updated the notes."
         }
+        if !ZuffiPlan.shared.leadRoom(current: b.rows.count) {
+            ZuffiPlan.shared.askToUpgrade()
+            return "The free plan keeps up to \(ZuffiPlan.shared.freeLeads) leads. Zuffi Business gives you as many as you like — Settings → Zuffi account."
+        }
         let today = ZuffiBusiness.iso(Date())
         var row = Array(repeating: "", count: b.header.count)
         func put(_ k: String, _ v: String) { if let x = b.i([k]) { row[x] = v } }
