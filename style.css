@@ -1466,3 +1466,20 @@ html[data-event]:not([data-event="none"]) .hero::before { background: radial-gra
 .bz-meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .4s; }
 .bz-tag { font-style: normal; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--ink); margin-left: 4px; vertical-align: 1px; }
 .bz-auto input:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---------- paywall: trial over / not signed in ---------- */
+#paywall { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 20px; overflow-y: auto;
+  background: radial-gradient(ellipse 70% 60% at 50% 30%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%), color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+#paywall[hidden] { display: none; }
+.pw-card { width: min(440px, 100%); padding: 26px 22px 18px; border-radius: 26px; text-align: center; background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.35); animation: pwIn .5s cubic-bezier(.16,1,.3,1); }
+.pw-head { width: 104px; height: 104px; margin: -4px auto 8px; background: url(mascots/zuffi-directions.webp) 50% 50% / 300% 300% no-repeat; animation: pwBob 3.6s ease-in-out infinite; }
+.pw-card h2 { margin: 4px 0 8px; font-size: 24px; line-height: 1.15; letter-spacing: -.02em; }
+.pw-card > p { margin: 0 auto; max-width: 34ch; }
+.pw-box { margin-top: 16px; text-align: left; }
+.pw-box #accBox .row-btns { justify-content: center; }
+.pw-foot { margin: 16px 0 0 !important; font-size: 13px; opacity: .75; }
+.pw-foot a { color: inherit; }
+@keyframes pwIn { from { opacity: 0; transform: translateY(16px) scale(.97); } }
+@keyframes pwBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+.acc-badge.trial { background: color-mix(in srgb, var(--good, #16A34A) 25%, transparent); }

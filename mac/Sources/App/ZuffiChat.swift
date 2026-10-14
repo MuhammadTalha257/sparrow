@@ -33,6 +33,7 @@ final class ZuffiChat: ObservableObject {
     var isOpen: Bool { panel?.isVisible == true }
 
     func open(prefill: String = "") {
+        if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }   // trial over: choose a plan first
         if !prefill.isEmpty { draft = prefill }
         AppState.shared.unreadReplies = 0
         // fold the main panel away — chat lives on its own

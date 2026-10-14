@@ -185,6 +185,7 @@ final class PetController {
     private var wasShownBeforeAsk = false
     private var askTimeout: DispatchWorkItem?
     func deliver(kind: String, text: String) {
+        if ZuffiPlan.shared.isLocked { return }
         // Water / coffee / medicine: Zuffi walks across the screen carrying it.
         ZuffiWalk.shared.arrive(kind: kind, title: text)
     }

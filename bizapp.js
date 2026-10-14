@@ -297,7 +297,9 @@ function upgradeSheet(why) {
 function planCard() {
   const p = account.plan(), n = leads().length, max = account.freeLeads();
   if (p === 'business') return card('Your plan', `<p class="bz-p">Zuffi Business${account.email() ? ' · ' + esc(account.email()) : ''}. Unlimited leads, linked devices and automations.</p>`);
-  return card('Your plan', `<p class="bz-p">${p === 'pro' ? 'Zuffi Pro' : 'Free'} · ${Math.min(n, max)} of ${max} leads used.</p>
+  if (p === 'trial') return card('Your free trial', `<p class="bz-p">Everything in Zuffi Business is switched on during your trial. Choose a plan any time to keep it.</p>
+    <button class="bz-btn" data-act="upgrade">Choose Business</button>`);
+  return card('Your plan', `<p class="bz-p">Zuffi Pro · ${Math.min(n, max)} of ${max} business leads used.</p>
     <div class="bz-meter"><i style="width:${Math.min(100, n / max * 100)}%"></i></div>
     <button class="bz-btn" data-act="upgrade">Get Business — unlimited leads &amp; linked devices</button>`);
 }
@@ -942,7 +944,7 @@ function editLead(k) {
     // Same phone number already in Leads? Update that client instead of making a duplicate.
     let dupe = null;
     if (!k) { const d = ph.replace(/\D/g, '').slice(-9); if (d.length >= 9) dupe = bs.rows('Leads').find(x => f(x.r, 'Phone').replace(/\D/g, '').slice(-9) === d); }
-    if (!k && !dupe && !leadRoom()) { upgradeSheet(`The free plan keeps up to ${account.freeLeads()} leads. Upgrade to Business to add ${esc(name || 'this client')} and as many more as you like.`); return false; }
+    if (!k && !dupe && !leadRoom()) { upgradeSheet(`Zuffi Pro keeps up to ${account.freeLeads()} business leads. Upgrade to Business to add ${esc(name || 'this client')} and as many more as you like.`); return false; }
     if (dupe) { const keep = {}; for (const c in row) if (String(row[c] ?? '').trim()) keep[c] = row[c]; delete keep.Added; if (keep.Status === 'New') delete keep.Status;
       bs.put('Leads', { ...dupe.r, ...keep }, dupe.k); toast(`${f(dupe.r, 'Name') || 'This number'} is already in your leads — updated ✓`); return; }
     if (!k && !row['Assigned to'] && LS.get('zuffiAgent')) row['Assigned to'] = LS.get('zuffiAgent');
@@ -1199,7 +1201,7 @@ function importPhoneChats(force) {
     n++;
   }
   if (n && !force) toast(`${n} new enquir${n > 1 ? 'ies' : 'y'} from this phone added to leads`);
-  if (full && !force) toast(`${full} new WhatsApp enquir${full > 1 ? 'ies' : 'y'} not saved — the free plan is full. Get Business to keep them all.`, 6000);
+  if (full && !force) toast(`${full} new WhatsApp enquir${full > 1 ? 'ies' : 'y'} not saved — Pro keeps up to ${account.freeLeads()} leads. Get Business to keep them all.`, 6000);
   return n;
 }
 function importGroupListings() {
@@ -1234,7 +1236,7 @@ export function command(text) {
     const area = (rest.match(/\bin\s+(.+?)(?:\s+(?:budget|from|wants)\s+|$)/i) || [])[1] || '';
     const bud = (rest.match(/\bbudget\s+(.+?)(?:\s+(?:in|from|wants)\s+|$)/i) || [])[1] || '';
     if (!name && !phone) return null;
-    if (!leadRoom()) return `Your free plan is full (${account.freeLeads()} leads). Open Business → More → Get Business to add more.`;
+    if (!leadRoom()) return `Zuffi Pro keeps up to ${account.freeLeads()} leads. Open Business → More → Get Business to add more.`;
     bs.put('Leads', { Name: name, Phone: phone, Source: src, Interest: want, Area: area, Budget: bud, Status: 'New', Added: iso() });
     return `✨ Added ${name || phone} to your leads${bs.linked() ? ' — on all your devices' : ''}.`;
   }

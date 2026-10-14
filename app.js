@@ -74,26 +74,34 @@ $('#sBirthday')?.addEventListener('change', e => { S().birthday = e.target.value
 $('#lookTag')?.addEventListener('click', () => openSettings('look'));
 
 // ---------------- Zuffi account & plan (Settings → Zuffi account) ----------------
-const PLAN_NAME = { free: 'Free', pro: 'Pro', business: 'Business' };
+// Zuffi is a 3-day free trial, then Pro or Business. Without a plan the whole app shows the paywall below.
+const PLAN_NAME = { free: 'No plan', trial: 'Free trial', pro: 'Pro', business: 'Business' };
 let accStep = 'email', accDevices = null;
 async function openSite(promise) { const w = /iPhone|iPad/.test(navigator.userAgent) && !N && !D && !M ? window.open('', '_blank') : null; const url = await promise; if (w) w.location = url; else openUrl(url); }
+const fmtTrialDay = d => d ? new Date(d).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+function trialLeft() {
+  const e = acct.trialEnds(); if (!e) return '';
+  const h = Math.max(0, (e - Date.now()) / 3600e3);
+  return h > 36 ? `${Math.round(h / 24)} days left` : h >= 1 ? `${Math.round(h)} hours left` : 'ends within the hour';
+}
 function renderAccount() {
   const box = $('#accBox'); if (!box) return;
   const a = acct.account(), p = acct.plan();
   if (acct.signedIn() && a) {
     const ends = a.renews_at ? new Date(a.renews_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long' }) : '';
-    const line = p === 'free' ? 'Free plan — upgrade for the built-in AI and the full business tools.'
-      : (a.cancel_at_period_end || a.status === 'canceled') ? `${PLAN_NAME[p]} until ${ends}, then Free (nothing is deleted).`
+    const line = p === 'trial' ? `Your free trial ends ${fmtTrialDay(acct.trialEnds())} (${trialLeft()}). Everything is switched on — choose a plan any time to keep Zuffi.`
+      : p === 'free' ? (a.trial_ends_at ? 'Your free trial has ended. Choose a plan to keep using Zuffi — everything you saved is still here.' : 'Choose a plan to use Zuffi on this device.')
+      : (a.cancel_at_period_end || a.status === 'canceled') ? `${PLAN_NAME[p]} until ${ends}. After that Zuffi pauses until you choose a plan (nothing is deleted).`
       : a.status === 'past_due' ? 'Your last payment didn’t go through — update your card in Manage subscription.'
       : `${PLAN_NAME[p]} · renews ${ends}`;
     box.innerHTML = `<div class="acc-head"><b>${esc(a.email)}</b><span class="acc-badge ${p}">${PLAN_NAME[p]}</span></div>
       <p class="small-text">${esc(line)}</p>
-      ${a.ai?.limit ? `<p class="small-text">Built-in AI: ${a.ai.used} of ${a.ai.limit} this month.</p>` : ''}
+      ${a.ai?.limit ? `<p class="small-text">Built-in AI: ${a.ai.used} of ${a.ai.limit} ${p === 'trial' ? 'in your trial' : 'this month'}.</p>` : ''}
       <p class="small-text">${a.devices.length} of ${a.max_devices} devices signed in.</p>
-      <div class="row-btns">${p === 'free' ? '<button class="btn" data-acc="up-pro">Get Pro</button><button class="btn ghost" data-acc="up-business">Get Business</button>'
+      <div class="row-btns">${p === 'free' || p === 'trial' ? '<button class="btn" data-acc="up-pro">Choose Pro</button><button class="btn ghost" data-acc="up-business">Choose Business</button>'
         : p === 'pro' ? '<button class="btn ghost" data-acc="up-business">Upgrade to Business</button><button class="btn ghost" data-acc="manage">Manage subscription</button>'
         : '<button class="btn ghost" data-acc="manage">Manage subscription</button>'}</div>
-      <div class="row-btns"><button class="btn ghost" data-acc="refresh">Check my plan</button><button class="btn ghost" data-acc="out">Sign out of this device</button></div>`;
+      <div class="row-btns"><button class="btn ghost" data-acc="refresh">${p === 'free' ? 'I’ve paid — check again' : 'Check my plan'}</button><button class="btn ghost" data-acc="out">Sign out of this device</button></div>`;
   } else if (accStep === 'code') {
     box.innerHTML = `<p class="small-text">We emailed a 6-digit code to <b>${esc(acct.email())}</b>.</p>
       <label class="field"><span>Code</span><input id="accCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
@@ -101,7 +109,7 @@ function renderAccount() {
       <div class="row-btns"><button class="btn" data-acc="verify">Sign in</button><button class="btn ghost" data-acc="back">Use another email</button></div><p class="small-text" id="accMsg"></p>`;
     setTimeout(() => $('#accCode')?.focus(), 50);
   } else {
-    box.innerHTML = `<p class="small-text">Sign in to use Pro or Business on this device. Zuffi’s free features don’t need an account.</p>
+    box.innerHTML = `<p class="small-text">Type your email and we’ll send you a 6-digit code — no password, no card. Your 3-day free trial starts as soon as you sign in.</p>
       <label class="field"><span>Email</span><input id="accEmail" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(acct.email())}"></label>
       <div class="row-btns"><button class="btn" data-acc="send">Email me a code</button><button class="btn ghost" data-acc="plans">See plans</button></div><p class="small-text" id="accMsg"></p>`;
   }
@@ -117,7 +125,7 @@ $('#accBox')?.addEventListener('click', async e => {
     b.disabled = true; msg('Signing in…');
     const r = await acct.finishSignIn(code, b.dataset.accReplace);
     b.disabled = false;
-    if (r.ok) { accStep = 'email'; accDevices = null; renderAccount(); toast(`Signed in — ${PLAN_NAME[acct.plan()]} plan`); return; }
+    if (r.ok) { accStep = 'email'; accDevices = null; renderAccount(); toast(acct.isTrial() ? '🎉 Your 3-day free trial has started — everything is on!' : `Signed in — ${PLAN_NAME[acct.plan()]}`, 5000); return; }
     if (r.deviceLimit) { accDevices = r.deviceLimit; renderAccount(); $('#accCode').value = code; return; }
     msg(r.error);
   }
@@ -127,7 +135,57 @@ $('#accBox')?.addEventListener('click', async e => {
   else if (act === 'refresh') { b.disabled = true; await acct.refresh(true); renderAccount(); toast(`Your plan: ${PLAN_NAME[acct.plan()]}`); }
   else if (act === 'out') { await acct.signOut(); renderAccount(); toast('Signed out of this device'); }
 });
-document.addEventListener('zuffi-plan', () => { if (!$('#sheet').hidden) renderAccount(); document.documentElement.dataset.plan = acct.plan(); });
+
+// ---- the paywall: no plan → Zuffi pauses (nothing is deleted) ----
+let wasLocked = null;
+function paywall() {
+  const locked = acct.locked();
+  document.documentElement.dataset.plan = acct.plan();
+  let pw = $('#paywall');
+  if (locked && !pw) {
+    pw = document.createElement('div'); pw.id = 'paywall'; pw.setAttribute('role', 'dialog'); pw.setAttribute('aria-modal', 'true');
+    pw.innerHTML = `<div class="pw-card"><div class="pw-head mascot-dir" aria-hidden="true"></div><h2 id="pwTitle"></h2><p id="pwText" class="small-text"></p><div class="pw-box"></div>
+      <p class="pw-foot"><a href="#" data-pw="site">See plans and prices</a> · <a href="#" data-pw="help">Help</a></p></div>`;
+    document.body.appendChild(pw);
+    pw.addEventListener('click', e => { const a = e.target.closest('[data-pw]'); if (!a) return; e.preventDefault(); openUrl(a.dataset.pw === 'site' ? acct.SITE() + '#pricing' : acct.SITE() + '#questions'); });
+  }
+  if (pw) {
+    pw.hidden = !locked;
+    const box = $('#accBox');
+    if (locked) {
+      const ended = acct.signedIn() && acct.hadTrial();
+      $('#pwTitle').textContent = ended ? 'Your free trial has ended' : acct.signedIn() ? 'Choose a plan to keep Zuffi' : 'Try Zuffi free for 3 days';
+      $('#pwText').textContent = ended ? 'I hope I helped! Choose Pro or Business to keep me — your reminders, chats and business are all still here.'
+        : acct.signedIn() ? 'Pro for you, Business for your shop or office. Everything you saved is still here.'
+        : 'Sign in with your email to switch everything on. No card needed — you only pay if you decide to keep me.';
+      if (box && box.parentElement !== pw.querySelector('.pw-box')) pw.querySelector('.pw-box').appendChild(box);
+      renderAccount();
+    } else if (box && box.parentElement !== $('#accDetails')) $('#accDetails').appendChild(box);
+  }
+  if (locked !== wasLocked) { nativeLock(locked, wasLocked === null); wasLocked = locked; }
+}
+// Phone and computer extras (floating pet, wake word, alarms) pause with the app and come back as they were.
+function nativeLock(locked, first) {
+  const KEY = 'zuffiLockSaved';
+  try {
+    if (N) {
+      if (locked) {
+        if (!localStorage.getItem(KEY)) { const st = JSON.parse(N.status() || '{}'); localStorage.setItem(KEY, JSON.stringify({ pet: !!st.pet, bubble: !!st.bubble, wakeWord: !!st.wakeWord })); }
+        N.setPet(false); N.setBubble(false); N.setWakeWord(false); N.syncAlarms('[]');
+      } else {
+        const sv = JSON.parse(localStorage.getItem(KEY) || 'null');
+        if (sv) { if (sv.pet) N.setPet(true); if (sv.bubble) N.setBubble(true); if (sv.wakeWord) N.setWakeWord(true); localStorage.removeItem(KEY); }
+        if (!first) syncAlarms();
+      }
+    }
+    if (D && D.getSettings) {
+      if (locked) D.getSettings().then(st => { if (!localStorage.getItem(KEY)) localStorage.setItem(KEY, JSON.stringify({ pet: st.pet !== false })); D.setSetting('pet', false); });
+      else { const sv = JSON.parse(localStorage.getItem(KEY) || 'null'); if (sv) { if (sv.pet) D.setSetting('pet', true); localStorage.removeItem(KEY); } }
+    }
+  } catch {}
+}
+document.addEventListener('zuffi-plan', () => { if (!$('#sheet').hidden) renderAccount(); paywall(); });
+acct.whenReady().then(paywall);
 // back from the website after buying: check straight away
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && acct.signedIn()) acct.refresh(true); });
 
@@ -839,7 +897,7 @@ function alertNow(spoken, shown, tag, itemId) {
 }
 const who = () => S().name ? S().name + ', ' : '';
 async function checkDue() {
-  if (DASH) return;                     // the island window rings reminders, not the dashboard
+  if (DASH || acct.locked()) return;            // no plan: reminders pause too                     // the island window rings reminders, not the dashboard
   const now = Date.now(), lead = (+S().lead || 0) * 60000;
   const missed = [];
   for (const it of store.items) {
@@ -904,6 +962,7 @@ const HEALTH = {
 const INTERVALS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360];
 const intervalText = m => m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)}½ h` : `${m / 60} hour${m > 60 ? 's' : ''}`;
 function checkHealth() {
+  if (acct.locked()) return;
   const all = S().health; if (!all) return;
   const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
   for (const kind of Object.keys(HEALTH)) {
@@ -1404,7 +1463,7 @@ function refreshAndroid() {
 }
 /** Android rings these with real alarms, even when Zuffi is closed. */
 function syncAlarms() {
-  if (!N) return;
+  if (!N || acct.locked()) return;
   const s = S(), w = s.name ? s.name + ', ' : '', lead = (+s.lead || 0) * 60000, list = [];
   const push = (i, at, suffix = '') => {
     const meet = i.type === 'meeting';

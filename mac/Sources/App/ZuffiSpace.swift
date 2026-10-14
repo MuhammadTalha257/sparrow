@@ -235,6 +235,7 @@ struct HomeAction: Identifiable {
     }
 
     @MainActor static func run(_ id: String, home: ZuffiHomeModel) {
+        if ZuffiPlan.shared.isLocked && id != "settings" { ZuffiPlan.shared.openAccount(); return }
         switch id {
         case "chat": ZuffiChat.shared.open()
         case "settings": ZuffiNav.go(.settings)

@@ -11,16 +11,23 @@ final class ZuffiPlan: ObservableObject {
     private(set) var freeLeads: Int = { let n = UserDefaults.standard.integer(forKey: "zuffiFreeLeads"); return n > 0 ? n : 30 }()
     private var lastAsk = Date.distantPast
 
-    var isBusiness: Bool { plan == "business" }
-    var isPaid: Bool { plan == "pro" || plan == "business" }
-    var name: String { ["pro": "Pro", "business": "Business"][plan] ?? "Free" }
+    var isBusiness: Bool { plan == "business" || plan == "trial" }      // the trial switches everything on
+    var isPaid: Bool { plan == "pro" || plan == "business" || plan == "trial" }
+    /// No plan (trial over, or never signed in): Zuffi pauses until one is chosen. Nothing is deleted.
+    var isLocked: Bool { heard && plan == "free" }
+    var name: String { ["trial": "Free trial", "pro": "Pro", "business": "Business"][plan] ?? "No plan" }
+    private var heard = UserDefaults.standard.string(forKey: "zuffiPlan") != nil   // the web part has told us at least once
+    private var shownLock = false
 
     func update(plan: String, email: String, freeLeads: Int) {
-        self.plan = ["pro", "business"].contains(plan) ? plan : "free"
+        heard = true
+        self.plan = ["trial", "pro", "business"].contains(plan) ? plan : "free"
         self.email = email
         self.freeLeads = freeLeads > 0 ? freeLeads : 30
         let d = UserDefaults.standard
         d.set(self.plan, forKey: "zuffiPlan"); d.set(email, forKey: "zuffiPlanEmail"); d.set(self.freeLeads, forKey: "zuffiFreeLeads")
+        if isLocked && !shownLock { shownLock = true; openAccount() }        // show the paywall once when Zuffi locks
+        if !isLocked { shownLock = false }
     }
 
     func leadRoom(current: Int) -> Bool { isBusiness || current < freeLeads }
@@ -55,7 +62,7 @@ struct ZuffiPlanSettings: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(p.email.isEmpty ? "Not signed in" : p.email).font(.system(size: 13, weight: .semibold))
-                    Text(p.isPaid ? "Zuffi \(p.name) is on for this Mac." : "Free plan — sign in to use Pro or Business here.")
+                    Text(p.plan == "trial" ? "Your free trial is on — everything is switched on." : p.isPaid ? "Zuffi \(p.name) is on for this Mac." : "No plan — sign in to start your 3-day free trial, or choose a plan.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()

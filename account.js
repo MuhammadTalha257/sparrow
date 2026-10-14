@@ -10,7 +10,10 @@ const LS = { get(k) { try { return localStorage.getItem(k); } catch { return nul
 let st = {}; try { st = JSON.parse(LS.get(KEY) || '{}'); } catch { st = {}; }
 // The plan is never read straight from storage: the signed licence is checked again every time Zuffi starts.
 const save = () => { const { lic: _a, ...keep } = st; LS.set(KEY, JSON.stringify(keep)); };
-const emit = () => document.dispatchEvent(new CustomEvent('zuffi-plan', { detail: { plan: plan(), account: st.account || null } }));
+const emit = () => {
+  document.dispatchEvent(new CustomEvent('zuffi-plan', { detail: { plan: plan(), account: st.account || null } }));
+  try { window.SparrowHost === 'mac' && window.SparrowMac?.post('plan', { plan: plan(), email: email(), freeLeads: freeLeads() }); } catch {}
+};
 
 export function deviceId() {
   let d = LS.get(DEV);
@@ -70,20 +73,26 @@ async function checkLicence(lic, fromServer = false) {
 export function plan() {
   const p = st.lic;
   if (!st.token || !p || p.d !== deviceId() || p.exp * 1000 < Date.now()) return 'free';
-  return ['pro', 'business'].includes(p.p) ? p.p : 'free';
+  return ['trial', 'pro', 'business'].includes(p.p) ? p.p : 'free';
 }
+/** pro, business or the trial: Zuffi works. 'free' means no plan any more — the app shows the paywall. */
 export const isPaid = () => plan() !== 'free';
-export const isBusiness = () => plan() === 'business';
+export const isBusiness = () => plan() === 'business' || plan() === 'trial';   // the trial switches everything on
+export const isTrial = () => plan() === 'trial';
+export const locked = () => plan() === 'free';
+export const trialEnds = () => (plan() === 'trial' && st.lic?.exp) ? new Date(st.lic.exp * 1000) : null;
+export const hadTrial = () => !!st.account?.trial_ends_at;
 export const signedIn = () => !!st.token;
 export const account = () => st.account || null;
 export const email = () => st.account?.email || st.email || '';
 export const freeLeads = () => st.account?.free_leads || 30;
 
+let expT = 0;
 async function take(acct) {
   st.account = acct; st.email = acct?.email || st.email;
   const p = await checkLicence(acct?.licence, true);
   st.lic = p; st.checkedAt = Date.now(); save(); emit();
-  try { window.SparrowHost === 'mac' && window.SparrowMac?.post('plan', { plan: plan(), email: email(), freeLeads: freeLeads() }); } catch {}
+  if (p?.exp) { clearTimeout(expT); const ms = p.exp * 1000 - Date.now(); if (ms > 0 && ms < 2 ** 31) expT = setTimeout(emit, ms + 500); }   // lock the moment the trial ends
 }
 
 /** Ask the server for the latest plan (once a day, at start, and after buying). */
@@ -133,10 +142,12 @@ export async function ai(messages, maxTokens = 700) {
 // at start: check the saved licence (works offline)
 const ready = (async () => {
   delete st.lic;
-  if (st.token && st.account?.licence) { st.lic = await checkLicence(st.account.licence); if (st.lic) emit(); }
+  if (st.token && st.account?.licence) { st.lic = await checkLicence(st.account.licence); }
+  emit();
+  if (st.lic?.exp) { const ms = st.lic.exp * 1000 - Date.now(); if (ms > 0 && ms < 2 ** 31) expT = setTimeout(emit, ms + 500); }
 })();
 export const whenReady = () => ready;
 
-window.zuffiAccount = { plan, isPaid, isBusiness, signedIn, account, email, refresh, upgradeUrl, manageUrl, freeLeads, whenReady };
-ready.then(() => setTimeout(() => refresh(!!st.token && !st.lic), 1500));   // couldn’t check it here → ask the server now
+window.zuffiAccount = { plan, isPaid, isBusiness, isTrial, locked, trialEnds, signedIn, account, email, refresh, upgradeUrl, manageUrl, freeLeads, whenReady };
+ready.then(() => setTimeout(() => refresh(!!st.token && (!st.lic || plan() === 'free' || plan() === 'trial')), 1500));   // couldn’t check it here → ask the server now
 setInterval(() => refresh(), 6 * 3600e3);
