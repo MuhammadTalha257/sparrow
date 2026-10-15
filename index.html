@@ -208,6 +208,8 @@
     <label class="field"><span>City for weather &amp; prayer times</span><input id="sCity" placeholder="Leave empty = where you are now"></label>
   </details>
 
+  <button class="btn ghost guide-open" type="button" id="openGuide">📖 How to use Zuffi</button>
+
   <details id="accDetails"><summary>👤 Zuffi account &amp; plan</summary>
     <div id="accBox"></div>
   </details>
@@ -273,6 +275,11 @@
 
   <details><summary>✨ AI</summary>
     <p class="small-text">Everyday commands work without any AI. For open questions, Zuffi uses the first one that's available.</p>
+    <div class="field ai-source" id="aiSourceBox">
+      <span>Where Zuffi's answers come from</span>
+      <label class="radio-row"><input type="radio" name="aiSource" value="zuffi"> <b>Zuffi's built-in AI</b><small id="aiSourceNote">Included with Pro, Business and the free trial — nothing to set up.</small></label>
+      <label class="radio-row"><input type="radio" name="aiSource" value="own"> <b>My own AI key</b><small>Use your own Groq, OpenAI, Gemini… key below (free keys work), or the free AI on this device.</small></label>
+    </div>
     <label class="field"><span>Preferred AI</span><select id="sProvider"></select></label>
     <div id="ollamaBox" class="desktop-only">
       <label class="field"><span>Ollama model on this computer (free)</span><select id="sOllama"><option value="">Automatic</option></select></label>

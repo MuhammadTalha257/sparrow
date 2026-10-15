@@ -136,6 +136,61 @@ $('#accBox')?.addEventListener('click', async e => {
   else if (act === 'out') { await acct.signOut(); renderAccount(); toast('Signed out of this device'); }
 });
 
+// ---- "How to use Zuffi": shown once after the trial starts (or on first open with a plan), and from Settings any time ----
+function guideSteps() {
+  const where = M ? 'mac' : D ? 'windows' : N ? 'android' : /iPhone|iPad/.test(navigator.userAgent) ? 'iphone' : 'web';
+  const open = {
+    mac: 'I live in the black notch at the top of your screen. Click it (or the bunny in the menu bar) to open me.',
+    windows: 'I live at the top centre of your screen. Click me, or press Ctrl + Shift + Space from any app.',
+    android: 'Open the Zuffi app, or turn on the floating bunny (Settings → Zuffi on screen) and tap me over any app.',
+    iphone: 'In Safari tap Share → Add to Home Screen, then open Zuffi from your home screen like any app.',
+    web: 'Keep this page open, or install it from your browser’s menu (Install app / Add to Home Screen).',
+  }[where];
+  const trial = acct.isTrial() ? ` Your free trial has ${trialLeft()} — everything is switched on.` : '';
+  return [
+    ['👋', 'Hi! I’m Zuffi', `${open}${trial}`],
+    ['🎙️', 'Talk or type', 'Tap the microphone or type. Try: “Remind me to call Ali at 5”, “When is Asr?”, “Open WhatsApp” or “What’s the weather tomorrow?”. Turn on “Say Zuffi” in Settings → Voice to call me hands-free.'],
+    ['⏰', 'Reminders that come back', 'I remind you at the right time, even when the app is closed. Water, coffee and medicine breaks are in Settings → Water, coffee & medicine — I’ll walk over with them' + (where === 'iphone' || where === 'web' ? '' : ' across your screen') + '.'],
+    ['🕌', 'Prayer times and your day', 'Prayer times follow where you are (Settings → Prayer times). Every morning I give you a short summary of your day.'],
+    ['💼', 'Your business', 'Open the Business tab: WhatsApp enquiries become leads, I nudge you to reply within 5 minutes, and track payments, stock and staff. Link your phone and computer under Business → Link devices.'],
+    ['✨', 'Answers from AI', acct.isPaid() ? 'Built-in AI is included — nothing to set up. Prefer your own AI key? Choose it in Settings → AI. Reminders, prayer times and your business work offline too.' : 'Add a free AI key in Settings → AI, or use the free AI on this device. Reminders, prayer times and your business work offline too.'],
+    ['🐰', 'Make me yours', 'Pick my outfit and colours (Settings → Zuffi’s outfit & seasons), add your birthday, and choose my voice. Your plan and devices are in Settings → Zuffi account. Need help? Settings → How to use Zuffi, or ask us at lisansystems.com/zuffi.'],
+  ];
+}
+let guideAt = 0;
+function showGuide() {
+  let g = $('#guide');
+  if (!g) {
+    g = document.createElement('div'); g.id = 'guide'; g.setAttribute('role', 'dialog'); g.setAttribute('aria-modal', 'true'); g.setAttribute('aria-labelledby', 'guideTitle');
+    g.innerHTML = `<div class="gd-card"><button class="gd-x" data-g="close" aria-label="Close">✕</button><div class="gd-ico" id="guideIco"></div><h2 id="guideTitle"></h2><p id="guideText"></p>
+      <div class="gd-dots" id="guideDots"></div><div class="row-btns"><button class="btn ghost" data-g="back">Back</button><button class="btn" data-g="next">Next</button></div></div>`;
+    document.body.appendChild(g);
+    g.addEventListener('click', e => {
+      const b = e.target.closest('[data-g]'); if (!b) { if (e.target === g) closeGuide(); return; }
+      const n = guideSteps().length;
+      if (b.dataset.g === 'close') return closeGuide();
+      if (b.dataset.g === 'back') guideAt = Math.max(0, guideAt - 1);
+      if (b.dataset.g === 'next') { if (guideAt >= n - 1) return closeGuide(); guideAt++; }
+      if (b.dataset.g === 'dot') guideAt = +b.dataset.i;
+      drawGuide();
+    });
+    document.addEventListener('keydown', e => { if (!g.hidden && e.key === 'Escape') closeGuide(); });
+  }
+  guideAt = 0; g.hidden = false; drawGuide(); setTimeout(() => g.querySelector('[data-g="next"]')?.focus(), 60);
+}
+function drawGuide() {
+  const steps = guideSteps(), [ico, title, text] = steps[guideAt];
+  $('#guideIco').textContent = ico; $('#guideTitle').textContent = title; $('#guideText').textContent = text;
+  $('#guideDots').innerHTML = steps.map((_, i) => `<button data-g="dot" data-i="${i}" class="${i === guideAt ? 'on' : ''}" aria-label="Step ${i + 1}"></button>`).join('');
+  $('#guide [data-g="back"]').style.visibility = guideAt ? 'visible' : 'hidden';
+  $('#guide [data-g="next"]').textContent = guideAt === steps.length - 1 ? 'Start using Zuffi' : 'Next';
+}
+function closeGuide() { const g = $('#guide'); if (g) g.hidden = true; try { localStorage.setItem('zuffiWelcomeSeen', '1'); } catch {} if (!S().guideSeen) { S().guideSeen = true; store.save(); } }
+$('#openGuide')?.addEventListener('click', () => { closeSheets(); showGuide(); });
+function maybeGuide() { let seen = false; try { seen = localStorage.getItem('zuffiWelcomeSeen') === '1'; } catch {}
+  if (!DASH && !seen && !S().guideSeen && !acct.locked() && !document.hidden) setTimeout(() => { if (!acct.locked() && !S().guideSeen) showGuide(); }, 900); }
+document.addEventListener('zuffi-plan', maybeGuide);
+
 // ---- the paywall: no plan → Zuffi pauses (nothing is deleted) ----
 let wasLocked = null;
 function paywall() {
@@ -1346,6 +1401,10 @@ function fillSettings() {
   $('#pOn').checked = s.prayer.on; $('#pMethod').value = s.prayer.method; $('#pAsr').value = s.prayer.asr; $('#pBefore').value = String(s.prayer.before); $('#pSpeak').checked = s.prayer.speak;
   $('#sProvider').innerHTML = `<option value="auto">Automatic (free first)</option>${D ? '<option value="ollama">Ollama on this computer</option>' : '<option value="local">Free AI on this device</option>'}` + PROVIDER_ORDER.map(p => `<option value="${p}">${PROVIDERS[p].name}</option>`).join('');
   $('#sProvider').value = s.provider || 'auto';
+  { const paid = acct.isPaid(), own = Object.values(s.keys || {}).some(Boolean);
+    const src = s.aiSource || (paid && !own ? 'zuffi' : 'own');
+    $$('input[name="aiSource"]').forEach(r => { r.checked = r.value === src; if (r.value === 'zuffi') r.disabled = !paid; });
+    $('#aiSourceNote').textContent = paid ? 'Included with your plan — nothing to set up. Your questions go through Zuffi’s secure server.' : 'Included with Pro and Business (and the free trial). Sign in under Zuffi account to use it.'; }
   $('#sModel').value = s.model;
   $('#keyFields').innerHTML = PROVIDER_ORDER.map(p => `<label class="field"><span>${PROVIDERS[p].name}</span><div class="key-row"><input type="password" data-key="${p}" value="${esc(s.keys[p] || '')}" placeholder="API key" autocomplete="off"><a href="${PROVIDERS[p].site}" target="_blank" rel="noopener">Get a key</a></div></label>`).join('');
   $('#bName').value = s.business.name; $('#bAddr').value = s.business.address; $('#bCur').value = s.business.currency; $('#sMusic').value = s.musicApp;
@@ -1375,6 +1434,7 @@ function saveSettings() {
   s.health = readHealthSettings(s.health || {});
   s.prayer = { ...s.prayer, on: $('#pOn').checked, method: $('#pMethod').value, asr: $('#pAsr').value, before: +$('#pBefore').value, speak: $('#pSpeak').checked };
   s.provider = $('#sProvider').value; s.model = $('#sModel').value; if (D) s.ollamaModel = $('#sOllama').value;
+  { const r = $$('input[name="aiSource"]').find(x => x.checked); if (r) s.aiSource = r.value; }
   $$('#keyFields [data-key]').forEach(i => s.keys[i.dataset.key] = i.value.trim());
   s.business = { ...s.business, name: $('#bName').value.trim(), address: $('#bAddr').value.trim(), currency: $('#bCur').value }; s.musicApp = $('#sMusic').value;
   s.memory = { ...s.memory, on: $('#mOn').checked, keepCopies: $('#mCopies').checked, days: +$('#mDays').value, recentFiles: $('#mRecent').checked };

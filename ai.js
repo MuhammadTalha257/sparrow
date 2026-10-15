@@ -163,8 +163,11 @@ async function callProvider(p, key, messages, maxTokens = 1200) {
 async function order() {
   const s = store.settings, k = s.keys || {}, out = [];
   const keyed = Object.keys(PROVIDERS).filter(p => k[p]);
+  // Built-in AI (Pro / Business / trial) only if they want it: their choice in Settings → AI,
+  // or automatically when they haven't added a key of their own.
+  const builtIn = account.isPaid() && (s.aiSource === 'zuffi' || (s.aiSource !== 'own' && !keyed.length));
+  if (builtIn) out.push('zuffi');
   if (s.provider && s.provider !== 'auto') out.push(s.provider);
-  if (account.isPaid()) out.push('zuffi');                      // Pro / Business: built-in AI, nothing to set up
   if (window.SparrowDesktop && (await ollamaModels()).length) out.push('ollama');
   out.push(...keyed);
   if (engine || s.aiReady) out.push('local');
