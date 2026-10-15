@@ -305,6 +305,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     /// Always-on "Zuffi, …" listening (Settings toggle).
     func setWakeWord(_ on: Bool) {
+        if on, ZuffiPlan.shared.isLocked { stopRecognition(); status = ""; return }
         if on { requestPermissions { ok in if ok { self.startRecognition() } } }
         else { stopRecognition(); status = "" }
     }
@@ -340,6 +341,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     func pushToTalkDown() {
         guard !pushToTalk else { return }
+        if ZuffiPlan.shared.blocked() { return }
         if LiveSession.shared.active { return }          // already talking: just speak
         if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
@@ -377,6 +379,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     /// Mic button: listen for one command, no wake word needed.
     func listenOnce() {
+        if ZuffiPlan.shared.blocked() { return }
         // The mic button always wins: stop talking and listen right now.
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
         if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
@@ -697,6 +700,7 @@ enum Assistant {
 
     static func run(_ text: String, spoken: Bool) async {
         let state = AppState.shared
+        if ZuffiPlan.shared.blocked() { if spoken { VoiceEngine.shared.speak(ZuffiPlan.shared.lockedMessage) }; return }   // no plan: sign in / choose a plan first
 
         // Voice: everyday commands run instantly without opening the chat.
         if spoken, let reply = await AgentRouter.shared.handle(text) {

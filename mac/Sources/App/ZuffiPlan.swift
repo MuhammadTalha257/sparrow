@@ -14,20 +14,44 @@ final class ZuffiPlan: ObservableObject {
     var isBusiness: Bool { plan == "business" || plan == "trial" }      // the trial switches everything on
     var isPaid: Bool { plan == "pro" || plan == "business" || plan == "trial" }
     /// No plan (trial over, or never signed in): Zuffi pauses until one is chosen. Nothing is deleted.
-    var isLocked: Bool { heard && plan == "free" }
+    /// A new install starts locked: signing in with an email starts the 3-day trial.
+    var isLocked: Bool { !isPaid }
     var name: String { ["trial": "Free trial", "pro": "Pro", "business": "Business"][plan] ?? "No plan" }
-    private var heard = UserDefaults.standard.string(forKey: "zuffiPlan") != nil   // the web part has told us at least once
     private var shownLock = false
+    private var lockedBefore: Bool? = nil
+    private var lastBlock = Date.distantPast
+
+    /// What Zuffi says when someone tries to use her without a plan.
+    var lockedMessage: String {
+        email.isEmpty ? "Hi! Sign in with your email to start your free 3-day trial. Everything switches on, no card needed."
+                      : "Your free trial has ended. Choose Pro or Business to keep using Zuffi. Nothing you saved is deleted."
+    }
+
+    /// Call before any feature. Returns true (and shows sign-in / plans) when Zuffi is locked.
+    @discardableResult
+    func blocked() -> Bool {
+        guard isLocked else { return false }
+        let s = AppState.shared
+        s.noteMessage = "🐰 " + lockedMessage
+        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+        if Date().timeIntervalSince(lastBlock) > 4 { lastBlock = Date(); openAccount() }
+        return true
+    }
 
     func update(plan: String, email: String, freeLeads: Int) {
-        heard = true
         self.plan = ["trial", "pro", "business"].contains(plan) ? plan : "free"
         self.email = email
         self.freeLeads = freeLeads > 0 ? freeLeads : 30
         let d = UserDefaults.standard
         d.set(self.plan, forKey: "zuffiPlan"); d.set(email, forKey: "zuffiPlanEmail"); d.set(self.freeLeads, forKey: "zuffiFreeLeads")
+        let wasLocked = lockedBefore; lockedBefore = isLocked
         if isLocked && !shownLock { shownLock = true; openAccount() }        // show the paywall once when Zuffi locks
         if !isLocked { shownLock = false }
+        // "Hey Zuffi" listening pauses with the plan and comes back with it
+        if wasLocked != isLocked {
+            let wake = UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord)
+            if isLocked { VoiceEngine.shared.setWakeWord(false) } else if wasLocked == true, wake { VoiceEngine.shared.setWakeWord(true) }
+        }
     }
 
     func leadRoom(current: Int) -> Bool { isBusiness || current < freeLeads }

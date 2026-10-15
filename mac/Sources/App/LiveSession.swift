@@ -72,6 +72,7 @@ final class LiveSession: NSObject {
 
     /// Starts a conversation. `text` = what was already said with "Zuffi, …" (answered straight away).
     func start(text: String? = nil, image: Data? = nil) {
+        if ZuffiPlan.shared.blocked() { return }
         guard VoiceEngine.micOn else { VoiceEngine.shared.speak("Your mic is off. Turn it on with the mic button and I'll listen."); return }
         if active {
             if let image { sendImage(image) }

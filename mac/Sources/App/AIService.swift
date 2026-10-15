@@ -136,6 +136,7 @@ final class AIService {
     // MARK: Entry point
 
     func chat(query: String, context: PromptContext?, state: AppState) async {
+        if ZuffiPlan.shared.isLocked { finish(ZuffiPlan.shared.lockedMessage, state: state, emote: .happy); ZuffiPlan.shared.openAccount(); return }
         var context = context
         // 0) Your data: daily messages, and spreadsheets you hand over.
         if let r = ZuffiTeam.shared.handle(query) { finish(r, state: state, emote: .happy); return }

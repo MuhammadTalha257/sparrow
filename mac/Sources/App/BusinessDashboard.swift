@@ -13,6 +13,7 @@ final class BusinessDashboard {
     private var window: NSWindow?
 
     func show(_ tab: BizTab? = nil) {
+        if ZuffiPlan.shared.blocked() { return }
         if let tab { BizNav.shared.tab = tab }
         ZuffiCRM.shared.reload()
         if window?.isVisible != true, BizLock.shared.enabled { BizLock.shared.locked = true }
