@@ -86,6 +86,7 @@ const codeFresh = () => { try { return Date.now() - Number(localStorage.getItem(
 const setCodeSent = on => { try { on ? localStorage.setItem(CODE_KEY, String(Date.now())) : localStorage.removeItem(CODE_KEY); } catch {} };
 let accStep = codeFresh() ? 'code' : 'email', accDevices = null;
 async function openSite(promise) { const w = /iPhone|iPad/.test(navigator.userAgent) && !N && !D && !M ? window.open('', '_blank') : null; const url = await promise; if (w) w.location = url; else openUrl(url); }
+window.zuffiOpenSite = openSite;
 const fmtTrialDay = d => d ? new Date(d).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
 function trialLeft() {
   const e = acct.trialEnds(); if (!e) return '';
@@ -2001,7 +2002,6 @@ document.addEventListener('zuffi-plan', () => { let h = null; try { h = sessionS
 window.zuffiOpenUrl = u => openUrl(u);
 window.zuffiOpenSettings = section => openSettings(section);
 bizapp.mount($('#bizRoot'), { toast: (t, ms) => toast(t, ms) });
-if (DASH) acct.whenReady?.().then(() => { if (!acct.isBusiness()) $('#bizRoot').innerHTML = `<div class="biz-lock"><div class="gd-ico">🔒</div><h2>Business is part of Zuffi Business</h2><p>You’re on ${acct.isPaid() ? 'Pro' : 'no plan'}. Zuffi Business (${price('business')} a month) adds the WhatsApp inbox, leads and follow-ups, money and late payers, staff and automations, set up for your type of business.</p><button class="btn" id="bizLockUp">See Business</button></div>`, $('#bizLockUp')?.addEventListener('click', () => openSite(acct.upgradeUrl('business', priceCountry()))); });
 // Walking Zuffi inside the app on iPhone / web (Android, Windows and Mac have their own pets)
 if (!N && !D && !M && !DASH) Promise.all([import('./petweb.js'), import('./zblob.js')]).then(([p, Z]) => p.start(() => {
   const now = Date.now(), nx = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now).sort((a, b) => new Date(a.when) - new Date(b.when))[0];

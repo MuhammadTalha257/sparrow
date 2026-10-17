@@ -250,6 +250,13 @@ export function show(t) {
 function render() {
   if (!root) return;
   if (locked()) return renderLock();
+  const A = window.zuffiAccount;
+  if (A && !A.isBusiness()) {   // Pro or no plan: show what Business adds instead of the dashboard
+    const pk = (bs.cfg('country') || '') === 'PK', pr = pk ? 'Rs 2,000' : '£14.99';
+    root.innerHTML = `<div class="biz-lock"><div class="gd-ico">🔒</div><h2>Business is part of Zuffi Business</h2><p>You’re on ${A.isPaid() ? 'Pro' : 'no plan'}. Zuffi Business (${pr} a month) adds the WhatsApp inbox, leads and follow-ups, money and late payers, staff and automations, set up for your type of business.</p><button class="btn" id="bizLockUp">See Business</button></div>`;
+    root.querySelector('#bizLockUp').onclick = () => { const u = A.upgradeUrl('business', pk ? 'PK' : 'GB'); window.zuffiOpenSite ? window.zuffiOpenSite(u) : u.then(x => window.open(x, '_blank')); };
+    return;
+  }
   root.classList.toggle('bz-private', LS.get('zuffiPrivate') === '1');
   const tabs = TABS();
   if (DASH() && ({ leads: 1, more: 1 })[tab]) tab = tab === 'leads' ? 'inbox' : 'business';
