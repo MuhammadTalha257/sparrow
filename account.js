@@ -32,8 +32,11 @@ function deviceName() {
 }
 
 async function call(path, body, method = 'POST') {
-  const r = await fetch(API() + path, { method, headers: { 'Content-Type': 'application/json', ...(st.token ? { Authorization: 'Bearer ' + st.token } : {}) },
-    body: method === 'GET' ? undefined : JSON.stringify(body || {}) });
+  let r;
+  try {
+    r = await fetch(API() + path, { method, headers: { 'Content-Type': 'application/json', ...(st.token ? { Authorization: 'Bearer ' + st.token } : {}) },
+      body: method === 'GET' ? undefined : JSON.stringify(body || {}) });
+  } catch { return { ok: false, status: 0, net: true }; }          // really couldn't reach the server
   let j = {}; try { j = await r.json(); } catch {}
   j.status = r.status;
   if (r.status === 401 && st.token) { st.token = ''; st.lic = null; st.account = null; save(); emit(); }
@@ -103,17 +106,27 @@ export async function refresh(force = false) {
   return plan();
 }
 
+/** A clear reason, not always "check your internet". */
+function why(j, step) {
+  if (j.status === 429) return 'Too many tries — wait a few minutes, then try again.';
+  if (j.error) return j.error;
+  if (j.net) return 'Couldn’t reach Zuffi — check your internet and try again.';
+  if (j.status >= 500) return step === 'verify' ? 'Something went wrong on our side. Your code still works for 10 minutes — please try again in a moment.' : 'Something went wrong on our side. Please try again in a moment.';
+  return step === 'verify' ? 'Couldn’t sign in. Check the code and try again.' : 'Couldn’t send the code. Please try again.';
+}
+
 export async function startSignIn(addr) {
   const j = await call('/auth/start', { email: String(addr || '').trim() });
   if (j.ok) { st.email = String(addr).trim().toLowerCase(); save(); }
-  return j.ok ? { ok: true } : { ok: false, error: j.status === 429 ? 'Too many tries — wait a few minutes.' : j.error || 'Couldn’t send the code — check your internet.' };
+  return j.ok ? { ok: true } : { ok: false, error: why(j, 'send') };
 }
 /** → {ok} · {ok:false, deviceLimit:[…devices]} · {ok:false, error} */
 export async function finishSignIn(code, replace) {
   const j = await call('/auth/verify', { email: st.email, code, device_id: deviceId(), device_name: deviceName(), platform: platform(), ...(replace ? { replace } : {}) });
-  if (j.ok) { st.token = j.token; await take(j.account); return { ok: true }; }
+  if (j.ok && j.account?.licence) { st.token = j.token; await take(j.account); return { ok: true }; }
+  if (j.ok) return { ok: false, error: 'Something went wrong on our side. Please try again in a moment.' };
   if (j.error === 'device_limit') return { ok: false, deviceLimit: j.devices, max: j.max };
-  return { ok: false, error: j.status === 429 ? 'Too many tries — wait a few minutes.' : j.error || 'Couldn’t sign in — check your internet.' };
+  return { ok: false, error: why(j, 'verify') };
 }
 export async function signOut() { try { await call('/logout'); } catch {} st = { email: st.email }; save(); emit(); }
 export async function removeDevice(id) { const j = await call('/devices/remove', { device_id: id }); await refresh(true); return j.ok; }

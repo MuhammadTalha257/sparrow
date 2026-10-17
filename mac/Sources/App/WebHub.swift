@@ -149,6 +149,8 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
     /// Click anywhere else → the panel tucks away (like a popover).
     func windowDidResignKey(_ notification: Notification) {
         guard UserDefaults.standard.object(forKey: "morePinned") as? Bool != true else { return }
+        // Signing in / choosing a plan: stay put while you fetch the code from your email.
+        guard !ZuffiPlan.shared.isLocked else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             MainActor.assumeIsolated {
                 guard let w = WebHub.shared.window, !w.isKeyWindow, NSApp.modalWindow == nil, w.attachedSheet == nil else { return }
@@ -279,6 +281,13 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         case "look":
             // Settings → Zuffi's outfit & seasons, changed in the web part of the app
             ZuffiLook.shared.fromWebLook(outfit: o["outfit"] as? String ?? "auto", birthday: o["birthday"] as? String ?? "")
+        case "profile":
+            // The welcome form ("Just me" / "My business"): the name Zuffi calls you, and your city
+            let d = UserDefaults.standard
+            if let n = o["name"] as? String { d.set(n.trimmingCharacters(in: .whitespaces), forKey: AssistantPrefs.userName) }
+            if let c = o["city"] as? String, !c.isEmpty { d.set(c, forKey: "weatherCity") }
+            d.set(o["type"] as? String ?? "personal", forKey: "zuffiUse")
+            d.set(o["business"] as? String ?? "", forKey: "zuffiBusinessName")
         case "plan":
             // Zuffi account: which plan this Mac has (the web part checks the signed licence)
             ZuffiPlan.shared.update(plan: o["plan"] as? String ?? "free", email: o["email"] as? String ?? "", freeLeads: o["freeLeads"] as? Int ?? 30)

@@ -90,6 +90,16 @@ final class KeychainStore: @unchecked Sendable {
         Keychain.save(key: key, value: value)
     }
 
+    /// The AI keys a person can add in Settings → AI.
+    static let aiKeys = ["anthropic-api-key", "openai-api-key", "gemini-api-key", "groq-api-key", "xai-api-key",
+                         "deepseek-api-key", "mistral-api-key", "perplexity-api-key", "openrouter-api-key"]
+
+    /// Forget every key and token Zuffi saved on this Mac (Settings → Start fresh / Remove my keys).
+    func removeAll(onlyAI: Bool = false) {
+        let keys = onlyAI ? Self.aiKeys : Array(Set(Self.allKeys + Self.aiKeys + ["zuffi-server-key"]))
+        for k in keys { lock.withLock { cache[k] = nil }; Keychain.delete(key: k) }
+    }
+
     /// Removes from cache + Keychain only if the key was previously set.
     func remove(_ key: String) {
         let had = lock.withLock { () -> Bool in

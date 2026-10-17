@@ -1502,3 +1502,42 @@ html[data-event]:not([data-event="none"]) .hero::before { background: radial-gra
 .gd-dots button { width: 8px; height: 8px; padding: 0; border-radius: 50%; border: 0; background: var(--line); cursor: pointer; transition: width .25s, background .25s; }
 .gd-dots button.on { width: 22px; border-radius: 6px; background: var(--accent); }
 .guide-open { width: 100%; margin: 4px 0 10px; }
+
+/* ---- Welcome: who is Zuffi for? ---- */
+#welcome { position: fixed; inset: 0; z-index: 9997; display: grid; place-items: center; padding: 18px; overflow-y: auto; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+#welcome[hidden] { display: none; }
+.wel-card { position: relative; width: min(460px, 100%); max-height: calc(100vh - 36px); overflow-y: auto; padding: 24px 22px 18px; border-radius: 26px; background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.35); animation: pwIn .45s cubic-bezier(.16,1,.3,1); }
+.wel-form { width: min(560px, 100%); text-align: left; }
+.wel-top { display: flex; justify-content: center; }
+.wel-head { width: 80px; height: 80px; margin: 0 auto 6px; background: url(mascots/zuffi-directions.webp) 50% 50% / 300% 300% no-repeat; animation: pwBob 3.6s ease-in-out infinite; }
+.wel-card h2 { margin: 2px 0 6px; font-size: 22px; line-height: 1.2; letter-spacing: -.02em; text-align: center; }
+.wel-sub { margin: 0 auto 16px; max-width: 38ch; color: var(--muted); font-size: 14.5px; line-height: 1.5; text-align: center; }
+.wel-pick { display: grid; gap: 10px; }
+.wel-pick button { display: grid; grid-template-columns: 46px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; text-align: left; padding: 14px 16px; border-radius: 18px; border: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--text); cursor: pointer; transition: transform .2s, border-color .2s, background .2s; }
+.wel-pick button:hover, .wel-pick button:focus-visible { transform: translateY(-2px); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); outline: none; }
+.wel-pick span { grid-row: 1 / 3; font-size: 30px; text-align: center; }
+.wel-pick b { font-size: 16px; }
+.wel-pick small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.wel-skip { display: block; margin: 14px auto 0; border: 0; background: none; color: var(--muted); font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.wel-h3 { margin: 16px 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.wel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.wel-grid .field, .wel-form > .field { margin-bottom: 10px; }
+.wel-wide { grid-column: 1 / -1; }
+.wel-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.wel-chips button { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--text); font-size: 13px; cursor: pointer; transition: background .2s, border-color .2s; }
+.wel-chips button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); font-weight: 600; }
+.wel-form textarea { width: 100%; resize: vertical; }
+.wel-form .row-btns { justify-content: space-between; margin-top: 6px; }
+.wel-card .gd-x { position: absolute; top: 12px; right: 12px; }
+@media (max-width: 480px) { .wel-grid { grid-template-columns: 1fr; } .wel-card { padding: 20px 16px 14px; } }
+
+.wel-note { margin: 14px 0 0; text-align: center; color: var(--muted); font-size: 12.5px; }
+.wel-loading { text-align: center; }
+.wel-loading h2 { margin-bottom: 16px; }
+.wel-bar { height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--accent) 14%, transparent); overflow: hidden; margin: 0 4px 16px; }
+.wel-bar i { display: block; height: 100%; width: 4%; border-radius: inherit; background: linear-gradient(90deg, #F27BA1, var(--accent)); transition: width .45s cubic-bezier(.16,1,.3,1); }
+.wel-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; text-align: left; }
+.wel-steps li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); transition: color .3s; }
+.wel-steps li::before { content: ''; flex: none; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); box-sizing: border-box; transition: all .3s; }
+.wel-steps li.done { color: var(--text); }
+.wel-steps li.done::before { content: '✓'; display: grid; place-items: center; border-color: var(--accent); background: var(--accent); color: #fff; font-size: 12px; font-weight: 800; }

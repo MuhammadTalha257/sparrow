@@ -30,8 +30,7 @@ enum AssistantPrefs {
 
     static var displayName: String {
         let custom = (UserDefaults.standard.string(forKey: userName) ?? "").trimmingCharacters(in: .whitespaces)
-        if !custom.isEmpty { return custom }
-        return NSFullUserName().split(separator: " ").first.map(String.init) ?? ""
+        return custom          // only the name you gave Zuffi (never borrowed from the Mac's user account)
     }
 }
 

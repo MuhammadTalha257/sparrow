@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import WebKit
 
 /// Which Zuffi plan this Mac has. The web part of the app signs in and checks the signed licence,
 /// then tells us here ("plan" message), so the native parts can follow the same rules.
@@ -98,5 +99,61 @@ struct ZuffiPlanSettings: View {
             }
             .padding(6)
         }
+    }
+}
+
+// MARK: - Start fresh
+
+/// Settings → General → "Start fresh on this Mac".
+/// macOS keeps an app's Keychain items, settings and data even after the app is deleted and installed
+/// again, so a reinstall still remembers the last person. This really wipes it: name and details, chats,
+/// memories, reminders, business data, settings and AI keys. The Zuffi account and plan live on the
+/// server and are not touched — just sign in again.
+@MainActor
+enum ZuffiReset {
+    static func confirmAndRun() {
+        let a = NSAlert()
+        a.messageText = "Start fresh on this Mac?"
+        a.informativeText = "This erases everything Zuffi saved on this Mac: your name and details, chats, memories, reminders, business data, settings and any AI keys you added.\n\nYour Zuffi account and plan are not affected. Just sign in again afterwards.\n\nThis can't be undone."
+        a.alertStyle = .warning
+        a.addButton(withTitle: "Erase and start fresh")
+        a.addButton(withTitle: "Cancel")
+        a.buttons.first?.hasDestructiveAction = true
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        appendAppLog("voice.log", "start fresh: erasing this Mac's Zuffi data")
+        KeychainStore.shared.removeAll()
+        WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {
+            Task { @MainActor in finish() }
+        }
+    }
+
+    static func confirmRemoveKeys() -> Bool {
+        let a = NSAlert()
+        a.messageText = "Remove all AI keys from this Mac?"
+        a.informativeText = "Your own ChatGPT, Gemini, Groq, Claude and other keys are deleted from this Mac's Keychain. Zuffi's built-in AI (included with your plan) keeps working."
+        a.addButton(withTitle: "Remove keys")
+        a.addButton(withTitle: "Cancel")
+        a.buttons.first?.hasDestructiveAction = true
+        guard a.runModal() == .alertFirstButtonReturn else { return false }
+        KeychainStore.shared.removeAll(onlyAI: true)
+        UserDefaults.standard.removeObject(forKey: "geminiResolved")
+        AIService.shared.clearConversation()
+        return true
+    }
+
+    private static func finish() {
+        let fm = FileManager.default
+        let sup = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        for name in ["Sparrow", "Zuffi"] { try? fm.removeItem(at: sup.appendingPathComponent(name, isDirectory: true)) }
+        if let id = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: id)
+            UserDefaults.standard.synchronize()
+        }
+        // Open Zuffi again a moment after it quits, like a brand-new install.
+        let relaunch = Process()
+        relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+        relaunch.arguments = ["-c", "sleep 1.5; /usr/bin/open \"\(Bundle.main.bundlePath)\""]
+        try? relaunch.run()
+        exit(0)            // quit now, so nothing writes the old settings back on the way out
     }
 }

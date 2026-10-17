@@ -732,87 +732,189 @@ struct AIModelsSettings: View {
     @State private var ollamaInstalled: [String] = []
     @State private var saved: String = ""
 
+    @State private var showMore = false
+    @ObservedObject private var plan = ZuffiPlan.shared
+
     var body: some View {
-        GroupBox("AI models") {
-            VStack(alignment: .leading, spacing: 10) {
-                Picker("Use", selection: $state.aiProvider) {
-                    ForEach(AIProvider.allCases) { p in Text(p.label).tag(p.rawValue) }
-                }
-                Text("Auto picks the first one that's set up: Claude, Groq, ChatGPT, Gemini, Apple, then Ollama — and if one fails, Zuffi quietly tries the next. Models are picked automatically. Opening apps, music and volume always work, even with nothing set up.")
-                    .font(.system(size: 11)).foregroundColor(.secondary)
-
-                InstalledAIView(state: state)
-                TeamSettings()
-
-                Divider()
-                Text("ChatGPT (OpenAI)").font(.system(size: 12, weight: .semibold))
-                SecureField("API key (sk-…)", text: $openaiKey).textFieldStyle(.roundedBorder)
-                TextField("Model (default \(AppState.defaultOpenAIModel))", text: $state.openaiModel).textFieldStyle(.roundedBorder)
-
-                Divider()
-                Text("Groq — the fastest, free key at console.groq.com").font(.system(size: 12, weight: .semibold))
-                SecureField("API key (gsk_…)", text: $groqKey).textFieldStyle(.roundedBorder)
-
-                Divider()
-                Text("Gemini (Google)").font(.system(size: 12, weight: .semibold))
-                SecureField("API key (AIza…)", text: $geminiKey).textFieldStyle(.roundedBorder)
-                TextField("Model (default \(AppState.defaultGeminiModel))", text: $state.geminiModel).textFieldStyle(.roundedBorder)
-
-                Divider()
-                Text("More AI: Grok, DeepSeek, Mistral, Perplexity, OpenRouter").font(.system(size: 12, weight: .semibold))
-                SecureField("Grok key from console.x.ai (xai-…)", text: $xaiKey).textFieldStyle(.roundedBorder)
-                SecureField("DeepSeek key from platform.deepseek.com", text: $deepseekKey).textFieldStyle(.roundedBorder)
-                SecureField("Mistral key from console.mistral.ai", text: $mistralKey).textFieldStyle(.roundedBorder)
-                SecureField("Perplexity key (pplx-…)", text: $perplexityKey).textFieldStyle(.roundedBorder)
-                SecureField("OpenRouter key (sk-or-…) — one key, hundreds of models", text: $openrouterKey).textFieldStyle(.roundedBorder)
-
-                HStack {
-                    Button("Save keys") {
-                        save("xai-api-key", xaiKey)
-                        save("deepseek-api-key", deepseekKey)
-                        save("mistral-api-key", mistralKey)
-                        save("perplexity-api-key", perplexityKey)
-                        save("openrouter-api-key", openrouterKey)
-                        save("openai-api-key", openaiKey)
-                        save("gemini-api-key", geminiKey)
-                        save("groq-api-key", groqKey)
-                        UserDefaults.standard.removeObject(forKey: "geminiResolved")
-                        AIService.shared.clearConversation()
-                        saved = "✓ Saved"
+        VStack(alignment: .leading, spacing: 16) {
+            // 1. Where answers come from
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ZuffiIconBadge(symbol: "sparkles", colors: ["#F27BA1", "#B79CFF"])
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(plan.isPaid ? "Zuffi’s built-in AI is included" : "Zuffi’s AI")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text(plan.isPaid
+                                 ? "You don’t need any key. Zuffi answers with the AI that comes with your plan. Add your own key below only if you want to use your own account."
+                                 : "Sign in to get Zuffi’s built-in AI with your trial or plan, or add your own key below.")
+                                .font(.system(size: 11.5)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    Text(saved).font(.system(size: 11)).foregroundColor(.secondary)
-                }
-
-                Divider()
-                Text("Ollama — free, runs on your computer").font(.system(size: 12, weight: .semibold))
-                if ollamaInstalled.isEmpty {
-                    Text("Not running. Install it from ollama.com, open it once, then come back.")
-                        .font(.system(size: 11)).foregroundColor(.secondary)
-                } else {
-                    Picker("Model", selection: $state.ollamaModel) {
-                        Text("Automatic (best small model)").tag("")
-                        ForEach(ollamaInstalled, id: \.self) { Text($0).tag($0) }
+                    Picker("Answer with", selection: $state.aiProvider) {
+                        ForEach(AIProvider.allCases) { p in Text(p.label).tag(p.rawValue) }
+                    }
+                    Text("Auto uses the first one that’s ready and quietly tries the next if one fails. Opening apps, music, reminders and volume always work, even offline.")
+                        .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Image(systemName: AIService.appleModelAvailable ? "checkmark.seal.fill" : "minus.circle")
+                            .foregroundColor(AIService.appleModelAvailable ? .green : .secondary)
+                        Text(AIService.appleModelAvailable
+                             ? "Apple’s on-device model is ready — free and private."
+                             : "Apple’s on-device model needs Apple silicon and Apple Intelligence.")
+                            .font(.system(size: 11)).foregroundColor(.secondary)
                     }
                 }
+            } label: { Label("Where answers come from", systemImage: "bolt.horizontal.circle") }
 
-                Divider()
-                HStack(spacing: 6) {
-                    Image(systemName: AIService.appleModelAvailable ? "checkmark.circle.fill" : "xmark.circle")
-                        .foregroundColor(AIService.appleModelAvailable ? .green : .secondary)
-                    Text(AIService.appleModelAvailable
-                         ? "Apple's on-device model is available — free and private."
-                         : "Apple's on-device model needs Apple silicon and Apple Intelligence.")
+            InstalledAIView(state: state)
+            TeamSettings()
+
+            // 2. Your own keys (optional)
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Optional. Keys stay in this Mac’s Keychain and are only sent to that AI company.")
                         .font(.system(size: 11)).foregroundColor(.secondary)
+                    ZuffiKeyRow(name: "ChatGPT", hint: "OpenAI · platform.openai.com", symbol: "bubble.left.and.text.bubble.right.fill", colors: ["#10A37F", "#3CCB9A"],
+                                placeholder: "sk-…", key: $openaiKey, saved: has("openai-api-key")) {
+                        TextField("Model (default \(AppState.defaultOpenAIModel))", text: $state.openaiModel).textFieldStyle(.roundedBorder)
+                    }
+                    ZuffiKeyRow(name: "Groq", hint: "Fastest · free key at console.groq.com", symbol: "hare.fill", colors: ["#F55036", "#FF8A65"],
+                                placeholder: "gsk_…", key: $groqKey, saved: has("groq-api-key")) { EmptyView() }
+                    ZuffiKeyRow(name: "Gemini", hint: "Google · aistudio.google.com", symbol: "diamond.fill", colors: ["#4285F4", "#9B72CB"],
+                                placeholder: "AIza…", key: $geminiKey, saved: has("gemini-api-key")) {
+                        TextField("Model (default \(AppState.defaultGeminiModel))", text: $state.geminiModel).textFieldStyle(.roundedBorder)
+                    }
+                    DisclosureGroup(isExpanded: $showMore) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ZuffiKeyRow(name: "Grok", hint: "console.x.ai", symbol: "xmark.circle.fill", colors: ["#333333", "#777777"], placeholder: "xai-…", key: $xaiKey, saved: has("xai-api-key")) { EmptyView() }
+                            ZuffiKeyRow(name: "DeepSeek", hint: "platform.deepseek.com", symbol: "water.waves", colors: ["#4D6BFE", "#7F95FF"], placeholder: "sk-…", key: $deepseekKey, saved: has("deepseek-api-key")) { EmptyView() }
+                            ZuffiKeyRow(name: "Mistral", hint: "console.mistral.ai", symbol: "wind", colors: ["#FA520F", "#FFAF00"], placeholder: "Key", key: $mistralKey, saved: has("mistral-api-key")) { EmptyView() }
+                            ZuffiKeyRow(name: "Perplexity", hint: "Answers with sources", symbol: "magnifyingglass.circle.fill", colors: ["#20808D", "#4FB3BF"], placeholder: "pplx-…", key: $perplexityKey, saved: has("perplexity-api-key")) { EmptyView() }
+                            ZuffiKeyRow(name: "OpenRouter", hint: "One key, hundreds of models", symbol: "point.3.connected.trianglepath.dotted", colors: ["#6467F2", "#A78BFA"], placeholder: "sk-or-…", key: $openrouterKey, saved: has("openrouter-api-key")) { EmptyView() }
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        Text("More AI: Grok, DeepSeek, Mistral, Perplexity, OpenRouter").font(.system(size: 12, weight: .semibold))
+                    }
+                    HStack(spacing: 10) {
+                        Button {
+                            save("xai-api-key", xaiKey); save("deepseek-api-key", deepseekKey); save("mistral-api-key", mistralKey)
+                            save("perplexity-api-key", perplexityKey); save("openrouter-api-key", openrouterKey)
+                            save("openai-api-key", openaiKey); save("gemini-api-key", geminiKey); save("groq-api-key", groqKey)
+                            UserDefaults.standard.removeObject(forKey: "geminiResolved")
+                            AIService.shared.clearConversation()
+                            saved = "✓ Saved"; refresh += 1
+                        } label: { Label("Save keys", systemImage: "checkmark") }
+                        .buttonStyle(.borderedProminent).tint(Color(hex: "#E2648A"))
+                        Text(saved).font(.system(size: 11)).foregroundColor(.secondary)
+                        Spacer()
+                        Button(role: .destructive) {
+                            if ZuffiReset.confirmRemoveKeys() {
+                                openaiKey = ""; geminiKey = ""; groqKey = ""; xaiKey = ""; deepseekKey = ""; mistralKey = ""; perplexityKey = ""; openrouterKey = ""
+                                saved = "All keys removed"; refresh += 1
+                            }
+                        } label: { Label("Remove all keys", systemImage: "trash") }
+                    }
                 }
-            }
-            .padding(6)
+            } label: { Label("Your own AI keys", systemImage: "key.fill") }
+
+            // 3. Free AI on this Mac
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    if ollamaInstalled.isEmpty {
+                        Text("Not running. Install it from ollama.com, open it once, then come back.")
+                            .font(.system(size: 11)).foregroundColor(.secondary)
+                    } else {
+                        Picker("Model", selection: $state.ollamaModel) {
+                            Text("Automatic (best small model)").tag("")
+                            ForEach(ollamaInstalled, id: \.self) { Text($0).tag($0) }
+                        }
+                    }
+                }
+            } label: { Label("Ollama — free, runs on this Mac", systemImage: "desktopcomputer") }
         }
+        .id(refresh)
         .task { ollamaInstalled = await AIService.ollamaModels() }
     }
+
+    @State private var refresh = 0
+    private func has(_ k: String) -> Bool { !(KeychainStore.shared.get(k) ?? "").isEmpty }
 
     private func save(_ key: String, _ value: String) {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if v.isEmpty { KeychainStore.shared.remove(key) } else { KeychainStore.shared.set(key, value: v) }
+    }
+}
+
+// MARK: - Pretty pieces for Settings
+
+/// A small rounded square with a gradient and an SF Symbol (like iOS Settings icons).
+struct ZuffiIconBadge: View {
+    let symbol: String
+    let colors: [String]
+    var size: CGFloat = 30
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .fill(LinearGradient(colors: colors.map { Color(hex: $0) }, startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: size, height: size)
+            .overlay(Image(systemName: symbol).font(.system(size: size * 0.48, weight: .semibold)).foregroundColor(.white))
+            .shadow(color: Color(hex: colors.first ?? "#000000").opacity(0.25), radius: 4, y: 2)
+    }
+}
+
+/// One AI provider: icon, name, hint, a "Saved" pill, the key field and anything extra (a model field).
+struct ZuffiKeyRow<Extra: View>: View {
+    let name: String
+    let hint: String
+    let symbol: String
+    let colors: [String]
+    let placeholder: String
+    @Binding var key: String
+    let saved: Bool
+    @ViewBuilder var extra: () -> Extra
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ZuffiIconBadge(symbol: symbol, colors: colors, size: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.system(size: 12.5, weight: .semibold))
+                    Text(hint).font(.system(size: 10.5)).foregroundColor(.secondary)
+                }
+                Spacer()
+                Text(saved ? "Saved" : "Not added")
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(saved ? Color.green.opacity(0.16) : Color.secondary.opacity(0.12)))
+                    .foregroundColor(saved ? .green : .secondary)
+            }
+            SecureField("API key (\(placeholder))", text: $key).textFieldStyle(.roundedBorder)
+            extra()
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.035)))
+    }
+}
+
+/// Settings cards: rounded, soft, with a bold title — used by every GroupBox in Settings.
+struct ZuffiCardStyle: GroupBoxStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            configuration.label
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(.primary)
+            configuration.content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.05), radius: 10, y: 3)
     }
 }

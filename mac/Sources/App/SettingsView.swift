@@ -124,6 +124,20 @@ struct SettingsView: View {
                         .onChange(of: launchAtStartup) { _, on in toggleStartup(on) }
                         .padding(6)
                 }
+
+                // MARK: Start fresh
+                GroupBox {
+                    HStack(alignment: .center, spacing: 12) {
+                        ZuffiIconBadge(symbol: "arrow.counterclockwise", colors: ["#FF8A8A", "#F2526B"])
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Start fresh on this Mac").font(.system(size: 13, weight: .semibold))
+                            Text("Erases your details, chats, memories, settings and AI keys from this Mac, like a brand-new install. macOS keeps these even if you delete Zuffi. Your account and plan stay safe.")
+                                .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 8)
+                        Button(role: .destructive) { ZuffiReset.confirmAndRun() } label: { Text("Start fresh…") }
+                    }
+                } label: { Label("Reset", systemImage: "sparkles") }
                 }
 
                 if tab == .look {
@@ -221,9 +235,18 @@ struct SettingsView: View {
 
                 Spacer(minLength: 0)
             }
+            .groupBoxStyle(ZuffiCardStyle())
             .padding(20)
         }
         }
+        .background(
+            ZStack {
+                Color(nsColor: .windowBackgroundColor)
+                LinearGradient(colors: [Color(hex: "#F9A8C9").opacity(0.10), Color(hex: "#B79CFF").opacity(0.06), .clear],
+                               startPoint: .topLeading, endPoint: .bottom)
+            }
+            .ignoresSafeArea()
+        )
         .onAppear {
             guard fetchedModels.isEmpty,
                   let key = KeychainStore.shared.get("anthropic-api-key"), !key.isEmpty else { return }
@@ -361,29 +384,34 @@ struct SettingsHeader: View {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable().frame(width: 34, height: 34)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Zuffi").font(.system(size: 17, weight: .bold, design: .rounded))
-                    Text("Your little helper — set it up your way")
+                    Text("Zuffi Settings").font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text(ZuffiPlan.shared.email.isEmpty ? "Your little helper — set it up your way" : "\(ZuffiPlan.shared.name) · \(ZuffiPlan.shared.email)")
                         .font(.system(size: 11)).foregroundColor(.secondary)
                 }
                 Spacer()
             }
             HStack(spacing: 6) {
                 ForEach(SettingsTab.allCases) { t in
-                    Button { withAnimation(.easeOut(duration: 0.15)) { tab = t } } label: {
-                        VStack(spacing: 3) {
+                    Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tab = t } } label: {
+                        VStack(spacing: 4) {
                             Image(systemName: t.icon).font(.system(size: 14, weight: .semibold))
-                            Text(t.title).font(.system(size: 11, weight: .medium))
+                            Text(t.title).font(.system(size: 11, weight: tab == t ? .semibold : .medium))
+                                .lineLimit(1).minimumScaleFactor(0.75)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
+                        .padding(.vertical, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(tab == t ? Color(hex: "#F9A830").opacity(0.22) : Color.clear)
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .fill(tab == t
+                                      ? AnyShapeStyle(LinearGradient(colors: [Color(hex: "#F27BA1"), Color(hex: "#E2648A")], startPoint: .top, endPoint: .bottom))
+                                      : AnyShapeStyle(Color.clear))
+                                .shadow(color: tab == t ? Color(hex: "#E2648A").opacity(0.35) : .clear, radius: 6, y: 2)
                         )
-                        .foregroundColor(tab == t ? Color(hex: "#F28A3C") : .secondary)
+                        .foregroundColor(tab == t ? .white : .secondary)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help(t.title)
                 }
             }
         }

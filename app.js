@@ -76,7 +76,11 @@ $('#lookTag')?.addEventListener('click', () => openSettings('look'));
 // ---------------- Zuffi account & plan (Settings → Zuffi account) ----------------
 // Zuffi is a 3-day free trial, then Pro or Business. Without a plan the whole app shows the paywall below.
 const PLAN_NAME = { free: 'No plan', trial: 'Free trial', pro: 'Pro', business: 'Business' };
-let accStep = 'email', accDevices = null;
+// The code step survives closing the panel or the app (you go to your email and come back): codes last 10 minutes.
+const CODE_KEY = 'zuffiCodeSentAt';
+const codeFresh = () => { try { return Date.now() - Number(localStorage.getItem(CODE_KEY) || 0) < 10 * 60e3; } catch { return false; } };
+const setCodeSent = on => { try { on ? localStorage.setItem(CODE_KEY, String(Date.now())) : localStorage.removeItem(CODE_KEY); } catch {} };
+let accStep = codeFresh() ? 'code' : 'email', accDevices = null;
 async function openSite(promise) { const w = /iPhone|iPad/.test(navigator.userAgent) && !N && !D && !M ? window.open('', '_blank') : null; const url = await promise; if (w) w.location = url; else openUrl(url); }
 const fmtTrialDay = d => d ? new Date(d).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
 function trialLeft() {
@@ -103,7 +107,7 @@ function renderAccount() {
         : '<button class="btn ghost" data-acc="manage">Manage subscription</button>'}</div>
       <div class="row-btns"><button class="btn ghost" data-acc="refresh">${p === 'free' ? 'I’ve paid — check again' : 'Check my plan'}</button><button class="btn ghost" data-acc="out">Sign out of this device</button></div>`;
   } else if (accStep === 'code') {
-    box.innerHTML = `<p class="small-text">We emailed a 6-digit code to <b>${esc(acct.email())}</b>.</p>
+    box.innerHTML = `<p class="small-text">We emailed a 6-digit code to <b>${esc(acct.email())}</b>. It can take a minute, so check Spam too. You can switch to your email and come back; the code works for 10 minutes.</p>
       <label class="field"><span>Code</span><input id="accCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
       ${accDevices ? `<p class="small-text">You’re signed in on ${accDevices.length} devices already. Sign one out to use Zuffi here:</p>${accDevices.map(d => `<div class="acc-dev"><span>${esc(d.name)}<small>${esc(d.platform)}</small></span><button class="btn ghost" data-acc-replace="${esc(d.device_id)}">Sign it out</button></div>`).join('')}` : ''}
       <div class="row-btns"><button class="btn" data-acc="verify">Sign in</button><button class="btn ghost" data-acc="back">Use another email</button></div><p class="small-text" id="accMsg"></p>`;
@@ -118,14 +122,14 @@ $('#accBox')?.addEventListener('click', async e => {
   const b = e.target.closest('[data-acc], [data-acc-replace]'); if (!b) return;
   const msg = t => { const m = $('#accMsg'); if (m) m.textContent = t; };
   const act = b.dataset.acc;
-  if (act === 'send') { const em = $('#accEmail').value.trim(); if (!/.+@.+\..+/.test(em)) return msg('Type your email address.'); b.disabled = true; msg('Sending…'); const r = await acct.startSignIn(em); b.disabled = false; if (!r.ok) return msg(r.error); accStep = 'code'; accDevices = null; renderAccount(); }
-  else if (act === 'back') { accStep = 'email'; accDevices = null; renderAccount(); }
+  if (act === 'send') { const em = $('#accEmail').value.trim(); if (!/.+@.+\..+/.test(em)) return msg('Type your email address.'); b.disabled = true; msg('Sending…'); const r = await acct.startSignIn(em); b.disabled = false; if (!r.ok) return msg(r.error); setCodeSent(true); accStep = 'code'; accDevices = null; renderAccount(); }
+  else if (act === 'back') { setCodeSent(false); accStep = 'email'; accDevices = null; renderAccount(); }
   else if (act === 'verify' || b.dataset.accReplace) {
     const code = ($('#accCode')?.value || '').replace(/\D/g, ''); if (code.length !== 6) return msg('Type the 6-digit code from the email.');
     b.disabled = true; msg('Signing in…');
     const r = await acct.finishSignIn(code, b.dataset.accReplace);
     b.disabled = false;
-    if (r.ok) { accStep = 'email'; accDevices = null; renderAccount(); toast(acct.isTrial() ? '🎉 Your 3-day free trial has started — everything is on!' : `Signed in — ${PLAN_NAME[acct.plan()]}`, 5000); return; }
+    if (r.ok) { setCodeSent(false); accStep = 'email'; accDevices = null; renderAccount(); toast(acct.isTrial() ? '🎉 Your 3-day free trial has started — everything is on!' : `Signed in — ${PLAN_NAME[acct.plan()]}`, 5000); return; }
     if (r.deviceLimit) { accDevices = r.deviceLimit; renderAccount(); $('#accCode').value = code; return; }
     msg(r.error);
   }
@@ -188,7 +192,150 @@ function drawGuide() {
 function closeGuide() { const g = $('#guide'); if (g) g.hidden = true; try { localStorage.setItem('zuffiWelcomeSeen', '1'); } catch {} if (!S().guideSeen) { S().guideSeen = true; store.save(); } }
 $('#openGuide')?.addEventListener('click', () => { closeSheets(); showGuide(); });
 function maybeGuide() { let seen = false; try { seen = localStorage.getItem('zuffiWelcomeSeen') === '1'; } catch {}
-  if (!DASH && !seen && !S().guideSeen && !acct.locked() && !document.hidden) setTimeout(() => { if (!acct.locked() && !S().guideSeen) showGuide(); }, 900); }
+  if (DASH || acct.locked() || document.hidden) return;
+  const asked = () => { try { return localStorage.getItem('zuffiProfileAsked') === '1'; } catch { return false; } };
+  if (!S().profile?.doneAt && !asked()) return void setTimeout(() => { if (!acct.locked() && !S().profile?.doneAt && !asked()) showWelcome(); }, 300);   // first: who is Zuffi for? (needed before she switches on)
+  if (!seen && !S().guideSeen) setTimeout(() => { if (!acct.locked() && !S().guideSeen) showGuide(); }, 900); }
+
+// ---------------- Welcome: "Is Zuffi for you or your business?" ----------------
+// Asked once after signing in (and from Settings → You → Edit my details). Kept only on this device,
+// it's what Zuffi always remembers about you: your name, birthday, city, what you want help with —
+// and for a business its name, type, hours and anniversary.
+const HELP = [['remind', '⏰ Reminders & tasks'], ['prayer', '🕌 Prayer times'], ['health', '💧 Water & health'], ['meet', '📅 Meetings & calls'],
+  ['study', '📚 Study'], ['family', '🎂 Birthdays & family'], ['money', '💷 Money & bills']];
+const BIZ_KINDS = [['realEstate', '🏠 Estate agent / property'], ['shop', '🛍️ Shop / online store'], ['restaurant', '🍽️ Restaurant / café / takeaway'], ['salon', '💇 Salon / barber / beauty'],
+  ['clinic', '🩺 Clinic / dentist / pharmacy'], ['services', '🛠️ Trades & services'], ['agency', '💼 Agency / office / consultancy'], ['other', '✨ Something else']];
+let welType = null;
+function showWelcome(edit = false) {
+  let w = $('#welcome');
+  if (!w) {
+    w = document.createElement('div'); w.id = 'welcome'; w.setAttribute('role', 'dialog'); w.setAttribute('aria-modal', 'true'); w.setAttribute('aria-labelledby', 'welTitle');
+    document.body.appendChild(w);
+    w.addEventListener('click', welClick);
+    w.addEventListener('keydown', e => { if (e.key === 'Escape' && S().profile?.doneAt) closeWelcome(); });
+  }
+  welType = edit ? (S().profile?.type || null) : null;
+  w.hidden = false; drawWelcome();
+}
+function closeWelcome() { const w = $('#welcome'); if (w) w.hidden = true; }
+/** After the form: "Setting up Zuffi for you…" with a few ticks, then everything is on. */
+function settingUp(name, type) {
+  const w = $('#welcome');
+  const steps = type === 'business'
+    ? ['Saving your details', 'Setting up your business: leads, follow-ups and money', 'Turning on reminders and anniversaries', 'Getting Zuffi ready']
+    : ['Saving your details', 'Turning on reminders, birthdays and health', 'Getting prayer times and weather for your city', 'Getting Zuffi ready'];
+  w.innerHTML = `<div class="wel-card wel-loading"><div class="wel-top"><div class="wel-head" aria-hidden="true"></div></div>
+    <h2 id="welTitle">Setting up Zuffi for you, ${esc(name)}…</h2>
+    <div class="wel-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+    <ul class="wel-steps">${steps.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
+  const lis = [...w.querySelectorAll('.wel-steps li')], bar = w.querySelector('.wel-bar i');
+  lis.forEach((li, i) => setTimeout(() => { li.classList.add('done'); bar.style.width = `${Math.round((i + 1) / lis.length * 100)}%`; }, 450 + i * 520));
+  setTimeout(() => {
+    closeWelcome();
+    toast(`Lovely to meet you, ${name}! Everything is on. 💗`, 4500);
+    sparrow?.react?.('delighted', 1400);
+    speakSoon(`Hi ${name}! I'm all set up and ready to help.`);
+    maybeGuide();
+  }, 650 + lis.length * 520);
+}
+function drawWelcome() {
+  const w = $('#welcome'), p = S().profile || {}, b = p.biz || {}, v = x => esc(x ?? '');
+  const head = `<div class="wel-top"><div class="wel-head mascot-dir" aria-hidden="true"></div>${p.doneAt ? '<button class="gd-x" data-w="close" aria-label="Close">✕</button>' : ''}</div>`;
+  if (!welType) {
+    w.innerHTML = `<div class="wel-card">${head}<h2 id="welTitle">Hi! I’m Zuffi 👋</h2><p class="wel-sub">Who am I helping? I’ll set myself up just for you.</p>
+      <div class="wel-pick"><button data-w="type" data-t="personal"><span>🙋</span><b>Just me</b><small>Reminders, prayer times, health, birthdays and everyday help</small></button>
+      <button data-w="type" data-t="business"><span>🏪</span><b>My business</b><small>Leads, WhatsApp, follow-ups, money, staff, and you too</small></button></div>
+      <p class="wel-note">Takes 30 seconds. Then I switch everything on for you.</p></div>`;
+    return;
+  }
+  const me = `<div class="wel-grid">
+      <label class="field"><span>Your name *</span><input id="wName" autocomplete="given-name" value="${v(p.name ?? S().name)}" placeholder="What should I call you?"></label>
+      <label class="field"><span>Date of birth</span><input id="wDob" type="date" value="${v(p.dob ?? S().birthday)}"></label>
+      <label class="field"><span>Phone / WhatsApp</span><input id="wPhone" type="tel" autocomplete="tel" value="${v(p.phone)}" placeholder="+44 7…"></label>
+      <label class="field"><span>Your city</span><input id="wCity" autocomplete="address-level2" value="${v(p.city ?? S().city)}" placeholder="For prayer times and weather"></label></div>`;
+  const biz = welType !== 'business' ? '' : `<h3 class="wel-h3">Your business</h3><div class="wel-grid">
+      <label class="field"><span>Business name *</span><input id="wBName" value="${v(b.name ?? bizsync.cfg('name'))}" placeholder="e.g. Green Leaf Estates"></label>
+      <label class="field"><span>Your role</span><input id="wRole" value="${v(b.role)}" placeholder="Owner, manager…"></label>
+      <label class="field wel-wide"><span>What kind of business?</span><select id="wKind">${BIZ_KINDS.map(([k, l]) => `<option value="${k}"${(b.kind || bizsync.cfg('kind')) === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="field"><span>Business phone / WhatsApp</span><input id="wBPhone" type="tel" value="${v(b.phone)}" placeholder="Customers call this number"></label>
+      <label class="field"><span>Business city / area</span><input id="wBCity" value="${v(b.city)}" placeholder="e.g. Leeds, DHA Lahore"></label>
+      <label class="field"><span>Opened on (anniversary)</span><input id="wFounded" type="date" value="${v(b.founded)}"></label>
+      <label class="field"><span>Opening hours</span><input id="wHours" value="${v(b.hours)}" placeholder="Mon–Sat 9am–6pm"></label>
+      <label class="field"><span>People in the team</span><input id="wStaff" type="number" min="1" value="${v(b.staff)}" placeholder="1"></label></div>`;
+  const helps = new Set(p.help || (welType === 'business' ? ['remind', 'meet', 'money'] : ['remind', 'health', 'family']));
+  w.innerHTML = `<div class="wel-card wel-form">${head}<h2 id="welTitle">${welType === 'business' ? 'Tell me about you and your business' : 'Tell me a little about you'}</h2>
+    <p class="wel-sub">I’ll remember this always, and it stays on your device. Only your name is needed.</p>
+    <h3 class="wel-h3">${welType === 'business' ? 'About you' : 'You'}</h3>${me}${biz}
+    <h3 class="wel-h3">What should I help with most?</h3><div class="wel-chips">${HELP.map(([k, l]) => `<button data-w="chip" data-k="${k}" class="${helps.has(k) ? 'on' : ''}" aria-pressed="${helps.has(k)}">${l}</button>`).join('')}</div>
+    <label class="field"><span>Anything I should always remember?</span><textarea id="wNotes" rows="2" placeholder="e.g. I’m vegetarian · my wife is Sara · I work night shifts · we close on Fridays">${v(p.notes)}</textarea></label>
+    <p class="small-text" id="welMsg" role="alert"></p>
+    <div class="row-btns"><button class="btn ghost" data-w="back">Back</button><button class="btn" data-w="save">${p.doneAt ? 'Save' : 'Let’s go'}</button></div></div>`;
+  setTimeout(() => $('#wName')?.focus(), 60);
+}
+function welClick(e) {
+  const b = e.target.closest('[data-w]'); if (!b) return;
+  const a = b.dataset.w;
+  if (a === 'close') return closeWelcome();
+  if (a === 'type') { welType = b.dataset.t; return drawWelcome(); }
+  if (a === 'back') { welType = null; return drawWelcome(); }
+  if (a === 'chip') { b.classList.toggle('on'); b.setAttribute('aria-pressed', b.classList.contains('on')); return; }
+  if (a === 'save') {
+    const g = id => ($('#' + id)?.value || '').trim();
+    const msg = t => { $('#welMsg').textContent = t; };
+    const name = g('wName'); if (!name) { $('#wName').focus(); return msg('Please tell me your name.'); }
+    if (welType === 'business' && !g('wBName')) { $('#wBName').focus(); return msg('What is your business called?'); }
+    const dob = g('wDob'); if (dob && (dob > new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) || dob < '1900-01-01')) return msg('That date of birth doesn’t look right.');
+    const p = { type: welType, name, dob, phone: g('wPhone'), city: g('wCity'), notes: g('wNotes').slice(0, 600),
+      help: [...$('#welcome').querySelectorAll('[data-w="chip"].on')].map(x => x.dataset.k), doneAt: S().profile?.doneAt || Date.now(), updatedAt: Date.now() };
+    if (welType === 'business') p.biz = { name: g('wBName'), role: g('wRole'), kind: g('wKind'), phone: g('wBPhone'), city: g('wBCity'), founded: g('wFounded'), hours: g('wHours'), staff: g('wStaff') };
+    saveProfile(p);
+    const first = !$('#welcome').querySelector('[data-w="close"]');
+    if (!first) { closeWelcome(); toast('Saved — I’ll remember.', 3000); return; }
+    settingUp(name, welType);
+  }
+}
+function saveProfile(p) {
+  const s = S(); try { localStorage.setItem('zuffiProfileAsked', '1'); } catch {}
+  s.profile = p; s.name = p.name;
+  if (p.dob) { s.birthday = p.dob; s.bdayAskDone = true; }
+  if (p.city) s.city = p.city;
+  if (p.type === 'business' && p.biz) {
+    s.business = { ...(s.business || {}), name: p.biz.name, address: p.biz.city || s.business?.address || '' };
+    try { bizsync.setCfg('name', p.biz.name); bizsync.setCfg('owner', p.name); if (['realEstate', 'shop', 'restaurant', 'salon', 'clinic', 'services'].includes(p.biz.kind)) bizsync.setCfg('kind', p.biz.kind); else bizsync.setCfg('kind', 'services');
+      bizsync.setCfg('info', [p.biz.hours && `Open ${p.biz.hours}`, p.biz.city, p.biz.phone].filter(Boolean).join(' · ')); } catch {}
+  }
+  store.save(); seasons.apply(); renderBirthdayAsk(); syncAlarms();
+  if ($('#sName')) $('#sName').value = s.name;
+  if ($('#sCity')) $('#sCity').value = s.city || '';
+  M?.post('profile', { name: p.name, city: p.city || '', type: p.type, business: p.biz?.name || '' });
+  M?.post('look', { outfit: s.outfit || 'auto', birthday: s.birthday || '' });
+}
+/** One line for the AI so Zuffi always knows who she's helping. */
+function profileLine() {
+  const p = S().profile; if (!p?.doneAt) return '';
+  const help = (p.help || []).map(k => (HELP.find(h => h[0] === k)?.[1] || '').replace(/^\S+\s/, '')).filter(Boolean);
+  const b = p.biz, parts = [`About the user: ${p.type === 'business' ? 'uses Zuffi for their business and for themselves' : 'uses Zuffi personally'}`,
+    p.city && `lives in ${p.city}`, p.dob && `birthday ${p.dob.slice(5)}`, help.length && `wants help with ${help.join(', ')}`, p.notes && `notes: ${p.notes}`,
+    b && `business: ${b.name}${b.kind ? ` (${(BIZ_KINDS.find(k => k[0] === b.kind)?.[1] || '').replace(/^\S+\s/, '')})` : ''}${b.role ? `, they are the ${b.role}` : ''}${b.city ? `, in ${b.city}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}${b.founded ? `, opened ${b.founded}` : ''}`];
+  return ' ' + parts.filter(Boolean).join('; ') + '.';
+}
+window.zuffiProfileLine = profileLine;
+$('#editProfile')?.addEventListener('click', () => { closeSheets(); showWelcome(true); });
+
+// The business anniversary, every year (like the birthday).
+function isAnniversary(d = new Date()) { const f = S().profile?.biz?.founded || ''; return f.length === 10 && f.slice(5) === `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function anniversaryWords() {
+  const b = S().profile.biz, yrs = new Date().getFullYear() - +b.founded.slice(0, 4);
+  return { title: `Happy anniversary, ${b.name}! 🎉`, sub: yrs > 0 ? `${yrs} year${yrs > 1 ? 's' : ''} in business today` : 'Opened on this day',
+    say: `Happy anniversary${S().name ? ', ' + S().name : ''}! ${b.name} is ${yrs > 0 ? yrs + (yrs > 1 ? ' years' : ' year') + ' old' : 'celebrating'} today. Well done to you and the team!` };
+}
+function checkAnniversary() {
+  if (DASH || !isAnniversary() || S().annivWished === dayKey() || new Date().getHours() < 9) return;
+  S().annivWished = dayKey(); store.save();
+  const w = anniversaryWords();
+  chime(); showAlert(w.title, w.sub); sparrow?.react?.('delighted', 1500);
+  if (!N) { speakSoon(w.say); notify(w.title, 'birthday'); }
+}
 document.addEventListener('zuffi-plan', maybeGuide);
 
 // ---- the paywall: no plan → Zuffi pauses (nothing is deleted) ----
@@ -978,7 +1125,7 @@ async function checkDue() {
     const msg = `While your Mac was asleep you missed: ${missed.slice(0, 4).join(', ')}.`;
     chime(); showAlert('⏰ You missed ' + missed.length + (missed.length > 1 ? ' reminders' : ' reminder'), missed.slice(0, 3).join(' · ')); speakSoon(`${who()}${msg}`);
   }
-  checkPrayer(); checkHabits(); checkDaily(); checkFocus(); checkHealth(); checkBirthday();
+  checkPrayer(); checkHabits(); checkDaily(); checkFocus(); checkHealth(); checkBirthday(); checkAnniversary();
 }
 let prayerCache = { day: '', times: null };
 function checkPrayer() {
@@ -1552,6 +1699,12 @@ function syncAlarms() {
     for (let k = 0; k < 370; k++) { if (isBirthday(d) && d.getTime() > Date.now() && s.bdayWished !== d.toDateString()) break; d.setDate(d.getDate() + 1); }
     const w = birthdayWords();
     list.push({ id: 'birthday-' + d.getFullYear(), title: w.title, type: 'birthday', at: d.getTime(), head: '🎂 Happy birthday', say: w.say });
+  }
+  if (S().profile?.biz?.founded?.length === 10) {
+    const d = new Date(); d.setHours(9, 0, 0, 0);
+    for (let k = 0; k < 370; k++) { if (isAnniversary(d) && d.getTime() > Date.now() && S().annivWished !== d.toDateString()) break; d.setDate(d.getDate() + 1); }
+    const w = anniversaryWords();
+    list.push({ id: 'anniv-' + d.getFullYear(), title: w.title, type: 'birthday', at: d.getTime(), head: '🎉 Business anniversary', say: w.say });
   }
   try { N.syncAlarms(JSON.stringify(list)); } catch {}
 }

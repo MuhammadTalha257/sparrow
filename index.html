@@ -190,7 +190,8 @@
   <div class="sheet-head"><h2 data-i18n="settings">Settings</h2><button class="pill-btn solid" id="closeSheet" data-i18n="done">Done</button></div>
 
   <details open><summary>👋 You</summary>
-    <label class="field"><span>Your name</span><input id="sName" placeholder="Talha"></label>
+    <button class="btn ghost guide-open" id="editProfile" type="button">📝 Edit my details (you or your business)</button>
+    <label class="field"><span>Your name</span><input id="sName" placeholder="What should Zuffi call you?"></label>
     <label class="field"><span>Your birthday — Zuffi wishes you and dresses up on the day</span><input id="sBirthday" type="date" max="2026-12-31"></label>
     <label class="field"><span>Language</span><select id="sLang"></select></label>
     <div class="field"><span>Look</span><div class="themes" id="sTheme">
@@ -325,7 +326,7 @@
       <label class="row"><input type="checkbox" id="waLeads"> 📥 Save new WhatsApp chats as leads</label>
       <label class="row"><input type="checkbox" id="waPilot"> 🤖 Autopilot — reply to clients for me</label>
       <label class="row"><input type="checkbox" id="waContacts"> 👥 Also my saved contacts (off = only new numbers; friends &amp; groups are left alone)</label>
-      <label class="field"><span>Business name</span><input id="waName" placeholder="e.g. Talha Estates"></label>
+      <label class="field"><span>Business name</span><input id="waName" placeholder="e.g. Green Leaf Estates"></label>
       <label class="field"><span>About your business (prices, area, hours, how booking works…)</span><textarea id="waInfo" rows="5" placeholder="We are a property agency in DHA Lahore. Plots, houses, rent. Office 10am–8pm Mon–Sat. Site visits free…"></textarea></label>
       <label class="field"><span>Today's update (offers, new items — used today only)</span><input id="waToday" placeholder="e.g. New 5 marla plots in DHA 9, Rs 1.6 crore"></label>
       <div class="row-btns"><button class="btn" id="waOpen">See WhatsApp chats</button></div>
