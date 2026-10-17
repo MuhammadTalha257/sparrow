@@ -9,7 +9,7 @@ import {
   spokenPlan, spokenList, tasksForDay, moveToTomorrow, nextOccurrence, repeatText, weather, location as getLocation, prayerToday, habitCount, bumpHabit,
   setLastAlert, lastAlert, findCustomer,
 } from './brain.js';
-import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary } from './ai.js';
+import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary, currentAI } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
@@ -76,6 +76,10 @@ $('#lookTag')?.addEventListener('click', () => openSettings('look'));
 // ---------------- Zuffi account & plan (Settings → Zuffi account) ----------------
 // Zuffi is a 3-day free trial, then Pro or Business. Without a plan the whole app shows the paywall below.
 const PLAN_NAME = { free: 'No plan', trial: 'Free trial', pro: 'Pro', business: 'Business' };
+// Prices for this device's country (only one currency shows); the website has the same list
+const PRICES = { GB: { pro: '£6.99', business: '£14.99' }, PK: { pro: 'Rs 1,000', business: 'Rs 2,000' } };
+const priceCountry = () => (typeof guessCountry === 'function' && guessCountry() === 'PK') ? 'PK' : 'GB';
+const price = plan => PRICES[priceCountry()][plan];
 // The code step survives closing the panel or the app (you go to your email and come back): codes last 10 minutes.
 const CODE_KEY = 'zuffiCodeSentAt';
 const codeFresh = () => { try { return Date.now() - Number(localStorage.getItem(CODE_KEY) || 0) < 10 * 60e3; } catch { return false; } };
@@ -102,8 +106,8 @@ function renderAccount() {
       <p class="small-text">${esc(line)}</p>
       ${a.ai?.limit ? `<p class="small-text">Built-in AI: ${a.ai.used} of ${a.ai.limit} ${p === 'trial' ? 'in your trial' : 'this month'}.</p>` : ''}
       <p class="small-text">${a.devices.length} of ${a.max_devices} devices signed in.</p>
-      <div class="row-btns">${p === 'free' || p === 'trial' ? '<button class="btn" data-acc="up-pro">Choose Pro</button><button class="btn ghost" data-acc="up-business">Choose Business</button>'
-        : p === 'pro' ? '<button class="btn ghost" data-acc="up-business">Upgrade to Business</button><button class="btn ghost" data-acc="manage">Manage subscription</button>'
+      <div class="row-btns">${p === 'free' || p === 'trial' ? `<button class="btn" data-acc="up-pro">Choose Pro · ${price('pro')}/mo</button><button class="btn ghost" data-acc="up-business">Choose Business · ${price('business')}/mo</button>`
+        : p === 'pro' ? `<button class="btn ghost" data-acc="up-business">Upgrade to Business · ${price('business')}/mo</button><button class="btn ghost" data-acc="manage">Manage subscription</button>`
         : '<button class="btn ghost" data-acc="manage">Manage subscription</button>'}</div>
       <div class="row-btns"><button class="btn ghost" data-acc="refresh">${p === 'free' ? 'I’ve paid — check again' : 'Check my plan'}</button><button class="btn ghost" data-acc="out">Sign out of this device</button></div>`;
   } else if (accStep === 'code') {
@@ -134,7 +138,7 @@ $('#accBox')?.addEventListener('click', async e => {
     msg(r.error);
   }
   else if (act === 'plans') openUrl(acct.SITE() + '#pricing');
-  else if (act === 'up-pro' || act === 'up-business') openSite(acct.upgradeUrl(act.slice(3)));
+  else if (act === 'up-pro' || act === 'up-business') openSite(acct.upgradeUrl(act.slice(3), priceCountry()));
   else if (act === 'manage') openSite(acct.manageUrl());
   else if (act === 'refresh') { b.disabled = true; await acct.refresh(true); renderAccount(); toast(`Your plan: ${PLAN_NAME[acct.plan()]}`); }
   else if (act === 'out') { await acct.signOut(); renderAccount(); toast('Signed out of this device'); }
@@ -207,6 +211,17 @@ const BIZ_KINDS = [['realEstate', '🏠', 'Estate agent', 'Plots, files, install
   ['clinic', '🩺', 'Clinic / dentist', 'Appointments & recalls'], ['shop', '🛍️', 'Shop / online store', 'Orders, stock & delivery'], ['services', '🛠️', 'Trades & services', 'Jobs, quotes & invoices'],
   ['freelancer', '💻', 'Freelancer', 'Clients, projects & invoices']];
 const kindName = k => (BIZ_KINDS.find(x => x[0] === k) || [])[2] || '';
+/** Where this device is: the saved choice, else the time zone / language. PK · GB · OTHER */
+function guessCountry() {
+  const saved = S().profile?.country || bizsync.cfg('country'); if (saved) return saved;
+  try { const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '', langs = (navigator.languages || [navigator.language || '']).join(',');
+    if (/Karachi/.test(tz) || /-PK\b|^ur\b|,ur\b/i.test(langs)) return 'PK';
+    if (/London|Belfast/.test(tz) || /-GB\b/i.test(langs)) return 'GB'; } catch {}
+  return 'OTHER';
+}
+const COUNTRIES = [['GB', '🇬🇧 United Kingdom'], ['PK', '🇵🇰 Pakistan'], ['OTHER', '🌍 Somewhere else']];
+const kindCards = (country, sel) => BIZ_KINDS.filter(([k]) => bizapp.kindsFor(country).includes(k)).map(([k, ic, name, sub]) =>
+  `<button type="button" data-w="kind" data-k="${k}" class="${sel === k ? 'on' : ''}" aria-pressed="${sel === k}"><span>${ic}</span><b>${name}</b><small>${sub}</small></button>`).join('');
 let welType = null, welKind = '';
 function showWelcome(edit = false) {
   let w = $('#welcome');
@@ -258,8 +273,9 @@ function drawWelcome() {
       ${biz ? `<label class="field"><span>Business name *</span><input id="wBName" value="${v(b.name ?? bizsync.cfg('name'))}" placeholder="e.g. Green Leaf Estates"></label>
       <label class="field"><span>Business WhatsApp / phone</span><input id="wBPhone" type="tel" value="${v(b.phone)}" placeholder="Customers message this number"></label>
       <label class="field"><span>Opened on (anniversary)</span><input id="wFounded" type="date" value="${v(b.founded)}"></label>` : ''}</div>`;
-  const kinds = !biz ? '' : `<h3 class="wel-h3">What kind of business?</h3><div class="wel-kinds">${BIZ_KINDS.map(([k, ic, name, sub]) =>
-      `<button type="button" data-w="kind" data-k="${k}" class="${(b.kind || welKind) === k ? 'on' : ''}" aria-pressed="${(b.kind || welKind) === k}"><span>${ic}</span><b>${name}</b><small>${sub}</small></button>`).join('')}</div>`;
+  const ctry = p.country || guessCountry();
+  const countryBox = `<label class="field wel-country"><span>Country</span><select id="wCountry">${COUNTRIES.map(([k, l]) => `<option value="${k}"${ctry === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  const kinds = !biz ? '' : `<h3 class="wel-h3">What kind of business?</h3><div class="wel-kinds" id="wKinds">${kindCards(ctry, b.kind || welKind)}</div>`;
   const more = `<details class="wel-more"><summary>More about you (optional)</summary><div class="wel-grid">
       ${biz ? `<label class="field"><span>Your date of birth</span><input id="wDob" type="date" value="${v(p.dob ?? S().birthday)}"></label>
       <label class="field"><span>Your role</span><input id="wRole" value="${v(b.role)}" placeholder="Owner, manager…"></label>
@@ -270,13 +286,19 @@ function drawWelcome() {
   const helps = new Set(p.help || (welType === 'business' ? ['remind', 'meet', 'money'] : ['remind', 'health', 'family']));
   w.innerHTML = `<div class="wel-card wel-form">${head}<h2 id="welTitle">${welType === 'business' ? 'Your business' : 'Tell me a little about you'}</h2>
     <p class="wel-sub">${welType === 'business' ? 'Pick your type and I’ll show only what your business needs.' : 'I’ll remember this always. It stays on your device.'}</p>
-    ${kinds}${me}
+    ${countryBox}${kinds}${me}
     ${biz ? '' : `<h3 class="wel-h3">What should I help with most?</h3><div class="wel-chips">${HELP.map(([k, l]) => `<button data-w="chip" data-k="${k}" class="${helps.has(k) ? 'on' : ''}" aria-pressed="${helps.has(k)}">${l}</button>`).join('')}</div>`}
     ${more}
     <p class="small-text" id="welMsg" role="alert"></p>
     <div class="row-btns"><button class="btn ghost" data-w="back">Back</button><button class="btn" data-w="save">${p.doneAt ? 'Save' : 'Let’s go'}</button></div></div>`;
   setTimeout(() => $('#wName')?.focus(), 60);
 }
+document.addEventListener('change', e => {
+  if (e.target?.id !== 'wCountry') return;
+  const box = $('#wKinds'); if (!box) return;
+  const keep = $('#welcome [data-w="kind"].on')?.dataset.k || '';
+  box.innerHTML = kindCards(e.target.value, bizapp.kindsFor(e.target.value).includes(keep) ? keep : '');
+});
 function welClick(e) {
   const b = e.target.closest('[data-w]'); if (!b) return;
   const a = b.dataset.w;
@@ -293,7 +315,7 @@ function welClick(e) {
     if (welType === 'business' && !kindPick) return msg('Pick what kind of business you have.');
     if (welType === 'business' && !g('wBName')) { $('#wBName').focus(); return msg('What is your business called?'); }
     const dob = g('wDob'); if (dob && (dob > new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) || dob < '1900-01-01')) return msg('That date of birth doesn’t look right.');
-    const p = { type: welType, name, dob, phone: g('wPhone'), city: g('wCity'), notes: g('wNotes').slice(0, 600),
+    const p = { type: welType, name, dob, phone: g('wPhone'), city: g('wCity'), notes: g('wNotes').slice(0, 600), country: $('#wCountry')?.value || guessCountry(),
       help: welType === 'business' ? ['remind', 'meet', 'money'] : [...$('#welcome').querySelectorAll('[data-w="chip"].on')].map(x => x.dataset.k), doneAt: S().profile?.doneAt || Date.now(), updatedAt: Date.now() };
     if (welType === 'business') p.biz = { name: g('wBName'), role: g('wRole'), kind: kindPick, phone: g('wBPhone'), city: g('wCity'), founded: g('wFounded'), hours: g('wHours'), staff: g('wStaff') };
     saveProfile(p);
@@ -307,16 +329,17 @@ function saveProfile(p) {
   s.profile = p; s.name = p.name;
   if (p.dob) { s.birthday = p.dob; s.bdayAskDone = true; }
   if (p.city) s.city = p.city;
+  if (p.country && p.country !== 'OTHER') { try { bizsync.setCfg('country', p.country); bizsync.setCfg('currency', p.country === 'PK' ? 'Rs' : '£'); } catch {} }
   if (p.type === 'business' && p.biz) {
     s.business = { ...(s.business || {}), name: p.biz.name, address: p.biz.city || s.business?.address || '' };
     try { bizsync.setCfg('name', p.biz.name); bizsync.setCfg('owner', p.name); bizsync.setCfg('kind', BIZ_KINDS.some(k => k[0] === p.biz.kind) ? p.biz.kind : 'services');
-      if (p.biz.kind === 'realEstate' && !bizsync.cfg('country')) bizsync.setCfg('country', 'PK');
+
       bizsync.setCfg('info', [p.biz.hours && `Open ${p.biz.hours}`, p.biz.city, p.biz.phone].filter(Boolean).join(' · ')); } catch {}
   }
   store.save(); seasons.apply(); renderBirthdayAsk(); syncAlarms();
   if ($('#sName')) $('#sName').value = s.name;
   if ($('#sCity')) $('#sCity').value = s.city || '';
-  M?.post('profile', { name: p.name, city: p.city || '', type: p.type, business: p.biz?.name || '', kind: p.biz?.kind || '', dob: p.dob || '', founded: p.biz?.founded || '',
+  M?.post('profile', { name: p.name, city: p.city || '', type: p.type, country: p.country || '', business: p.biz?.name || '', kind: p.biz?.kind || '', dob: p.dob || '', founded: p.biz?.founded || '',
     role: p.biz?.role || '', hours: p.biz?.hours || '', notes: p.notes || '', help: (p.help || []).join(',') });
   applyUseMode();
   M?.post('look', { outfit: s.outfit || 'auto', birthday: s.birthday || '' });
@@ -334,7 +357,12 @@ window.zuffiProfileLine = profileLine;
 // ---- AI usage: built-in AI left this month, and tokens / rough cost with your own keys ----
 const fmtTok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
 function usageText() {
-  const b = acct.aiUsage(), u = usageSummary(), parts = [];
+  // The notch shows the AI answering right now and its numbers
+  const b = acct.aiUsage(), u = usageSummary(), cur = currentAI(), r = u.byProvider[cur];
+  if (cur === 'Zuffi AI' || (!cur && b.limit)) return b.limit ? [`Zuffi AI · ${Math.max(0, b.limit - b.used)} of ${b.limit} left`] : [];
+  if (/^(Ollama|On-device)/.test(cur)) return [`${cur} · free`];
+  if (r) return [`${cur} · ${fmtTok(r.in + r.out)} tokens · about $${r.cost < 0.01 ? r.cost.toFixed(4) : r.cost.toFixed(2)}`];
+  const parts = [];
   if (b.limit) parts.push(`Built-in AI: ${b.used} of ${b.limit} ${acct.isTrial() ? 'in your trial' : 'this month'} · ${Math.max(0, b.limit - b.used)} left`);
   if (u.req) parts.push(`Your own keys: ${fmtTok(u.tokens)} tokens this month · about $${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(2)}`);
   return parts;
@@ -398,6 +426,7 @@ function paywall() {
       $('#pwText').textContent = ended ? 'I hope I helped! Choose Pro or Business to keep me — your reminders, chats and business are all still here.'
         : acct.signedIn() ? 'Pro for you, Business for your shop or office. Everything you saved is still here.'
         : 'Sign in with your email to switch everything on. No card needed — you only pay if you decide to keep me.';
+      $('#pwText').textContent += ` Then Pro ${price('pro')} or Business ${price('business')} a month.`;
       if (box && box.parentElement !== pw.querySelector('.pw-box')) pw.querySelector('.pw-box').appendChild(box);
       renderAccount();
     } else if (box && box.parentElement !== $('#accDetails')) $('#accDetails').appendChild(box);

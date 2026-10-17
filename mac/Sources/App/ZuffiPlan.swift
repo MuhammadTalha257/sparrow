@@ -101,6 +101,7 @@ final class ZuffiPlan: ObservableObject {
         if let c = p["city"], !c.isEmpty { d.set(c, forKey: AssistantPrefs.weatherCity) }
         d.set(p["type"] == "business" ? "business" : "personal", forKey: "zuffiUse")
         d.set(p["business"] ?? "", forKey: "zuffiBusinessName")
+        if let c = p["country"], c == "PK" || c == "GB" { ZuffiCRM.shared.country = c; ZuffiCRM.shared.currencyChoice = c == "PK" ? "Rs" : "£" }
         if p["type"] == "business" {
             let map: [String: ZuffiBusiness.Pack] = ["realEstate": .realEstate, "salon": .salon, "clinic": .clinic, "shop": .shop, "restaurant": .restaurant, "services": .services, "freelancer": .freelancer]
             if let pack = map[p["kind"] ?? ""], ZuffiBusiness.shared.pack != pack {
@@ -249,7 +250,13 @@ final class AIUsage: ObservableObject, @unchecked Sendable {
     @Published private(set) var webRows: [String: Row] = [:]       // made by the Zuffi panel (web part)
     @Published var builtInUsed = 0
     @Published var builtInLimit = 0
+    /// The AI that answered last ("Gemini", "Groq", "Zuffi AI"…): the notch shows its numbers.
+    @Published var current: String = UserDefaults.standard.string(forKey: "aiCurrent") ?? "" { didSet { UserDefaults.standard.set(current, forKey: "aiCurrent") } }
+    private var restUntil: [String: Date] = [:]
     private let lock = NSLock()
+
+    func rest(_ name: String, minutes: Double) { lock.lock(); restUntil[name] = Date().addingTimeInterval(minutes * 60); lock.unlock() }
+    func resting(_ name: String) -> Bool { lock.lock(); defer { lock.unlock() }; return (restUntil[name] ?? .distantPast) > Date() }
 
     private init() { load() }
     private static var thisMonth: String { let f = DateFormatter(); f.dateFormat = "yyyy-MM"; return f.string(from: Date()) }
@@ -287,6 +294,7 @@ final class AIUsage: ObservableObject, @unchecked Sendable {
         DispatchQueue.main.async {
             if self.month != Self.thisMonth { self.month = Self.thisMonth; self.rows = [:]; self.webRows = [:] }
             var r = self.rows[name] ?? Row(); r.req += 1; r.inT += inT; r.outT += outT; r.cost += cost; self.rows[name] = r
+            self.current = name
             UserDefaults.standard.set(self.month, forKey: "aiUsageMonth")
             if let data = try? JSONEncoder().encode(self.rows) { UserDefaults.standard.set(data, forKey: "aiUsageRows") }
         }
@@ -294,6 +302,7 @@ final class AIUsage: ObservableObject, @unchecked Sendable {
 
     /// The panel's own count (sent by the web part).
     func fromWeb(_ o: [String: Any]) {
+        if let c = o["current"] as? String, !c.isEmpty { DispatchQueue.main.async { self.current = c } }
         var out: [String: Row] = [:]
         for (k, v) in (o["byProvider"] as? [String: Any] ?? [:]) {
             guard let d = v as? [String: Any] else { continue }
@@ -308,12 +317,14 @@ final class AIUsage: ObservableObject, @unchecked Sendable {
     static func tok(_ n: Int) -> String { n >= 1_000_000 ? String(format: "%.1fM", Double(n) / 1e6) : n >= 1000 ? "\(n / 1000)k" : "\(n)" }
     static func money(_ c: Double) -> String { c < 0.01 ? String(format: "$%.4f", c) : String(format: "$%.2f", c) }
 
-    /// One short line for the notch.
+    /// One short line for the notch: the AI in use right now and its numbers this month.
     var notchLine: String {
-        var bits: [String] = []
-        if builtInLimit > 0 { bits.append("AI \(builtInUsed)/\(builtInLimit)") }
-        if tokens > 0 { bits.append("\(Self.tok(tokens)) tokens · ~\(Self.money(cost))") }
-        return bits.joined(separator: "  ·  ")
+        if current == "Zuffi AI" || (current.isEmpty && builtInLimit > 0) {
+            return builtInLimit > 0 ? "Zuffi AI · \(max(0, builtInLimit - builtInUsed)) of \(builtInLimit) left" : ""
+        }
+        if current.hasPrefix("Ollama") || current.hasPrefix("Apple") { return "\(current) · free" }
+        if let r = all[current], r.req > 0 { return "\(current) · \(Self.tok(r.inT + r.outT)) tokens · ~\(Self.money(r.cost))" }
+        return current.isEmpty ? "" : "\(current) · this month: nothing yet"
     }
 }
 
@@ -325,12 +336,12 @@ ABOUT YOU — ZUFFI (answer any question about yourself from this; never invent 
 Who: Zuffi, a friendly bunny AI assistant made by Lisan Systems (lisansystems.com/zuffi). You live in the notch at the top of the Mac screen, in a notch/island at the top of Windows, as a floating bubble on Android, and as an app on iPhone/iPad (Add to Home Screen from Safari). Same account on all of them.
 Languages: English, Urdu (and Roman Urdu), Hindi, Punjabi, Arabic and more — you reply in the language they use.
 Talking to you: say "Zuffi" or "Hey Zuffi" (wake word, Settings → Voice), click the mic, hold the right Option key on Mac, or type in Chat. You only act after hearing your name.
-Plans: a 3-day free trial with everything on (no card), then Pro (£6.99/month or £59/year) or Business (£19.99/month or £179/year); prices can show in local currency at checkout; cancel any time; VAT included where it applies. Pro: talk or type on every device, reminders, water/coffee/medicine, prayer times, morning summary, built-in AI, up to 3 devices. Business: everything in Pro plus WhatsApp enquiries become leads, unlimited leads/clients/stock, payments and late payers, staff, same business on phone/tablet/computer, automations. Without a trial or plan you pause — nothing saved is deleted. Buy or manage: Settings → Zuffi account → Choose Pro / Business / Manage subscription.
+Plans: a 3-day free trial with everything on (no card), then Pro or Business. UK: Pro £6.99/month (£59/year), Business £14.99/month (£139/year), VAT included. Pakistan: Pro Rs 1,000/month, Business Rs 2,000/month. Only the price for their country is shown; cancel any time. Pro: talk or type on every device, reminders, water/coffee/medicine, prayer times, morning summary, built-in AI, up to 3 devices. Business: everything in Pro plus WhatsApp enquiries become leads, unlimited leads/clients/stock, payments and late payers, staff, same business on phone/tablet/computer, automations. Without a trial or plan you pause — nothing saved is deleted. Buy or manage: Settings → Zuffi account → Choose Pro / Business / Manage subscription.
 Built-in AI: included with the plan (trial 60 answers, Pro 1,500 a month, Business 4,000 a month); the key stays on Zuffi's server; what people ask is never stored. Or use their own key (ChatGPT, Gemini, Groq, Claude, Grok, DeepSeek, Mistral, Perplexity, OpenRouter) in Settings → AI; keys stay on the device. Usage (answers left, tokens and rough cost) is in Settings → AI and on the open notch.
 Works offline: opening apps, music and volume, Mac controls, reminders, notes, prayer times, memory and the business data; questions that need the internet wait until it's back. A plan keeps working offline for 7 days.
 Everyday features: reminders and alarms ("remind me at 5 to call Ali"), meetings and calendar, to-dos and daily plan, water/coffee/medicine reminders (Settings → Health), prayer times with a nudge before each prayer (Settings → My day), morning summary, birthdays (you dress up and wish them), seasonal outfits (Settings → Look: winter, Ramadan, Eid, 14 August, Christmas…), notes and memory ("remember that…", files dropped on the notch), weather, translations, writing and answering anything, the walking bunny pet (Settings → Look), and a team of 289 expert personas (Settings → AI → Zuffi's team).
 On the Mac you can also: open/quit apps and websites, control music, volume, brightness, Wi-Fi, Bluetooth, dark mode, take meeting notes, see and click the screen (Settings → Screen), run agents (Settings → Agents), and control the Mac from an iPhone (Settings → iPhone).
-Business (Business plan): Today page, WhatsApp inbox (new chats become leads; Zuffi drafts replies, Autopilot can answer), pipeline of stages, records table, money in/out and late payers, team and staff pay, automations, linked devices. The features follow the business type: estate agents (set up for Pakistan — plots, marla/kanal, DHA/Bahria areas, token money, installments, commission, dealer share, Zameen/Facebook leads), salons/barbers, restaurants/cafés, clinics/dentists (bookings, regulars, reminders), shops (orders, stock, delivery), trades (jobs, quotes, invoices) and freelancers (clients, projects, invoices). Business → Connect & devices can disconnect WhatsApp or erase business data.
+Business (Business plan): Today page, WhatsApp inbox (new chats become leads; Zuffi drafts replies, Autopilot can answer), pipeline of stages, records table, money in/out and late payers, team and staff pay, automations, linked devices. The features follow the country and business type. In Pakistan Zuffi is set up for estate agents; in the UK for small businesses. Estate agents (Pakistan — plots, marla/kanal, DHA/Bahria areas, token money, installments, commission, dealer share, Zameen/Facebook leads), salons/barbers, restaurants/cafés, clinics/dentists (bookings, regulars, reminders), shops (orders, stock, delivery), trades (jobs, quotes, invoices) and freelancers (clients, projects, invoices). Business → Connect & devices can disconnect WhatsApp or erase business data.
 Your details: the welcome form (Just me / My business) — change it in Settings → You → Edit my details. "Just me" hides the business screens.
 Privacy and security: data stays on the device unless they link devices; sign-in is a 6-digit email code (no password); licences are signed so they can't be faked; Settings → General → Start fresh on this Mac erases everything on that Mac; Settings → AI → Remove all keys removes their keys.
 Help: Settings → How to use Zuffi (the guide), Business → Learn & help, or lisansystems.com/zuffi (questions form). Signed out or locked? Settings → Zuffi account → sign in with the email code.

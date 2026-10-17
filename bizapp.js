@@ -21,7 +21,9 @@ const PACKS = {
   freelancer: { label: 'Freelancer', icon: '💻' },
 };
 const freelance = () => kind() === 'freelancer';
-const kind = () => bs.cfg('kind') || 'realEstate';
+// Business types follow the country: Pakistan → estate agents; UK → small businesses; elsewhere → all.
+export const kindsFor = c => c === 'PK' ? ['realEstate'] : c === 'GB' ? ['salon', 'restaurant', 'clinic', 'shop', 'services', 'freelancer'] : Object.keys(PACKS);
+const kind = () => { const ok = kindsFor(country()), k = bs.cfg('kind') || ok[0]; return ok.includes(k) ? k : ok[0]; };
 const estate = () => kind() === 'realEstate';
 const country = () => { const c = bs.cfg('country'); return c && c !== 'OTHER' ? c : (C.guess() || 'OTHER'); };
 const feats = () => C.features(country());
@@ -713,7 +715,7 @@ function moreBusiness() {
       <label class="bz-lbl">Your name<input class="bz-in" data-cfg="owner" value="${esc(bs.cfg('owner'))}" placeholder="for greetings and messages"></label>
       <button class="bz-pick" data-act="pickCountry"><span>${C.flag(country())}</span><span class="bz-rt"><b>${esc(C.name(country()))}</b><small>Country · features & currency</small></span><span>›</span></button>
       <div class="bz-grid2">
-        <label class="bz-lbl">Type of business<select class="bz-in" data-cfg="kind">${Object.entries(PACKS).map(([id, x]) => `<option value="${id}" ${kind() === id ? 'selected' : ''}>${x.icon} ${x.label}</option>`).join('')}</select></label>
+        <label class="bz-lbl">Type of business<select class="bz-in" data-cfg="kind">${Object.entries(PACKS).filter(([id]) => kindsFor(country()).includes(id)).map(([id, x]) => `<option value="${id}" ${kind() === id ? 'selected' : ''}>${x.icon} ${x.label}</option>`).join('')}</select></label>
         <label class="bz-lbl">Currency<input class="bz-in" data-cfg="currency" value="${esc(cur())}" maxlength="4"></label>
         <label class="bz-lbl">Average deal / job value<input class="bz-in" data-cfg="avgDeal" inputmode="decimal" value="${esc(bs.cfg('avgDeal'))}" placeholder="${esc(money(avgDeal()))}"></label>
         <label class="bz-lbl">Your time is worth (per hour)<input class="bz-in" data-cfg="hourRate" inputmode="decimal" value="${esc(bs.cfg('hourRate'))}" placeholder="${esc(money(hourRate()))}"></label>
@@ -817,7 +819,7 @@ function onboarding(fromSettings) {
       <div class="bz-search glass"><span>⌕</span><input class="bz-q2" placeholder="Search country" value="${esc(q)}"></div>
       <div class="bz-countries">${list.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()) || c.code.toLowerCase() === q.toLowerCase()).map(c => `<button class="${sel === c.code ? 'on' : ''}" data-cc="${c.code}"><span>${c.flag}</span>${esc(c.name)}</button>`).join('')}</div>
       ${sel ? `<div class="bz-feat"><b>${C.flag(sel)} What you get in ${esc(C.name(sel))}</b>${C.featureList(sel).map(([i, t, s]) => `<div><span>${i}</span><span class="bz-rt"><b>${esc(t)}</b><small>${esc(s)}</small></span></div>`).join('')}</div>` : ''}
-      ${!fromSettings ? `<label class="bz-lbl">Type of business<select class="bz-in" id="obKind">${Object.entries(PACKS).map(([id, x]) => `<option value="${id}" ${kind() === id ? 'selected' : ''}>${x.icon} ${x.label}</option>`).join('')}</select></label>
+      ${!fromSettings ? `<label class="bz-lbl">Type of business<select class="bz-in" id="obKind">${Object.entries(PACKS).filter(([id]) => kindsFor(sel || country()).includes(id)).map(([id, x]) => `<option value="${id}" ${kind() === id ? 'selected' : ''}>${x.icon} ${x.label}</option>`).join('')}</select></label>
       <label class="bz-lbl">Business name<input class="bz-in" id="obName" value="${esc(bs.cfg('name'))}" placeholder="e.g. Al-Noor Estate"></label>` : ''}</div>`;
   const { w } = sheet(fromSettings ? 'Country' : 'Welcome to Zuffi Business', html(), w => {
     if (!sel) { toast('Pick your country'); return false; }

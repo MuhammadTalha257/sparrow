@@ -132,10 +132,11 @@ export async function signOut() { try { await call('/logout'); } catch {} st = {
 export async function removeDevice(id) { const j = await call('/devices/remove', { device_id: id }); await refresh(true); return j.ok; }
 
 /** Open the website to buy or change a plan — already signed in. */
-export async function upgradeUrl(which = 'pro') {
-  if (!st.token) return SITE() + '#pricing';
+export async function upgradeUrl(which = 'pro', country = '') {
+  const c = country === 'PK' ? '&country=PK' : country ? '&country=GB' : '';
+  if (!st.token) return SITE() + '?' + c.slice(1) + '#pricing';
   const j = await call('/handoff', { plan: which });
-  return j.ok ? j.url : SITE() + '/account?plan=' + which;
+  return j.ok ? j.url + (j.url.includes('?') ? c : '?' + c.slice(1)) : SITE() + '/account?plan=' + which + c;
 }
 export async function manageUrl() {
   const j = await call('/portal');

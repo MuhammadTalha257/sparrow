@@ -121,6 +121,13 @@ async function post(url, body, headers) {
   return j;
 }
 
+// ---- Which AI is answering now, and the ones resting because they ran out of tokens ----
+const REST = {};
+const rest = p => { REST[p] = Date.now() + 60 * 60e3; };
+const resting = p => (REST[p] || 0) > Date.now();
+function setCurrent(name) { try { localStorage.setItem('zuffiAICurrent', name); } catch {} document.dispatchEvent(new CustomEvent('zuffi-usage')); try { window.SparrowHost === 'mac' && window.SparrowMac?.post('usage', usageSummary()); } catch {} }
+export const currentAI = () => { try { return localStorage.getItem('zuffiAICurrent') || ''; } catch { return ''; } };
+
 // ---- Your own AI keys: how many tokens you used this month and roughly what it cost ----
 // Prices are approximate list prices in US dollars per million tokens (input, output); the AI
 // company's own bill is the real number. OpenRouter tells us the exact cost itself.
@@ -143,7 +150,7 @@ function trackUsage(url, model, j) {
   if (all.month !== month) all = { month, p: {} };
   const r = all.p[name] || (all.p[name] = { req: 0, in: 0, out: 0, cost: 0 });
   r.req++; r.in += inT; r.out += outT; r.cost += cost;
-  try { localStorage.setItem(UKEY, JSON.stringify(all)); } catch {}
+  try { localStorage.setItem(UKEY, JSON.stringify(all)); localStorage.setItem('zuffiAICurrent', name); } catch {}
   document.dispatchEvent(new CustomEvent('zuffi-usage'));
   try { window.SparrowHost === 'mac' && window.SparrowMac?.post('usage', usageSummary()); } catch {}
 }
@@ -152,7 +159,7 @@ export function usageSummary() {
   let all = {}; try { all = JSON.parse(localStorage.getItem(UKEY) || '{}'); } catch {}
   const month = new Date().toISOString().slice(0, 7), p = all.month === month ? all.p || {} : {};
   const v = Object.values(p);
-  return { month, req: v.reduce((a, r) => a + r.req, 0), tokens: v.reduce((a, r) => a + r.in + r.out, 0), cost: v.reduce((a, r) => a + r.cost, 0), byProvider: p };
+  return { month, req: v.reduce((a, r) => a + r.req, 0), tokens: v.reduce((a, r) => a + r.in + r.out, 0), cost: v.reduce((a, r) => a + r.cost, 0), byProvider: p, current: currentAI() };
 }
 window.zuffiUsage = usageSummary;
 
@@ -203,6 +210,12 @@ async function order() {
   const keyed = Object.keys(PROVIDERS).filter(p => k[p]);
   // Built-in AI (Pro / Business / trial) only if they want it: their choice in Settings → AI,
   // or automatically when they haven't added a key of their own.
+  // No internet: the brains on this device answer first (Ollama on the computer, or the phone's small model).
+  if (navigator.onLine === false) {
+    if (window.SparrowDesktop && (await ollamaModels()).length) out.push('ollama');
+    if (engine || s.aiReady) out.push('local');
+    if (out.length) return out;
+  }
   const builtIn = account.isPaid() && (s.aiSource === 'zuffi' || (s.aiSource !== 'own' && !keyed.length));
   if (builtIn) out.push('zuffi');
   if (s.provider && s.provider !== 'auto') out.push(s.provider);
@@ -221,12 +234,15 @@ export async function ask(question, onToken, opts = {}) {
   // opts.system replaces Zuffi's chatty persona (used for structured jobs: CV analysis, cover letters, JSON).
   const messages = [{ role: 'system', content: opts.system ? opts.system + extra : systemPrompt(extra) }, ...(opts.noHistory ? [] : history()), { role: 'user', content: question }];
   const tried = [];
-  for (const p of await order()) {
+  // AIs that just ran out of tokens go to the back of the line (they come back after an hour)
+  const all = await order(), queue = [...all.filter(p => !resting(p)), ...all.filter(resting)];
+  for (const p of queue) {
     try {
       if (p === 'ollama') {
         const list = await ollamaModels();
         const model = store.settings.ollamaModel && list.includes(store.settings.ollamaModel) ? store.settings.ollamaModel : list[0];
         const text = await window.SparrowDesktop.ollama('chat', { model, messages, stream: false, options: { num_ctx: opts.context ? 8192 : 4096 } });
+        setCurrent('Ollama (offline)');
         return { text: text.trim(), source: 'Ollama · ' + model };
       }
       if (p === 'local') {
@@ -234,17 +250,22 @@ export async function ask(question, onToken, opts = {}) {
         let text = '';
         const stream = await engine.chat.completions.create({ messages, stream: true, temperature: 0.6, max_tokens: Math.min(opts.maxTokens || 500, 1500) });
         for await (const chunk of stream) { text += chunk.choices[0]?.delta?.content || ''; onToken?.(text); }
+        setCurrent('On-device AI');
         return { text: text.trim(), source: 'on-device AI' };
       }
       if (p === 'zuffi') {
         const text = await account.ai(messages, Math.min(opts.maxTokens || 900, 1500));
-        onToken?.(text);
+        onToken?.(text); setCurrent('Zuffi AI');
         return { text: text.trim(), source: 'Zuffi AI' };
       }
       const key = store.settings.keys?.[p];
       if (!key || !PROVIDERS[p]) continue;
       return { text: await callProvider(p, key, messages, opts.maxTokens || 1200), source: PROVIDERS[p].name.split(' (')[0] };
-    } catch (e) { tried.push(`${p}: ${e.message}`); }
+    } catch (e) {
+      tried.push(`${p}: ${e.message}`);
+      // out of tokens / quota / credit (or the built-in AI's monthly limit): rest it and move on to the next AI
+      if (/limit|quota|429|rate|insufficient|credit|exceeded|402/i.test(e.message)) rest(p);
+    }
   }
   if (tried.length) throw new Error(tried[tried.length - 1]);
   throw new Error('NO_AI');

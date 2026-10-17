@@ -210,11 +210,18 @@ final class AIService {
                 guard !clean.isEmpty else { continue }
                 history.append((role: "assistant", text: clean))
                 lastProvider = p
+                if p == .ollama || p == .apple { AIUsage.shared.current = p == .ollama ? "Ollama (offline)" : "Apple (on-device)" }
                 finish(clean, state: state, emote: .happy)
                 return
             } catch {
                 lastError = error
                 appendAppLog("ai.log", "\(p.label) failed: \(error.localizedDescription)")
+                // Out of quota / tokens / credit: rest this AI for an hour and quietly use the next one.
+                let m = error.localizedDescription.lowercased(), code = (error as NSError).code
+                if code == 429 || code == 402 || m.contains("quota") || m.contains("rate limit") || m.contains("insufficient") || m.contains("credit") || m.contains("exceeded") {
+                    AIUsage.shared.rest(p.label, minutes: 60)
+                    NotificationCenter.default.post(name: .petSay, object: "\(p.label) is out of tokens for now — I’ll use another AI.")
+                }
             }
         }
         history.removeLast()
@@ -250,9 +257,16 @@ final class AIService {
     /// The chosen provider, then every other one that is ready (keys first, then on-device).
     private func fallbackChain(first: AIProvider) async -> [AIProvider] {
         var out: [AIProvider] = [first]
+        if !NetStatus.shared.online {                                   // offline: only the brains on this Mac can answer
+            if first != .ollama, !(await Self.ollamaModels()).isEmpty { out.append(.ollama) }
+            if first != .apple, Self.appleModelAvailable { out.append(.apple) }
+            return out
+        }
         for p in [AIProvider.groq, .gemini, .openai, .grok, .deepseek, .mistral, .openrouter] where p != first {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { out.append(p) }
         }
+        // AIs that just ran out of tokens go to the back of the line.
+        out = out.filter { !AIUsage.shared.resting($0.label) } + out.filter { AIUsage.shared.resting($0.label) }
         if first != .apple, Self.appleModelAvailable { out.append(.apple) }
         if first != .ollama, !(await Self.ollamaModels()).isEmpty { out.append(.ollama) }
         return out
@@ -269,8 +283,13 @@ final class AIService {
 
     func resolveProvider(state: AppState) async -> AIProvider? {
         let chosen = AIProvider(rawValue: state.aiProvider) ?? .auto
+        // No internet: answer with the brain on this Mac (Ollama, or Apple's model) instead of failing.
+        if !NetStatus.shared.online, chosen != .ollama, chosen != .apple {
+            if !(await Self.ollamaModels()).isEmpty { return .ollama }
+            if Self.appleModelAvailable { return .apple }
+        }
         if chosen != .auto { return chosen }
-        for p in [AIProvider.claude, .groq, .openai, .gemini, .grok, .deepseek, .mistral, .perplexity, .openrouter] {
+        for p in [AIProvider.claude, .groq, .openai, .gemini, .grok, .deepseek, .mistral, .perplexity, .openrouter] where !AIUsage.shared.resting(p.label) {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { return p }
         }
         // The subscription you already pay for (Claude Code / Codex), if installed.
@@ -610,6 +629,38 @@ final class AIService {
 
     // MARK: Ollama (local, free)
 
+    /// 16 GB of memory or more: room for a bigger, smarter offline model.
+    nonisolated static var bigMac: Bool { ProcessInfo.processInfo.physicalMemory >= 15 * 1_073_741_824 }
+    /// The model "Get the offline brain" downloads (Qwen 2.5: strong in English, Urdu, Hindi and Arabic).
+    nonisolated static var recommendedOllama: String { bigMac ? "qwen2.5:7b" : "qwen2.5:3b" }
+
+    static func ollamaRunning() async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:11434/api/version") else { return false }
+        let req = URLRequest(url: url, timeoutInterval: 1.5)
+        return ((try? await URLSession.shared.data(for: req))?.1 as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    /// Downloads a model into Ollama, reporting progress 0…1.
+    static func pullOllama(_ name: String, progress: @escaping @MainActor (Double, String) -> Void) async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:11434/api/pull") else { return false }
+        var req = URLRequest(url: url, timeoutInterval: 3600)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["name": name, "stream": true])
+        guard let (bytes, resp) = try? await URLSession.shared.bytes(for: req), (resp as? HTTPURLResponse)?.statusCode == 200 else { return false }
+        do {
+            for try await line in bytes.lines {
+                guard let d = line.data(using: .utf8), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+                if o["error"] != nil { return false }
+                let status = o["status"] as? String ?? ""
+                let total = (o["total"] as? Double) ?? 0, done = (o["completed"] as? Double) ?? 0
+                await progress(total > 0 ? done / total : 0, status)
+                if status == "success" { return true }
+            }
+        } catch { return false }
+        return true
+    }
+
     static func ollamaModels() async -> [String] {
         guard let url = URL(string: "http://127.0.0.1:11434/api/tags") else { return [] }
         let req = URLRequest(url: url, timeoutInterval: 1.5)
@@ -622,8 +673,10 @@ final class AIService {
             let l = n.lowercased()
             return !l.contains("embed") && !l.contains("cloud") && !l.contains("nomic") && !l.contains("bge")
         }
-        // Prefer small, fast models first (good on any Mac), then the rest.
-        let preferred = ["llama3.2:latest", "llama3.2:3b", "qwen2.5:3b", "gemma3:4b", "qwen2.5:1.5b", "llama3.2:1b", "qwen3:4b", "phi3"]
+        // The best model this Mac can run quickly: bigger ones on 16 GB+ Macs, small fast ones otherwise.
+        let preferred = Self.bigMac
+            ? ["qwen2.5:7b", "llama3.1:8b", "qwen3:8b", "gemma3:12b", "gemma3:4b", "qwen2.5:3b", "llama3.2:3b", "llama3.2:latest", "qwen3:4b", "phi3"]
+            : ["qwen2.5:3b", "llama3.2:3b", "llama3.2:latest", "gemma3:4b", "qwen3:4b", "qwen2.5:1.5b", "llama3.2:1b", "phi3"]
         return names.sorted { a, b in
             let ia = preferred.firstIndex(where: { a.hasPrefix($0) }) ?? 99
             let ib = preferred.firstIndex(where: { b.hasPrefix($0) }) ?? 99
@@ -648,7 +701,7 @@ final class AIService {
             messages.append(msg)
         }
         let json = try await postJSON(URL(string: "http://127.0.0.1:11434/api/chat")!,
-                                      body: ["model": model, "messages": messages, "stream": false,
+                                      body: ["model": model, "messages": messages, "stream": false, "keep_alive": "30m",   // stays loaded: fast replies
                                              // Default window (2k tokens) is too small for a document.
                                              "options": ["num_ctx": document == nil ? 4096 : 8192]],
                                       headers: [:], timeout: 180)
@@ -824,9 +877,11 @@ struct AIModelsSettings: View {
             // 3. Free AI on this Mac
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
+                    Text("Zuffi’s offline brain: answers questions with no internet and nothing leaves this Mac. When the internet drops, Zuffi switches to it by herself.")
+                        .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    OllamaGetButton { ollamaInstalled = await AIService.ollamaModels() }
                     if ollamaInstalled.isEmpty {
-                        Text("Not running. Install it from ollama.com, open it once, then come back.")
-                            .font(.system(size: 11)).foregroundColor(.secondary)
+                        EmptyView()
                     } else {
                         Picker("Model", selection: $state.ollamaModel) {
                             Text("Automatic (best small model)").tag("")
@@ -945,5 +1000,41 @@ struct AIUsageCard: View {
                 }
             }
         } label: { Label("This month", systemImage: "chart.bar.fill") }
+    }
+}
+
+/// Settings → AI → Ollama: one click installs the recommended offline model (or opens ollama.com).
+struct OllamaGetButton: View {
+    var done: () async -> Void
+    @State private var running = false
+    @State private var have = false
+    @State private var pct: Double = -1
+    @State private var status = ""
+    var body: some View {
+        HStack(spacing: 10) {
+            if pct >= 0 && pct < 1 {
+                ProgressView(value: pct).frame(width: 160).tint(Color(hex: "#E2648A"))
+                Text(status.isEmpty ? "Downloading…" : "\(Int(pct * 100))% · \(status)").font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+            } else if have {
+                Label("Offline brain ready (\(AIService.recommendedOllama))", systemImage: "checkmark.seal.fill").font(.system(size: 11.5, weight: .semibold)).foregroundColor(.green)
+            } else if running {
+                Button {
+                    Task {
+                        pct = 0
+                        let ok = await AIService.pullOllama(AIService.recommendedOllama) { p, s in pct = p; status = s }
+                        pct = -1; have = ok; status = ok ? "" : "Download failed — try again"
+                        await done()
+                    }
+                } label: { Label("Get the offline brain (\(AIService.recommendedOllama), \(AIService.bigMac ? "about 4.7 GB" : "about 1.9 GB"))", systemImage: "arrow.down.circle.fill") }
+                .buttonStyle(.borderedProminent).tint(Color(hex: "#E2648A"))
+            } else {
+                Button { NSWorkspace.shared.open(URL(string: "https://ollama.com/download")!) } label: { Label("Install Ollama (free)", systemImage: "arrow.up.forward.app") }
+                Text("Install it, open it once, then come back here.").font(.system(size: 11)).foregroundColor(.secondary)
+            }
+        }
+        .task {
+            running = await AIService.ollamaRunning()
+            have = (await AIService.ollamaModels()).contains { $0.hasPrefix(AIService.recommendedOllama) }
+        }
     }
 }

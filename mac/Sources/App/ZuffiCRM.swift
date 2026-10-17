@@ -188,7 +188,13 @@ final class ZuffiCRM: ObservableObject {
     /// "PK", "GB" or "OTHER" — picked in My business; decides currency and which business types show.
     @Published var country: String = UserDefaults.standard.string(forKey: "bizCountry")
         ?? (Locale.current.region?.identifier == "PK" ? "PK" : Locale.current.region?.identifier == "GB" ? "GB" : "OTHER") {
-        didSet { UserDefaults.standard.set(country, forKey: "bizCountry"); if UserDefaults.standard.string(forKey: "bizCurrency") == nil { objectWillChange.send() } }
+        didSet {
+            UserDefaults.standard.set(country, forKey: "bizCountry"); if UserDefaults.standard.string(forKey: "bizCurrency") == nil { objectWillChange.send() }
+            // The business type follows the country: Pakistan → estate agent; UK → small businesses.
+            if let first = packsForCountry.first, !packsForCountry.contains(kind), ZuffiBusiness.shared.pack != nil {
+                Task { @MainActor in _ = await ZuffiBusiness.shared.install(first) }
+            }
+        }
     }
     @Published var currencyChoice: String = UserDefaults.standard.string(forKey: "bizCurrency") ?? "" { didSet { UserDefaults.standard.set(currencyChoice, forKey: "bizCurrency") } }
     var currency: String {
@@ -211,7 +217,7 @@ final class ZuffiCRM: ObservableObject {
     var packsForCountry: [ZuffiBusiness.Pack] {
         switch country {
         case "PK": return [.realEstate]
-        case "GB": return [.salon, .clinic, .shop, .restaurant, .services, .freelancer, .realEstate]
+        case "GB": return [.salon, .clinic, .shop, .restaurant, .services, .freelancer]   // UK: small businesses only
         default: return ZuffiBusiness.Pack.allCases
         }
     }

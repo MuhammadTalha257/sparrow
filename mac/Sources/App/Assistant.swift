@@ -290,7 +290,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             resumeAfterSpeech = false
             // (not right after a live conversation ended — then it's back to "Zuffi…" listening)
             if Date().timeIntervalSince(liveEndedAt) > 4, !LiveSession.shared.active {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { VoiceEngine.shared.listenOnce() } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { VoiceEngine.shared.listenOnce(byButton: false) } }
                 return
             }
         }
@@ -342,7 +342,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         guard !pushToTalk else { return }
         if ZuffiPlan.shared.blocked(speak: true) { return }
         if LiveSession.shared.active { return }          // already talking: just speak
-        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
+        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(byButton: true); return }
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
         pushToTalk = true
         SoundEngine.shared.play("question")
@@ -384,11 +384,11 @@ final class VoiceEngine: NSObject, ObservableObject {
     }
 
     /// Mic button: listen for one command, no wake word needed.
-    func listenOnce() {
+    func listenOnce(byButton: Bool = true) {
         if ZuffiPlan.shared.blocked(speak: true) { return }
         // The mic button always wins: stop talking and listen right now.
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
-        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
+        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(byButton: byButton); return }
         requestPermissions { ok in
             guard ok else { return }
             self.oneShot = true
@@ -664,7 +664,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         // Jarvis mode: one continuous conversation (any language, interruptible) until "thanks" / "bye".
         if LiveSession.shared.usable, !meetingMode {
             appendAppLog("voice.log", "live conversation: \(command.isEmpty ? "(name only)" : command)")
-            LiveSession.shared.start(text: command.isEmpty ? nil : command)
+            LiveSession.shared.start(text: command.isEmpty ? nil : command, byName: true)
             return
         }
         if command.isEmpty {
@@ -758,7 +758,8 @@ enum Assistant {
                 say(await SmartPlanner.shared.run(plan)); return
             }
             if !short, let reply = await WebHub.shared.ask(text) { say(reply); return }
-            if !NetStatus.shared.online, text.split(separator: " ").count > 1 {
+            let hasLocalBrain = AIService.appleModelAvailable || !(await AIService.ollamaModels()).isEmpty
+            if !NetStatus.shared.online, !hasLocalBrain, text.split(separator: " ").count > 1 {
                 say("I'm offline right now, so I can't look that up. I can still open apps, play music, control your Mac, and set reminders and notes.")
                 return
             }

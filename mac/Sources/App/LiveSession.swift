@@ -71,7 +71,15 @@ final class LiveSession: NSObject {
     // MARK: Start / stop
 
     /// Starts a conversation. `text` = what was already said with "Zuffi, …" (answered straight away).
-    func start(text: String? = nil, image: Data? = nil) {
+    /// When the last conversation ended: a new one never starts by itself straight after
+    /// ("ok bye" really ends it). Only her name, the mic button or a picture start one.
+    private var endedAt = Date.distantPast
+
+    func start(text: String? = nil, image: Data? = nil, byName: Bool = false, byButton: Bool = false) {
+        if text == nil, image == nil, !byName, !byButton, Date().timeIntervalSince(endedAt) < 6 {
+            appendAppLog("voice.log", "live: not restarting by itself right after it ended")
+            return
+        }
         if ZuffiPlan.shared.blocked(speak: true) { return }
         lastCloseCode = 0
         guard VoiceEngine.micOn else { VoiceEngine.shared.speak("Your mic is off. Turn it on with the mic button and I'll listen."); return }
@@ -108,7 +116,7 @@ final class LiveSession: NSObject {
     /// Ends the conversation and goes back to listening for "Zuffi…".
     func stop(_ why: String) {
         guard active else { return }
-        active = false; ready = false
+        active = false; ready = false; endedAt = Date()
         appendAppLog("voice.log", "live: end (\(why)) after \(Int(Date().timeIntervalSince(startedAt)))s")
         ticker?.invalidate(); ticker = nil
         connectGen += 1
