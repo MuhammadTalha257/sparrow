@@ -341,7 +341,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     func pushToTalkDown() {
         guard !pushToTalk else { return }
-        if ZuffiPlan.shared.blocked() { return }
+        if ZuffiPlan.shared.blocked(speak: true) { return }
         if LiveSession.shared.active { return }          // already talking: just speak
         if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
@@ -366,6 +366,14 @@ final class VoiceEngine: NSObject, ObservableObject {
     }
 
     /// Normal (non-live) listening for one command — used when the live voice can't start.
+    /// Live talk couldn't start (no internet): say so out loud, then listen for the command offline.
+    func offlineHello() {
+        liveEndedAt = .distantPast                 // so it really listens after speaking
+        listenAfterSpeech = true
+        speak(NetStatus.shared.online ? "Yes? I'm listening."
+              : "I'm offline right now, but I can still help with your Mac, reminders and notes. What do you need?")
+    }
+
     func listenOffline() {
         SoundEngine.shared.play("question")
         NotificationCenter.default.post(name: .hookReveal, object: nil)
@@ -379,7 +387,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     /// Mic button: listen for one command, no wake word needed.
     func listenOnce() {
-        if ZuffiPlan.shared.blocked() { return }
+        if ZuffiPlan.shared.blocked(speak: true) { return }
         // The mic button always wins: stop talking and listen right now.
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
         if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(); return }
@@ -655,12 +663,12 @@ final class VoiceEngine: NSObject, ObservableObject {
             return
         }
         if command.isEmpty {
-            // Like Siri: a quick chirp, the sparrow pops out and listens for the command.
-            SoundEngine.shared.play("question")
+            // Just the name: she pops out, answers out loud ("Yes?") and listens for the command — online or offline.
             NotificationCenter.default.post(name: .hookReveal, object: nil)
             NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
-            oneShot = true
-            startRecognition()          // fresh session with sharper recognition for what comes next
+            liveEndedAt = .distantPast
+            listenAfterSpeech = true
+            speak(NetStatus.shared.online ? "Yes?" : "Yes? I'm offline, but I can still help.")
             status = "Listening…"
             return
         }
@@ -700,7 +708,7 @@ enum Assistant {
 
     static func run(_ text: String, spoken: Bool) async {
         let state = AppState.shared
-        if ZuffiPlan.shared.blocked() { if spoken { VoiceEngine.shared.speak(ZuffiPlan.shared.lockedMessage) }; return }   // no plan: sign in / choose a plan first
+        if ZuffiPlan.shared.blocked(speak: spoken) { return }   // no plan: sign in / choose a plan first
 
         // Voice: everyday commands run instantly without opening the chat.
         if spoken, let reply = await AgentRouter.shared.handle(text) {

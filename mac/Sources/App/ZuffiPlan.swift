@@ -29,8 +29,9 @@ final class ZuffiPlan: ObservableObject {
 
     /// Call before any feature. Returns true (and shows sign-in / plans) when Zuffi is locked.
     @discardableResult
-    func blocked() -> Bool {
+    func blocked(speak: Bool = false) -> Bool {
         guard isLocked else { return false }
+        if speak { VoiceEngine.shared.speak(lockedMessage) }       // asked by voice → answer by voice
         let s = AppState.shared
         s.noteMessage = "🐰 " + lockedMessage
         NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)

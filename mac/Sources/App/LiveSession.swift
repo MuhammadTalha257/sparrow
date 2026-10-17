@@ -72,7 +72,8 @@ final class LiveSession: NSObject {
 
     /// Starts a conversation. `text` = what was already said with "Zuffi, …" (answered straight away).
     func start(text: String? = nil, image: Data? = nil) {
-        if ZuffiPlan.shared.blocked() { return }
+        if ZuffiPlan.shared.blocked(speak: true) { return }
+        lastCloseCode = 0
         guard VoiceEngine.micOn else { VoiceEngine.shared.speak("Your mic is off. Turn it on with the mic button and I'll listen."); return }
         if active {
             if let image { sendImage(image) }
@@ -130,15 +131,18 @@ final class LiveSession: NSObject {
             SoundEngine.shared.play("approve")
             stop("quiet")
         }
-        // Couldn't connect at all within 12 s → fall back to the offline voice for this request.
-        if !ready, Date().timeIntervalSince(startedAt) > 12 { fallback("timeout") }
+        // Couldn't connect within 6 s → fall back to the offline voice for this request.
+        if !ready, Date().timeIntervalSince(startedAt) > 6 { fallback("timeout") }
     }
+
+    private var lastCloseCode = 0
 
     private func fallback(_ why: String) {
         let t = firstText
+        if why == "timeout" || lastCloseCode == -1 { NetStatus.shared.noteNoInternet() }   // no internet: go offline now
         stop("fallback: \(why)")
-        if let t, !t.isEmpty { Task { await Assistant.run(t, spoken: true) } }
-        else { VoiceEngine.shared.listenOffline() }
+        if let t, !t.isEmpty { Task { await Assistant.run(t, spoken: true) } }     // answered by the offline brain, out loud
+        else { VoiceEngine.shared.offlineHello() }                                  // "Hey Zuffi" alone: say so, then listen
     }
 
     // MARK: Connection
@@ -169,6 +173,7 @@ final class LiveSession: NSObject {
     private func socketClosed(gen: Int, code: Int, reason: String) {
         guard active, gen == connectGen else { return }
         appendAppLog("voice.log", "live: socket closed \(code) \(reason.prefix(200))")
+        lastCloseCode = code
         connectGen += 1          // one close = one retry (the socket can report the same close twice)
         if !ready {
             // The model isn't available for this key (or didn't like a setting) → try the next one.
@@ -179,6 +184,10 @@ final class LiveSession: NSObject {
             stop("closed")
         } else {
             stop("error \(code)")
+            if code == -1 {                                   // the internet dropped mid-conversation
+                NetStatus.shared.noteNoInternet()
+                VoiceEngine.shared.speak("I lost the internet, so I'm switching to my offline voice. Say Zuffi when you need me.")
+            }
         }
     }
 
