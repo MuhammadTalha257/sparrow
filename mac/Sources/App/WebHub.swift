@@ -282,15 +282,15 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             // Settings → Zuffi's outfit & seasons, changed in the web part of the app
             ZuffiLook.shared.fromWebLook(outfit: o["outfit"] as? String ?? "auto", birthday: o["birthday"] as? String ?? "")
         case "profile":
-            // The welcome form ("Just me" / "My business"): the name Zuffi calls you, and your city
-            let d = UserDefaults.standard
-            if let n = o["name"] as? String { d.set(n.trimmingCharacters(in: .whitespaces), forKey: AssistantPrefs.userName) }
-            if let c = o["city"] as? String, !c.isEmpty { d.set(c, forKey: "weatherCity") }
-            d.set(o["type"] as? String ?? "personal", forKey: "zuffiUse")
-            d.set(o["business"] as? String ?? "", forKey: "zuffiBusinessName")
+            // The welcome form ("Just me" / "My business"): who Zuffi helps, kept on this Mac
+            ZuffiPlan.shared.saveProfile(o)
         case "plan":
             // Zuffi account: which plan this Mac has (the web part checks the signed licence)
             ZuffiPlan.shared.update(plan: o["plan"] as? String ?? "free", email: o["email"] as? String ?? "", freeLeads: o["freeLeads"] as? Int ?? 30)
+            AIUsage.shared.builtInUsed = o["aiUsed"] as? Int ?? 0
+            AIUsage.shared.builtInLimit = o["aiLimit"] as? Int ?? 0
+        case "usage":
+            AIUsage.shared.fromWeb(o)
         case "health":
             // water / coffee / medicine time → the sparrow flies in carrying it
             PetController.shared.deliver(kind: o["kind"] as? String ?? "water", text: o["text"] as? String ?? "Time for a break")

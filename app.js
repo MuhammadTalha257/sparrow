@@ -9,7 +9,7 @@ import {
   spokenPlan, spokenList, tasksForDay, moveToTomorrow, nextOccurrence, repeatText, weather, location as getLocation, prayerToday, habitCount, bumpHabit,
   setLastAlert, lastAlert, findCustomer,
 } from './brain.js';
-import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded } from './ai.js';
+import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
@@ -203,9 +203,11 @@ function maybeGuide() { let seen = false; try { seen = localStorage.getItem('zuf
 // and for a business its name, type, hours and anniversary.
 const HELP = [['remind', '⏰ Reminders & tasks'], ['prayer', '🕌 Prayer times'], ['health', '💧 Water & health'], ['meet', '📅 Meetings & calls'],
   ['study', '📚 Study'], ['family', '🎂 Birthdays & family'], ['money', '💷 Money & bills']];
-const BIZ_KINDS = [['realEstate', '🏠 Estate agent / property'], ['shop', '🛍️ Shop / online store'], ['restaurant', '🍽️ Restaurant / café / takeaway'], ['salon', '💇 Salon / barber / beauty'],
-  ['clinic', '🩺 Clinic / dentist / pharmacy'], ['services', '🛠️ Trades & services'], ['agency', '💼 Agency / office / consultancy'], ['other', '✨ Something else']];
-let welType = null;
+const BIZ_KINDS = [['realEstate', '🏠', 'Estate agent', 'Plots, files, installments'], ['salon', '💇', 'Salon / barber', 'Bookings & regulars'], ['restaurant', '🍽️', 'Restaurant / café', 'Tables, orders & takeaway'],
+  ['clinic', '🩺', 'Clinic / dentist', 'Appointments & recalls'], ['shop', '🛍️', 'Shop / online store', 'Orders, stock & delivery'], ['services', '🛠️', 'Trades & services', 'Jobs, quotes & invoices'],
+  ['freelancer', '💻', 'Freelancer', 'Clients, projects & invoices']];
+const kindName = k => (BIZ_KINDS.find(x => x[0] === k) || [])[2] || '';
+let welType = null, welKind = '';
 function showWelcome(edit = false) {
   let w = $('#welcome');
   if (!w) {
@@ -214,7 +216,7 @@ function showWelcome(edit = false) {
     w.addEventListener('click', welClick);
     w.addEventListener('keydown', e => { if (e.key === 'Escape' && S().profile?.doneAt) closeWelcome(); });
   }
-  welType = edit ? (S().profile?.type || null) : null;
+  welType = edit ? (S().profile?.type || null) : null; welKind = S().profile?.biz?.kind || '';
   w.hidden = false; drawWelcome();
 }
 function closeWelcome() { const w = $('#welcome'); if (w) w.hidden = true; }
@@ -248,26 +250,29 @@ function drawWelcome() {
       <p class="wel-note">Takes 30 seconds. Then I switch everything on for you.</p></div>`;
     return;
   }
+  const biz = welType === 'business';
   const me = `<div class="wel-grid">
       <label class="field"><span>Your name *</span><input id="wName" autocomplete="given-name" value="${v(p.name ?? S().name)}" placeholder="What should I call you?"></label>
-      <label class="field"><span>Date of birth</span><input id="wDob" type="date" value="${v(p.dob ?? S().birthday)}"></label>
-      <label class="field"><span>Phone / WhatsApp</span><input id="wPhone" type="tel" autocomplete="tel" value="${v(p.phone)}" placeholder="+44 7…"></label>
-      <label class="field"><span>Your city</span><input id="wCity" autocomplete="address-level2" value="${v(p.city ?? S().city)}" placeholder="For prayer times and weather"></label></div>`;
-  const biz = welType !== 'business' ? '' : `<h3 class="wel-h3">Your business</h3><div class="wel-grid">
-      <label class="field"><span>Business name *</span><input id="wBName" value="${v(b.name ?? bizsync.cfg('name'))}" placeholder="e.g. Green Leaf Estates"></label>
+      ${biz ? '' : `<label class="field"><span>Date of birth</span><input id="wDob" type="date" value="${v(p.dob ?? S().birthday)}"></label>`}
+      <label class="field"><span>${biz ? 'City / area' : 'Your city'}</span><input id="wCity" autocomplete="address-level2" value="${v(p.city ?? S().city)}" placeholder="${biz ? 'e.g. DHA Lahore, Leeds' : 'For prayer times and weather'}"></label>
+      ${biz ? `<label class="field"><span>Business name *</span><input id="wBName" value="${v(b.name ?? bizsync.cfg('name'))}" placeholder="e.g. Green Leaf Estates"></label>
+      <label class="field"><span>Business WhatsApp / phone</span><input id="wBPhone" type="tel" value="${v(b.phone)}" placeholder="Customers message this number"></label>
+      <label class="field"><span>Opened on (anniversary)</span><input id="wFounded" type="date" value="${v(b.founded)}"></label>` : ''}</div>`;
+  const kinds = !biz ? '' : `<h3 class="wel-h3">What kind of business?</h3><div class="wel-kinds">${BIZ_KINDS.map(([k, ic, name, sub]) =>
+      `<button type="button" data-w="kind" data-k="${k}" class="${(b.kind || welKind) === k ? 'on' : ''}" aria-pressed="${(b.kind || welKind) === k}"><span>${ic}</span><b>${name}</b><small>${sub}</small></button>`).join('')}</div>`;
+  const more = `<details class="wel-more"><summary>More about you (optional)</summary><div class="wel-grid">
+      ${biz ? `<label class="field"><span>Your date of birth</span><input id="wDob" type="date" value="${v(p.dob ?? S().birthday)}"></label>
       <label class="field"><span>Your role</span><input id="wRole" value="${v(b.role)}" placeholder="Owner, manager…"></label>
-      <label class="field wel-wide"><span>What kind of business?</span><select id="wKind">${BIZ_KINDS.map(([k, l]) => `<option value="${k}"${(b.kind || bizsync.cfg('kind')) === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-      <label class="field"><span>Business phone / WhatsApp</span><input id="wBPhone" type="tel" value="${v(b.phone)}" placeholder="Customers call this number"></label>
-      <label class="field"><span>Business city / area</span><input id="wBCity" value="${v(b.city)}" placeholder="e.g. Leeds, DHA Lahore"></label>
-      <label class="field"><span>Opened on (anniversary)</span><input id="wFounded" type="date" value="${v(b.founded)}"></label>
       <label class="field"><span>Opening hours</span><input id="wHours" value="${v(b.hours)}" placeholder="Mon–Sat 9am–6pm"></label>
-      <label class="field"><span>People in the team</span><input id="wStaff" type="number" min="1" value="${v(b.staff)}" placeholder="1"></label></div>`;
+      <label class="field"><span>People in the team</span><input id="wStaff" type="number" min="1" value="${v(b.staff)}" placeholder="1"></label>` : ''}
+      <label class="field"><span>Your phone</span><input id="wPhone" type="tel" autocomplete="tel" value="${v(p.phone)}" placeholder="+44 7… / 03…"></label></div>
+      <label class="field"><span>Anything I should always remember?</span><textarea id="wNotes" rows="2" placeholder="e.g. my wife is Sara · I work night shifts · we close on Fridays">${v(p.notes)}</textarea></label></details>`;
   const helps = new Set(p.help || (welType === 'business' ? ['remind', 'meet', 'money'] : ['remind', 'health', 'family']));
-  w.innerHTML = `<div class="wel-card wel-form">${head}<h2 id="welTitle">${welType === 'business' ? 'Tell me about you and your business' : 'Tell me a little about you'}</h2>
-    <p class="wel-sub">I’ll remember this always, and it stays on your device. Only your name is needed.</p>
-    <h3 class="wel-h3">${welType === 'business' ? 'About you' : 'You'}</h3>${me}${biz}
-    <h3 class="wel-h3">What should I help with most?</h3><div class="wel-chips">${HELP.map(([k, l]) => `<button data-w="chip" data-k="${k}" class="${helps.has(k) ? 'on' : ''}" aria-pressed="${helps.has(k)}">${l}</button>`).join('')}</div>
-    <label class="field"><span>Anything I should always remember?</span><textarea id="wNotes" rows="2" placeholder="e.g. I’m vegetarian · my wife is Sara · I work night shifts · we close on Fridays">${v(p.notes)}</textarea></label>
+  w.innerHTML = `<div class="wel-card wel-form">${head}<h2 id="welTitle">${welType === 'business' ? 'Your business' : 'Tell me a little about you'}</h2>
+    <p class="wel-sub">${welType === 'business' ? 'Pick your type and I’ll show only what your business needs.' : 'I’ll remember this always. It stays on your device.'}</p>
+    ${kinds}${me}
+    ${biz ? '' : `<h3 class="wel-h3">What should I help with most?</h3><div class="wel-chips">${HELP.map(([k, l]) => `<button data-w="chip" data-k="${k}" class="${helps.has(k) ? 'on' : ''}" aria-pressed="${helps.has(k)}">${l}</button>`).join('')}</div>`}
+    ${more}
     <p class="small-text" id="welMsg" role="alert"></p>
     <div class="row-btns"><button class="btn ghost" data-w="back">Back</button><button class="btn" data-w="save">${p.doneAt ? 'Save' : 'Let’s go'}</button></div></div>`;
   setTimeout(() => $('#wName')?.focus(), 60);
@@ -279,15 +284,18 @@ function welClick(e) {
   if (a === 'type') { welType = b.dataset.t; return drawWelcome(); }
   if (a === 'back') { welType = null; return drawWelcome(); }
   if (a === 'chip') { b.classList.toggle('on'); b.setAttribute('aria-pressed', b.classList.contains('on')); return; }
+  if (a === 'kind') { welKind = b.dataset.k; $('#welcome').querySelectorAll('[data-w="kind"]').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); }); return; }
   if (a === 'save') {
     const g = id => ($('#' + id)?.value || '').trim();
     const msg = t => { $('#welMsg').textContent = t; };
     const name = g('wName'); if (!name) { $('#wName').focus(); return msg('Please tell me your name.'); }
+    const kindPick = $('#welcome [data-w="kind"].on')?.dataset.k || '';
+    if (welType === 'business' && !kindPick) return msg('Pick what kind of business you have.');
     if (welType === 'business' && !g('wBName')) { $('#wBName').focus(); return msg('What is your business called?'); }
     const dob = g('wDob'); if (dob && (dob > new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) || dob < '1900-01-01')) return msg('That date of birth doesn’t look right.');
     const p = { type: welType, name, dob, phone: g('wPhone'), city: g('wCity'), notes: g('wNotes').slice(0, 600),
-      help: [...$('#welcome').querySelectorAll('[data-w="chip"].on')].map(x => x.dataset.k), doneAt: S().profile?.doneAt || Date.now(), updatedAt: Date.now() };
-    if (welType === 'business') p.biz = { name: g('wBName'), role: g('wRole'), kind: g('wKind'), phone: g('wBPhone'), city: g('wBCity'), founded: g('wFounded'), hours: g('wHours'), staff: g('wStaff') };
+      help: welType === 'business' ? ['remind', 'meet', 'money'] : [...$('#welcome').querySelectorAll('[data-w="chip"].on')].map(x => x.dataset.k), doneAt: S().profile?.doneAt || Date.now(), updatedAt: Date.now() };
+    if (welType === 'business') p.biz = { name: g('wBName'), role: g('wRole'), kind: kindPick, phone: g('wBPhone'), city: g('wCity'), founded: g('wFounded'), hours: g('wHours'), staff: g('wStaff') };
     saveProfile(p);
     const first = !$('#welcome').querySelector('[data-w="close"]');
     if (!first) { closeWelcome(); toast('Saved — I’ll remember.', 3000); return; }
@@ -301,13 +309,16 @@ function saveProfile(p) {
   if (p.city) s.city = p.city;
   if (p.type === 'business' && p.biz) {
     s.business = { ...(s.business || {}), name: p.biz.name, address: p.biz.city || s.business?.address || '' };
-    try { bizsync.setCfg('name', p.biz.name); bizsync.setCfg('owner', p.name); if (['realEstate', 'shop', 'restaurant', 'salon', 'clinic', 'services'].includes(p.biz.kind)) bizsync.setCfg('kind', p.biz.kind); else bizsync.setCfg('kind', 'services');
+    try { bizsync.setCfg('name', p.biz.name); bizsync.setCfg('owner', p.name); bizsync.setCfg('kind', BIZ_KINDS.some(k => k[0] === p.biz.kind) ? p.biz.kind : 'services');
+      if (p.biz.kind === 'realEstate' && !bizsync.cfg('country')) bizsync.setCfg('country', 'PK');
       bizsync.setCfg('info', [p.biz.hours && `Open ${p.biz.hours}`, p.biz.city, p.biz.phone].filter(Boolean).join(' · ')); } catch {}
   }
   store.save(); seasons.apply(); renderBirthdayAsk(); syncAlarms();
   if ($('#sName')) $('#sName').value = s.name;
   if ($('#sCity')) $('#sCity').value = s.city || '';
-  M?.post('profile', { name: p.name, city: p.city || '', type: p.type, business: p.biz?.name || '' });
+  M?.post('profile', { name: p.name, city: p.city || '', type: p.type, business: p.biz?.name || '', kind: p.biz?.kind || '', dob: p.dob || '', founded: p.biz?.founded || '',
+    role: p.biz?.role || '', hours: p.biz?.hours || '', notes: p.notes || '', help: (p.help || []).join(',') });
+  applyUseMode();
   M?.post('look', { outfit: s.outfit || 'auto', birthday: s.birthday || '' });
 }
 /** One line for the AI so Zuffi always knows who she's helping. */
@@ -316,10 +327,37 @@ function profileLine() {
   const help = (p.help || []).map(k => (HELP.find(h => h[0] === k)?.[1] || '').replace(/^\S+\s/, '')).filter(Boolean);
   const b = p.biz, parts = [`About the user: ${p.type === 'business' ? 'uses Zuffi for their business and for themselves' : 'uses Zuffi personally'}`,
     p.city && `lives in ${p.city}`, p.dob && `birthday ${p.dob.slice(5)}`, help.length && `wants help with ${help.join(', ')}`, p.notes && `notes: ${p.notes}`,
-    b && `business: ${b.name}${b.kind ? ` (${(BIZ_KINDS.find(k => k[0] === b.kind)?.[1] || '').replace(/^\S+\s/, '')})` : ''}${b.role ? `, they are the ${b.role}` : ''}${b.city ? `, in ${b.city}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}${b.founded ? `, opened ${b.founded}` : ''}`];
+    b && `business: ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.role ? `, they are the ${b.role}` : ''}${b.city ? `, in ${b.city}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}${b.founded ? `, opened ${b.founded}` : ''}`];
   return ' ' + parts.filter(Boolean).join('; ') + '.';
 }
 window.zuffiProfileLine = profileLine;
+// ---- AI usage: built-in AI left this month, and tokens / rough cost with your own keys ----
+const fmtTok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
+function usageText() {
+  const b = acct.aiUsage(), u = usageSummary(), parts = [];
+  if (b.limit) parts.push(`Built-in AI: ${b.used} of ${b.limit} ${acct.isTrial() ? 'in your trial' : 'this month'} · ${Math.max(0, b.limit - b.used)} left`);
+  if (u.req) parts.push(`Your own keys: ${fmtTok(u.tokens)} tokens this month · about $${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(2)}`);
+  return parts;
+}
+function renderUsage() {
+  const el = $('#aiUsage'); if (!el) return;
+  const b = acct.aiUsage(), u = usageSummary(), pct = b.limit ? Math.min(100, Math.round(b.used / b.limit * 100)) : 0;
+  el.innerHTML = (b.limit ? `<div class="au-row"><b>Built-in AI this month</b><span>${b.used} / ${b.limit}</span></div><div class="au-bar"><i style="width:${pct}%"></i></div><small>${Math.max(0, b.limit - b.used)} questions left${acct.isTrial() ? ' in your trial' : ' — resets on the 1st'}</small>` : '')
+    + (u.req ? `<div class="au-row"><b>Your own keys this month</b><span>${fmtTok(u.tokens)} tokens</span></div>`
+      + Object.entries(u.byProvider).map(([n, r]) => `<small>${esc(n)}: ${r.req} answers · ${fmtTok(r.in + r.out)} tokens · about $${r.cost < 0.01 ? r.cost.toFixed(4) : r.cost.toFixed(2)}</small>`).join('')
+      + `<small class="au-note">Costs are estimates from list prices; your AI company’s bill is the real number.</small>` : '');
+  el.hidden = !el.innerHTML;
+  window.SparrowIsland?.usage?.(usageText());
+}
+document.addEventListener('zuffi-usage', renderUsage);
+document.addEventListener('zuffi-plan', renderUsage);
+setTimeout(renderUsage, 0);
+// "Just me": business screens are hidden; "My business": only what that type of business needs.
+function applyUseMode() {
+  const personal = S().profile?.doneAt && S().profile.type !== 'business';
+  document.body.classList.toggle('personal-mode', !!personal);
+}
+setTimeout(applyUseMode, 0);
 $('#editProfile')?.addEventListener('click', () => { closeSheets(); showWelcome(true); });
 
 // The business anniversary, every year (like the birthday).
@@ -422,6 +460,7 @@ setTimeout(renderBirthdayAsk, 0);
 // ---------------- navigation ----------------
 let planType = 'task';
 function go(v) {
+  if (v === 'biz' && document.body.classList.contains('personal-mode')) { toast('Business is off because you chose “Just me”. Turn it on in Settings → You → Edit my details.', 5000); v = 'home'; }
   $$('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'chat') setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
@@ -1785,6 +1824,7 @@ jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
   catchUp: () => checkDue(),
   openSettings: section => openSettings(section),
+  editProfile: () => showWelcome(true),
   rememberNote: (title, text) => mem.remember('meeting-notes', title, text),
   rememberFile: async (name, type, base64) => {
     const bin = atob(base64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -20,6 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Warm up Keychain cache on main thread BEFORE any poller or view touches it
         _ = KeychainStore.shared
         NSApp.setActivationPolicy(.accessory)
+        // First run: open Zuffi when the Mac starts (signed in already — the plan is remembered on this Mac).
+        // Settings → General → Startup turns it off.
+        if !UserDefaults.standard.bool(forKey: "loginItemOffered") {
+            UserDefaults.standard.set(true, forKey: "loginItemOffered")
+            if SMAppService.mainApp.status != .enabled { try? SMAppService.mainApp.register() }
+        }
         setupMenuBarItem()
         setupIsland()
     }
@@ -82,7 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            styleMask: [.titled, .closable, .miniaturizable, .resizable],
                            backing: .buffered, defer: false)
         win.title = "Settings — Zuffi"
-        let host = NSHostingView(rootView: SettingsView())
+        win.appearance = NSAppearance(named: .darkAqua)               // the same night look as Zuffi's other windows
+        win.titlebarAppearsTransparent = true
+        win.backgroundColor = NSColor(red: 0.043, green: 0.039, blue: 0.122, alpha: 1)
+        let host = NSHostingView(rootView: SettingsView().preferredColorScheme(.dark))
         host.sizingOptions = [.minSize]
         win.contentView = host
         win.contentMinSize = NSSize(width: 420, height: 320)

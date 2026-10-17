@@ -139,7 +139,7 @@ final class LiveSession: NSObject {
 
     private func fallback(_ why: String) {
         let t = firstText
-        if why == "timeout" || lastCloseCode == -1 { NetStatus.shared.noteNoInternet() }   // no internet: go offline now
+        if (why == "timeout" || lastCloseCode == -1) && !NetStatus.shared.pathUp { NetStatus.shared.noteNoInternet() }   // no network: go offline now
         stop("fallback: \(why)")
         if let t, !t.isEmpty { Task { await Assistant.run(t, spoken: true) } }     // answered by the offline brain, out loud
         else { VoiceEngine.shared.offlineHello() }                                  // "Hey Zuffi" alone: say so, then listen
@@ -184,9 +184,9 @@ final class LiveSession: NSObject {
             stop("closed")
         } else {
             stop("error \(code)")
-            if code == -1 {                                   // the internet dropped mid-conversation
+            if code == -1, !NetStatus.shared.pathUp {        // the network really dropped mid-conversation
                 NetStatus.shared.noteNoInternet()
-                VoiceEngine.shared.speak("I lost the internet, so I'm switching to my offline voice. Say Zuffi when you need me.")
+                VoiceEngine.shared.speak("I lost the internet. Say Zuffi when you need me.")
             }
         }
     }
@@ -258,7 +258,7 @@ final class LiveSession: NSObject {
         let items = await WebHub.shared.callJS("return window.Sparrow.listItems ? JSON.stringify(window.Sparrow.listItems()) : '[]'") as? String ?? "[]"
         let front = AppState.shared.lastExternalApp?.localizedName ?? "unknown"
         return """
-        You are Zuffi, \(name.isEmpty ? "the user's" : name + "'s") personal assistant living on their Mac — like JARVIS: calm, quick, warm, a little witty, always useful. You have a team of agents (tools) that do real things on this Mac.
+        You are Zuffi, \(name.isEmpty ? "the user's" : name + "'s") personal assistant living on their Mac — like JARVIS: calm, quick, warm, a little witty, always useful. You have a team of agents (tools) that do real things on this Mac.\(ZuffiPlan.shared.profileLine)
         Now: \(f.string(from: Date())) (\(tz)). Front app: \(front).
         Their reminders, meetings and tasks (JSON, id = what tools need): \(items.prefix(4000))
 

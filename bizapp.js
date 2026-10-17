@@ -18,7 +18,9 @@ const ROSE = '#F58FA8', AMBER = '#FBC56A', VIOLET = '#9A84FF', GREEN = '#34D399'
 const PACKS = {
   realEstate: { label: 'Estate agent', icon: '🏠' }, salon: { label: 'Salon / barber / beauty', icon: '💇' }, clinic: { label: 'Clinic / dentist', icon: '🩺' },
   shop: { label: 'Shop / online store', icon: '🛍️' }, restaurant: { label: 'Restaurant / takeaway', icon: '🍽️' }, services: { label: 'Trades & services', icon: '🛠️' },
+  freelancer: { label: 'Freelancer', icon: '💻' },
 };
+const freelance = () => kind() === 'freelancer';
 const kind = () => bs.cfg('kind') || 'realEstate';
 const estate = () => kind() === 'realEstate';
 const country = () => { const c = bs.cfg('country'); return c && c !== 'OTHER' ? c : (C.guess() || 'OTHER'); };
@@ -28,14 +30,17 @@ const stages = () => ({
   realEstate: ['New', 'Contacted', 'Site visit', 'Negotiating', 'Won', 'Lost'], salon: ['New', 'Contacted', 'Booked', 'Visited', 'Regular', 'Lost'],
   clinic: ['New', 'Contacted', 'Booked', 'Visited', 'Regular', 'Lost'], restaurant: ['New', 'Contacted', 'Booked', 'Visited', 'Regular', 'Lost'],
   shop: ['New', 'Contacted', 'Quoted', 'Ordered', 'Delivered', 'Lost'], services: ['New', 'Contacted', 'Quoted', 'Negotiating', 'Won', 'Lost'],
+  freelancer: ['New', 'Proposal sent', 'Working', 'Invoiced', 'Paid', 'Lost'],
 }[kind()] || ['New', 'Contacted', 'Won', 'Lost']);
 const labels = () => ({
   realEstate: ['Wants', 'Area', 'Budget', 'Deal value'], salon: ['Service', 'Preferred day / staff', 'Budget', 'Spent'], clinic: ['Service', 'Preferred day / staff', 'Budget', 'Spent'],
   restaurant: ['Booking for', 'Party size / time', 'Budget', 'Spent'], shop: ['Product', 'Delivery area', 'Budget', 'Order value'], services: ['Job', 'Location', 'Budget', 'Job value'],
+  freelancer: ['Project', 'Deadline', 'Budget', 'Project value'],
 }[kind()]);
-const SALE = ['Won', 'Visited', 'Regular', 'Ordered', 'Delivered'];
-const incomeCats = () => estate() ? ['Commission', 'Token / advance', 'Installment received', 'Rent collected', 'Other income'] : ['Sales', 'Services', 'Products', 'Deposits', 'Other income'];
+const SALE = ['Won', 'Visited', 'Regular', 'Ordered', 'Delivered', 'Paid'];
+const incomeCats = () => estate() ? ['Commission', 'Token / advance', 'Installment received', 'Rent collected', 'Other income'] : freelance() ? ['Project fees', 'Hourly work', 'Retainer', 'Other income'] : ['Sales', 'Services', 'Products', 'Deposits', 'Other income'];
 const expenseCats = () => estate() ? ['Salaries', 'Office rent', 'Marketing & ads', 'Portal fees', 'Dealer share', 'Fuel & travel', 'Utilities & bills', 'Advance to staff', 'Other']
+  : freelance() ? ['Software & tools', 'Equipment', 'Travel', 'Marketing', 'Accountant', 'Tax set aside', 'Other']
   : ['Wages', 'Rent', 'Stock & supplies', 'Utilities', 'Marketing', 'Equipment', 'Card / booking fees', 'VAT & tax', 'Advance to staff', 'Other'];
 const methods = () => feats().methods;
 const SOURCES_BASE = ['WhatsApp', 'Missed call', 'Phone call', 'Facebook', 'Instagram', 'TikTok', 'Google', 'Website', 'Referral', 'Walk-in', 'WhatsApp group'];
@@ -218,13 +223,13 @@ const SECTIONS = () => [
     : ['clients', 'Clients', 'users', 'Regulars & who to invite back', ['Everyone who visited, with their usual service.', 'Zuffi shows who is due to come back.', 'One click sends a friendly invite on WhatsApp.']],
   ['records', 'Records', 'table', 'Every client in one table', ['Everyone who ever contacted you, like a spreadsheet.', 'Click a column title to sort; search at the top.', 'Export to Excel (CSV) any time — it’s your data.']],
   ['money', 'Money', 'cash', 'Money in, money out, profit', ['Add money in or out in two clicks — or type “expense 2500 fuel” below.', 'Owed to you: chase late payments with a ready message.', 'Profit is worked out for you.']],
-  ['team', 'Team & staff', 'team', 'Staff, salaries & hours', ['Add each person and how they are paid.', 'Pay salary or commission — it goes into Money by itself.', 'See who is slow to follow up their leads.']],
+  ...(freelance() ? [] : [['team', 'Team & staff', 'team', 'Staff, salaries & hours', ['Add each person and how they are paid.', 'Pay salary or commission — it goes into Money by itself.', 'See who is slow to follow up their leads.']]]),
   ['business', 'My business', 'building', 'Your details Zuffi uses to reply', ['Write your prices, hours and location — Zuffi uses them when replying.', 'Pick your country and currency here.', 'Choose Zuffi’s look and colour for every device.']],
   ['automations', 'Automations', 'bolt', 'Jobs Zuffi does for you', ['Switch on the jobs you want Zuffi to do.', 'Each switch says exactly what it does.', 'They work on all your linked devices.']],
   ['connect', 'Connect & devices', 'link', 'WhatsApp, your phone & other devices', ['Link your phone or tablet with the QR code.', 'Changes on one device appear on the others by themselves.', 'Lock Business with a PIN and hide amounts here.']],
   ['learn', 'Learn & help', 'learn', 'How Zuffi works, step by step', ['Short guides for every part of Zuffi.', 'Includes setting up a free AI model on this computer.', 'Something not working? Open “Something not working?”.']],
 ];
-const TABS = () => DASH() ? SECTIONS().map(([id, lb]) => [id, lb, GREY]) : [['today', 'Today', VIOLET], ['leads', 'Leads', ROSE], estate() ? ['stock', 'Stock', AMBER] : ['clients', 'Clients', AMBER], ['money', 'Money', AMBER], ['team', 'Team', VIOLET], ['more', 'More', GREY]];
+const TABS = () => DASH() ? SECTIONS().map(([id, lb]) => [id, lb, GREY]) : [['today', 'Today', VIOLET], ['leads', 'Leads', ROSE], estate() ? ['stock', 'Stock', AMBER] : ['clients', 'Clients', AMBER], ['money', 'Money', AMBER], ...(freelance() ? [] : [['team', 'Team', VIOLET]]), ['more', 'More', GREY]];
 
 export function mount(el, opts = {}) {
   root = el; toast = opts.toast || toast;

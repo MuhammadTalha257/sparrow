@@ -14,6 +14,14 @@ final class BusinessDashboard {
 
     func show(_ tab: BizTab? = nil) {
         if ZuffiPlan.shared.blocked() { return }
+        if ZuffiPlan.shared.isPersonal {
+            let a = NSAlert()
+            a.messageText = "Business is switched off"
+            a.informativeText = "You chose “Just me”, so Zuffi hides the business screens. To use them, change it to “My business” in Zuffi → Settings → You → Edit my details."
+            a.addButton(withTitle: "Edit my details"); a.addButton(withTitle: "OK")
+            if a.runModal() == .alertFirstButtonReturn { WebHub.shared.show(); WebHub.shared.run("window.Sparrow && window.Sparrow.editProfile && window.Sparrow.editProfile()") }
+            return
+        }
         if let tab { BizNav.shared.tab = tab }
         ZuffiCRM.shared.reload()
         if window?.isVisible != true, BizLock.shared.enabled { BizLock.shared.locked = true }
@@ -277,7 +285,7 @@ struct BusinessDashboardView: View {
                 }
             }
             .padding(.top, 34).padding(.bottom, 14).padding(.horizontal, 6)
-            ForEach(BizTab.allCases.filter { $0 != .properties || crm.isEstate }) { t in
+            ForEach(BizTab.allCases.filter { ($0 != .properties || crm.isEstate) && ($0 != .team || crm.kind != .freelancer) }) { t in
                 Button { nav.tab = t } label: {
                     HStack(spacing: 10) {
                         Image(systemName: t.icon).font(.system(size: 13, weight: .medium)).frame(width: 20)
@@ -1027,6 +1035,7 @@ struct BizConnectView: View {
                 GlassBox { BizSyncBox() }
                 GlassBox { BizPowerBox() }
                 GlassBox { BizSecurityBox() }
+                GlassBox { BizEraseBox() }
                 GlassBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { header("1 · WhatsApp on this Mac", "laptopcomputer"); Spacer(); Pill(text: "works now", color: Biz.green) }
@@ -1247,6 +1256,8 @@ struct BizBusinessView: View {
         case (.restaurant, "today"): return "e.g. Today's special: lamb karahi £12.99. Fully booked 7–9pm, tables free after 9."
         case (.restaurant, _): return "\(name.isEmpty ? "Our restaurant" : name), [address]. Open daily 12pm–11pm.\nBookings for up to 12 people; bigger groups call us.\nMenu highlights and prices: [dishes].\nHalal. Vegetarian options. Takeaway and delivery via [apps]."
         case (.services, "today"): return "e.g. Free quotes this week. Available for jobs from Thursday."
+        case (.freelancer, "today"): return "e.g. Taking 2 new projects this month. Next free start date: the 20th."
+        case (.freelancer, _): return "\(name.isEmpty ? "I'm a freelancer" : name). I do [services, e.g. websites, design, writing].\nPrices: [day rate or typical project prices]. 50% upfront, rest on delivery.\nUsual turnaround: [e.g. 1–2 weeks].\nTo start: tell me what you need, your deadline and budget, and I'll send a quote.\nInvoices by bank transfer within 14 days."
         case (_, _): return "\(name.isEmpty ? "We" : name) do [services] in [areas].\nPrices: [typical prices or how quotes work].\nHours: [days and times]. Free quotes: send photos and your postcode.\nPayment: [terms]. Guarantee: [details]."
         }
     }
@@ -1729,5 +1740,43 @@ struct BizStartGuide: View {
             .padding(16)
             .inkPanel(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
+    }
+}
+
+// MARK: - Connect & devices → disconnect WhatsApp / erase business data
+
+struct BizEraseBox: View {
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @State private var done = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) { Image(systemName: "trash.circle.fill").foregroundColor(Biz.red); Text("Disconnect & erase").font(.system(size: 13, weight: .bold)) }
+            Text("Stop Zuffi reading WhatsApp and remove what it saved from WhatsApp, or wipe all business data on this Mac. Your WhatsApp app and chats on your phone are not touched.")
+                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                BizSoftButton(title: "Disconnect WhatsApp", icon: "bolt.slash") {
+                    guard confirm("Disconnect WhatsApp?", "Zuffi stops reading WhatsApp and stops Autopilot replies. Clients that came from WhatsApp, and their messages, are removed from this Mac.") else { return }
+                    crm.set(.watchWhatsApp, false); crm.set(.autopilot, false)
+                    let wa = crm.leads.filter { $0.source.lowercased().contains("whatsapp") || !$0.lastMessageAt.isEmpty }
+                    for l in wa { crm.delete(l.key) }
+                    crm.reload()
+                    done = "WhatsApp disconnected · \(wa.count) WhatsApp client\(wa.count == 1 ? "" : "s") removed"
+                }
+                BizSoftButton(title: "Erase all business data", icon: "trash") {
+                    guard confirm("Erase all business data on this Mac?", "Clients, properties, money, staff, bookings and notes saved by Zuffi on this Mac are deleted, and linked devices are unlinked. This can’t be undone.") else { return }
+                    crm.set(.watchWhatsApp, false); crm.set(.autopilot, false)
+                    BizSync.shared.unlink()
+                    try? FileManager.default.removeItem(at: ZuffiBusiness.docs)
+                    crm.reload()
+                    done = "All business data erased from this Mac"
+                }
+            }
+            if !done.isEmpty { Text("✓ " + done).font(.system(size: 11)).foregroundColor(Biz.green) }
+        }
+    }
+    private func confirm(_ title: String, _ text: String) -> Bool {
+        let a = NSAlert(); a.messageText = title; a.informativeText = text; a.alertStyle = .warning
+        a.addButton(withTitle: "Yes, do it"); a.addButton(withTitle: "Cancel"); a.buttons.first?.hasDestructiveAction = true
+        return a.runModal() == .alertFirstButtonReturn
     }
 }

@@ -18,7 +18,7 @@ import SwiftUI
 final class ZuffiBusiness: ObservableObject {
     static let shared = ZuffiBusiness()
     enum Pack: String, CaseIterable, Identifiable {
-        case realEstate, salon, clinic, shop, restaurant, services
+        case realEstate, salon, clinic, shop, restaurant, services, freelancer
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -28,6 +28,7 @@ final class ZuffiBusiness: ObservableObject {
             case .shop: return "Shop / online store"
             case .restaurant: return "Restaurant / café"
             case .services: return "Services (builder, tutor, repairs…)"
+            case .freelancer: return "Freelancer (clients & projects)"
             }
         }
         var icon: String {
@@ -38,6 +39,7 @@ final class ZuffiBusiness: ObservableObject {
             case .shop: return "bag.fill"
             case .restaurant: return "fork.knife"
             case .services: return "wrench.and.screwdriver.fill"
+            case .freelancer: return "laptopcomputer"
             }
         }
         /// Businesses that work with bookings (appointments sheet).
@@ -89,6 +91,14 @@ final class ZuffiBusiness: ObservableObject {
                 ("Clients", "Name,Phone,Last visit,Usual service,Notes\nSample Client,07700900123,\(today),\(p == .clinic ? "Check-up" : "Dinner"),\n"),
             ]
             HomeAction.right = ["business", "appointments", "book", "inbox"]
+        case .freelancer:
+            files = [
+                ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
+                    + Self.leadRow(["name": "Sam Carter", "phone": "07700900123", "source": "LinkedIn", "interest": "Website redesign", "area": "Due end of month", "budget": "£1,500", "status": "Proposal sent", "added": ago4, "last contact": ago4, "next follow-up": today]) + "\n"),
+                ("Projects", "Project,Client,Deadline,Fee,Status,Hours,Notes\nWebsite redesign,Sam Carter,\(tomorrow),1500,Working,6,First draft sent\n"),
+                ("Invoices", "Invoice,Client,Date,Amount,Due,Status\nINV-001,Sam Carter,\(ago4),750,\(today),Sent\n"),
+            ]
+            HomeAction.right = ["business", "inbox", "newLead", "leads"]
         case .shop, .services:
             files = [
                 ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"

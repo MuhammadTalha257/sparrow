@@ -12,7 +12,7 @@ let st = {}; try { st = JSON.parse(LS.get(KEY) || '{}'); } catch { st = {}; }
 const save = () => { const { lic: _a, ...keep } = st; LS.set(KEY, JSON.stringify(keep)); };
 const emit = () => {
   document.dispatchEvent(new CustomEvent('zuffi-plan', { detail: { plan: plan(), account: st.account || null } }));
-  try { window.SparrowHost === 'mac' && window.SparrowMac?.post('plan', { plan: plan(), email: email(), freeLeads: freeLeads() }); } catch {}
+  try { window.SparrowHost === 'mac' && window.SparrowMac?.post('plan', { plan: plan(), email: email(), freeLeads: freeLeads(), aiUsed: st.account?.ai?.used ?? 0, aiLimit: st.account?.ai?.limit ?? 0 }); } catch {}
 };
 
 export function deviceId() {
@@ -148,7 +148,7 @@ export async function manageUrl() {
 export async function ai(messages, maxTokens = 700) {
   if (!isPaid()) throw new Error('upgrade');
   const j = await call('/ai', { messages, max_tokens: maxTokens });
-  if (j.ok) return j.text;
+  if (j.ok) { if (st.account) { st.account.ai = { used: j.used, limit: j.limit }; save(); emit(); } return j.text; }
   throw new Error(j.status === 402 ? 'upgrade' : j.error === 'limit' ? 'limit' : j.error || 'AI unavailable');
 }
 
@@ -161,6 +161,8 @@ const ready = (async () => {
 })();
 export const whenReady = () => ready;
 
-window.zuffiAccount = { plan, isPaid, isBusiness, isTrial, locked, trialEnds, signedIn, account, email, refresh, upgradeUrl, manageUrl, freeLeads, whenReady };
+/** Built-in AI this month: {used, limit} (0 limit = not on a plan). */
+export const aiUsage = () => ({ used: st.account?.ai?.used ?? 0, limit: st.account?.ai?.limit ?? 0 });
+window.zuffiAccount = { aiUsage, plan, isPaid, isBusiness, isTrial, locked, trialEnds, signedIn, account, email, refresh, upgradeUrl, manageUrl, freeLeads, whenReady };
 ready.then(() => setTimeout(() => refresh(!!st.token && (!st.lic || plan() === 'free' || plan() === 'trial')), 1500));   // couldn’t check it here → ask the server now
 setInterval(() => refresh(), 6 * 3600e3);

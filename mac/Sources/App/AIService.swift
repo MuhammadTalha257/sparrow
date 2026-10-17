@@ -108,7 +108,7 @@ final class AIService {
 
     var fullSystemPrompt: String {
         if let o = oneShotSystem { return o }
-        let base = Self.systemPrompt + ZuffiTeam.shared.persona
+        let base = Self.systemPrompt + ZuffiPlan.shared.profileLine + ZuffiTeam.shared.persona
         guard let document else { return base }
         return base + """
 
@@ -241,7 +241,7 @@ final class AIService {
     /// One prompt for a command-line AI: Zuffi's instructions, any document, and the recent conversation.
     private func cliPrompt() -> String {
         var t = oneShotSystem.map { $0 + " Do not use tools or edit files.\n" }
-            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + ZuffiTeam.shared.persona + "\n")
+            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + ZuffiPlan.shared.profileLine + ZuffiTeam.shared.persona + "\n")
         if let d = document { t += "\nDocument the user shared:\n\(d.prefix(20_000))\n" }
         for m in history.suffix(12) { t += "\n\(m.role == "assistant" ? "Zuffi" : "User"): \(m.text)" }
         return t + "\nZuffi:"
@@ -361,6 +361,7 @@ final class AIService {
             if code == 401 || code == 403 { msg += " — check the API key in Settings." }
             throw NSError(domain: "Zuffi", code: code, userInfo: [NSLocalizedDescriptionKey: msg])
         }
+        AIUsage.shared.record(url: url.absoluteString, model: body["model"] as? String ?? url.lastPathComponent, json: json)
         return json
     }
 
@@ -767,6 +768,7 @@ struct AIModelsSettings: View {
                 }
             } label: { Label("Where answers come from", systemImage: "bolt.horizontal.circle") }
 
+            AIUsageCard()
             InstalledAIView(state: state)
             TeamSettings()
 
@@ -909,12 +911,39 @@ struct ZuffiCardStyle: GroupBoxStyle {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.92))
+                .fill(Color.white.opacity(0.06))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.05), radius: 10, y: 3)
+        .shadow(color: Color.black.opacity(0.25), radius: 14, y: 4)
+    }
+}
+
+/// Settings → AI → "This month": built-in AI left, and tokens / rough cost per AI company for your own keys.
+struct AIUsageCard: View {
+    @ObservedObject private var u = AIUsage.shared
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                if u.builtInLimit > 0 {
+                    HStack { Text("Zuffi’s built-in AI").font(.system(size: 12.5, weight: .semibold)); Spacer(); Text("\(u.builtInUsed) / \(u.builtInLimit)").font(.system(size: 12, weight: .semibold, design: .rounded)) }
+                    ProgressView(value: Double(min(u.builtInUsed, u.builtInLimit)), total: Double(max(u.builtInLimit, 1))).tint(Color(hex: "#E2648A"))
+                    Text("\(max(0, u.builtInLimit - u.builtInUsed)) questions left this month (resets on the 1st).").font(.system(size: 11)).foregroundColor(.secondary)
+                }
+                if u.tokens > 0 {
+                    if u.builtInLimit > 0 { Divider() }
+                    HStack { Text("Your own keys").font(.system(size: 12.5, weight: .semibold)); Spacer(); Text("\(AIUsage.tok(u.tokens)) tokens · ~\(AIUsage.money(u.cost))").font(.system(size: 12, weight: .semibold, design: .rounded)) }
+                    ForEach(u.all.sorted { $0.value.cost > $1.value.cost }, id: \.key) { name, r in
+                        HStack { Text(name).font(.system(size: 11.5)); Spacer(); Text("\(r.req) answers · \(AIUsage.tok(r.inT + r.outT)) tokens · ~\(AIUsage.money(r.cost))").font(.system(size: 11)).foregroundColor(.secondary) }
+                    }
+                    Text("Costs are estimates from list prices — your AI company’s bill is the real number.").font(.system(size: 10.5)).foregroundColor(.secondary)
+                }
+                if u.builtInLimit == 0 && u.tokens == 0 {
+                    Text("Nothing used yet this month.").font(.system(size: 11.5)).foregroundColor(.secondary)
+                }
+            }
+        } label: { Label("This month", systemImage: "chart.bar.fill") }
     }
 }

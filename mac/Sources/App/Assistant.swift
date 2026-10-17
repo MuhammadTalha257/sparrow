@@ -369,8 +369,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     func offlineHello() {
         liveEndedAt = .distantPast                 // so it really listens after speaking
         listenAfterSpeech = true
-        speak(NetStatus.shared.online ? "Yes? I'm listening."
-              : "I'm offline right now, but I can still help with your Mac, reminders and notes. What do you need?")
+        speak("Yes?")
     }
 
     func listenOffline() {
@@ -634,7 +633,14 @@ final class VoiceEngine: NSObject, ObservableObject {
         }
         var command: String?
         if wasOneShot {
-            command = said.isEmpty ? nil : said
+            // Already listening for the command: drop a repeated "hey Zuffi" in front of it.
+            let stripped = said.replacingOccurrences(of: #"^\s*((hey|hi|ok|okay|hello)\s+)?(zuffi|zuffy|zoofy|sophie|zufi)[\s,.!?]*"#, with: "", options: [.regularExpression, .caseInsensitive])
+            if stripped.isEmpty && !said.isEmpty {
+                appendAppLog("voice.log", "name again while listening — still listening")
+                heard = ""; oneShot = true; startRecognition(); status = "Listening…"
+                return
+            }
+            command = stripped.isEmpty ? nil : stripped
         } else {
             command = extractCommand(said)
         }
@@ -667,7 +673,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
             liveEndedAt = .distantPast
             listenAfterSpeech = true
-            speak(NetStatus.shared.online ? "Yes?" : "Yes? I'm offline, but I can still help.")
+            speak(["Yes?", "Yes?", "I'm here.", "Mm-hm?"].randomElement()!)
             status = "Listening…"
             return
         }

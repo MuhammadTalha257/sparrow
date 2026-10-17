@@ -297,6 +297,9 @@ final class ClaudeService {
             let msg = String(data: data, encoding: .utf8) ?? "unknown error"
             throw NSError(domain: "Claude", code: 0, userInfo: [NSLocalizedDescriptionKey: msg])
         }
+        if let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            AIUsage.shared.record(url: endpoint.absoluteString, model: body["model"] as? String ?? "", json: j)
+        }
         return data
     }
 

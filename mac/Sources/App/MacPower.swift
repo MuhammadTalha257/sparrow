@@ -73,6 +73,7 @@ enum SpeedToLead {
     private static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; return f }()
 
     static func check() {
+        guard !ZuffiPlan.shared.isPersonal, !ZuffiPlan.shared.isLocked else { return }   // business alerts only for a business
         let now = Date()
         for l in ZuffiCRM.shared.leads where l.stage == "New" {
             guard let at = fmt.date(from: l.lastMessageAt) else { continue }
@@ -83,8 +84,9 @@ enum SpeedToLead {
             let key = l.key + "|" + l.lastMessageAt
             if (told[key] ?? 0) >= stage { continue }
             told[key] = stage
-            let msg = stage == 15 ? "⏱️ \(l.display) has waited \(mins) min — reply now or they'll go elsewhere"
-                                  : "⏱️ \(l.display) is waiting for a reply (\(mins) min)"
+            // Notch layout: "from" line (green) · message · card ("✓ title — detail")
+            let msg = "WhatsApp · \(l.display)\n" + (stage == 15 ? "Has waited \(mins) min — reply now or they'll go elsewhere." : "Is waiting for your reply (\(mins) min).")
+                + "\n✓ Reply now — Business → Inbox"
             AppState.shared.noteMessage = msg
             NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
             NotificationCenter.default.post(name: .petSay, object: msg)

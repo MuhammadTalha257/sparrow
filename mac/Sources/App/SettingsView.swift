@@ -241,9 +241,9 @@ struct SettingsView: View {
         }
         .background(
             ZStack {
-                Color(nsColor: .windowBackgroundColor)
-                LinearGradient(colors: [Color(hex: "#F9A8C9").opacity(0.10), Color(hex: "#B79CFF").opacity(0.06), .clear],
-                               startPoint: .topLeading, endPoint: .bottom)
+                Color(hex: "#0B0A1F")                                         // Zuffi night sky (same as the panel)
+                RadialGradient(colors: [Color(hex: "#E2648A").opacity(0.22), .clear], center: .topTrailing, startRadius: 10, endRadius: 520)
+                RadialGradient(colors: [Color(hex: "#7C5CFF").opacity(0.18), .clear], center: .bottomLeading, startRadius: 10, endRadius: 560)
             }
             .ignoresSafeArea()
         )

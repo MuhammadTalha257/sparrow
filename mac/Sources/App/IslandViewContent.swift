@@ -1056,15 +1056,70 @@ struct ResultView: View {
 
 struct NoteView: View {
     @ObservedObject var state: AppState
+    @State private var typed = ""
+    @State private var typing: Task<Void, Never>?
+
+    /// "From line\nMessage\n✓ Card title — card detail": the first and last lines are optional.
+    private var parts: (from: String?, text: String, card: (String, String)?) {
+        var lines = (state.noteMessage ?? "").components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        var card: (String, String)?
+        if lines.count > 1, let last = lines.last, last.hasPrefix("✓ ") {
+            let body = String(last.dropFirst(2)); let bits = body.components(separatedBy: " — ")
+            card = (bits[0], bits.count > 1 ? bits[1...].joined(separator: " — ") : ""); lines.removeLast()
+        }
+        var from: String?
+        if lines.count > 1, lines[0].count < 60, lines[0].contains(" · ") { from = lines.removeFirst() }
+        return (from, lines.joined(separator: " "), card)
+    }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            CardBackground(wash: nil)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(state.noteMessage ?? "")
-                    .font(.system(size: 15, weight: .semibold))
+        let p = parts
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(hex: "#0B0B0D"))
+            VStack(alignment: .leading, spacing: 7) {
+                if let from = p.from {
+                    Text(from).font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#4ADE80")).lineLimit(1)
+                }
+                Text(typed.isEmpty ? " " : typed)
+                    .font(.system(size: 14.5, weight: .medium)).foregroundColor(.white.opacity(0.95))
+                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                if let card = p.card, typed.count >= p.text.count {
+                    HStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white)
+                            .frame(width: 30, height: 30)
+                            .overlay(Image(systemName: "briefcase").font(.system(size: 13, weight: .semibold)).foregroundColor(.black))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(card.0).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white)
+                            if !card.1.isEmpty { Text(card.1).font(.system(size: 10.5)).foregroundColor(.white.opacity(0.5)) }
+                        }
+                        Spacer(minLength: 6)
+                        Circle().fill(Color(hex: "#4ADE80")).frame(width: 24, height: 24)
+                            .overlay(Image(systemName: "checkmark").font(.system(size: 11, weight: .heavy)).foregroundColor(.black))
+                    }
+                    .padding(9)
+                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(0.08)))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .padding(.leading, 98)
+            .padding(.leading, 98).padding(.trailing, 18).padding(.vertical, 12)
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: typed.count >= p.text.count)
+        }
+        .onAppear { type(p.text) }
+        .onChange(of: state.noteMessage) { _, _ in type(parts.text) }
+        .onDisappear { typing?.cancel() }
+    }
+
+    /// Letters appear one by one, like Zuffi is writing (instant for long texts).
+    private func type(_ text: String) {
+        typing?.cancel()
+        guard text.count < 160 else { typed = text; return }
+        typed = ""
+        typing = Task { @MainActor in
+            for ch in text {
+                if Task.isCancelled { return }
+                typed.append(ch)
+                try? await Task.sleep(nanoseconds: 16_000_000)
+            }
         }
     }
 }

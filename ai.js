@@ -115,8 +115,44 @@ async function post(url, body, headers) {
     const msg = j.error?.message || j.error || j.message || `HTTP ${status}`;
     throw new Error(status === 401 || status === 403 ? `${msg} — check the key in Settings.` : String(msg));
   }
+  try { trackUsage(url, body?.model || '', j); } catch {}
   return j;
 }
+
+// ---- Your own AI keys: how many tokens you used this month and roughly what it cost ----
+// Prices are approximate list prices in US dollars per million tokens (input, output); the AI
+// company's own bill is the real number. OpenRouter tells us the exact cost itself.
+const PRICE = [
+  [/anthropic/, m => /opus/.test(m) ? [15, 75] : /haiku/.test(m) ? [1, 5] : [3, 15]],
+  [/openai\.com/, m => /mini|nano/.test(m) ? [0.15, 0.6] : [2.5, 10]],
+  [/groq/, () => [0.59, 0.79]], [/googleapis/, m => /pro/.test(m) ? [1.25, 10] : [0.3, 2.5]],
+  [/x\.ai/, () => [3, 15]], [/deepseek/, () => [0.27, 1.1]], [/mistral/, () => [0.4, 2]], [/perplexity/, () => [1, 1]], [/openrouter/, () => [0, 0]],
+];
+const NAMES = [[/anthropic/, 'Claude'], [/openai\.com/, 'ChatGPT'], [/groq/, 'Groq'], [/googleapis/, 'Gemini'], [/x\.ai/, 'Grok'], [/deepseek/, 'DeepSeek'], [/mistral/, 'Mistral'], [/perplexity/, 'Perplexity'], [/openrouter/, 'OpenRouter']];
+const UKEY = 'zuffiAIUsage';
+function trackUsage(url, model, j) {
+  const name = NAMES.find(([re]) => re.test(url))?.[1]; if (!name) return;           // only AI companies (not Zuffi's own server)
+  const u = j.usage || {}, g = j.usageMetadata || {};
+  const inT = u.prompt_tokens ?? u.input_tokens ?? g.promptTokenCount ?? 0, outT = u.completion_tokens ?? u.output_tokens ?? g.candidatesTokenCount ?? 0;
+  const price = PRICE.find(([re]) => re.test(url))?.[1](model || '') || [0, 0];
+  const cost = typeof u.cost === 'number' ? u.cost : (inT * price[0] + outT * price[1]) / 1e6;
+  const month = new Date().toISOString().slice(0, 7);
+  let all = {}; try { all = JSON.parse(localStorage.getItem(UKEY) || '{}'); } catch {}
+  if (all.month !== month) all = { month, p: {} };
+  const r = all.p[name] || (all.p[name] = { req: 0, in: 0, out: 0, cost: 0 });
+  r.req++; r.in += inT; r.out += outT; r.cost += cost;
+  try { localStorage.setItem(UKEY, JSON.stringify(all)); } catch {}
+  document.dispatchEvent(new CustomEvent('zuffi-usage'));
+  try { window.SparrowHost === 'mac' && window.SparrowMac?.post('usage', usageSummary()); } catch {}
+}
+/** This month with your own keys: {month, tokens, cost, req, byProvider:{name:{req,in,out,cost}}}. */
+export function usageSummary() {
+  let all = {}; try { all = JSON.parse(localStorage.getItem(UKEY) || '{}'); } catch {}
+  const month = new Date().toISOString().slice(0, 7), p = all.month === month ? all.p || {} : {};
+  const v = Object.values(p);
+  return { month, req: v.reduce((a, r) => a + r.req, 0), tokens: v.reduce((a, r) => a + r.in + r.out, 0), cost: v.reduce((a, r) => a + r.cost, 0), byProvider: p };
+}
+window.zuffiUsage = usageSummary;
 
 async function newestGemini(key) {
   try {

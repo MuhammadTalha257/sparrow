@@ -163,9 +163,15 @@ function setState(s) {
 const expand = () => { setState('expanded'); homeApps(); micLabel(); };
 const collapse = () => { if (document.querySelector('.sheet:not([hidden])')) document.querySelector('#sheetBg')?.click(); setState('collapsed'); pushCap(); };
 /** Show a short message in the island (alerts, voice replies), then shrink back. */
+let typeT = null;
 function peek(t1, t2 = '', ms = 6000) {
   if (state === 'expanded') return;
   capText(t1, t2); setState('peek');
+  // "WhatsApp · Sana" style lines sit on top in green; the message types itself in, like the Mac notch
+  const sm = cap.querySelector('#capT2'), b = cap.querySelector('#capT1');
+  sm.classList.toggle('from', / · /.test(t2) && t2.length < 60);
+  clearInterval(typeT);
+  if (t1.length < 140 && !matchMedia('(prefers-reduced-motion: reduce)').matches) { let n = 0; b.textContent = ''; typeT = setInterval(() => { b.textContent = t1.slice(0, ++n); if (n >= t1.length) clearInterval(typeT); }, 16); }
   clearTimeout(peekTimer); peekTimer = setTimeout(() => { if (state === 'peek') { setState('collapsed'); pushCap(); } }, ms);
 }
 cap.onclick = expand;
@@ -210,6 +216,8 @@ store.onChange(pushCap); setInterval(pushCap, 60000); setTimeout(pushCap, 300);
 // hooks used by app.js
 window.SparrowIsland = {
   peek, expand, collapse, get state() { return state; },
+  /** AI usage line on the open notch: "Built-in AI: 12 of 300 · 288 left". */
+  usage(lines) { let el = nhome.querySelector('.nh-usage'); if (!el) { el = document.createElement('div'); el.className = 'nh-usage'; nhome.appendChild(el); } el.textContent = (lines || [])[0] || ''; el.hidden = !el.textContent; },
   /** A reply to something said while the island was closed: short ones peek, long ones open the island. */
   reply(text, isCommand) {
     if (state === 'expanded') { if (!html.classList.contains('isl-full')) setWords(text.slice(0, 160), 20000); return; }

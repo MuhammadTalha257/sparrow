@@ -1541,3 +1541,34 @@ html[data-event]:not([data-event="none"]) .hero::before { background: radial-gra
 .wel-steps li::before { content: ''; flex: none; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); box-sizing: border-box; transition: all .3s; }
 .wel-steps li.done { color: var(--text); }
 .wel-steps li.done::before { content: '✓'; display: grid; place-items: center; border-color: var(--accent); background: var(--accent); color: #fff; font-size: 12px; font-weight: 800; }
+/* "Just me": no business screens */
+.personal-mode .tabs [data-v="biz"] { display: none; }
+/* Welcome: business type cards + optional extras */
+.wel-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.wel-kinds button { display: grid; grid-template-columns: 30px 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; transition: border-color .2s, background .2s, transform .2s; }
+.wel-kinds button:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+.wel-kinds button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.wel-kinds span { grid-row: 1 / 3; font-size: 22px; text-align: center; }
+.wel-kinds b { font-size: 13.5px; }
+.wel-kinds small { color: var(--muted); font-size: 11.5px; }
+.wel-more { margin: 4px 0 10px; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.wel-more summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
+.wel-more[open] summary { margin-bottom: 10px; }
+/* Windows notch messages, like the website demo: deep black, bunny left, 2 lines, green "from" line */
+html.island-mode.isl-peek #island { --iw: 460px; --ih: 88px; --ir: 26px; background: #0B0B0D; }
+html.island-mode.isl-peek .cap { height: 88px; padding: 0 20px 0 16px; gap: 14px; align-items: center; }
+html.island-mode.isl-peek .cap-bird { width: 46px; height: 46px; }
+html.island-mode.isl-peek .cap-txt { gap: 3px; }
+html.island-mode.isl-peek .cap-txt b { font-size: 14.5px; font-weight: 600; color: #fff; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
+html.island-mode.isl-peek .cap-txt small { font-size: 12px; color: #A0A2AA; }
+html.island-mode.isl-peek .cap-txt small.from { order: -1; color: #4ADE80; font-weight: 600; font-size: 11.5px; }
+html.island-mode.isl-peek .cap-wave { display: none; }
+
+.ai-usage { display: grid; gap: 4px; margin: 4px 0 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.ai-usage[hidden] { display: none; }
+.ai-usage .au-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.ai-usage .au-row + small, .ai-usage small { color: var(--muted); font-size: 12px; }
+.ai-usage .au-bar { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--accent) 15%, transparent); overflow: hidden; }
+.ai-usage .au-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.ai-usage .au-note { opacity: .75; font-size: 11px !important; }
+.nh-usage { font-size: 10.5px; color: #8E9099; text-align: center; letter-spacing: .01em; }

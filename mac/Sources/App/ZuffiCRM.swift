@@ -171,6 +171,7 @@ final class ZuffiCRM: ObservableObject {
         case .salon, .clinic, .restaurant: return ["New", "Contacted", "Booked", "Visited", "Regular", "Lost"]
         case .shop: return ["New", "Contacted", "Quoted", "Ordered", "Delivered", "Lost"]
         case .services: return ["New", "Contacted", "Quoted", "Negotiating", "Won", "Lost"]
+        case .freelancer: return ["New", "Proposal sent", "Working", "Invoiced", "Paid", "Lost"]
         }
     }
     /// Field names that fit the business.
@@ -181,6 +182,7 @@ final class ZuffiCRM: ObservableObject {
         case .restaurant: return ("Booking for", "Party size / time", "Budget", "Spent")
         case .shop: return ("Product", "Delivery area", "Budget", "Order value")
         case .services: return ("Job", "Location", "Budget", "Job value")
+        case .freelancer: return ("Project", "Deadline", "Budget", "Project value")
         }
     }
     /// "PK", "GB" or "OTHER" — picked in My business; decides currency and which business types show.
@@ -209,7 +211,7 @@ final class ZuffiCRM: ObservableObject {
     var packsForCountry: [ZuffiBusiness.Pack] {
         switch country {
         case "PK": return [.realEstate]
-        case "GB": return [.salon, .clinic, .shop, .restaurant, .services, .realEstate]
+        case "GB": return [.salon, .clinic, .shop, .restaurant, .services, .freelancer, .realEstate]
         default: return ZuffiBusiness.Pack.allCases
         }
     }
@@ -222,12 +224,13 @@ final class ZuffiCRM: ObservableObject {
         case .shop: return "\(country.isEmpty ? "" : country + " ")shop"
         case .restaurant: return "\(country.isEmpty ? "" : country + " ")restaurant"
         case .services: return "\(country.isEmpty ? "" : country + " ")service business"
+        case .freelancer: return "\(country.isEmpty ? "" : country + " ")freelancer"
         }
     }
 
     nonisolated static func stage(for raw: String) -> String {
         let s = raw.lowercased().trimmingCharacters(in: .whitespaces)
-        let known = ["New", "Contacted", "Site visit", "Negotiating", "Won", "Lost", "Booked", "Visited", "Regular", "Quoted", "Ordered", "Delivered"]
+        let known = ["New", "Contacted", "Site visit", "Negotiating", "Won", "Lost", "Booked", "Visited", "Regular", "Quoted", "Ordered", "Delivered", "Proposal sent", "Working", "Invoiced", "Paid"]
         if let k = known.first(where: { $0.lowercased() == s }) { return k }
         if s.isEmpty || s == "new" || ["hot", "warm", "cold"].contains(s) { return "New" }
         if s.contains("visit") { return "Site visit" }

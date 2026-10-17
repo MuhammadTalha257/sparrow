@@ -47,6 +47,7 @@ final class ZuffiPlan: ObservableObject {
         let d = UserDefaults.standard
         d.set(self.plan, forKey: "zuffiPlan"); d.set(email, forKey: "zuffiPlanEmail"); d.set(self.freeLeads, forKey: "zuffiFreeLeads")
         let wasLocked = lockedBefore; lockedBefore = isLocked
+        checkOldKeys()
         if isLocked && !shownLock { shownLock = true; openAccount() }        // show the paywall once when Zuffi locks
         if !isLocked { shownLock = false }
         // "Hey Zuffi" listening pauses with the plan and comes back with it
@@ -57,6 +58,84 @@ final class ZuffiPlan: ObservableObject {
     }
 
     func leadRoom(current: Int) -> Bool { isBusiness || current < freeLeads }
+
+    /// AI keys saved on this Mac before this person signed in (an old install, or someone else's)?
+    /// macOS keeps them after an app is deleted, so ask once: keep them or remove them.
+    private var askedKeys = false
+    private func checkOldKeys() {
+        guard !email.isEmpty, !askedKeys else { return }
+        let owner = UserDefaults.standard.string(forKey: "aiKeysOwner") ?? ""
+        guard owner != email else { return }
+        let found = KeychainStore.aiKeys.filter { !(KeychainStore.shared.get($0) ?? "").isEmpty }
+        if found.isEmpty { UserDefaults.standard.set(email, forKey: "aiKeysOwner"); return }
+        askedKeys = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            let names = found.map { $0.replacingOccurrences(of: "-api-key", with: "").capitalized }.joined(separator: ", ")
+            let a = NSAlert()
+            a.messageText = "AI keys from before were found on this Mac"
+            a.informativeText = "This Mac still has \(names) key\(found.count > 1 ? "s" : "") saved from before you signed in as \(self.email). macOS keeps them even after Zuffi is deleted.\n\nKeep them if they are yours. Remove them if they belong to someone else. Zuffi’s built-in AI works either way."
+            a.addButton(withTitle: "Remove them"); a.addButton(withTitle: "Keep — they’re mine")
+            if a.runModal() == .alertFirstButtonReturn {
+                KeychainStore.shared.removeAll(onlyAI: true)
+                UserDefaults.standard.removeObject(forKey: "geminiResolved")
+                AIService.shared.clearConversation()
+            }
+            UserDefaults.standard.set(self.email, forKey: "aiKeysOwner")
+        }
+    }
+
+    // MARK: Who Zuffi helps (the welcome form)
+
+    /// "personal" (Just me) or "business". Business screens only show for a business.
+    var use: String { UserDefaults.standard.string(forKey: "zuffiUse") ?? "personal" }
+    var isPersonal: Bool { UserDefaults.standard.string(forKey: "zuffiProfile") != nil && use != "business" }
+    var profile: [String: String] { (UserDefaults.standard.dictionary(forKey: "zuffiProfile") as? [String: String]) ?? [:] }
+
+    func saveProfile(_ o: [String: Any]) {
+        var p: [String: String] = [:]
+        for (k, v) in o { if let s = v as? String { p[k] = s.trimmingCharacters(in: .whitespacesAndNewlines) } }
+        let d = UserDefaults.standard
+        d.set(p, forKey: "zuffiProfile")
+        d.set(p["name"] ?? "", forKey: AssistantPrefs.userName)       // the name from the form — never the Mac account's
+        if let c = p["city"], !c.isEmpty { d.set(c, forKey: AssistantPrefs.weatherCity) }
+        d.set(p["type"] == "business" ? "business" : "personal", forKey: "zuffiUse")
+        d.set(p["business"] ?? "", forKey: "zuffiBusinessName")
+        if p["type"] == "business" {
+            let map: [String: ZuffiBusiness.Pack] = ["realEstate": .realEstate, "salon": .salon, "clinic": .clinic, "shop": .shop, "restaurant": .restaurant, "services": .services, "freelancer": .freelancer]
+            if let pack = map[p["kind"] ?? ""], ZuffiBusiness.shared.pack != pack {
+                if pack == .realEstate, UserDefaults.standard.string(forKey: "bizCountry") == nil { ZuffiCRM.shared.country = "PK" }
+                Task { _ = await ZuffiBusiness.shared.install(pack) }
+            }
+            ZuffiBusiness.shared.businessName = p["business"] ?? ""
+        } else {
+            HomeAction.right = HomeAction.defaultRight                 // no business buttons for "Just me"
+        }
+        objectWillChange.send()
+        AIService.shared.clearConversation()
+    }
+
+    /// One paragraph for every AI prompt, so Zuffi always knows who she's helping (phone numbers are left out).
+    var profileLine: String {
+        let p = profile
+        guard !p.isEmpty else { return "" }
+        var parts: [String] = []
+        if let n = p["name"], !n.isEmpty { parts.append("Their name is \(n) (from their Zuffi profile — use this name, never one from the computer)") }
+        if let b = p["dob"], b.count == 10 { parts.append("date of birth \(b)") }
+        if let c = p["city"], !c.isEmpty { parts.append("lives in \(c)") }
+        if p["type"] == "business" {
+            var biz = "uses Zuffi for their business"
+            if let n = p["business"], !n.isEmpty { biz += " \"\(n)\"" }
+            if let k = p["kind"], !k.isEmpty { biz += " (\(ZuffiBusiness.Pack(rawValue: k)?.label ?? k))" }
+            if let r = p["role"], !r.isEmpty { biz += ", they are the \(r)" }
+            if let h = p["hours"], !h.isEmpty { biz += ", open \(h)" }
+            if let f = p["founded"], f.count == 10 { biz += ", opened on \(f)" }
+            parts.append(biz)
+        } else { parts.append("uses Zuffi personally (not for a business)") }
+        if let h = p["help"], !h.isEmpty { parts.append("wants help with: \(h)") }
+        if let n = p["notes"], !n.isEmpty { parts.append("always remember: \(n)") }
+        return "\nABOUT THE USER (they filled this in when they set Zuffi up; answer questions about it): " + parts.joined(separator: "; ") + ".\n"
+    }
 
     /// Opens Settings → Zuffi account in the Zuffi panel (sign in / upgrade live there).
     func openAccount() {
@@ -155,5 +234,85 @@ enum ZuffiReset {
         relaunch.arguments = ["-c", "sleep 1.5; /usr/bin/open \"\(Bundle.main.bundlePath)\""]
         try? relaunch.run()
         exit(0)            // quit now, so nothing writes the old settings back on the way out
+    }
+}
+
+// MARK: - AI usage (Settings → AI and the notch)
+
+/// Tokens and rough cost when someone uses their own AI keys, plus the built-in AI allowance from their plan.
+/// Prices are approximate list prices (US$ per million tokens, input/output); the AI company's bill is the real number.
+final class AIUsage: ObservableObject, @unchecked Sendable {
+    static let shared = AIUsage()
+    struct Row: Codable { var req = 0; var inT = 0; var outT = 0; var cost = 0.0 }
+    @Published private(set) var month = ""
+    @Published private(set) var rows: [String: Row] = [:]          // made on this Mac (native AI)
+    @Published private(set) var webRows: [String: Row] = [:]       // made by the Zuffi panel (web part)
+    @Published var builtInUsed = 0
+    @Published var builtInLimit = 0
+    private let lock = NSLock()
+
+    private init() { load() }
+    private static var thisMonth: String { let f = DateFormatter(); f.dateFormat = "yyyy-MM"; return f.string(from: Date()) }
+
+    private func load() {
+        let d = UserDefaults.standard
+        month = d.string(forKey: "aiUsageMonth") ?? ""
+        if let data = d.data(forKey: "aiUsageRows"), let r = try? JSONDecoder().decode([String: Row].self, from: data) { rows = r }
+        if month != Self.thisMonth { month = Self.thisMonth; rows = [:]; webRows = [:] }
+    }
+
+    /// Called after every successful answer from an AI company.
+    func record(url: String, model: String, json: [String: Any]) {
+        let names: [(String, String)] = [("anthropic", "Claude"), ("openai.com", "ChatGPT"), ("groq", "Groq"), ("googleapis", "Gemini"), ("x.ai", "Grok"),
+                                         ("deepseek", "DeepSeek"), ("mistral", "Mistral"), ("perplexity", "Perplexity"), ("openrouter", "OpenRouter")]
+        guard let name = names.first(where: { url.contains($0.0) })?.1 else { return }
+        let u = json["usage"] as? [String: Any] ?? [:], g = json["usageMetadata"] as? [String: Any] ?? [:]
+        let inT = (u["prompt_tokens"] ?? u["input_tokens"] ?? g["promptTokenCount"]) as? Int ?? 0
+        let outT = (u["completion_tokens"] ?? u["output_tokens"] ?? g["candidatesTokenCount"]) as? Int ?? 0
+        let m = model.lowercased()
+        let price: (Double, Double) = {
+            switch name {
+            case "Claude": return m.contains("opus") ? (15, 75) : m.contains("haiku") ? (1, 5) : (3, 15)
+            case "ChatGPT": return (m.contains("mini") || m.contains("nano")) ? (0.15, 0.6) : (2.5, 10)
+            case "Groq": return (0.59, 0.79)
+            case "Gemini": return m.contains("pro") ? (1.25, 10) : (0.3, 2.5)
+            case "Grok": return (3, 15)
+            case "DeepSeek": return (0.27, 1.1)
+            case "Mistral": return (0.4, 2)
+            case "Perplexity": return (1, 1)
+            default: return (0, 0)
+            }
+        }()
+        let cost = (u["cost"] as? Double) ?? (Double(inT) * price.0 + Double(outT) * price.1) / 1_000_000
+        DispatchQueue.main.async {
+            if self.month != Self.thisMonth { self.month = Self.thisMonth; self.rows = [:]; self.webRows = [:] }
+            var r = self.rows[name] ?? Row(); r.req += 1; r.inT += inT; r.outT += outT; r.cost += cost; self.rows[name] = r
+            UserDefaults.standard.set(self.month, forKey: "aiUsageMonth")
+            if let data = try? JSONEncoder().encode(self.rows) { UserDefaults.standard.set(data, forKey: "aiUsageRows") }
+        }
+    }
+
+    /// The panel's own count (sent by the web part).
+    func fromWeb(_ o: [String: Any]) {
+        var out: [String: Row] = [:]
+        for (k, v) in (o["byProvider"] as? [String: Any] ?? [:]) {
+            guard let d = v as? [String: Any] else { continue }
+            out[k] = Row(req: d["req"] as? Int ?? 0, inT: d["in"] as? Int ?? 0, outT: d["out"] as? Int ?? 0, cost: d["cost"] as? Double ?? 0)
+        }
+        DispatchQueue.main.async { self.webRows = out }
+    }
+
+    var all: [String: Row] { rows.merging(webRows) { a, b in Row(req: a.req + b.req, inT: a.inT + b.inT, outT: a.outT + b.outT, cost: a.cost + b.cost) } }
+    var tokens: Int { all.values.reduce(0) { $0 + $1.inT + $1.outT } }
+    var cost: Double { all.values.reduce(0) { $0 + $1.cost } }
+    static func tok(_ n: Int) -> String { n >= 1_000_000 ? String(format: "%.1fM", Double(n) / 1e6) : n >= 1000 ? "\(n / 1000)k" : "\(n)" }
+    static func money(_ c: Double) -> String { c < 0.01 ? String(format: "$%.4f", c) : String(format: "$%.2f", c) }
+
+    /// One short line for the notch.
+    var notchLine: String {
+        var bits: [String] = []
+        if builtInLimit > 0 { bits.append("AI \(builtInUsed)/\(builtInLimit)") }
+        if tokens > 0 { bits.append("\(Self.tok(tokens)) tokens · ~\(Self.money(cost))") }
+        return bits.joined(separator: "  ·  ")
     }
 }

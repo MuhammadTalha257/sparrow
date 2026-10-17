@@ -221,7 +221,10 @@ struct HomeAction: Identifiable {
         set { UserDefaults.standard.set(newValue, forKey: "homeLeft") }
     }
     @MainActor static var right: [String] {
-        get { (UserDefaults.standard.stringArray(forKey: "homeRight") ?? defaultRight).filter { find($0) != nil } }
+        get {
+            let bizOnly: Set<String> = ["business", "inbox", "leads", "newLead", "messageLeads", "book", "week", "appointments", "callToday"]
+            return (UserDefaults.standard.stringArray(forKey: "homeRight") ?? defaultRight).filter { find($0) != nil && !(ZuffiPlan.shared.isPersonal && bizOnly.contains($0)) }
+        }
         set { UserDefaults.standard.set(newValue, forKey: "homeRight") }
     }
 
@@ -292,6 +295,8 @@ struct ZuffiHomePanel: View {
     @ObservedObject private var now = NowUsing.shared
     @ObservedObject private var agents = AgentHub.shared
     @ObservedObject private var home = ZuffiHomeModel.shared
+    @ObservedObject private var usage = AIUsage.shared
+    @ObservedObject private var planBox = ZuffiPlan.shared
     @StateObject private var head = SparrowSpriteModel()
     @State private var hover: String?
 
@@ -343,6 +348,14 @@ struct ZuffiHomePanel: View {
                 }
                 .frame(width: W - 20)
                 Spacer(minLength: 0)
+                if !usage.notchLine.isEmpty {
+                    Text(usage.notchLine)
+                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.45))
+                        .lineLimit(1)
+                        .help("AI used this month — details in Settings → AI")
+                        .padding(.bottom, 3)
+                }
                 bottomRow.frame(width: W - 20)
             }
             .padding(.top, 8).padding(.bottom, 12)
@@ -432,11 +445,11 @@ struct ZuffiHomePanel: View {
                     .padding(.horizontal, 12).frame(height: 28)
                     .liquidGlass(Capsule(), interactive: true)
             }.buttonStyle(.plain)
-            Button { BusinessDashboard.shared.show() } label: {
+            if !ZuffiPlan.shared.isPersonal { Button { BusinessDashboard.shared.show() } label: {
                 Label("Business", systemImage: "briefcase.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
                     .padding(.horizontal, 10).frame(height: 28)
                     .liquidGlass(Capsule(), tint: Color(hex: "#C77DFF"), glow: Color(hex: "#F58FA8"), interactive: true)
-            }.buttonStyle(.plain).help("Your leads, WhatsApp inbox, team and automations")
+            }.buttonStyle(.plain).help("Your leads, WhatsApp inbox, team and automations") }
             Button { VoiceEngine.shared.listenOnce() } label: {
                 Image(systemName: listening ? "waveform" : "mic.circle.fill").font(.system(size: 13, weight: .bold))
                     .foregroundColor(Color(hex: "#1A1008"))
