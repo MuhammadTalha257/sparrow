@@ -14,6 +14,14 @@ final class BusinessDashboard {
 
     func show(_ tab: BizTab? = nil) {
         if ZuffiPlan.shared.blocked() { return }
+        if !ZuffiPlan.shared.isBusiness {
+            let a = NSAlert()
+            a.messageText = "Business is part of Zuffi Business"
+            a.informativeText = "You’re on Pro. Zuffi Business adds the WhatsApp inbox, leads and follow-ups, money and late payers, staff and automations — set up for your type of business."
+            a.addButton(withTitle: "See Business"); a.addButton(withTitle: "Not now")
+            if a.runModal() == .alertFirstButtonReturn { ZuffiPlan.shared.openAccount() }
+            return
+        }
         if ZuffiPlan.shared.isPersonal {
             let a = NSAlert()
             a.messageText = "Business is switched off"

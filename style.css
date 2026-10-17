@@ -1573,3 +1573,6 @@ html.island-mode.isl-peek .cap-wave { display: none; }
 .ai-usage .au-note { opacity: .75; font-size: 11px !important; }
 .nh-usage { font-size: 10.5px; color: #8E9099; text-align: center; letter-spacing: .01em; }
 .personal-mode .nhome [data-h="business"], .personal-mode .nhome [data-h="call"] { display: none !important; }
+
+.biz-lock { max-width: 460px; margin: 12vh auto; padding: 28px 24px; text-align: center; border: 1px solid var(--line); border-radius: 22px; background: var(--card); }
+.biz-lock h2 { margin: 6px 0 8px; font-size: 22px; } .biz-lock p { color: var(--muted); line-height: 1.5; margin: 0 0 16px; }

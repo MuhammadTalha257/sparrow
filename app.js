@@ -488,8 +488,14 @@ setTimeout(renderBirthdayAsk, 0);
 
 // ---------------- navigation ----------------
 let planType = 'task';
+/** Pro (or no plan) and Business tapped: what Business adds, and the way to get it. */
+function bizUpsell() {
+  toast(`Business is part of Zuffi Business (${price('business')} a month): WhatsApp leads, follow-ups, money, staff and automations for your business.`, 6000);
+  openSettings('account');
+}
 function go(v) {
   if (v === 'biz' && document.body.classList.contains('personal-mode')) { toast('Business is off because you chose “Just me”. Turn it on in Settings → You → Edit my details.', 5000); v = 'home'; }
+  if (v === 'biz' && !acct.isBusiness()) { bizUpsell(); v = 'home'; }
   $$('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'chat') setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
@@ -1995,6 +2001,7 @@ document.addEventListener('zuffi-plan', () => { let h = null; try { h = sessionS
 window.zuffiOpenUrl = u => openUrl(u);
 window.zuffiOpenSettings = section => openSettings(section);
 bizapp.mount($('#bizRoot'), { toast: (t, ms) => toast(t, ms) });
+if (DASH) acct.whenReady?.().then(() => { if (!acct.isBusiness()) $('#bizRoot').innerHTML = `<div class="biz-lock"><div class="gd-ico">🔒</div><h2>Business is part of Zuffi Business</h2><p>You’re on ${acct.isPaid() ? 'Pro' : 'no plan'}. Zuffi Business (${price('business')} a month) adds the WhatsApp inbox, leads and follow-ups, money and late payers, staff and automations, set up for your type of business.</p><button class="btn" id="bizLockUp">See Business</button></div>`, $('#bizLockUp')?.addEventListener('click', () => openSite(acct.upgradeUrl('business', priceCountry()))); });
 // Walking Zuffi inside the app on iPhone / web (Android, Windows and Mac have their own pets)
 if (!N && !D && !M && !DASH) Promise.all([import('./petweb.js'), import('./zblob.js')]).then(([p, Z]) => p.start(() => {
   const now = Date.now(), nx = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now).sort((a, b) => new Date(a.when) - new Date(b.when))[0];

@@ -316,7 +316,8 @@ struct ZuffiHomePanel: View {
         if state.stateOverride != nil { return "Let me think…" }
         if let f = home.flash { return f }
         if let last = state.chatHistory.last(where: { $0.role == .assistant }), voice.speaking || Date().timeIntervalSince(state.lastActivity) < 90 {
-            return last.content
+            let c = zClean(last.content)
+            if !c.isEmpty { return c }
         }
         if !VoiceEngine.micOn { return "My mic is off — tap Mic to talk to me" }
         let name = AssistantPrefs.displayName
@@ -446,7 +447,7 @@ struct ZuffiHomePanel: View {
                     .liquidGlass(Capsule(), interactive: true)
             }.buttonStyle(.plain)
             if !ZuffiPlan.shared.isPersonal { Button { BusinessDashboard.shared.show() } label: {
-                Label("Business", systemImage: "briefcase.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
+                Label("Business", systemImage: planBox.isBusiness ? "briefcase.fill" : "lock.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
                     .padding(.horizontal, 10).frame(height: 28)
                     .liquidGlass(Capsule(), tint: Color(hex: "#C77DFF"), glow: Color(hex: "#F58FA8"), interactive: true)
             }.buttonStyle(.plain).help("Your leads, WhatsApp inbox, team and automations") }

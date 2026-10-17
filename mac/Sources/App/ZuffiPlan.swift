@@ -194,7 +194,7 @@ enum ZuffiReset {
     static func confirmAndRun() {
         let a = NSAlert()
         a.messageText = "Start fresh on this Mac?"
-        a.informativeText = "This erases everything Zuffi saved on this Mac: your name and details, chats, memories, reminders, business data, settings and any AI keys you added.\n\nYour Zuffi account and plan are not affected. Just sign in again afterwards.\n\nThis can't be undone."
+        a.informativeText = "This erases everything Zuffi saved on this Mac: your name and details, chats, memories, reminders, business data (the Documents › Zuffi folder), settings and any AI keys you added.\n\nYour Zuffi account and plan are not affected. Just sign in again afterwards.\n\nThis can't be undone."
         a.alertStyle = .warning
         a.addButton(withTitle: "Erase and start fresh")
         a.addButton(withTitle: "Cancel")
@@ -225,6 +225,7 @@ enum ZuffiReset {
         let fm = FileManager.default
         let sup = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         for name in ["Sparrow", "Zuffi"] { try? fm.removeItem(at: sup.appendingPathComponent(name, isDirectory: true)) }
+        try? fm.removeItem(at: fm.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Zuffi", isDirectory: true))   // business data
         if let id = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: id)
             UserDefaults.standard.synchronize()
@@ -346,4 +347,11 @@ Your details: the welcome form (Just me / My business) — change it in Settings
 Privacy and security: data stays on the device unless they link devices; sign-in is a 6-digit email code (no password); licences are signed so they can't be faked; Settings → General → Start fresh on this Mac erases everything on that Mac; Settings → AI → Remove all keys removes their keys.
 Help: Settings → How to use Zuffi (the guide), Business → Learn & help, or lisansystems.com/zuffi (questions form). Signed out or locked? Settings → Zuffi account → sign in with the email code.
 """#
+}
+
+/// Speech engines sometimes send markers like "<no speech>" or "{pause}": never show or say them.
+func zClean(_ s: String) -> String {
+    s.replacingOccurrences(of: #"<[^<>]{1,30}>|\{[^{}]{1,30}\}|\[(noise|music|silence|inaudible|pause)\]"#, with: " ", options: [.regularExpression, .caseInsensitive])
+        .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }

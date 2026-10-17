@@ -73,7 +73,7 @@ enum SpeedToLead {
     private static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; return f }()
 
     static func check() {
-        guard !ZuffiPlan.shared.isPersonal, !ZuffiPlan.shared.isLocked else { return }   // business alerts only for a business
+        guard !ZuffiPlan.shared.isPersonal, ZuffiPlan.shared.isBusiness else { return }   // business alerts only for a business
         let now = Date()
         for l in ZuffiCRM.shared.leads where l.stage == "New" {
             guard let at = fmt.date(from: l.lastMessageAt) else { continue }

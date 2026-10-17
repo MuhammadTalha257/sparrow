@@ -338,7 +338,7 @@ final class LiveSession: NSObject {
             }
         }
         if sc["turnComplete"] as? Bool == true {
-            let u = userText.trimmingCharacters(in: .whitespacesAndNewlines), a = agentText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let u = zClean(userText), a = zClean(agentText)
             // Kept in the chat history (not shown on screen while talking).
             let st = AppState.shared
             if !u.isEmpty { st.chatHistory.append(ChatMessage(role: .user, content: u)) }

@@ -273,7 +273,7 @@ final class AIService {
     }
 
     private func finish(_ text: String, state: AppState, emote: BotEmote) {
-        state.chatHistory.append(ChatMessage(role: .assistant, content: text))
+        state.chatHistory.append(ChatMessage(role: .assistant, content: zClean(text)))
         state.stateOverride = nil
         state.view = .prompt
         NotificationCenter.default.post(name: .triggerEmote, object: emote)
