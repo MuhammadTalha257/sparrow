@@ -108,7 +108,7 @@ final class AIService {
 
     var fullSystemPrompt: String {
         if let o = oneShotSystem { return o }
-        let base = Self.systemPrompt + ZuffiPlan.shared.profileLine + ZuffiTeam.shared.persona
+        let base = Self.systemPrompt + ZuffiPlan.shared.profileLine + "\n" + ZuffiAbout.text + "\n" + ZuffiTeam.shared.persona
         guard let document else { return base }
         return base + """
 
@@ -241,7 +241,7 @@ final class AIService {
     /// One prompt for a command-line AI: Zuffi's instructions, any document, and the recent conversation.
     private func cliPrompt() -> String {
         var t = oneShotSystem.map { $0 + " Do not use tools or edit files.\n" }
-            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + ZuffiPlan.shared.profileLine + ZuffiTeam.shared.persona + "\n")
+            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + ZuffiPlan.shared.profileLine + ZuffiAbout.text + "\n" + ZuffiTeam.shared.persona + "\n")
         if let d = document { t += "\nDocument the user shared:\n\(d.prefix(20_000))\n" }
         for m in history.suffix(12) { t += "\n\(m.role == "assistant" ? "Zuffi" : "User"): \(m.text)" }
         return t + "\nZuffi:"

@@ -1,5 +1,6 @@
 // Zuffi's AI. Free options first: Ollama on your computer, or a small model that runs on the phone.
 // Or your own key for Claude, ChatGPT, Gemini, Grok, DeepSeek, Mistral, Groq, OpenRouter or Perplexity.
+import { ABOUT } from './about.js';
 import { store } from './store.js';
 import { daySummary, fmtTime } from './brain.js';
 import * as account from './account.js';
@@ -86,6 +87,7 @@ function systemPrompt(extra = '') {
   const langNote = ` Detect the language of the user's latest message and reply in that SAME language and script: Urdu script → Urdu script; Roman Urdu ("kia kar rahe ho") → Roman Urdu; Hindi → Hindi; Punjabi → Punjabi; Spanish, French, Brazilian Portuguese, Arabic, Turkish → the same; English → English. If they mix languages, mix the same way.${s.lang && s.lang !== 'en' ? ` If unsure, use ${{ ur: 'Urdu', hi: 'Hindi', pa: 'Punjabi', ar: 'Arabic' }[s.lang] || 'English'}.` : ''} If asked to translate, give the translation clearly.`;
   return `You are Zuffi, a friendly, smart little assistant on the user's ${window.SparrowDesktop ? 'computer' : 'phone'}.${s.name ? ` The user's name is ${s.name}.` : ''}${window.zuffiProfileLine?.() || ''}${langNote}
 Be clear and concise (2–6 sentences unless asked for more). Plain text, no markdown symbols like ** or ##.
+${ABOUT}
 It is now ${new Date().toLocaleString()}. ${daySummary(new Date(), true)}
 Today's items: ${store.onDay(new Date()).map(i => `${i.title} at ${fmtTime(i.when)}`).join('; ') || 'none'}.
 Open tasks: ${store.openTasks().slice(0, 15).map(i => i.title).join('; ') || 'none'}.${extra}`;

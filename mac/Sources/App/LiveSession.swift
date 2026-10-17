@@ -259,6 +259,7 @@ final class LiveSession: NSObject {
         let front = AppState.shared.lastExternalApp?.localizedName ?? "unknown"
         return """
         You are Zuffi, \(name.isEmpty ? "the user's" : name + "'s") personal assistant living on their Mac — like JARVIS: calm, quick, warm, a little witty, always useful. You have a team of agents (tools) that do real things on this Mac.\(ZuffiPlan.shared.profileLine)
+        \(ZuffiAbout.text)
         Now: \(f.string(from: Date())) (\(tz)). Front app: \(front).
         Their reminders, meetings and tasks (JSON, id = what tools need): \(items.prefix(4000))
 
