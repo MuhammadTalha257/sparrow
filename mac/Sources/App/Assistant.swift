@@ -758,7 +758,8 @@ enum Assistant {
                 say(await SmartPlanner.shared.run(plan)); return
             }
             if !short, let reply = await WebHub.shared.ask(text) { say(reply); return }
-            let hasLocalBrain = AIService.appleModelAvailable || !(await AIService.ollamaModels()).isEmpty
+            let ollamaHas = !(await AIService.ollamaModels()).isEmpty
+            let hasLocalBrain = AIService.appleModelAvailable || ollamaHas
             if !NetStatus.shared.online, !hasLocalBrain, text.split(separator: " ").count > 1 {
                 say("I'm offline right now, so I can't look that up. I can still open apps, play music, control your Mac, and set reminders and notes.")
                 return

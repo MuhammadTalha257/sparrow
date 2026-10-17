@@ -373,7 +373,8 @@ const Voice = {
       const rest = m[2].trim();
       if (!final) { capText('Listening…', rest || 'Go ahead'); return; }
       if (meaningful(rest, words?.slice(1))) { this.finish(rest); return; }
-      this.startCommand();
+      try { const u = new SpeechSynthesisUtterance('Yes?'); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}   // like the Mac: a short "Yes?"
+      setTimeout(() => this.startCommand(), 450);
       return;
     }
     if (this.mode === 'command') {

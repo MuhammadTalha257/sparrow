@@ -331,6 +331,11 @@ function stopClipboard() { clearInterval(clipTimer); clipTimer = null; }
 // ---------- Ollama (free AI on this computer) ----------
 async function ollama(kind, body) {
   try {
+    if (kind === 'running') { const r = await net.fetch('http://127.0.0.1:11434/api/version'); return r.ok; }
+    if (kind === 'pull') {   // download a model (blocks until done)
+      const r = await net.fetch('http://127.0.0.1:11434/api/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: body?.name || 'qwen2.5:3b', stream: false }) });
+      const j = await r.json(); if (j.error) throw new Error(j.error); return true;
+    }
     if (kind === 'models') {
       const r = await net.fetch('http://127.0.0.1:11434/api/tags');
       const j = await r.json();
@@ -340,7 +345,7 @@ async function ollama(kind, body) {
     const j = await r.json();
     if (j.error) throw new Error(j.error);
     return j.message?.content || '';
-  } catch (e) { if (kind === 'models') return []; throw e; }
+  } catch (e) { if (kind === 'models') return []; if (kind === 'running') return false; throw e; }
 }
 
 // ---------- email (Mac Mail app) ----------
@@ -542,6 +547,8 @@ ipcMain.on('media', (_e, cmd) => media(cmd));
 ipcMain.on('window', () => toPanel('island', 'collapse'));
 ipcMain.on('show', () => showPanel());
 
+// Settings → Start fresh: Windows settings back to new-install defaults
+ipcMain.handle('reset-settings', () => { settings = { login: true, pill: true, firstRun: true, clipboard: true, watch: [], position: 'center', pet: true, chargeLight: true, awakeCharging: false, lidCharging: false, accent: 'rose' }; saveSettings(); return true; });
 ipcMain.handle('get-settings', () => {
   const d = screen.getPrimaryDisplay();
   return { ...settings, platform: process.platform, notch: isMac && d.workArea.y - d.bounds.y > 30 };

@@ -1572,3 +1572,4 @@ html.island-mode.isl-peek .cap-wave { display: none; }
 .ai-usage .au-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .ai-usage .au-note { opacity: .75; font-size: 11px !important; }
 .nh-usage { font-size: 10.5px; color: #8E9099; text-align: center; letter-spacing: .01em; }
+.personal-mode .nhome [data-h="business"], .personal-mode .nhome [data-h="call"] { display: none !important; }

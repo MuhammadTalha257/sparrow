@@ -1669,6 +1669,45 @@ $('#sLang').addEventListener('change', () => { store.save(); sendVoicePrefs(); }
 $('#testVoice').onclick = () => speak(S().lang === 'ur' ? 'السلام علیکم! میں سپیرو ہوں۔ آپ کی کیا مدد کروں؟' : S().lang === 'hi' ? 'नमस्ते! मैं स्पैरो हूँ। बताइए, मैं क्या मदद करूँ?' : S().lang === 'pa' ? 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਸਪੈਰੋ ਹਾਂ। ਦੱਸੋ, ਮੈਂ ਕੀ ਮਦਦ ਕਰਾਂ?' : `Hi${S().name ? ' ' + S().name : ''}! I'm Zuffi. Ready when you are.`);
 $('#pCalendar').onclick = async () => { const l = await getLocation(); if (!l) return toast('I need your location or city first.'); downloadICS(prayerICS(l.lat, l.lon, 30), 'Prayer times'); };
 $('#exportBtn').onclick = () => tools.deliver('sparrow-backup.json', new TextEncoder().encode(JSON.stringify({ items: store.items, settings: { ...S(), keys: undefined } }, null, 2)), 'application/json');
+// Remove keys / erase business / start fresh (same as the Mac's Settings)
+$('#removeKeysBtn')?.addEventListener('click', () => {
+  if (!confirm('Remove all your AI keys from this device? Zuffi’s built-in AI keeps working.')) return;
+  S().keys = {}; store.save(); toast('All AI keys removed from this device');
+});
+$('#eraseBizBtn')?.addEventListener('click', () => {
+  if (!confirm('Erase all business data on this device? Clients, money, staff, bookings and stock saved here are deleted and linked devices are unlinked. This can’t be undone.')) return;
+  try { bizsync.unlink(); for (const k of Object.keys(localStorage)) if (/^zuffi\.biz|^zuffiBiz|biz\.v|bizsync/i.test(k)) localStorage.removeItem(k); } catch {}
+  toast('All business data erased'); setTimeout(() => location.reload(), 800);
+});
+$('#startFreshBtn')?.addEventListener('click', async () => {
+  if (!confirm('Start fresh on this device? This erases your details, chats, memories, reminders, settings, business data and AI keys here. Your account and plan are safe — just sign in again. This can’t be undone.')) return;
+  try { await mem.forgetAll(); } catch {}
+  try { localStorage.clear(); sessionStorage.clear(); } catch {}
+  try { for (const d of (await indexedDB.databases?.()) || []) if (d.name) indexedDB.deleteDatabase(d.name); } catch {}
+  try { await D?.resetSettings?.(); } catch {}
+  location.reload();
+});
+// Old AI keys on this device from before this person signed in: keep or remove (asked once)
+document.addEventListener('zuffi-plan', () => {
+  const email = acct.email(); if (!acct.signedIn() || !email) return;
+  let owner = ''; try { owner = localStorage.getItem('zuffiKeysOwner') || ''; } catch {}
+  if (owner === email) return;
+  const keys = Object.entries(S().keys || {}).filter(([, v]) => v).map(([k]) => PROVIDERS[k]?.name?.split(' (')[0] || k);
+  try { localStorage.setItem('zuffiKeysOwner', email); } catch {}
+  if (!keys.length) return;
+  setTimeout(() => {
+    if (!confirm(`This device still has ${keys.join(', ')} key${keys.length > 1 ? 's' : ''} saved from before you signed in as ${email}.\n\nOK = remove them (if they belong to someone else)\nCancel = keep them (they’re yours)`)) return;
+    S().keys = {}; store.save(); toast('Old AI keys removed');
+  }, 1500);
+});
+$('#getBrainBtn')?.addEventListener('click', async e => {
+  const b = e.currentTarget; if (!D?.ollama) return;
+  const have = await ollamaModels();
+  if (!have.length && !(await D.ollama('running'))) { openUrl('https://ollama.com/download'); toast('Install Ollama (free), open it once, then press this again.', 6000); return; }
+  b.disabled = true; b.textContent = '⏳ Downloading the offline brain… (a few minutes)';
+  try { await D.ollama('pull', { name: 'qwen2.5:3b' }); b.textContent = '✅ Offline brain ready'; toast('Offline brain ready — Zuffi now answers even with no internet', 5000); }
+  catch { b.disabled = false; b.textContent = '⬇️ Get the offline brain (try again)'; }
+});
 $('#clearBtn').onclick = () => { if (confirm('Delete all your tasks, meetings, reminders, notes and chat?')) { store.clearAll(); renderChat(); toast('Everything deleted'); } };
 $('#mExport').onclick = async () => tools.deliver('sparrow-memory.json', new TextEncoder().encode(JSON.stringify(await mem.exportMemory())), 'application/json');
 $('#mWipe').onclick = async () => { if (confirm('Forget everything Zuffi remembers (files and history)?')) { await mem.forgetAll(); toast('Memory wiped'); renderMemory(); } };

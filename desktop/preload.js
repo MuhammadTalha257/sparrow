@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   show: () => ipcRenderer.send('show'),
   state: () => {},
   getSettings: () => inv('get-settings'),
+  resetSettings: () => inv('reset-settings'),
   setSetting: (k, v) => inv('set-setting', k, v),
   modelUrl: () => inv('model-url'),
   playSong: (q, where) => inv('play-song', q, where),
