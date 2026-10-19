@@ -49,15 +49,25 @@ function placeCard() {
   const left = Math.max(8, Math.min(innerWidth - cw - 8, x + W / 2 - cw / 2));
   card.style.left = left + 'px'; card.style.setProperty('--tail', Math.max(14, Math.min(cw - 28, x + W / 2 - left - 7)) + 'px');
 }
-function say(text, head = '', buttons = [], ms = 6000) {
+function say(text, head = '', buttons = [], ms = 6000, reply = false) {
+  card.classList.toggle('reply', reply);
   document.getElementById('cH').textContent = head; document.getElementById('cH').style.display = head ? '' : 'none';
   document.getElementById('cT').textContent = text;
   const b = document.getElementById('cB'); b.innerHTML = ''; b.style.display = buttons.length ? '' : 'none';
-  for (const [label, solid, fn] of buttons) { const e = document.createElement('button'); e.textContent = label; if (solid) e.className = 'solid'; e.onclick = ev => { ev.stopPropagation(); hideCard(); fn(); }; b.appendChild(e); }
+  for (const [label, solid, fn] of buttons) { const e = document.createElement('button'); e.textContent = label; if (solid) e.className = 'solid'; e.onclick = ev => { ev.stopPropagation(); e.classList.add('pressed'); setTimeout(() => { hideCard(); fn(); }, 160); }; b.appendChild(e); }
   card.classList.add('on'); placeCard();
   clearTimeout(cardT); if (ms) cardT = setTimeout(hideCard, ms);
 }
 function hideCard() { card.classList.remove('on'); busy = false; clearTimeout(cardT); }
+// The happy dance + hearts and sparkles floating up
+function dance() {
+  pet.classList.remove('dance'); void pet.offsetWidth; pet.classList.add('dance'); setTimeout(() => pet.classList.remove('dance'), 2300);
+  ['💗', '✨', '🌸', '💖', '⭐️', '🎉', '💕', '✨'].forEach((m, i) => setTimeout(() => {
+    const e = document.createElement('div'); e.className = 'joy'; e.textContent = m;
+    e.style.left = (x + W / 2 - 9 + (i % 2 ? 1 : -1) * (10 + (i * 13) % 34)) + 'px'; e.style.bottom = (110 + (i % 3) * 14) + 'px';
+    e.style.setProperty('--dx', ((i % 2 ? 1 : -1) * (20 + (i * 7) % 30)) + 'px'); document.body.appendChild(e); setTimeout(() => e.remove(), 1500);
+  }, i * 140));
+}
 
 D.onPet(v => {
   hiddenUntil = 0; pet.classList.remove('hidden');
@@ -65,9 +75,11 @@ D.onPet(v => {
     busy = true;
     walkTo(innerWidth / 2 - W / 2, () => {
       hop();
-      const btns = v.id ? [['Done', true, () => D.petAction({ action: 'done', id: v.id })], ['Snooze 10 min', false, () => D.petAction({ action: 'snooze', id: v.id })]]
-                        : [['Got it', true, () => {}]];
-      say(v.title || 'Reminder', '⏰ ' + (v.head || 'Reminder'), btns, 120000);
+      const emoji = /meeting/i.test(v.head || '') ? '📅' : /prayer/i.test(v.head || '') ? '🌙' : '⏰';
+      const happy = () => { busy = true; dance(); say(/meeting/i.test(v.head || '') ? 'Good luck! 🍀' : 'Yay, done! 🎉 Nice work 💗', '', [], 2600, true); };
+      const btns = v.id ? [['Done', true, () => { D.petAction({ action: 'done', id: v.id }); happy(); }], ['Later', false, () => { D.petAction({ action: 'snooze', id: v.id }); say('I’ll come back in 10 minutes ⏰', '', [], 2600, true); }]]
+                        : [['Thanks', true, happy]];
+      say(`${v.title || 'Reminder'} ${emoji}`, '', btns, 120000);
     });
   } else if (v.kind === 'say') { hop(); say(v.text || '', v.head || '', [], v.ms || 6000); }
   else if (v.kind === 'outfit') { outfit = v.v || 'none'; preload(); if (target === null) img.src = pic('zuffi-body'); }

@@ -1137,8 +1137,9 @@ html.biz-dash .bz-tabs { background: none; box-shadow: none; }
 .webpet.hop { animation: wpHop .42s cubic-bezier(.3,.7,.4,1); }
 @keyframes wpHop { 40% { margin-bottom: 18px; } }
 @keyframes breathe { 50% { transform: scaleY(1.03); } }
-.webpet-b { position: absolute; bottom: 92px; width: 220px; padding: 10px 13px; border-radius: 16px; font-size: 13.5px; font-weight: 650; color: #fff; line-height: 1.3;
-  background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)), rgba(22,16,52,.92); box-shadow: 0 12px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.14); }
+.webpet-b { position: absolute; bottom: 92px; width: max-content; max-width: 240px; padding: 10px 14px; border-radius: 16px; font-size: 13px; font-weight: 600; color: #F5F5F5; line-height: 1.35;
+  background: #0C0C0C; box-shadow: 0 14px 34px rgba(12,12,12,.3); }
+.webpet-b::after { content: ""; position: absolute; top: 100%; left: 18px; border: 7px solid transparent; border-top-color: #0C0C0C; }
 html.zc-open .webpet, html.desktop .webpet, html.android-app .webpet, html.mac-host .webpet { display: none; }
 
 /* =====================================================================

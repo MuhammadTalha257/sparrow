@@ -11,17 +11,32 @@
   #pet.hidden { display: none; }
   @keyframes breathe { 50% { transform: scaleY(1.03); } }
   @keyframes hop { 40% { margin-bottom: 24px; } }
-  #card { position: absolute; bottom: 176px; left: 0; min-width: 190px; max-width: 320px; padding: 12px 16px; border-radius: 20px; color: #fff;
-    background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)), rgba(22,16,52,.9);
-    box-shadow: 0 18px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.3), 0 0 0 1px rgba(255,255,255,.14);
-    backdrop-filter: blur(20px); opacity: 0; transform: translateY(8px) scale(.92); transition: opacity .2s, transform .25s cubic-bezier(.34,1.56,.64,1); pointer-events: none; }
+  /* Website look: a dark pill that says it (buttons inside), then a white reply bubble */
+  #card { position: absolute; bottom: 184px; left: 0; max-width: 360px; padding: 10px 10px 10px 14px; border-radius: 16px; color: #F5F5F5; background: #0C0C0C;
+    box-shadow: 0 14px 34px rgba(12,12,12,.3); opacity: 0; transform: translateY(10px) scale(.9); transition: opacity .3s, transform .3s cubic-bezier(.34,1.56,.64,1); pointer-events: none;
+    display: flex; align-items: center; gap: 10px; }
   #card.on { opacity: 1; transform: none; pointer-events: auto; }
-  #card::after { content: ""; position: absolute; bottom: -7px; left: var(--tail, 40px); width: 14px; height: 14px; background: rgba(22,16,52,.95); transform: rotate(45deg); border-radius: 3px; }
-  #card .h { color: #F58FA8; font-size: 12px; font-weight: 700; margin-bottom: 2px; }
-  #card .t { font-size: 15px; font-weight: 650; line-height: 1.3; }
-  #card .b { display: flex; gap: 8px; margin-top: 10px; }
-  #card button { font: inherit; font-size: 13px; font-weight: 700; border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer; color: #fff; background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
-  #card button.solid { color: #1A1008; background: linear-gradient(180deg, #FBC56A, #F28A3C); box-shadow: none; }
+  #card::after { content: ""; position: absolute; top: 100%; left: var(--tail, 40px); border: 7px solid transparent; border-top-color: #0C0C0C; }
+  #card { z-index: 2; } .joy { z-index: 1; }
+  #card.reply { bottom: 232px; background: #fff; color: #0C0C0C; padding-right: 14px; box-shadow: 0 14px 34px rgba(12,12,12,.22), 0 0 0 1px rgba(12,12,12,.12); }
+  #card.reply::after { border-top-color: #fff; }
+  #card .h { display: none; }
+  #card .t { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+  #card .b { display: flex; gap: 6px; flex: none; }
+  #card button { font: inherit; font-size: 12.5px; font-weight: 700; border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; color: rgba(255,255,255,.85); background: rgba(255,255,255,.12); transition: transform .15s, background .15s; }
+  #card button.solid { color: #0C0C0C; background: #F5F5F5; }
+  #card button.solid:active, #card button.solid.pressed { transform: scale(.9); background: #7EE2A8; }
+  /* the happy dance: big hops with a wiggle, a squash on landing and a twirl */
+  #pet.dance img { animation: dance 2.2s cubic-bezier(.3,.7,.4,1); }
+  @keyframes dance {
+    0% { transform: translateY(0) rotate(0) scale(1,1); }
+    10% { transform: translateY(-40px) rotate(-10deg) scale(.96,1.05); } 20% { transform: translateY(0) rotate(0) scale(1.1,.9); }
+    30% { transform: translateY(-38px) rotate(10deg) scale(.96,1.05); } 40% { transform: translateY(0) rotate(0) scale(1.1,.9); }
+    52% { transform: translateY(-34px) rotateY(180deg); } 62% { transform: translateY(0) rotateY(360deg) scale(1.08,.92); }
+    74% { transform: translateY(-26px) rotate(-8deg); } 84% { transform: translateY(0) rotate(0) scale(1.06,.94); }
+    92% { transform: translateY(-10px) rotate(4deg); } 100% { transform: translateY(0) rotate(0) scale(1,1); } }
+  .joy { position: absolute; font-size: 18px; pointer-events: none; animation: joy 1.4s ease-out forwards; }
+  @keyframes joy { 0% { opacity: 0; transform: translate(0, 0) scale(.6); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), -170px) scale(1.2); } }
 </style></head>
 <body><div id="card"><div class="h" id="cH"></div><div class="t" id="cT"></div><div class="b" id="cB"></div></div>
 <div id="pet" class="idle"><img id="img" src="mascots/zuffi-body.webp" alt="Zuffi"></div>

@@ -1260,6 +1260,7 @@ function checkPrayer() {
       if (!fired[key] && now >= at && now - at < 10 * 60000) {
         fired[key] = 1; S().prayerFired = Object.fromEntries(Object.entries(fired).slice(-24)); store.save();
         const msg = before ? `${n} prayer in ${before} minutes` : `It's time for ${n} prayer`;
+        if (M) M.post('reminder', { kind: 'prayer', title: msg, sub: fmtTime(prayerCache.times[n]) });   // the Mac: Zuffi walks in and tells you
         chime(); showAlert('🕌 ' + msg, fmtTime(prayerCache.times[n])); if (p.speak !== false) speakSoon(`${who()}${msg}.`); notify(msg, 'prayer' + n + before);
       }
     }
