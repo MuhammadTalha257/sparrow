@@ -15,6 +15,8 @@ final class NativeSpeech {
     private var startWaiter: CheckedContinuation<Bool, Never>?
     private var onEnd: (() -> Void)?
     private(set) var failures = 0
+    private var slowStreak = 0
+    private var restarting = false
 
     static let voices: [String: (sid: Int, label: String)] = [
         "af_heart": (3, "Heart (warm, American)"), "af_bella": (2, "Bella (bright, American)"), "af_nicole": (6, "Nicole (soft, American)"),
@@ -70,7 +72,7 @@ final class NativeSpeech {
 
     private func died() {
         proc = nil; input = nil
-        failures += 1
+        if restarting { restarting = false } else { failures += 1 }
         appendAppLog("voice.log", "natural voice engine stopped (\(failures))")
         startWaiter?.resume(returning: false); startWaiter = nil
         let end = onEnd; onEnd = nil; end?()
@@ -92,6 +94,7 @@ final class NativeSpeech {
             let id = o["id"] as? Int ?? -1
             switch ev {
             case "start" where id == currentId:
+                slowStreak = 0
                 startWaiter?.resume(returning: true); startWaiter = nil
             case "end" where id == currentId:
                 let end = onEnd; onEnd = nil; end?()
@@ -158,6 +161,14 @@ final class NativeSpeech {
                     NativeSpeech.shared.onEnd = nil
                     NativeSpeech.shared.send(["cmd": "stop"])
                     appendAppLog("voice.log", "natural voice too slow — using the instant voice")
+                    // Twice slow in a row (e.g. after the Mac slept): restart the voice helper fresh.
+                    NativeSpeech.shared.slowStreak += 1
+                    if NativeSpeech.shared.slowStreak >= 2 {
+                        NativeSpeech.shared.slowStreak = 0
+                        NativeSpeech.shared.restarting = true
+                        appendAppLog("voice.log", "natural voice: restarting the helper")
+                        NativeSpeech.shared.proc?.terminate()
+                    }
                     w.resume(returning: false)
                 }
             }

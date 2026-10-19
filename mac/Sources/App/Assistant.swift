@@ -52,7 +52,10 @@ final class VoiceEngine: NSObject, ObservableObject {
     private var silenceTimer: Timer?
     private var restartTimer: Timer?
     private var oneShot = false          // mic button: no wake word needed
-    @Published private(set) var speaking = false
+    @Published private(set) var speaking = false { didSet { if speaking != oldValue { speakingSince = speaking ? Date() : .distantFuture } } }
+    private var speakingSince = Date.distantFuture
+    /// When the current recognition session last (re)started — a session that goes quiet for too long is restarted.
+    private var listenStartedAt = Date.distantPast
     private var resumeAfterSpeech = false
 
     private var failures = 0
@@ -79,6 +82,20 @@ final class VoiceEngine: NSObject, ObservableObject {
     private var lastAttempt = Date.distantPast
 
     fileprivate func watchdog() {
+        // Never stay deaf because "speaking" got stuck (a voice that failed or never reported it finished).
+        if speaking, Date().timeIntervalSince(speakingSince) > 25, !synth.isSpeaking, !LiveSession.shared.active {
+            appendAppLog("voice.log", "watchdog: speaking flag stuck for \(Int(Date().timeIntervalSince(speakingSince)))s — clearing it")
+            NativeSpeech.shared.stop()
+            neuralTurn += 1
+            resumeAfterSpeech = true
+            speechFinished()
+        }
+        // A listening session that silently stalled (no restart for > 75 s): start a fresh one.
+        if isListening, !oneShot, !meetingMode, Date().timeIntervalSince(listenStartedAt) > 75, !LiveSession.shared.active {
+            appendAppLog("voice.log", "watchdog: listening stalled — restarting")
+            startRecognition()
+            return
+        }
         guard UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord), Self.micOn,
               !isListening, !speaking, !oneShot, !LiveSession.shared.active,
               Date().timeIntervalSince(lastAttempt) > 3.5 else { return }
@@ -493,6 +510,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             return
         }
         isListening = true
+        listenStartedAt = Date()
         status = oneShot ? "Listening…" : "Say \"Zuffi…\" anytime"
         failures = 0
         heard = ""
@@ -885,7 +903,9 @@ final class Briefing {
            let n = Int(CommandEngine.shared.runAppleScript("tell application \"Mail\" to get unread count of inbox") ?? ""), n > 0 {
             text += " You have \(n) unread email\(n == 1 ? "" : "s")."
         }
-        text += " " + (await Planner.shared.summary(for: Date(), detailed: false))
+        let mine = await WebHub.shared.zuffiPlan()
+        let apple = await Planner.shared.summary(for: Date(), detailed: false)
+        text += " " + (mine.isEmpty ? apple : (apple.contains("calendar is clear") ? mine : apple + " " + mine))
         return text
     }
 }

@@ -126,25 +126,36 @@
 
   <!-- TOOLS -->
   <section class="view" id="view-tools">
-    <div class="tool-grid">
-      <button class="tool card" data-goto2="memory"><span>🧠</span>Memory</button>
-      <button class="tool card" data-tool="jobs"><span>💼</span>Job agent</button>
-      <button class="tool card" data-tool="quote"><span>🧾</span>Quote / invoice</button>
-      <button class="tool card" data-tool="timer"><span>⏱️</span><b id="timerLbl">Time tracker</b></button>
-      <button class="tool card" data-tool="expenses"><span>💸</span>Expenses</button>
-      <button class="tool card" data-tool="report"><span>📊</span>Daily report</button>
-      <button class="tool card" data-tool="focus"><span>🎯</span>Focus timer</button>
-      <button class="tool card" data-tool="meeting"><span>🎤</span>Meeting notes</button>
-      <button class="tool card" data-tool="merge"><span>📑</span>Merge PDFs</button>
-      <button class="tool card" data-tool="images"><span>🖼️</span>Photos → PDF</button>
-      <button class="tool card" data-tool="pages"><span>✂️</span>Keep pages</button>
-      <button class="tool card" data-tool="rotate"><span>🔄</span>Rotate PDF</button>
-      <button class="tool card" data-tool="snippets"><span>📋</span>Snippets</button>
-      <button class="tool card" data-tool="sync"><span>🔁</span>Sync devices</button>
-      <button class="tool card desktop-only" data-tool="find"><span>📁</span>Find files</button>
-      <button class="tool card desktop-only" data-tool="tidy"><span>🧹</span>Tidy Downloads</button>
-      <button class="tool card desktop-only" data-tool="clipboard"><span>📎</span>Clipboard</button>
-      <button class="tool card desktop-only" data-tool="watch"><span>👀</span>Watch a folder</button>
+    <div id="toolSecs">
+      <section class="tool-sec"><h3>Every day</h3><div class="tool-grid">
+        <button class="tool" data-goto2="memory" style="--tc:#8B7CF6"><span class="ti">🧠</span><span class="tt"><b>Memory</b><small>Notes &amp; files Zuffi remembers</small></span></button>
+        <button class="tool" data-tool="meeting" style="--tc:#EC5F8B"><span class="ti">🎤</span><span class="tt"><b>Meeting notes</b><small>Record, then get a clean summary</small></span></button>
+        <button class="tool" data-tool="focus" style="--tc:#F59E0B"><span class="ti">🎯</span><span class="tt"><b>Focus timer</b><small>25 minutes of deep work</small></span></button>
+        <button class="tool" data-tool="snippets" style="--tc:#14B8A6"><span class="ti">📋</span><span class="tt"><b>Snippets</b><small>Text you paste often</small></span></button>
+      </div></section>
+      <section class="tool-sec"><h3>Work &amp; money</h3><div class="tool-grid">
+        <button class="tool" data-tool="quote" style="--tc:#3B82F6"><span class="ti">🧾</span><span class="tt"><b>Quote / invoice</b><small>Say it, get a PDF</small></span></button>
+        <button class="tool" data-tool="expenses" style="--tc:#22C55E"><span class="ti">💸</span><span class="tt"><b>Expenses</b><small>Track what you spend</small></span></button>
+        <button class="tool" data-tool="timer" style="--tc:#06B6D4"><span class="ti">⏱️</span><span class="tt"><b><span id="timerLbl">Time tracker</span></b><small>Hours per client</small></span></button>
+        <button class="tool" data-tool="report" style="--tc:#6366F1"><span class="ti">📊</span><span class="tt"><b>Daily report</b><small>What you did today</small></span></button>
+        <button class="tool" data-tool="jobs" style="--tc:#A855F7"><span class="ti">💼</span><span class="tt"><b>Job agent</b><small>Find &amp; track jobs</small></span></button>
+      </div></section>
+      <section class="tool-sec"><h3>Photos, PDF &amp; files</h3><div class="tool-grid">
+        <button class="tool" data-tool="studio" style="--tc:#EC4899"><span class="ti">📸</span><span class="tt"><b>Photo studio</b><small>Brighten, resize, add your logo</small></span></button>
+        <button class="tool" data-tool="convert" style="--tc:#0EA5E9"><span class="ti">🔀</span><span class="tt"><b>Convert files</b><small>JPG, PNG, WebP, PDF, text</small></span></button>
+        <button class="tool" data-tool="sign" style="--tc:#16A34A"><span class="ti">✍️</span><span class="tt"><b>Sign a PDF</b><small>Draw your signature, done</small></span></button>
+        <button class="tool" data-tool="merge" style="--tc:#EF4444"><span class="ti">📑</span><span class="tt"><b>Merge PDFs</b><small>Join several into one</small></span></button>
+        <button class="tool" data-tool="images" style="--tc:#F97316"><span class="ti">🖼️</span><span class="tt"><b>Photos → PDF</b><small>Pictures into one PDF</small></span></button>
+        <button class="tool" data-tool="pages" style="--tc:#EAB308"><span class="ti">✂️</span><span class="tt"><b>Keep pages</b><small>Pick the pages you need</small></span></button>
+        <button class="tool" data-tool="rotate" style="--tc:#0EA5E9"><span class="ti">🔄</span><span class="tt"><b>Rotate PDF</b><small>Turn pages the right way</small></span></button>
+      </div></section>
+      <section class="tool-sec"><h3>This computer</h3><div class="tool-grid">
+        <button class="tool" data-tool="sync" style="--tc:#10B981"><span class="ti">🔁</span><span class="tt"><b>Sync devices</b><small>Same Zuffi everywhere</small></span></button>
+        <button class="tool desktop-only" data-tool="find" style="--tc:#64748B"><span class="ti">📁</span><span class="tt"><b>Find files</b><small>Search by what you remember</small></span></button>
+        <button class="tool desktop-only" data-tool="tidy" style="--tc:#F472B6"><span class="ti">🧹</span><span class="tt"><b>Tidy Downloads</b><small>Sort the mess in one tap</small></span></button>
+        <button class="tool desktop-only" data-tool="clipboard" style="--tc:#8B5CF6"><span class="ti">📎</span><span class="tt"><b>Clipboard</b><small>Everything you copied</small></span></button>
+        <button class="tool desktop-only" data-tool="watch" style="--tc:#0891B2"><span class="ti">👀</span><span class="tt"><b>Watch a folder</b><small>Act when new files arrive</small></span></button>
+      </div></section>
     </div>
     <div class="card tool-panel" id="toolPanel" hidden></div>
   </section>

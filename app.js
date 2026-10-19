@@ -9,13 +9,14 @@ import {
   spokenPlan, spokenList, tasksForDay, moveToTomorrow, nextOccurrence, repeatText, weather, location as getLocation, prayerToday, habitCount, bumpHabit,
   setLastAlert, lastAlert, findCustomer,
 } from './brain.js';
-import { ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary, currentAI } from './ai.js';
+import { transcribeAudio, ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary, currentAI } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
 import * as maclink from './maclink.js';
 import * as zc from './companion.js';
 import * as bizapp from './bizapp.js';
+import * as studio from './studio.js';
 import * as bizsync from './bizsync.js';
 import * as seasons from './seasons.js';
 import * as acct from './account.js';
@@ -498,6 +499,7 @@ function go(v) {
   if (v === 'biz' && document.body.classList.contains('personal-mode')) { toast('Business is off because you chose “Just me”. Turn it on in Settings → You → Edit my details.', 5000); v = 'home'; }
   if (v === 'biz' && !acct.isBusiness()) { bizUpsell(); v = 'home'; }
   $$('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
+  if (v === 'tools') closeTool();
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'chat') setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
   else window.scrollTo({ top: 0 });
@@ -1211,11 +1213,14 @@ function checkPrayer() {
   const fired = S().prayerFired || {}, now = Date.now();
   for (const n of PRAYERS) {
     if (n === 'Sunrise') continue;
-    const at = prayerCache.times[n].getTime() - (+p.before || 0) * 60000, key = dayKey() + n;
-    if (!fired[key] && now >= at && now - at < 10 * 60000) {
-      fired[key] = 1; S().prayerFired = Object.fromEntries(Object.entries(fired).slice(-12)); store.save();
-      const msg = +p.before ? `${n} prayer in ${p.before} minutes` : `It's time for ${n} prayer`;
-      chime(); showAlert('🕌 ' + msg, fmtTime(prayerCache.times[n])); if (p.speak) speakSoon(`${who()}${msg}.`); notify(msg, 'prayer' + n);
+    // A heads-up before (if set) AND a call right on time.
+    for (const before of [...new Set([+p.before || 0, 0])]) {
+      const at = prayerCache.times[n].getTime() - before * 60000, key = dayKey() + n + (before ? '-' + before : '');
+      if (!fired[key] && now >= at && now - at < 10 * 60000) {
+        fired[key] = 1; S().prayerFired = Object.fromEntries(Object.entries(fired).slice(-24)); store.save();
+        const msg = before ? `${n} prayer in ${before} minutes` : `It's time for ${n} prayer`;
+        chime(); showAlert('🕌 ' + msg, fmtTime(prayerCache.times[n])); if (p.speak !== false) speakSoon(`${who()}${msg}.`); notify(msg, 'prayer' + n + before);
+      }
     }
   }
 }
@@ -1309,7 +1314,7 @@ async function checkDaily() {
     if (mins >= n && mins < n + 180) { S().lastNight = dayKey(); store.save(); openCheckIn(true); }
   }
 }
-setInterval(checkDue, 20000);
+setInterval(checkDue, 5000);   // reminders ring within 5 seconds of their time
 // Browsers only allow speech after one tap on the page; queue it until then.
 let activated = false, queuedSpeech = null;
 document.addEventListener('pointerdown', () => { activated = true; if (queuedSpeech) { const tx = queuedSpeech; queuedSpeech = null; speak(tx); } startWake(); }, { capture: true });
@@ -1403,10 +1408,12 @@ function pickFiles(accept, multiple = true) {
 }
 function updateTimerLabel() { const r = tools.runningTimer(); $('#timerLbl').textContent = r ? `⏹ ${r.title} · ${tools.fmtHours(tools.hours(r))}` : 'Time tracker'; }
 setInterval(updateTimerLabel, 30000);
+function closeTool() { const P = $('#toolPanel'); if (P) { P.hidden = true; P.innerHTML = ''; } const g = $('#toolSecs'); if (g) g.hidden = false; }
 async function openTool(name) {
   if (name === 'jobs') { jobs.openJobs(); return; }
   const P = $('#toolPanel'); P.hidden = false;
-  const done = html => { P.innerHTML = html; P.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  // An open tool gets the page to itself, with a way back.
+  const done = html => { $('#toolSecs').hidden = true; P.innerHTML = '<button class="tool-back" id="toolBack" type="button">‹ All tools</button>' + html; $('#toolBack').onclick = closeTool; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const cur = S().business.currency;
   if (name === 'quote') {
     done(`<h3>🧾 Quote or invoice</h3><p class="small-text">Type it like you'd say it. A PDF is made on this device.</p>
@@ -1442,6 +1449,47 @@ async function openTool(name) {
   }
   if (name === 'report') openReport();
   if (name === 'focus') { const m = parseInt(prompt('Focus for how many minutes?', '25'), 10); if (m) startFocus(m); }
+  if (name === 'studio') {
+    const files = await pickFiles('image/*'); if (!files.length) { closeTool(); return; }
+    const srcs = await Promise.all(files.map(f => studio.loadPhoto(f)));
+    const mark0 = S().business?.name || '';
+    done(`<h3>📸 Photo studio</h3><p class="small-text">${files.length} photo${files.length > 1 ? 's' : ''} · everything happens on this device.</p>
+      <canvas id="psView" style="width:100%;border-radius:16px;background:#0002;display:block"></canvas>
+      <div class="ps-chips" id="psLook">${Object.entries(studio.LOOKS).map(([k, l]) => `<button class="chip ${k === 'auto' ? 'on' : ''}" data-look="${k}">${l.label}</button>`).join('')}</div>
+      <label class="field"><span>Brightness</span><input type="range" id="psB" min="0.6" max="1.6" step="0.02" value="1"></label>
+      <label class="field"><span>Warmth</span><input type="range" id="psW" min="-0.25" max="0.25" step="0.01" value="0"></label>
+      <label class="field"><span>Size</span><select id="psSize">${Object.entries(studio.SIZES).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('')}</select></label>
+      <label class="field"><span>Watermark (your name or logo text)</span><input id="psMark" value="${esc(mark0)}" placeholder="e.g. Ali Estates"></label>
+      <button class="btn" id="psSave">Save ${files.length > 1 ? 'all ' + files.length + ' photos' : 'photo'}</button>`);
+    let look = 'auto';
+    const opts = () => ({ look, b: +$('#psB').value, w: +$('#psW').value, size: $('#psSize').value, mark: $('#psMark').value.trim() });
+    const draw = () => { const cv = studio.render(srcs[0], opts()), v = $('#psView'); if (!v) return; v.width = cv.width; v.height = cv.height; v.getContext('2d').drawImage(cv, 0, 0); };
+    $$('#psLook .chip').forEach(b => b.onclick = () => { look = b.dataset.look; $$('#psLook .chip').forEach(x => x.classList.toggle('on', x === b)); draw(); });
+    ['#psB', '#psW', '#psSize', '#psMark'].forEach(id => $(id).oninput = draw);
+    draw();
+    $('#psSave').onclick = async () => { toast('Saving…'); for (let i = 0; i < files.length; i++) { const o = await studio.exportPhoto(srcs[i], opts(), files[i].name); await tools.deliver(o.name, o.bytes, o.mime); } toast(`✅ Saved ${files.length} photo${files.length > 1 ? 's' : ''}`); };
+    return;
+  }
+  if (name === 'convert') {
+    const files = await pickFiles('image/*,.txt,.md,.csv,.html,.htm,.json'); if (!files.length) { closeTool(); return; }
+    const can = studio.targetsFor(files);
+    done(`<h3>🔀 Convert files</h3><p class="small-text">${files.length} file${files.length > 1 ? 's' : ''}: ${esc(files.slice(0, 3).map(f => f.name).join(', '))}${files.length > 3 ? '…' : ''}. Converted on this device — nothing is uploaded.</p>
+      ${can.length ? `<div class="ps-chips" id="cvTo">${can.map(k => `<button class="chip" data-to="${k}">→ ${studio.TARGETS[k].label}</button>`).join('')}</div>` : '<p>These files can’t be converted here yet. Try photos, text, CSV or HTML.</p>'}`);
+    $$('#cvTo .chip').forEach(b => b.onclick = async () => { toast('Converting…'); try { const out = await studio.convert(files, b.dataset.to); for (const o of out) await tools.deliver(o.name, o.bytes, o.mime); toast(`✅ ${out.length} file${out.length > 1 ? 's' : ''} ready`); } catch (e) { toast('Couldn’t convert: ' + e.message, 5000); } });
+    return;
+  }
+  if (name === 'sign') {
+    const [file] = await pickFiles('application/pdf', false); if (!file) { closeTool(); return; }
+    done(`<h3>✍️ Sign a PDF</h3><p class="small-text">${esc(file.name)} — draw your signature below.</p>
+      <canvas id="sgPad" width="900" height="300" style="width:100%;height:150px;border-radius:16px;background:#fff;border:1.5px dashed var(--line);display:block"></canvas>
+      <div class="row-2"><label class="field"><span>Page</span><select id="sgWhere"><option value="last">Last page</option><option value="first">First page</option></select></label>
+      <label class="field"><span>Your name (printed under it)</span><input id="sgName" value="${esc(S().name || '')}"></label></div>
+      <div class="row-2"><button class="btn ghost" id="sgClear" type="button">Clear</button><button class="btn" id="sgGo" type="button">Sign &amp; save</button></div>`);
+    const pad = studio.signaturePad($('#sgPad'));
+    $('#sgClear').onclick = () => pad.clear();
+    $('#sgGo').onclick = async () => { if (pad.empty()) return toast('Draw your signature first'); const o = await studio.signPDF(file, await pad.png(), { where: $('#sgWhere').value, name: $('#sgName').value.trim() }); await tools.deliver(o.name, o.bytes, o.mime); toast('✅ Signed PDF saved'); };
+    return;
+  }
   if (name === 'meeting') startMeetingNotes();
   if (name === 'sync') openSync();
   if (name === 'merge') { const f = await pickFiles('application/pdf'); if (f.length < 2) return toast('Pick two or more PDFs'); toast('Merging…'); tools.deliver('Merged.pdf', await tools.mergePDFs(f), 'application/pdf'); mem.remember('file', 'Merged PDF: ' + f.map(x => x.name).join(', ')); }
@@ -1536,6 +1584,10 @@ $('#focusStop').onclick = () => { $('#focus').hidden = true; };
 // ---------------- meeting notes ----------------
 let meeting = null;
 function startMeetingNotes() {
+  // The Mac records the whole meeting natively and writes an accurate transcript + notes into Apple Notes.
+  if (M) { M.post('meeting', { on: true }); toast('🎤 Taking meeting notes — say “Zuffi, stop meeting notes” or tap Stop', 6000);
+    const b = openPanel('🎤 Meeting notes', '<p class="small-text">Recording the meeting on your Mac. When you stop, Zuffi writes the full transcript and tidy notes (summary, decisions, action items) into Apple Notes and her memory.</p><button class="btn" id="mnStop">⏹ Stop & save</button>', () => {});
+    b.querySelector('#mnStop').onclick = () => { M.post('meeting', { on: false }); closeSheets(); toast('Writing up your notes…', 4000); }; return; }
   const desktopVoice = window.SparrowVoice?.dictate;
   if (!desktopVoice && !SR) { addMsg('bot', N ? 'Meeting notes need the Mac/Windows app or Chrome for now. Coming to the Android app soon.' : 'Meeting notes aren’t supported in this browser — use Chrome, or the Mac/Windows app.'); go('chat'); return; }
   let finalText = '', partial = '';
@@ -1553,8 +1605,22 @@ function startMeetingNotes() {
     try { r.start(); } catch {}
     stopFn = () => { on = false; try { r.stop(); } catch {} };
   }
-  meeting = { stop: () => { stopFn?.(); meeting = null; } };
-  body.querySelector('#mnStop').onclick = () => finishMeeting(finalText + partial);
+  // Also record the audio, so an accurate transcript can be made afterwards (with your own Groq / Gemini / OpenAI key).
+  let rec = null, chunks = [];
+  navigator.mediaDevices?.getUserMedia?.({ audio: { echoCancellation: true, noiseSuppression: true } }).then(st => {
+    if (!meeting) { st.getTracks().forEach(t => t.stop()); return; }
+    try { rec = new MediaRecorder(st, MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus') ? { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 32000 } : {}); rec.ondataavailable = e => e.data.size && chunks.push(e.data); rec.start(10000); rec._st = st; } catch {}
+  }).catch(() => {});
+  const audio = () => new Promise(res => { if (!rec || rec.state === 'inactive') return res(null); rec.onstop = () => { rec._st?.getTracks().forEach(t => t.stop()); res(chunks.length ? new Blob(chunks, { type: rec.mimeType || 'audio/webm' }) : null); }; rec.stop(); });
+  meeting = { stop: () => { stopFn?.(); meeting = null; }, audio };
+  body.querySelector('#mnStop').onclick = async () => {
+    const live = finalText + partial, m = meeting, btn = body.querySelector('#mnStop');
+    btn.disabled = true; btn.textContent = 'Writing it up…';
+    const blob = await m?.audio?.();
+    let text = live;
+    if (blob && navigator.onLine) { try { const t = await transcribeAudio(blob); if (t && t.length >= Math.min(40, live.length / 3)) text = t; } catch {} }
+    finishMeeting(text);
+  };
 }
 function stopMeetingNotes() { const live = $('#live'); finishMeeting(live ? live.textContent : ''); }
 function finishMeeting(text) {
@@ -1805,7 +1871,7 @@ function syncAlarms() {
     for (let day = 0; day < 3; day++) {
       const d = new Date(); d.setDate(d.getDate() + day);
       const tms = prayerTimes(d, s.lastLoc.lat, s.lastLoc.lon, s.prayer.method, s.prayer.asr);
-      for (const n of PRAYERS) if (n !== 'Sunrise') { const at = tms[n].getTime() - (+s.prayer.before || 0) * 60000; if (at > Date.now()) list.push({ id: `pr-${n}-${day}`, title: `${n} prayer`, type: 'prayer', at, head: `🕌 ${n}`, say: +s.prayer.before ? `${w}${n} prayer in ${s.prayer.before} minutes.` : `${w}it's time for ${n} prayer.` }); }
+      for (const n of PRAYERS) if (n !== 'Sunrise') for (const before of [...new Set([+s.prayer.before || 0, 0])]) { const at = tms[n].getTime() - before * 60000; if (at > Date.now()) list.push({ id: `pr-${n}-${day}${before ? '-' + before : ''}`, title: `${n} prayer`, type: 'prayer', at, head: `🕌 ${n}`, say: before ? `${w}${n} prayer in ${before} minutes.` : `${w}it's time for ${n} prayer.` }); }
     }
   }
   if (s.birthday && s.birthday.length === 10) {
@@ -1898,6 +1964,19 @@ async function voiceAsk(text) {
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
   catchUp: () => checkDue(),
+  // The Mac's morning briefing reads Zuffi's own list (not only Apple Calendar / Reminders).
+  todayPlan: () => {
+    if (acct.locked()) return '';
+    let s = spokenPlan(new Date());
+    if (/^Your day is clear/.test(s)) s = '';
+    try {
+      if (acct.isBusiness() && !document.body.classList.contains('personal-mode')) {
+        const f = bizapp.followUpsToday();
+        if (f.length) s += ` For your business: ${f.length === 1 ? 'one person' : f.length + ' people'} to follow up today${f.length <= 3 ? ': ' + spokenList(f) : ''}.`;
+      }
+    } catch {}
+    return s.trim();
+  },
   openSettings: section => openSettings(section),
   editProfile: () => showWelcome(true),
   rememberNote: (title, text) => mem.remember('meeting-notes', title, text),

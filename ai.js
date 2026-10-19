@@ -178,6 +178,29 @@ async function newestGemini(key) {
   } catch { return null; }
 }
 
+/** A recorded meeting / voice note → accurate text with your own key (Groq Whisper, Gemini, then OpenAI). null if none works. */
+export async function transcribeAudio(blob) {
+  const k = store.settings.keys || {}, mb = blob.size / 1048576, name = 'meeting.' + (/ogg/.test(blob.type) ? 'ogg' : /mp4|m4a|aac/.test(blob.type) ? 'm4a' : 'webm');
+  const whisper = async (url, key, model) => {
+    const fd = new FormData(); fd.append('model', model); fd.append('response_format', 'json'); fd.append('file', blob, name);
+    const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + key }, body: fd });
+    if (!r.ok) throw new Error('whisper ' + r.status); return ((await r.json()).text || '').trim();
+  };
+  if (k.groq && mb < 24) { try { const t = await whisper('https://api.groq.com/openai/v1/audio/transcriptions', k.groq, 'whisper-large-v3'); if (t) return t; } catch {} }
+  if (k.gemini && mb < 18) {
+    try {
+      const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+      const model = store.settings.models?.gemini || store.settings.geminiAuto || PROVIDERS.gemini.model;
+      const j = await post(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { contents: [{ role: 'user', parts: [
+        { text: 'Transcribe this meeting recording word for word in the language spoken. New line when the speaker changes, labelled Speaker 1, Speaker 2… (or a name if clearly said). Only the transcript.' },
+        { inline_data: { mime_type: (blob.type || 'audio/webm').split(';')[0], data: b64 } }] }], generationConfig: { temperature: 0 } }, { 'x-goog-api-key': k.gemini });
+      const t = (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('').trim(); if (t) return t;
+    } catch {}
+  }
+  if (k.openai && mb < 24) { try { const t = await whisper('https://api.openai.com/v1/audio/transcriptions', k.openai, 'whisper-1'); if (t) return t; } catch {} }
+  return null;
+}
+
 async function callProvider(p, key, messages, maxTokens = 1200) {
   const model = store.settings.models?.[p] || PROVIDERS[p].model;
   if (p === 'gemini') {

@@ -145,6 +145,20 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
 
     func run(_ js: String) { webView?.evaluateJavaScript(js, completionHandler: nil) }
 
+    /// Runs JS in the page and returns a string result (nil if the page isn't ready).
+    func evalString(_ js: String) async -> String? {
+        start()
+        guard let wv = webView else { return nil }
+        return await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
+            wv.evaluateJavaScript(js) { r, _ in c.resume(returning: r as? String) }
+        }
+    }
+    /// Zuffi's own day (her reminders, tasks, meetings and business follow-ups) as one spoken sentence.
+    func zuffiPlan() async -> String {
+        (await evalString("(window.Sparrow && window.Sparrow.todayPlan) ? window.Sparrow.todayPlan() : ''"))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     func hide() { window?.orderOut(nil) }
     /// Click anywhere else → the panel tucks away (like a popover).
     func windowDidResignKey(_ notification: Notification) {
@@ -233,6 +247,17 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             if let t = o["text"] as? String { VoiceEngine.shared.speak(t) }
         case "listen":
             VoiceEngine.shared.listenOnce()
+        case "meeting":
+            if (o["on"] as? Bool) == true {
+                VoiceEngine.shared.speak(MeetingNotes.shared.start())
+            } else {
+                Task { @MainActor in
+                    let r = await MeetingNotes.shared.stop()
+                    AppState.shared.noteMessage = r
+                    NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+                    VoiceEngine.shared.speak(r)
+                }
+            }
         case "mem":
             reply(id, MemoryStore.shared.handle(o))
         case "hide":

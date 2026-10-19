@@ -285,13 +285,21 @@ final class Routine {
         }
     }
 
+    /// Apple Calendar / Reminders + Zuffi's own list, without saying "your day is clear" when Zuffi has things.
+    static func dayText() async -> String {
+        let apple = await Planner.shared.spokenPlan()
+        let mine = await WebHub.shared.zuffiPlan()
+        if mine.isEmpty { return apple }
+        return apple.hasPrefix("Your day is clear") ? mine : apple + " " + mine
+    }
+
     func morningBriefing() async {
         ud.set(RoutinePrefs.dayKey(), forKey: RoutinePrefs.lastMorning)
         let name = AssistantPrefs.displayName
         let tf = DateFormatter(); tf.timeStyle = .short
         var text = "Good \(Briefing.period() == "night" ? "morning" : Briefing.period())\(name.isEmpty ? "" : ", \(name)")! It's \(tf.string(from: Date()))."
         if UserDefaults.standard.bool(forKey: AssistantPrefs.greetWeather), let w = await Weather.now() { text += " " + w }
-        text += " " + (await Planner.shared.spokenPlan())
+        text += " " + (await Self.dayText())
         text += " Have a lovely day!"
         Briefing.shared.markGreeted()
         // Spoken only — no words on screen (the sparrow just looks happy while it talks).
