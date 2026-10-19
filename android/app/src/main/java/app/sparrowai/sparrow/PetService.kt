@@ -188,6 +188,33 @@ class PetService : Service() {
         }
     }
 
+    /** The happy dance: big hops with a wiggle, a squash on landing and a twirl in the middle. */
+    private fun dance() {
+        val iv = img ?: return
+        iv.animate().cancel()
+        iv.pivotY = dp(132f * scale).toFloat(); iv.pivotX = dp(37f * scale).toFloat()
+        val total = 2200f
+        android.animation.ValueAnimator.ofFloat(0f, total).apply {
+            duration = total.toLong(); interpolator = android.view.animation.LinearInterpolator()
+            addUpdateListener {
+                val d = (it.animatedValue as Float) / 1000f
+                val k = d / 2.2f
+                val ph = (d * Math.PI * 2 / 0.55).toFloat()
+                val hop = Math.abs(Math.sin(ph / 2.0)).toFloat() * dp(40f) * (1 - k * 0.35f)
+                val c = Math.cos(ph / 2.0).toFloat()
+                val squash = Math.max(0f, c * c - 0.75f) * 0.5f
+                iv.translationY = -hop
+                iv.rotation = (Math.sin(ph / 2.0 + Math.PI / 2) * 11).toFloat()
+                iv.scaleX = 1 + squash; iv.scaleY = 1 - squash
+                iv.rotationY = if (d > 1.1f && d < 1.65f) (d - 1.1f) / 0.55f * 360f else 0f
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) { iv.translationY = 0f; iv.rotation = 0f; iv.scaleX = 1f; iv.scaleY = 1f; iv.rotationY = 0f; breathe() }
+            })
+            start()
+        }
+    }
+
     private fun hop() {
         val iv = img ?: return
         iv.animate().translationY(-dp(22f).toFloat()).setDuration(160).setInterpolator(DecelerateInterpolator())
@@ -343,36 +370,43 @@ class PetService : Service() {
         h.postDelayed(life, 125_000)
     }
 
-    private fun showCard(text: String, head: String?, reminderId: String?, ms: Long, hideBtn: Boolean) {
+    /** Website look: a dark pill that says it with the buttons inside; reply = a white bubble. */
+    private fun showCard(text: String, head: String?, reminderId: String?, ms: Long, hideBtn: Boolean, reply: Boolean = false) {
         hideCard()
+        cardReply = reply
+        val ink = Color.parseColor("#0C0C0C")
         val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(12f), dp(16f), dp(12f))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14f), dp(10f), dp(if (reply) 14f else 10f), dp(10f))
             background = GradientDrawable().apply {
-                cornerRadius = dp(22f).toFloat()
-                colors = intArrayOf(Color.parseColor("#F2241A44"), Color.parseColor("#F2160F30"))
-                orientation = GradientDrawable.Orientation.TOP_BOTTOM
-                setStroke(dp(1f), Color.parseColor("#55FFFFFF"))
+                cornerRadius = dp(16f).toFloat()
+                setColor(if (reply) Color.WHITE else ink)
+                if (reply) setStroke(dp(1f), Color.parseColor("#1F0C0C0C"))
             }
-            elevation = dp(10f).toFloat()
+            elevation = dp(12f).toFloat()
         }
-        if (head != null) col.addView(TextView(this).apply { this.text = "⏰  $head"; setTextColor(Color.parseColor("#F58FA8")); textSize = 12f; typeface = Typeface.DEFAULT_BOLD })
-        col.addView(TextView(this).apply { this.text = text; setTextColor(Color.WHITE); textSize = if (head != null) 17f else 15f; typeface = Typeface.create("sans-serif-medium", Typeface.BOLD); maxWidth = dp(260f) })
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10f), 0, 0) }
+        val emoji = when { head == null -> ""; head.contains("Meeting", true) -> " 📅"; head.contains("prayer", true) -> " 🌙"; else -> " ⏰" }
+        col.addView(TextView(this).apply {
+            this.text = if (reminderId != null || head != null) "$text$emoji" else text
+            setTextColor(if (reply) ink else Color.parseColor("#F5F5F5")); textSize = 14f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD); maxWidth = dp(if (reminderId != null) 190f else 260f)
+        })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(10f), 0, 0, 0) }
         fun btn(t: String, solid: Boolean, onTap: () -> Unit) = TextView(this).apply {
-            this.text = t; textSize = 13.5f; typeface = Typeface.DEFAULT_BOLD
-            setTextColor(if (solid) Color.parseColor("#1A1008") else Color.WHITE)
-            setPadding(dp(14f), dp(8f), dp(14f), dp(8f))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18f).toFloat()
-                if (solid) { colors = intArrayOf(Color.parseColor("#FBC56A"), Color.parseColor("#F28A3C")) } else { setColor(Color.parseColor("#22FFFFFF")); setStroke(dp(1f), Color.parseColor("#33FFFFFF")) }
+            this.text = t; textSize = 13f; typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (solid) ink else Color.parseColor("#D9FFFFFF"))
+            setPadding(dp(12f), dp(7f), dp(12f), dp(7f))
+            background = GradientDrawable().apply { cornerRadius = dp(18f).toFloat(); setColor(if (solid) Color.parseColor("#F5F5F5") else Color.parseColor("#1FFFFFFF")) }
+            setOnClickListener {
+                if (solid) { (background as? GradientDrawable)?.setColor(Color.parseColor("#7EE2A8")); animate().scaleX(0.9f).scaleY(0.9f).setDuration(120).start() }
+                postDelayed({ onTap() }, 160)
             }
-            setOnClickListener { onTap() }
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(8f) }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(6f) }
         }
         if (reminderId != null) {
-            row.addView(btn("Done", true) { hideCard(); hop() })
-            row.addView(btn("Snooze 10 min", false) { snooze(reminderId, head ?: "Reminder", text); hideCard() })
+            row.addView(btn("Done", true) { hideCard(); dance(); showCard(if (head?.contains("Meeting", true) == true) "Good luck! 🍀" else "Yay, done! 🎉 Nice work 💗", null, null, 2600, false, true) })
+            row.addView(btn("Later", false) { snooze(reminderId, head ?: "Reminder", text); hideCard(); showCard("I’ll come back in 10 minutes ⏰", null, null, 2600, false, true) })
             col.addView(row)
         } else if (hideBtn) {
             row.addView(btn("Open Zuffi", true) { hideCard(); Commands.startSafely(this, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) })
@@ -388,12 +422,13 @@ class PetService : Service() {
         h.removeCallbacks(autoHide); h.postDelayed(autoHide, ms)
     }
     private var cardLp: WindowManager.LayoutParams? = null
+    private var cardReply = false
     private val autoHide = Runnable { hideCard() }
     private fun moveCard() {
         val c = card ?: return; val p = cardLp ?: return
         val px = lp?.x ?: (dm.widthPixels / 2); val py = lp?.y ?: (dm.heightPixels - dp(200f))
         p.x = (px + dp(37f) - c.width / 2).coerceIn(dp(8f), (dm.widthPixels - c.width - dp(8f)).coerceAtLeast(dp(8f)))
-        p.y = (py - c.height - dp(4f)).coerceAtLeast(dp(40f))
+        p.y = (py - c.height - dp(if (cardReply) 50f else 4f)).coerceAtLeast(dp(40f))   // the reply sits higher: she's hopping
         safeUpdate(c, p)
     }
     private fun hideCard() { h.removeCallbacks(autoHide); card?.let { try { wm.removeView(it) } catch (_: Exception) {} }; card = null }

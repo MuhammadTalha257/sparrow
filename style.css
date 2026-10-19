@@ -1588,3 +1588,13 @@ html.island-mode.isl-peek .cap-wave { display: none; }
 
 .ps-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .ps-chips .chip.on { background: var(--accent); color: var(--ink); }
+
+/* the bunny's happy dance on the phone / web (same moves as Mac and Windows) */
+.webpet.dance img { animation: wpDance 2.2s cubic-bezier(.3,.7,.4,1); }
+@keyframes wpDance {
+  0% { transform: translateY(0) rotate(0) scale(1,1); } 10% { transform: translateY(-26px) rotate(-10deg) scale(.96,1.05); } 20% { transform: translateY(0) scale(1.1,.9); }
+  30% { transform: translateY(-24px) rotate(10deg) scale(.96,1.05); } 40% { transform: translateY(0) scale(1.1,.9); }
+  52% { transform: translateY(-22px) rotateY(180deg); } 62% { transform: translateY(0) rotateY(360deg) scale(1.08,.92); }
+  74% { transform: translateY(-16px) rotate(-8deg); } 84% { transform: translateY(0) scale(1.06,.94); } 92% { transform: translateY(-6px) rotate(4deg); } 100% { transform: none; } }
+.wp-joy { position: absolute; bottom: 60px; font-style: normal; font-size: 15px; pointer-events: none; animation: wpJoy 1.4s ease-out forwards; }
+@keyframes wpJoy { 0% { opacity: 0; transform: translate(0,0) scale(.6); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), -120px) scale(1.2); } }

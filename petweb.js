@@ -46,3 +46,15 @@ export function say(text, ms = 5000) {
   bub.style.left = left + 'px';
   clearTimeout(bubT); bubT = setTimeout(() => { bub.hidden = true; }, ms);
 }
+
+/** The happy dance (after Done) + hearts and sparkles floating up. */
+export function dance(text = 'Yay, done! 🎉 Nice work 💗') {
+  if (!el) return;
+  el.classList.remove('dance'); void el.offsetWidth; el.classList.add('dance'); setTimeout(() => el && el.classList.remove('dance'), 2300);
+  ['💗', '✨', '🌸', '💖', '🎉', '💕'].forEach((m, i) => setTimeout(() => {
+    if (!el) return; const e = document.createElement('i'); e.className = 'wp-joy'; e.textContent = m;
+    e.style.left = (14 + (i % 2 ? 1 : -1) * (8 + (i * 11) % 24)) + 'px'; e.style.setProperty('--dx', ((i % 2 ? 1 : -1) * (14 + (i * 7) % 20)) + 'px');
+    el.appendChild(e); setTimeout(() => e.remove(), 1500);
+  }, i * 150));
+  say(text, 2600);
+}

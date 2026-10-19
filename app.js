@@ -1209,7 +1209,7 @@ function showAlert(title, sub, itemId) {
 }
 $('#alertSnooze').onclick = () => { const id = $('#alertSnooze').dataset.id; const it = store.items.find(i => i.id === id); if (it) { store.update(id, { snoozeUntil: Date.now() + 10 * 60000, snoozed: false, done: false }); toast('😴 Snoozed for 10 minutes'); } $('#alert').hidden = true; };
 $('#alertDone').addEventListener('click', () => { const k = $('#alert').dataset.health; if (k && S().health?.[k]) { S().health[k].last = Date.now(); store.save(); } $('#alert').dataset.health = ''; });
-$('#alertDone').onclick = () => { const id = $('#alertDone').dataset.id; const it = store.items.find(i => i.id === id); if (it && !it.repeat) store.update(id, { done: true, doneAt: new Date().toISOString() }); $('#alert').hidden = true; };
+$('#alertDone').onclick = () => { const id = $('#alertDone').dataset.id; const it = store.items.find(i => i.id === id); if (it && !it.repeat) store.update(id, { done: true, doneAt: new Date().toISOString() }); $('#alert').hidden = true; window.zuffiPetDance?.(it?.type === 'meeting' ? 'Good luck! 🍀' : undefined); };
 function alertNow(spoken, shown, tag, itemId) {
   chime(); showAlert(shown, itemId ? 'Or say “snooze”' : '', itemId); birdMood('happy');
   if (itemId) setLastAlert(itemId);
@@ -2288,7 +2288,7 @@ window.zuffiOpenUrl = u => openUrl(u);
 window.zuffiOpenSettings = section => openSettings(section);
 bizapp.mount($('#bizRoot'), { toast: (t, ms) => toast(t, ms) });
 // Walking Zuffi inside the app on iPhone / web (Android, Windows and Mac have their own pets)
-if (!N && !D && !M && !DASH) Promise.all([import('./petweb.js'), import('./zblob.js')]).then(([p, Z]) => p.start(() => {
+if (!N && !D && !M && !DASH) Promise.all([import('./petweb.js'), import('./zblob.js')]).then(([p, Z]) => (window.zuffiPetDance = p.dance, p).start(() => {
   const now = Date.now(), nx = store.items.filter(i => i.when && !i.done && ['task', 'meeting', 'reminder'].includes(i.type) && new Date(i.when).getTime() > now).sort((a, b) => new Date(a.when) - new Date(b.when))[0];
   const f = bizapp.followUpsToday();
   return nx ? `Next: ${nx.title} · ${new Date(nx.when).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : f.length ? `📞 Call today: ${f.slice(0, 3).join(', ')}` : '';
