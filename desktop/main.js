@@ -341,6 +341,15 @@ async function ollama(kind, body) {
       const j = await r.json();
       return (j.models || []).map(m => m.name).filter(n => !/embed|cloud|nomic|bge/i.test(n));
     }
+    if (kind === 'allmodels') {   // including picture models (image generation)
+      const j = await (await net.fetch('http://127.0.0.1:11434/api/tags')).json();
+      return (j.models || []).map(m => m.name);
+    }
+    if (kind === 'image') {        // Ollama picture models (experimental): base64 PNG back
+      const r = await net.fetch('http://127.0.0.1:11434/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stream: false, ...body }) });
+      const j = await r.json(); if (j.error) throw new Error(j.error);
+      return j.image || (j.images || [])[0] || '';
+    }
     const r = await net.fetch('http://127.0.0.1:11434/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await r.json();
     if (j.error) throw new Error(j.error);

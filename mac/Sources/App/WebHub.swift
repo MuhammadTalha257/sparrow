@@ -323,6 +323,14 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             // The job agent's AI fallback: uses the keys saved in Zuffi's own settings.
             let prompt = o["prompt"] as? String ?? ""
             Task { if let t = await SmartPlanner.shared.complete(prompt) { self.reply(id, t) } else { self.reply(id, NSNull()) } }
+        case "keys":
+            // The page's own tools (pictures, captions, transcripts) can use the AI keys saved in the Mac's settings.
+            var k: [String: String] = [:]
+            for (web, kc) in [("openai", "openai-api-key"), ("gemini", "gemini-api-key"), ("grok", "xai-api-key"), ("groq", "groq-api-key"),
+                              ("openrouter", "openrouter-api-key"), ("claude", "anthropic-api-key"), ("perplexity", "perplexity-api-key")] {
+                if let v = KeychainStore.shared.get(kc), !v.isEmpty { k[web] = v }
+            }
+            reply(id, k)
         case "location":
             Task {
                 if let l = await LocationProvider.shared.current() { self.reply(id, ["lat": l.lat, "lon": l.lon, "city": l.city]) }

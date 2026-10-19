@@ -25,6 +25,12 @@ export const PROVIDERS = {
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', site: 'https://platform.deepseek.com/api_keys' },
   mistral: { name: 'Mistral', url: 'https://api.mistral.ai/v1/chat/completions', model: 'mistral-small-latest', site: 'https://console.mistral.ai/api-keys' },
   perplexity: { name: 'Perplexity (answers with web search)', url: 'https://api.perplexity.ai/chat/completions', model: 'sonar', site: 'https://www.perplexity.ai/settings/api' },
+  together: { name: 'Together AI (Llama, Qwen, FLUX images)', url: 'https://api.together.xyz/v1/chat/completions', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', site: 'https://api.together.ai/settings/api-keys' },
+  cerebras: { name: 'Cerebras (very fast, free tier)', url: 'https://api.cerebras.ai/v1/chat/completions', model: 'llama-3.3-70b', site: 'https://cloud.cerebras.ai' },
+  fireworks: { name: 'Fireworks AI', url: 'https://api.fireworks.ai/inference/v1/chat/completions', model: 'accounts/fireworks/models/llama-v3p3-70b-instruct', site: 'https://fireworks.ai/account/api-keys' },
+  qwen: { name: 'Qwen (Alibaba)', url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', model: 'qwen-plus', site: 'https://modelstudio.console.alibabacloud.com' },
+  kimi: { name: 'Kimi (Moonshot)', url: 'https://api.moonshot.ai/v1/chat/completions', model: 'moonshot-v1-8k', site: 'https://platform.moonshot.ai/console/api-keys' },
+  stability: { name: 'Stability AI (pictures only)', imageOnly: true, site: 'https://platform.stability.ai/account/keys' },
 };
 
 export async function deviceSupport() {
@@ -180,7 +186,7 @@ async function newestGemini(key) {
 
 /** A recorded meeting / voice note → accurate text with your own key (Groq Whisper, Gemini, then OpenAI). null if none works. */
 export async function transcribeAudio(blob) {
-  const k = store.settings.keys || {}, mb = blob.size / 1048576, name = 'meeting.' + (/ogg/.test(blob.type) ? 'ogg' : /mp4|m4a|aac/.test(blob.type) ? 'm4a' : 'webm');
+  const k = { ...(window.zuffiMacKeys || {}), ...(store.settings.keys || {}) }, mb = blob.size / 1048576, name = 'meeting.' + (/ogg/.test(blob.type) ? 'ogg' : /mp4|m4a|aac/.test(blob.type) ? 'm4a' : 'webm');
   const whisper = async (url, key, model) => {
     const fd = new FormData(); fd.append('model', model); fd.append('response_format', 'json'); fd.append('file', blob, name);
     const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + key }, body: fd });
@@ -198,6 +204,28 @@ export async function transcribeAudio(blob) {
     } catch {}
   }
   if (k.openai && mb < 24) { try { const t = await whisper('https://api.openai.com/v1/audio/transcriptions', k.openai, 'whisper-1'); if (t) return t; } catch {} }
+  return null;
+}
+
+/** Timed captions for a video/audio clip: [{s, e, text}] (seconds), with your Groq or OpenAI key. null if not possible. */
+export async function transcribeTimed(blob) {
+  const k = { ...(window.zuffiMacKeys || {}), ...(store.settings.keys || {}) }; if (blob.size > 24 * 1048576) return null;
+  for (const [url, key, model] of [['https://api.groq.com/openai/v1/audio/transcriptions', k.groq, 'whisper-large-v3'], ['https://api.openai.com/v1/audio/transcriptions', k.openai, 'whisper-1']]) {
+    if (!key) continue;
+    try {
+      const fd = new FormData(); fd.append('model', model); fd.append('response_format', 'verbose_json'); fd.append('timestamp_granularities[]', 'segment'); fd.append('file', blob, 'clip.' + ((blob.type || '').includes('webm') ? 'webm' : 'mp4'));
+      const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + key }, body: fd }); if (!r.ok) continue;
+      const j = await r.json();
+      // short caption chunks (max ~6 words) read better on a phone
+      const out = [];
+      for (const sg of j.segments || []) {
+        const words = String(sg.text || '').trim().split(/\s+/).filter(Boolean); if (!words.length) continue;
+        const n = Math.ceil(words.length / 6), d = (sg.end - sg.start) / n;
+        for (let i = 0; i < n; i++) out.push({ s: sg.start + i * d, e: sg.start + (i + 1) * d, text: words.slice(i * 6, (i + 1) * 6).join(' ') });
+      }
+      if (out.length) return out;
+    } catch {}
+  }
   return null;
 }
 
@@ -230,7 +258,7 @@ async function callProvider(p, key, messages, maxTokens = 1200) {
 /** Which AIs can answer right now, best first. */
 async function order() {
   const s = store.settings, k = s.keys || {}, out = [];
-  const keyed = Object.keys(PROVIDERS).filter(p => k[p]);
+  const keyed = Object.keys(PROVIDERS).filter(p => k[p] && !PROVIDERS[p].imageOnly);
   // Built-in AI (Pro / Business / trial) only if they want it: their choice in Settings → AI,
   // or automatically when they haven't added a key of their own.
   // No internet: the brains on this device answer first (Ollama on the computer, or the phone's small model).

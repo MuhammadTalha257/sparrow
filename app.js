@@ -9,7 +9,7 @@ import {
   spokenPlan, spokenList, tasksForDay, moveToTomorrow, nextOccurrence, repeatText, weather, location as getLocation, prayerToday, habitCount, bumpHabit,
   setLastAlert, lastAlert, findCustomer,
 } from './brain.js';
-import { transcribeAudio, ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary, currentAI } from './ai.js';
+import { transcribeAudio, transcribeTimed, ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary, currentAI } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
@@ -17,6 +17,13 @@ import * as maclink from './maclink.js';
 import * as zc from './companion.js';
 import * as bizapp from './bizapp.js';
 import * as studio from './studio.js';
+import * as send from './send.js';
+import * as office from './office.js';
+import * as actlog from './actlog.js';
+import * as reels from './reels.js';
+import * as images from './images.js';
+actlog.watch();
+const logAction = (kind, text) => actlog.add(kind, text);
 import * as bizsync from './bizsync.js';
 import * as seasons from './seasons.js';
 import * as acct from './account.js';
@@ -752,6 +759,40 @@ async function submit(text, fromVoice = false) {
   } else { addMsg('me', text); go('chat'); }
   mem.remember('chat', text);
 
+  // "undo", "undo that", "take that back" → reverses the last change Zuffi made
+  if (!files.length && /^(zuffi,?\s*)?(please\s+)?(undo( that| it| the last( thing| change)?)?|take (that|it) back|revert( that)?|wapas karo)[.!]?$/i.test(text)) {
+    const r = actlog.undo() || 'There’s nothing to undo.';
+    addMsg('bot', r); if (fromVoice) speak(r); renderAll?.(); return;
+  }
+  // "make a picture of…", "draw…", "design a poster for…" → an image
+  const picPrompt = !files.length && images.wantsImage(text);
+  if (picPrompt) {
+    const wait = addMsg('bot', '🎨 Drawing it…', { cmd: true });
+    try {
+      const { bytes, maker } = await images.make(picPrompt, { shape: /poster|story|flyer/i.test(text) ? 'portrait' : 'square' });
+      { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); }
+      await tools.deliver('zuffi-picture-' + Date.now().toString(36) + '.png', bytes, 'image/png'); logAction('photo', `Made a picture: ${picPrompt.slice(0, 50)}`);
+      const r = `Here's your picture (made by ${images.MAKERS[maker]}) — it's saved.`; addMsg('bot', r); if (fromVoice) speak(r);
+    } catch (e) { { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); } addMsg('bot', e.message === 'NO_MAKER' ? 'To make pictures, add an OpenAI, Gemini, Grok, Together, Stability or OpenRouter key in Settings → AI, or install an Ollama picture model (ollama pull x/z-image-turbo).' : `I couldn't make that picture: ${e.message}`); }
+    return;
+  }
+  // "make a PowerPoint about…", "write a letter to my tenant", "excel budget for…" → a real file
+  const ofKind = !files.length && office.kindOf(text);
+  if (ofKind && aiReady()) {
+    const label = { docx: 'Word document', xlsx: 'Excel sheet', pptx: 'PowerPoint' }[ofKind];
+    const steps = ['Writing the content', `Building the ${label}`, 'Saving the file'];
+    const stepText = n => `📄 Making your ${label}\n` + steps.map((st, i) => `${i < n ? '✅' : i === n ? '⏳' : '▫️'} ${i + 1}. ${st}`).join('\n');
+    let wait = addMsg('bot', stepText(0), { cmd: true });
+    const step = n => { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); wait = addMsg('bot', stepText(n), { cmd: true }); };
+    try {
+      const spec = await office.plan(ofKind, text, bizFacts()); step(1);
+      const file = await office.build(ofKind, spec); step(2);
+      { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); }
+      await tools.deliver(file.name, file.bytes, file.mime); logAction('office', `Made ${file.name}`);
+      const r = `Done — ${file.name} is ready.`; addMsg('bot', stepText(3).replace('Making your', 'Made your') + '\n\n' + r); if (fromVoice) speak(r);
+    } catch (e) { { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); } addMsg('bot', `I couldn't make that ${label}: ${e.message}`); }
+    return;
+  }
   // "lock my Mac", "turn off the laptop", "open Spotify on my Mac"… → your Mac at home does it
   if (!files.length && !M && maclink.isForMac(text)) {
     const wait = addMsg('bot', '💻 Sending to your Mac…', { cmd: true });
@@ -1467,7 +1508,7 @@ async function openTool(name) {
     $$('#psLook .chip').forEach(b => b.onclick = () => { look = b.dataset.look; $$('#psLook .chip').forEach(x => x.classList.toggle('on', x === b)); draw(); });
     ['#psB', '#psW', '#psSize', '#psMark'].forEach(id => $(id).oninput = draw);
     draw();
-    $('#psSave').onclick = async () => { toast('Saving…'); for (let i = 0; i < files.length; i++) { const o = await studio.exportPhoto(srcs[i], opts(), files[i].name); await tools.deliver(o.name, o.bytes, o.mime); } toast(`✅ Saved ${files.length} photo${files.length > 1 ? 's' : ''}`); };
+    $('#psSave').onclick = async () => { toast('Saving…'); for (let i = 0; i < files.length; i++) { const o = await studio.exportPhoto(srcs[i], opts(), files[i].name); await tools.deliver(o.name, o.bytes, o.mime); } toast(`✅ Saved ${files.length} photo${files.length > 1 ? 's' : ''}`); logAction('photo', `Edited ${files.length} photo${files.length > 1 ? 's' : ''} in the photo studio`); };
     return;
   }
   if (name === 'convert') {
@@ -1488,6 +1529,111 @@ async function openTool(name) {
     const pad = studio.signaturePad($('#sgPad'));
     $('#sgClear').onclick = () => pad.clear();
     $('#sgGo').onclick = async () => { if (pad.empty()) return toast('Draw your signature first'); const o = await studio.signPDF(file, await pad.png(), { where: $('#sgWhere').value, name: $('#sgName').value.trim() }); await tools.deliver(o.name, o.bytes, o.mime); toast('✅ Signed PDF saved'); };
+    return;
+  }
+  if (name === 'send') { openSend(done); return; }
+  if (name === 'picture') {
+    const makers = await images.available();
+    const bn = S().business?.name || '';
+    const IDEAS = [['🏠 Property post', `A bright, professional social media post for a 3-bedroom house for sale${bn ? ' by ' + bn : ''}, modern living room, warm daylight`],
+      ['🏷️ Offer poster', `A clean promotional poster: 20% off this weekend${bn ? ' at ' + bn : ''}, bold and friendly, plenty of space`],
+      ['💇 Salon post', 'An elegant Instagram post for a hair salon, soft pink tones, styled hair, minimal and modern'],
+      ['🍽️ Menu special', 'An appetising photo-style image of today’s special dish on a wooden table, restaurant lighting'],
+      ['🎂 Birthday card', 'A cheerful birthday card illustration with balloons and confetti']];
+    done(`<h3>🎨 Make a picture</h3>${makers.length ? `<p class="small-text">Using ${esc(images.MAKERS[makers[0]])}${makers.length > 1 ? ' (others as backup)' : ''}.</p>` : `<p class="small-text">To make pictures, add a key for OpenAI, Gemini, Grok, Together, Stability or OpenRouter in Settings → AI — or install an Ollama picture model on your computer (e.g. <b>ollama pull x/z-image-turbo</b>) to make them offline.</p>`}
+      <textarea class="field-in" id="pcReq" placeholder="Describe the picture, e.g. a cosy café poster for our new autumn latte"></textarea>
+      <div class="ps-chips" id="pcIdeas">${IDEAS.map(([l, t]) => `<button class="chip" data-p="${esc(t)}">${l}</button>`).join('')}</div>
+      <div class="row-2"><label class="field"><span>Shape</span><select id="pcShape"><option value="square">Square (Instagram)</option><option value="portrait">Portrait (Story, poster)</option><option value="landscape">Landscape (website, Facebook)</option></select></label>
+      ${makers.length > 1 ? `<label class="field"><span>Made by</span><select id="pcMaker">${makers.map(m => `<option value="${m}">${images.MAKERS[m]}</option>`).join('')}</select></label>` : ''}</div>
+      <button class="btn" id="pcGo" ${makers.length ? '' : 'disabled'}>Make it</button><div id="pcOut"></div>`);
+    $('#pcIdeas').onclick = e => { const b = e.target.closest('[data-p]'); if (b) $('#pcReq').value = b.dataset.p; };
+    $('#pcGo').onclick = async () => {
+      const prompt = $('#pcReq').value.trim(); if (!prompt) return toast('Describe the picture first');
+      const btn = $('#pcGo'); btn.disabled = true; btn.textContent = 'Drawing…';
+      try {
+        const { bytes, maker } = await images.make(prompt, { shape: $('#pcShape').value, maker: $('#pcMaker')?.value });
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+        $('#pcOut').innerHTML = `<img src="${url}" style="width:100%;border-radius:16px;margin-top:12px"><p class="small-text">Made by ${esc(images.MAKERS[maker])}</p><button class="btn ghost" id="pcSave">Save picture</button>`;
+        $('#pcSave').onclick = () => tools.deliver('zuffi-picture-' + Date.now().toString(36) + '.png', bytes, 'image/png');
+        logAction('photo', `Made a picture: ${prompt.slice(0, 50)}`);
+      } catch (e) { toast(e.message === 'NO_MAKER' ? 'Add a picture AI key in Settings → AI first' : 'Couldn’t make it: ' + e.message, 6000); }
+      finally { btn.disabled = false; btn.textContent = 'Make it'; }
+    };
+    return;
+  }
+  if (name === 'reels') {
+    const [file] = await pickFiles('video/*', false); if (!file) { closeTool(); return; }
+    let video; try { video = await reels.loadVideo(file); } catch (e) { toast(e.message); closeTool(); return; }
+    const dur = video.duration, hasKey = !!(S().keys?.groq || S().keys?.openai || window.zuffiMacKeys?.groq || window.zuffiMacKeys?.openai);
+    done(`<h3>🎬 Quick reel</h3><p class="small-text">${esc(file.name)} · ${Math.round(dur)} s · made on this device</p>
+      <video id="rlPrev" src="${video.src}" playsinline muted style="width:100%;max-height:300px;border-radius:16px;background:#000"></video>
+      <div class="row-2"><label class="field"><span>Length</span><select id="rlLen">${[15, 30, 60].filter(n => n < dur + 1).map(n => `<option value="${n}" ${n === 30 ? 'selected' : ''}>${n} seconds</option>`).join('')}<option value="${Math.min(90, Math.floor(dur))}">Whole clip${dur > 90 ? ' (first 90 s)' : ''}</option></select></label>
+      <label class="field"><span>Start at (seconds)</span><input id="rlStart" type="number" min="0" max="${Math.floor(dur)}" value="0"></label></div>
+      <label class="field"><span>Shape</span><select id="rlShape">${Object.entries(reels.SHAPES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select></label>
+      <label class="field"><span>Title (first 3 seconds)</span><input id="rlTitle" placeholder="e.g. 3-bed house in Riverside — £1,250 pcm"></label>
+      <label class="field"><span>Captions</span><select id="rlCapMode">${hasKey ? '<option value="auto">Automatic, from what’s said</option>' : ''}<option value="typed">I’ll type them</option><option value="none">No captions</option></select></label>
+      <textarea class="field-in" id="rlCaps" placeholder="One caption per line — they’re spread evenly over the reel" ${hasKey ? 'hidden' : ''}></textarea>
+      <label class="field"><span>Your name in the corner</span><input id="rlMark" value="${esc(S().business?.name || '')}"></label>
+      <button class="btn" id="rlGo">Make reel</button><div class="small-text" id="rlProg"></div>`);
+    $('#rlCapMode').onchange = e => { $('#rlCaps').hidden = e.target.value !== 'typed'; };
+    $('#rlGo').onclick = async () => {
+      const btn = $('#rlGo'), prog = $('#rlProg'); btn.disabled = true;
+      try {
+        const start = Math.max(0, +$('#rlStart').value || 0), len = Math.min(+$('#rlLen').value, dur - start);
+        let captions = [];
+        if ($('#rlCapMode').value === 'auto') {
+          prog.textContent = 'Listening for captions…';
+          const all = await transcribeTimed(file);
+          if (all) captions = all.filter(c => c.e > start && c.s < start + len).map(c => ({ ...c, s: c.s - start, e: c.e - start }));
+          else toast('Couldn’t make automatic captions (video too big or no Groq/OpenAI key) — making it without', 5000);
+        } else if ($('#rlCapMode').value === 'typed') captions = reels.evenCaptions($('#rlCaps').value.split('\n'), len);
+        prog.textContent = 'Making your reel… (it plays through once — about ' + Math.round(len) + ' s)';
+        const blob = await reels.render(video, { start, len, shape: $('#rlShape').value, title: $('#rlTitle').value.trim(), mark: $('#rlMark').value.trim(), captions, onProgress: p => { prog.textContent = `Making your reel… ${Math.round(p * 100)}%`; } });
+        const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+        await tools.deliver(file.name.replace(/\.[^.]+$/, '') + '-reel.' + ext, new Uint8Array(await blob.arrayBuffer()), blob.type);
+        prog.textContent = '✅ Reel saved' + (ext === 'webm' ? ' (WebM — most apps accept it; Instagram prefers MP4)' : '');
+        logAction('photo', `Made a ${Math.round(len)} s reel from ${file.name}`);
+      } catch (e) { prog.textContent = ''; toast('Couldn’t make the reel: ' + (e.message || e), 6000); }
+      finally { btn.disabled = false; }
+    };
+    return;
+  }
+  if (name === 'activity') {
+    const ICON = { add: '➕', edit: '✏️', remove: '🗑️', office: '📄', send: '📲', photo: '📸', meeting: '🎤' };
+    const draw = () => {
+      const L = actlog.list();
+      done(`<h3>🕘 Activity &amp; undo</h3><p class="small-text">Everything Zuffi did for you. Tap Undo — or just say “Zuffi, undo that”.</p>
+        <div id="acList">${L.map(e => `<div class="res-row${e.undone ? ' dim' : ''}"><div class="txt"><div class="t1">${ICON[e.kind] || '•'} ${esc(e.text)}</div><div class="t2">${fmtDay ? fmtDay(new Date(e.at)) + ' · ' : ''}${fmtTime(new Date(e.at))}${e.undone ? ' · undone' : ''}</div></div>${e.undo && !e.undone ? `<button data-un="${e.id}">Undo</button>` : ''}</div>`).join('') || '<p class="small-text">Nothing yet.</p>'}</div>
+        ${L.length ? '<p class="small-text"><a href="#" id="acClear">Clear the list</a></p>' : ''}`);
+      $('#acList').onclick = e => { const b = e.target.closest('[data-un]'); if (!b) return; toast(actlog.undo(b.dataset.un) || 'Can’t undo that'); renderAll?.(); draw(); };
+      $('#acClear') && ($('#acClear').onclick = ev => { ev.preventDefault(); actlog.clear(); draw(); });
+    };
+    draw(); return;
+  }
+  if (name === 'office') {
+    const ex = (() => { try { return acct.isBusiness() ? office.exportable() : []; } catch { return []; } })();
+    const IDEAS = { docx: ['A friendly letter to my tenant about the rent going up', 'A job advert for a part-time receptionist', 'A one-page business plan for a small salon'],
+      xlsx: ['A monthly budget for a small business', 'A price list for a hair salon', 'A weekly staff rota for 5 people'],
+      pptx: ['A presentation of a 3-bed house for sale', 'A 6-slide pitch for my business', 'Training slides: how we greet customers'] };
+    let kind = 'docx';
+    done(`<h3>📄 Word, Excel &amp; PowerPoint</h3><p class="small-text">Describe what you need. Zuffi writes it and builds the file on this device.</p>
+      <div class="ps-chips" id="ofKind"><button class="chip on" data-k="docx">📝 Word</button><button class="chip" data-k="xlsx">📊 Excel</button><button class="chip" data-k="pptx">📽️ PowerPoint</button></div>
+      <textarea class="field-in" id="ofReq" placeholder="e.g. A letter to my tenant about the rent going up from 1 December"></textarea>
+      <div class="ps-chips" id="ofIdeas"></div>
+      <button class="btn" id="ofGo">Make it</button><div id="ofOut"></div>
+      ${ex.length ? `<h3 style="margin-top:18px">Your business → Excel</h3><p class="small-text">Straight from your data, no AI needed.</p><div class="ps-chips" id="ofEx">${ex.map(n => `<button class="chip" data-ex="${n}">${office.EXPORTS[n]}</button>`).join('')}<button class="chip" data-ex="*">Everything</button></div>` : ''}`);
+    const ideas = () => { $('#ofIdeas').innerHTML = IDEAS[kind].map(t => `<button class="chip" data-idea="${esc(t)}">${esc(t)}</button>`).join(''); };
+    ideas();
+    $('#ofKind').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return; kind = b.dataset.k; $$('#ofKind .chip').forEach(x => x.classList.toggle('on', x === b)); ideas(); };
+    $('#ofIdeas').onclick = e => { const b = e.target.closest('[data-idea]'); if (b) $('#ofReq').value = b.dataset.idea; };
+    $('#ofGo').onclick = async () => {
+      const req = $('#ofReq').value.trim(); if (!req) return toast('Describe what you need first');
+      const btn = $('#ofGo'); btn.disabled = true; btn.textContent = 'Writing it…';
+      try { const { file } = await office.make(kind, req, bizFacts()); await tools.deliver(file.name, file.bytes, file.mime); $('#ofOut').innerHTML = `<p>✅ ${esc(file.name)} is ready.</p>`; logAction('office', `Made ${file.name}`); }
+      catch (e) { toast(aiReady() ? 'Couldn’t make it: ' + e.message : 'This needs AI — sign in for Zuffi’s built-in AI, add a key in Settings → AI, or get the offline brain.', 6000); }
+      finally { btn.disabled = false; btn.textContent = 'Make it'; }
+    };
+    $('#ofEx') && ($('#ofEx').onclick = async e => { const b = e.target.closest('[data-ex]'); if (!b) return; const f = await office.exportSheets(b.dataset.ex === '*' ? ex : [b.dataset.ex]); await tools.deliver(f.name, f.bytes, f.mime); toast('✅ ' + f.name + ' saved'); });
     return;
   }
   if (name === 'meeting') startMeetingNotes();
@@ -1637,6 +1783,65 @@ function finishMeeting(text) {
 }
 
 // ---------------- sync ----------------
+/** A line about the user's business, so documents fit them. */
+function bizFacts() {
+  const b = S().business || {}, p = S().profile || {};
+  return [S().name && 'Name: ' + S().name, b.name && 'Business: ' + b.name, p.biz?.kind && 'Type: ' + p.biz.kind, b.currency && 'Currency: ' + b.currency].filter(Boolean).join('. ');
+}
+// ---------------- send to my other device ----------------
+function sendInboxHtml() {
+  const list = send.inbox();
+  if (!list.length) return '<p class="small-text">Nothing received yet. Anything you send from your other devices appears here.</p>';
+  return list.map(i => `<div class="res-row"><div class="txt"><div class="t1">${i.kind === 'file' ? '📄 ' + esc(i.name) : i.kind === 'link' ? '🔗 ' + esc(i.text) : '💬 ' + esc((i.text || '').slice(0, 80))}</div><div class="t2">From ${esc(i.from || 'another device')} · ${fmtTime(new Date(i.at))}${i.size ? ' · ' + Math.max(1, Math.round(i.size / 1024)) + ' KB' : ''}</div></div>${i.kind === 'file' ? `<button data-sv="${i.id}">Save</button>` : i.kind === 'link' ? `<button data-ol="${i.id}">Open</button>` : `<button data-cp="${i.id}">Copy</button>`}<button data-fg="${i.id}">✕</button></div>`).join('');
+}
+async function saveReceived(item) {
+  try { const f = await send.fetchFile(item); await tools.deliver(f.name, f.bytes, f.mime); toast('✅ Saved ' + f.name); }
+  catch (e) { toast(e.message || 'Couldn’t get that file', 5000); }
+}
+function openSend(done) {
+  if (!send.linked()) {
+    done(`<h3>📲 Send to my devices</h3><p class="small-text">Link your phone and computers once. Then send files, photos, text and links between them — end-to-end encrypted, so nobody in between can read them.</p>
+      <div class="row-btns"><button class="btn" id="sdNew">Show a link code</button><button class="btn ghost" id="sdScan">Scan a code</button></div>
+      <div id="sdArea"></div>
+      <label class="field"><span>…or paste a link code</span><input id="sdPaste" placeholder="ZSEND:…"></label>`);
+    $('#sdNew').onclick = async () => { const code = send.create(); const [svg] = await sync.qrCodes(code); $('#sdArea').innerHTML = `<div class="qr-box">${svg}</div><p class="small-text center">On your other device: Zuffi → More → Send to my devices → Scan a code. Or copy the code:</p><input readonly value="${esc(code)}" onclick="this.select()"><button class="btn ghost" id="sdDone">Done</button>`; $('#sdDone').onclick = () => openTool('send'); };
+    $('#sdScan').onclick = async () => {
+      $('#sdArea').innerHTML = '<video class="scan" playsinline muted></video><p class="small-text center">Point the camera at the code…</p>';
+      try { const data = await sync.scan($('#sdArea video'), () => {}, new AbortController().signal); if (send.join(data)) { toast('✅ Devices linked'); openTool('send'); } else toast('That isn’t a Zuffi link code'); }
+      catch (e) { toast('Camera not available — paste the code instead', 5000); }
+    };
+    $('#sdPaste').onchange = e => { if (send.join(e.target.value)) { toast('✅ Devices linked'); openTool('send'); } else toast('That isn’t a Zuffi link code'); };
+    return;
+  }
+  const others = send.peers();
+  done(`<h3>📲 Send to my devices</h3><p class="small-text">${others.length ? 'Linked: ' + esc(others.map(p => p.name).join(', ')) : 'Linked — open Zuffi on your other device to see it here.'} · encrypted end to end</p>
+    <div class="row-btns"><button class="btn" id="sdFile">📎 Send a file or photo</button></div>
+    <textarea class="field-in" id="sdText" placeholder="Type or paste text or a link to send"></textarea><button class="btn ghost" id="sdSendT">Send text</button>
+    <h3 style="margin-top:16px">Received</h3><div id="sdInbox">${sendInboxHtml()}</div>
+    <p class="small-text"><a href="#" id="sdLinkMore">Link another device</a> · <a href="#" id="sdUnlink">Unlink this device</a></p>`);
+  $('#sdFile').onclick = async () => { const files = await pickFiles('*/*'); for (const f of files) { toast('Sending ' + f.name + '…'); try { const ok = await send.sendFile(f); toast(ok ? '📤 Sent ' + f.name : 'Couldn’t send — check the internet', 4000); if (ok) logAction('send', `Sent ${f.name} to your other devices`); } catch (e) { toast(e.message, 5000); } } };
+  $('#sdSendT').onclick = async () => { const t = $('#sdText').value; if (!t.trim()) return; toast((await send.sendText(t)) ? '📤 Sent' : 'Couldn’t send — check the internet'); $('#sdText').value = ''; };
+  $('#sdLinkMore').onclick = async e => { e.preventDefault(); const [svg] = await sync.qrCodes(send.linkCode()); $('#sdInbox').insertAdjacentHTML('beforebegin', `<div class="qr-box">${svg}</div><input readonly value="${esc(send.linkCode())}" onclick="this.select()">`); };
+  $('#sdUnlink').onclick = e => { e.preventDefault(); send.unlink(); openTool('send'); };
+  $('#sdInbox').onclick = async e => {
+    const b = e.target.closest('button'); if (!b) return; const it = send.inbox().find(i => i.id === (b.dataset.sv || b.dataset.ol || b.dataset.cp || b.dataset.fg)); if (!it) return;
+    if (b.dataset.sv) saveReceived(it);
+    if (b.dataset.ol) openUrl(it.text);
+    if (b.dataset.cp) { try { await navigator.clipboard.writeText(it.text); } catch { D?.clips?.('copy', it.text); } toast('Copied'); }
+    if (b.dataset.fg) { send.forget(it.id); $('#sdInbox').innerHTML = sendInboxHtml(); }
+  };
+}
+send.onEvent(e => {
+  if (e.t !== 'got') return;
+  const i = e.item;
+  chime(); showAlert(`📥 From ${i.from || 'your other device'}`, i.kind === 'file' ? i.name : (i.text || '').slice(0, 90));
+  notify(`From ${i.from}: ${i.kind === 'file' ? i.name : (i.text || '').slice(0, 60)}`, 'send' + i.id);
+  if ($('#sdInbox')) $('#sdInbox').innerHTML = sendInboxHtml();
+});
+send.start();
+// On the Mac: the AI keys saved in the Mac's settings, for the page's own tools (kept in memory only).
+if (M) M.call('keys').then(k => { if (k) window.zuffiMacKeys = k; }).catch(() => {});
+
 function openSync() {
   const body = openPanel('🔁 Sync devices', `<p class="small-text">Copy your tasks, reminders, notes, customers and habits between your phone and computer — no account, nothing goes online.</p>
     <div class="row-btns"><button class="btn" id="syShow">Show my QR code</button><button class="btn ghost" id="syScan">Scan a QR code</button></div>
@@ -1687,7 +1892,7 @@ function fillSettings() {
   const hl = s.health || {};
   renderHealthSettings(hl);
   $('#pOn').checked = s.prayer.on; $('#pMethod').value = s.prayer.method; $('#pAsr').value = s.prayer.asr; $('#pBefore').value = String(s.prayer.before); $('#pSpeak').checked = s.prayer.speak;
-  $('#sProvider').innerHTML = `<option value="auto">Automatic (free first)</option>${D ? '<option value="ollama">Ollama on this computer</option>' : '<option value="local">Free AI on this device</option>'}` + PROVIDER_ORDER.map(p => `<option value="${p}">${PROVIDERS[p].name}</option>`).join('');
+  $('#sProvider').innerHTML = `<option value="auto">Automatic (free first)</option>${D ? '<option value="ollama">Ollama on this computer</option>' : '<option value="local">Free AI on this device</option>'}` + PROVIDER_ORDER.filter(p => !PROVIDERS[p].imageOnly).map(p => `<option value="${p}">${PROVIDERS[p].name}</option>`).join('');
   $('#sProvider').value = s.provider || 'auto';
   { const paid = acct.isPaid(), own = Object.values(s.keys || {}).some(Boolean);
     const src = s.aiSource || (paid && !own ? 'zuffi' : 'own');
