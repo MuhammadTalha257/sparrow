@@ -33,7 +33,7 @@ const T = {
   },
   pa: {
     home: 'ہوم', chat: 'گل بات', plan: 'منصوبہ', memory: 'یادداشت', tools: 'ٹولز', settings: 'سیٹنگاں', today: 'اج', seeAll: 'سارے ویکھو',
-    quick: 'فوری', aiApps: 'اے آئی ایپس', myDay: 'میرا دن', talk: 'گل کرو', upNext: 'اگلا', checkIn: 'جائزہ', ask: 'سپیرو نوں پچھو… جیویں کل 5 وجے یاد کروانا',
+    quick: 'فوری', aiApps: 'اے آئی ایپس', myDay: 'میرا دن', talk: 'گل کرو', upNext: 'اگلا', checkIn: 'جائزہ', ask: 'زوفی نوں کجھ وی پچھو',
     tasks: 'کم', meetings: 'میٹنگاں', reminders: 'یاد دہانیاں', notes: 'نوٹس', customers: 'گاہک', money: 'حساب', habits: 'عادتاں',
     prayer: 'نماز دے ویلے', nextPrayer: 'اگلی نماز', done: 'ہو گیا', later: 'بعد وچ', snooze: '10 منٹ بعد', search: 'اپنی یادداشت وچ لبھو…',
     morning: 'صبح بخیر', afternoon: 'سلام', evening: 'شام بخیر', night: 'السلام علیکم', noTasks: 'اج کوئی کم نئیں', clear: 'اج دا دن خالی اے',
@@ -41,7 +41,7 @@ const T = {
   },
   ar: {
     home: 'الرئيسية', chat: 'محادثة', plan: 'الخطة', memory: 'الذاكرة', tools: 'أدوات', settings: 'الإعدادات', today: 'اليوم', seeAll: 'عرض الكل',
-    quick: 'سريع', aiApps: 'تطبيقات الذكاء', myDay: 'يومي', talk: 'تحدث', upNext: 'التالي', checkIn: 'المراجعة', ask: 'اسأل سبارو… مثلاً ذكّرني غداً الساعة 5',
+    quick: 'سريع', aiApps: 'تطبيقات الذكاء', myDay: 'يومي', talk: 'تحدث', upNext: 'التالي', checkIn: 'المراجعة', ask: 'اسأل زوفي أي شيء',
     tasks: 'المهام', meetings: 'الاجتماعات', reminders: 'التذكيرات', notes: 'الملاحظات', customers: 'العملاء', money: 'المال', habits: 'العادات',
     prayer: 'أوقات الصلاة', nextPrayer: 'الصلاة القادمة', done: 'تم', later: 'لاحقاً', snooze: 'بعد 10 دقائق', search: 'ابحث في ذاكرتك…',
     morning: 'صباح الخير', afternoon: 'مساء الخير', evening: 'مساء الخير', night: 'مرحباً', noTasks: 'لا مهام اليوم', clear: 'يومك فارغ',

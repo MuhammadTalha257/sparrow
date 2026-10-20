@@ -337,7 +337,7 @@ final class ZuffiPA {
             notes = rest.trimmingCharacters(in: CharacterSet(charactersIn: " ,-:."))
             for a in ["dha", "bahria", "gulberg", "johar town", "model town", "clifton", "f-7", "f-8", "e-11", "g-11", "b-17", "askari", "wapda town", "valencia", "lake city"] where t.contains(a) { area = a.uppercased() == "DHA" ? "DHA" : a.capitalized; break }
         }
-        guard !name.isEmpty || !phone.isEmpty else { return "Who's the lead? Say e.g. “new lead Ali Raza 0333 1234567 from Facebook, wants 10 marla in DHA”." }
+        guard !name.isEmpty || !phone.isEmpty else { return "Who's the lead? Tell me their name, number and where they came from." }
         var b = Self.load("Leads", header: Self.leadHeader)
         if !phone.isEmpty, let dup = b.rows.firstIndex(where: { Self.samePhone(b.get($0, ["phone"]), phone) }) {
             if !notes.isEmpty { b.set(dup, ["notes"], b.get(b.rows[dup], ["notes"]) + " | " + notes) }

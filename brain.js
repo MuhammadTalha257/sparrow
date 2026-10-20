@@ -652,7 +652,7 @@ export async function handle(input) {
       if (r?.error) return { reply: "I couldn't read Mail. Open the Mail app once, then allow Zuffi under System Settings → Privacy & Security → Automation." };
       return { reply: `📧 From ${r.from}\nSubject: ${r.subject}\n${r.body.slice(0, 500)}${r.body.length > 500 ? '…' : ''}\n\nSay "reply saying …" or "draft a reply".`, action: 'email', email: r };
     }
-    return { reply: 'On this device I can write emails for you, but I can’t read your inbox. Say "email Ali about the invoice".' };
+    return { reply: 'On this device I can write emails for you, but I can’t read your inbox. Say "email my accountant about the invoice".' };
   }
   m = o.match(/^(?:reply|respond)(?:\s+to\s+(?:it|that|the email|this))?(?:\s+(?:saying|that|with))?\s*(.*)$/i);
   if (m && D?.platform() === 'mac') return { reply: 'Writing your reply…', action: 'email-reply', text: m[1] };

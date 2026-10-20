@@ -72,17 +72,17 @@ final class ZuffiBusiness: ObservableObject {
         switch p {
         case .realEstate:
             files = [
-                ("Listings", "Property ID,Area,Type,Beds,Size,Price (PKR),Status,Owner,Owner phone,Notes\nP-101,DHA Phase 6,House,3,10 Marla,19500000,Available,Kamran,03001234567,Corner\nP-102,Bahria Town,Apartment,2,1100 sqft,9500000,Available,Sana,03211234567,Park facing\n"),
+                ("Listings", "Property ID,Area,Type,Beds,Size,Price (PKR),Status,Owner,Owner phone,Notes\nP-101,DHA Phase 6,House,3,10 Marla,19500000,Available,Owner,03001234567,Corner\nP-102,Bahria Town,Apartment,2,1100 sqft,9500000,Available,Sana,03211234567,Park facing\n"),
                 ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
-                    + Self.leadRow(["name": "Ali Raza", "phone": "03331234567", "source": "Facebook ad – DHA plots", "interest": "10 marla house", "area": "DHA Phase 6", "budget": "2 crore", "status": "New", "priority": "Hot", "added": today, "last contact": today, "next follow-up": today, "notes": "Wants to visit on Sunday"]) + "\n"
-                    + Self.leadRow(["name": "Hina Khan", "phone": "03451234567", "source": "Zameen.com", "interest": "2 bed apartment", "area": "Bahria Town", "budget": "1 crore", "status": "Contacted", "added": ago4, "last contact": ago4, "next follow-up": tomorrow]) + "\n"),
-                ("Buyers", "Name,Phone,Budget (PKR),Wants,Area,Last contact,Next follow-up,Notes\nAli Raza,03331234567,20000000,3 bed house,DHA,\(ago4),\(today),Wants to visit on Sunday\nHina Khan,03451234567,10000000,2 bed apartment,Bahria Town,\(today),\(tomorrow),\n"),
+                    + Self.leadRow(["name": "Sample Client 1", "phone": "03331234567", "source": "Facebook ad – DHA plots", "interest": "10 marla house", "area": "DHA Phase 6", "budget": "2 crore", "status": "New", "priority": "Hot", "added": today, "last contact": today, "next follow-up": today, "notes": "Wants to visit on Sunday"]) + "\n"
+                    + Self.leadRow(["name": "Sample Client 2", "phone": "03451234567", "source": "Zameen.com", "interest": "2 bed apartment", "area": "Bahria Town", "budget": "1 crore", "status": "Contacted", "added": ago4, "last contact": ago4, "next follow-up": tomorrow]) + "\n"),
+                ("Buyers", "Name,Phone,Budget (PKR),Wants,Area,Last contact,Next follow-up,Notes\nSample Client 1,03331234567,20000000,3 bed house,DHA,\(ago4),\(today),Wants to visit on Sunday\nSample Client 2,03451234567,10000000,2 bed apartment,Bahria Town,\(today),\(tomorrow),\n"),
             ]
             HomeAction.right = ["business", "inbox", "callToday", "newLead"]
         case .salon:
             files = [
-                ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n\(today),10:00,Emma Clarke,07700900123,Cut & blow dry,Sophie,45,Booked\n\(tomorrow),14:30,Priya Patel,07700900456,Colour,Jade,85,Booked\n"),
-                ("Clients", "Name,Phone,Last visit,Usual service,Notes\nEmma Clarke,07700900123,\(today),Cut & blow dry,\nOlivia Brown,07700900789,\(Self.iso(Date().addingTimeInterval(-50 * 86400))),Highlights,Prefers Saturdays\n"),
+                ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n\(today),10:00,Sample Client 2,07700900123,Cut & blow dry,Stylist,45,Booked\n\(tomorrow),14:30,Priya Patel,07700900456,Colour,Jade,85,Booked\n"),
+                ("Clients", "Name,Phone,Last visit,Usual service,Notes\nSample Client 2,07700900123,\(today),Cut & blow dry,\nSample Client 3,07700900789,\(Self.iso(Date().addingTimeInterval(-50 * 86400))),Highlights,Prefers Saturdays\n"),
             ]
             HomeAction.right = ["business", "appointments", "book", "inbox"]
         case .clinic, .restaurant:
@@ -94,9 +94,9 @@ final class ZuffiBusiness: ObservableObject {
         case .freelancer:
             files = [
                 ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
-                    + Self.leadRow(["name": "Sam Carter", "phone": "07700900123", "source": "LinkedIn", "interest": "Website redesign", "area": "Due end of month", "budget": "£1,500", "status": "Proposal sent", "added": ago4, "last contact": ago4, "next follow-up": today]) + "\n"),
-                ("Projects", "Project,Client,Deadline,Fee,Status,Hours,Notes\nWebsite redesign,Sam Carter,\(tomorrow),1500,Working,6,First draft sent\n"),
-                ("Invoices", "Invoice,Client,Date,Amount,Due,Status\nINV-001,Sam Carter,\(ago4),750,\(today),Sent\n"),
+                    + Self.leadRow(["name": "Sample Client 1", "phone": "07700900123", "source": "LinkedIn", "interest": "Website redesign", "area": "Due end of month", "budget": "£1,500", "status": "Proposal sent", "added": ago4, "last contact": ago4, "next follow-up": today]) + "\n"),
+                ("Projects", "Project,Client,Deadline,Fee,Status,Hours,Notes\nWebsite redesign,Sample Client 1,\(tomorrow),1500,Working,6,First draft sent\n"),
+                ("Invoices", "Invoice,Client,Date,Amount,Due,Status\nINV-001,Sample Client 1,\(ago4),750,\(today),Sent\n"),
             ]
             HomeAction.right = ["business", "inbox", "newLead", "leads"]
         case .shop, .services:
@@ -122,7 +122,7 @@ final class ZuffiBusiness: ObservableObject {
             return "Done! Zuffi is set up for your \(p.label.lowercased()). Open Business → My business and tell Zuffi about your services, prices and hours — then it can answer clients on WhatsApp for you."
         }
         return p == .realEstate
-            ? "Done! I made your Leads, Listings and Buyers sheets in Documents → Zuffi (with examples). Tell me leads as they come (“new lead Ali 0333… from Facebook, 10 marla DHA, 2 crore”), download your Facebook / Zameen leads into Downloads and I'll add them by myself, and ask “my leads”, “follow-ups today” or “message new leads”."
+            ? "Done! I made your Leads, Listings and Buyers sheets in Documents → Zuffi (with examples). Tell me leads as they come (their name, number, where they found you and what they want), download your Facebook / Zameen leads into Downloads and I'll add them by myself, and ask “my leads”, “follow-ups today” or “message new leads”."
             : "Done! I made your Appointments and Clients sheets in Documents → Zuffi (with examples). Just tell me: “book Emma tomorrow at 3pm for a cut”, “move Emma to Friday 2pm”, “cancel Emma's appointment”, “this week's bookings”, “send tomorrow's reminders”."
     }
 

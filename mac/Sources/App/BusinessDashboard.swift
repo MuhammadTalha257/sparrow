@@ -329,7 +329,7 @@ struct BusinessDashboardView: View {
                 Button { VoiceEngine.shared.listenOnce() } label: {
                     Image(systemName: voice.isListening ? "waveform" : "mic.fill").font(.system(size: 13, weight: .bold)).foregroundColor(Color(hex: "#1A1008"))
                         .frame(width: 34, height: 34).background(Circle().fill(Biz.accent))
-                }.buttonStyle(.plain).help("Talk: “new lead Ali 0333… from Facebook”, “who isn't following up?”")
+                }.buttonStyle(.plain).help("Talk to Zuffi: add a lead, ask who needs a follow-up")
                 Button { ZuffiChat.shared.open() } label: {
                     Label("Ask Zuffi", systemImage: "bubble.left.fill").font(.system(size: 12, weight: .bold))
                         .padding(.horizontal, 12).frame(height: 34).inkPanel(Capsule(), interactive: true)
@@ -776,7 +776,7 @@ struct BizLeadEditor: View {
                 TextField("Name", text: $l.name)
                 TextField("Phone (WhatsApp)", text: $l.phone)
                 TextField("Source (Facebook, Zameen, walk-in…)", text: $l.source)
-                TextField(crm.isEstate ? "Wants (e.g. 10 marla house)" : crm.labels.interest, text: $l.interest)
+                TextField(crm.isEstate ? "What they want (type and size)" : crm.labels.interest, text: $l.interest)
                 TextField(crm.labels.area, text: $l.area)
                 TextField(crm.labels.budget, text: $l.budget)
                 TextField("\(crm.labels.value) (\(crm.currency))", text: $l.value)
@@ -1253,15 +1253,15 @@ struct BizBusinessView: View {
     private func example(for part: String) -> String {
         let name = biz.businessName.isEmpty ? "" : biz.businessName
         switch (crm.kind, part) {
-        case (.realEstate, "today"): return "e.g. New: 5 marla plots in DHA Phase 9, Rs 1.6 crore. Bahria Town 10 marla house reduced to 3.1 crore. Site visits today till 6pm."
-        case (.realEstate, _): return "\(name.isEmpty ? "We are a property agency" : name) in Lahore (DHA, Bahria Town, Johar Town).\nWe deal in plots, houses and apartments — buying, selling and rent.\nOffice: [address]. Open 10am–8pm, Monday to Saturday.\nSite visits are free — clients choose a day and time.\nCommission: 1% from buyer and 1% from seller.\nWe need: area, size (marla / sq ft) and budget to suggest options.\nWe speak Urdu and English."
-        case (.salon, "today"): return "e.g. 20% off all colour today. Jade is in till 4pm. Free fringe trim with any cut."
+        case (.realEstate, "today"): return "For example: new listings, price changes or site-visit times for today."
+        case (.realEstate, _): return "\(name.isEmpty ? "We are a property agency" : name) in [your city and the areas you cover].\nWe deal in plots, houses and apartments — buying, selling and rent.\nOffice: [address]. Open 10am–8pm, Monday to Saturday.\nSite visits are free — clients choose a day and time.\nCommission: 1% from buyer and 1% from seller.\nWe need: area, size (marla / sq ft) and budget to suggest options.\nWe speak Urdu and English."
+        case (.salon, "today"): return "For example: today’s offer, who’s in today, or free slots."
         case (.salon, _): return "\(name.isEmpty ? "Our salon" : name), [address]. Open Tue–Sat 9am–6pm, Thursday till 8pm.\nPrices: Cut & blow dry £45 · Colour from £85 · Highlights from £95 · Gel nails £30.\nBooking: tell us the service and a day; we'll offer times. £10 deposit for colour.\nPatch test needed 48 hours before a first colour.\nParking behind the salon. Card and cash."
-        case (.clinic, "today"): return "e.g. Dr Khan is in until 2pm. Teeth whitening offer: £199 this week."
+        case (.clinic, "today"): return "For example: who’s in today, or a special offer this week."
         case (.clinic, _): return "\(name.isEmpty ? "Our clinic" : name), [address]. Open Mon–Fri 9am–5pm.\nServices and prices: Check-up £50 · Hygienist £65 · Whitening £250.\nNew patients: bring ID; arrive 10 minutes early.\nEmergencies: call [number]. We can't give medical advice on WhatsApp."
-        case (.shop, "today"): return "e.g. New stock: summer lawn suits. Free delivery over £50 today."
+        case (.shop, "today"): return "For example: new stock, today’s offer or delivery changes."
         case (.shop, _): return "\(name.isEmpty ? "Our shop" : name). We sell [products].\nPrices: [main items and prices].\nDelivery: UK 2–3 days, £3.99, free over £50. Collection from [address].\nPayment: card, bank transfer, cash on collection.\nReturns within 14 days, unused with tags."
-        case (.restaurant, "today"): return "e.g. Today's special: lamb karahi £12.99. Fully booked 7–9pm, tables free after 9."
+        case (.restaurant, "today"): return "For example: today’s special, or when tables are free."
         case (.restaurant, _): return "\(name.isEmpty ? "Our restaurant" : name), [address]. Open daily 12pm–11pm.\nBookings for up to 12 people; bigger groups call us.\nMenu highlights and prices: [dishes].\nHalal. Vegetarian options. Takeaway and delivery via [apps]."
         case (.services, "today"): return "e.g. Free quotes this week. Available for jobs from Thursday."
         case (.freelancer, "today"): return "e.g. Taking 2 new projects this month. Next free start date: the 20th."
@@ -1696,7 +1696,7 @@ struct BizStartGuide: View {
             Step(id: 1, title: "Tell Zuffi about your business", detail: "Your business name and type", done: !biz.businessName.isEmpty && biz.pack != nil, button: "Fill in") { nav.tab = .business },
             Step(id: 2, title: "Write your prices & opening hours", detail: "Zuffi uses this to answer clients", done: crm.businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count > 20, button: "Write") { nav.tab = .business },
             Step(id: 3, title: "Connect WhatsApp", detail: "New chats become clients automatically", done: crm.isOn(.watchWhatsApp) && WhatsAppAgent.installed, button: "Connect") { nav.tab = .connect },
-            Step(id: 4, title: "Add your first client", detail: "Or say “new lead Ali 0333…”", done: !crm.leads.isEmpty, button: "Add") { nav.tab = .records },
+            Step(id: 4, title: "Add your first client", detail: "Or just tell Zuffi about a new lead", done: !crm.leads.isEmpty, button: "Add") { nav.tab = .records },
             Step(id: 5, title: "Link your phone", detail: "Same business on your phone — scan a QR code", done: sync.linked, button: "Link") { nav.tab = .connect },
             Step(id: 6, title: "Add your staff (optional)", detail: "Salaries, hours, who follows up", done: !crm.team.isEmpty, button: "Add") { nav.tab = .team },
         ]

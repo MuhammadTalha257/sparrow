@@ -119,13 +119,7 @@ struct IslandContainer: View {
 
             // Zuffi's light: one thin strip of your colour along the bottom edge of the open island.
             if state.mode == .expanded && !greetingActive {
-                Capsule()
-                    .fill(LinearGradient(colors: [IslandConst.accent.opacity(0), IslandConst.accent, IslandConst.accent.opacity(0)], startPoint: .leading, endPoint: .trailing))
-                    .frame(width: islandWidth * 0.42, height: 2.5)
-                    .shadow(color: IslandConst.accent.opacity(0.9), radius: 6)
-                    .offset(x: islandWidth * 0.29, y: islandHeight - 4)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+                AccentStrip(width: islandWidth, height: islandHeight)
             }
 
             // Single BotPlacement — always alive in the view tree so spring animations
@@ -733,5 +727,21 @@ extension Color {
         let g = Double((val >> 8)  & 0xFF) / 255
         let b = Double( val        & 0xFF) / 255
         self.init(red: r, green: g, blue: b)
+    }
+}
+
+/// One thin strip of the person's colour along the bottom of the open island (kept separate so the compiler stays quick).
+struct AccentStrip: View {
+    let width: CGFloat
+    let height: CGFloat
+    var body: some View {
+        let c = IslandConst.accent
+        let fill = LinearGradient(colors: [c.opacity(0), c, c.opacity(0)], startPoint: .leading, endPoint: .trailing)
+        return Capsule()
+            .fill(fill)
+            .frame(width: width * 0.42, height: 2.5)
+            .shadow(color: c.opacity(0.9), radius: 6)
+            .offset(x: width * 0.29, y: height - 4)
+            .allowsHitTesting(false)
     }
 }

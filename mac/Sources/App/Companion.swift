@@ -586,7 +586,7 @@ struct TodayView: View {
             // Add anything
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill").foregroundColor(sunset).font(.system(size: 18))
-                TextField("Add anything — “meeting with Ali Fri 3pm”, “remind me…”, “buy milk”", text: $input)
+                TextField("Add anything — a meeting, a reminder or a task", text: $input)
                     .textFieldStyle(.plain)
                     .onSubmit { add() }
                 if busy { ProgressView().controlSize(.small) }

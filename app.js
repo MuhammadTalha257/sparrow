@@ -172,7 +172,7 @@ function guideSteps() {
   const trial = acct.isTrial() ? ` Your free trial has ${trialLeft()} — everything is switched on.` : '';
   return [
     ['👋', 'Hi! I’m Zuffi', `${open}${trial}`],
-    ['🎙️', 'Talk or type', 'Tap the microphone or type. Try: “Remind me to call Ali at 5”, “When is Asr?”, “Open WhatsApp” or “What’s the weather tomorrow?”. Turn on “Say Zuffi” in Settings → Voice to call me hands-free.'],
+    ['🎙️', 'Talk or type', 'Tap the microphone or type. Try: “Remind me to call the bank at 5”, “When is Asr?”, “Open WhatsApp” or “What’s the weather tomorrow?”. Turn on “Say Zuffi” in Settings → Voice to call me hands-free.'],
     ['⏰', 'Reminders that come back', 'I remind you at the right time, even when the app is closed. Water, coffee and medicine breaks are in Settings → Water, coffee & medicine — I’ll walk over with them' + (where === 'iphone' || where === 'web' ? '' : ' across your screen') + '.'],
     ['🕌', 'Prayer times and your day', 'Prayer times follow where you are (Settings → Prayer times). Every morning I give you a short summary of your day.'],
     ['💼', 'Your business', 'Open the Business tab: WhatsApp enquiries become leads, I nudge you to reply within 5 minutes, and track payments, stock and staff. Link your phone and computer under Business → Link devices.'],
@@ -644,7 +644,7 @@ function renderToday() {
   const calRows = dayplan.eventsOn(new Date()).filter(e => e.allDay || e.end > new Date()).map(e => `<div class="item cal-ev"><div class="ic">📅</div><div class="txt"><div class="t1">${esc(e.title)}</div><div class="t2">${e.allDay ? 'All day' : fmtTime(e.start) + ' – ' + fmtTime(e.end)} · ${esc(e.source || 'Calendar')}</div></div></div>`).join('');
   if (calRows) { $('#todayList').innerHTML = calRows + items.map(itemRow).join(''); return; }
   $('#todayList').innerHTML = items.length ? items.map(itemRow).join('')
-    : `<div class="empty">Nothing planned yet.<br>Try <b>"meeting with Ali Friday 3pm"</b> or <b>"remind me every day at 8pm to take medicine"</b>.</div>`;
+    : `<div class="empty">Nothing planned yet.<br>Try <b>"team meeting Friday 3pm"</b> or <b>"remind me every day at 8pm to take medicine"</b>.</div>`;
 }
 function renderPlan() {
   let list;
@@ -653,7 +653,7 @@ function renderPlan() {
     list = [...store.items.filter(i => ['invoice', 'quote', 'expense'].includes(i.type))].sort((a, b) => new Date(b.created) - new Date(a.created));
     $('#planList').innerHTML = `<div class="item"><div class="ic">📈</div><div class="txt"><div class="t1">This month's expenses</div><div class="t2">${S().business.currency}${total.toFixed(2)} · ${ex.length} item${ex.length === 1 ? '' : 's'}</div></div><div class="acts"><button data-tool-go="expenses" title="Export">⬇️</button></div></div>`
       + (list.map(itemRow).join('') || '');
-    $('#planHint').textContent = 'Say "spent £12 on lunch", "quote for Ali, 3 hours at £40" or "invoice Ahmed, website £300".';
+    $('#planHint').textContent = 'Say "spent £12 on lunch", "quote for a client, 3 hours at £40" or "invoice for website design, £300".';
     $('#planList').querySelector('[data-tool-go]')?.addEventListener('click', () => { go('tools'); openTool('expenses'); });
     return;
   }
@@ -662,9 +662,9 @@ function renderPlan() {
   else if (['note', 'customer', 'habit'].includes(planType)) list.sort((a, b) => new Date(b.created) - new Date(a.created));
   else list.sort((a, b) => new Date(a.when) - new Date(b.when));
   const examples = {
-    task: '"add task buy milk" or "I need to pay rent Friday"', meeting: '"meeting with Ali Friday 3pm" or "team meeting every Monday at 9"',
+    task: '"add task buy milk" or "I need to pay rent Friday"', meeting: '"client meeting Friday 3pm" or "team meeting every Monday at 9"',
     reminder: '"remind me every day at 8pm to take medicine"', note: '"note wifi password is sparrow123"',
-    habit: '"add habit drink water 8 times a day"', customer: '"add customer Ahmed Khan 07123 456789 ahmed@mail.com"',
+    habit: '"add habit drink water 8 times a day"', customer: '"add customer" followed by their name, phone and email',
   };
   $('#planList').innerHTML = list.length ? list.map(itemRow).join('') : `<div class="empty">Nothing here yet.<br>Say ${examples[planType]}</div>`;
   $('#planHint').textContent = ['reminder', 'meeting'].includes(planType) ? (isIOS ? 'iPhone tip: tap 📅 so your iPhone rings even when Zuffi is closed.' : 'Tap 📅 to add it to your calendar too.')
@@ -891,7 +891,7 @@ function mailBlock() {
     if (!mailCache.list.length) return `<div class="in-empty">No unread email. All caught up ✨</div>`;
     return '';
   }
-  return `<div class="in-empty">Say “email Ali about the invoice” and Zuffi writes it. Your inbox opens in your mail app:</div><div class="mail-cta"><button data-ia="open:gmail">Gmail</button><button data-ia="open:outlook">Outlook</button>${isIOS ? '<button data-ia="open:mail">Mail</button>' : ''}</div>`;
+  return `<div class="in-empty">Say “email my accountant about the invoice” and Zuffi writes it. Your inbox opens in your mail app:</div><div class="mail-cta"><button data-ia="open:gmail">Gmail</button><button data-ia="open:outlook">Outlook</button>${isIOS ? '<button data-ia="open:mail">Mail</button>' : ''}</div>`;
 }
 function renderInboxMini() {
   const el = $('#inboxMini'); if (!el) return;
@@ -1957,7 +1957,7 @@ async function openTool(name) {
     done(`<h3>⏱️ Time tracker</h3>${r ? `<p><b>Running:</b> ${esc(r.title)} · ${tools.fmtHours(tools.hours(r))}</p><button class="btn" id="tStop">Stop</button>`
       : `<input id="tLabel" placeholder="What are you working on?"><button class="btn" id="tStart">Start</button>`}
       <p class="small-text" style="margin-top:14px"><b>This week</b></p>${Object.entries(byLabel).map(([k, v]) => `<div class="res-row"><div class="txt"><div class="t1">${esc(k)}</div></div><b>${tools.fmtHours(v)}</b></div>`).join('') || '<p class="small-text">No time tracked yet.</p>'}
-      <p class="small-text">Then say “invoice Ali at £40” — tracked hours go straight onto the invoice.</p>`);
+      <p class="small-text">Then say “invoice the client at £40 an hour” — tracked hours go straight onto the invoice.</p>`);
     $('#tStart') && ($('#tStart').onclick = () => { tools.startTimer($('#tLabel').value || 'Work'); updateTimerLabel(); openTool('timer'); });
     $('#tStop') && ($('#tStop').onclick = () => { tools.stopTimer(); updateTimerLabel(); openTool('timer'); });
   }

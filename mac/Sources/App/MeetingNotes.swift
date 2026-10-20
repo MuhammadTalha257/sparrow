@@ -175,26 +175,27 @@ final class MeetingNotes {
 // MARK: - Screen recording ("Zuffi, record my screen" / "stop recording")
 // Records the whole screen (with the Mac's sound) to Movies → Zuffi recordings. Zuffi hides itself from the video.
 // =====================================================================
-@MainActor
-final class ScreenRecorder: NSObject, SCRecordingOutputDelegate {
+/// Not tied to the main thread: ScreenCaptureKit hands back its objects off the main actor.
+final class ScreenRecorder: NSObject, SCRecordingOutputDelegate, @unchecked Sendable {
     static let shared = ScreenRecorder()
+    private let lock = NSLock()
     private var stream: SCStream?
     private var output: SCRecordingOutput?
-    private(set) var fileURL: URL?
-    private(set) var startedAt: Date?
-    var isRecording: Bool { stream != nil }
+    private var fileURL: URL?
+    private var startedAt: Date?
+    var isRecording: Bool { lock.lock(); defer { lock.unlock() }; return stream != nil }
 
     func start() async -> String {
-        guard stream == nil else { return "I’m already recording your screen. Say “stop recording” when you’re done." }
+        if isRecording { return "I’m already recording your screen. Say “stop recording” when you’re done." }
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else { return "I couldn’t find a screen to record." }
+            let mainID = CGMainDisplayID()
+            guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first else { return "I couldn’t find a screen to record." }
             let me = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
             let filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])
             let cfg = SCStreamConfiguration()
-            let scale = Int(NSScreen.main?.backingScaleFactor ?? 2)
-            cfg.width = display.width * scale
-            cfg.height = display.height * scale
+            if let mode = CGDisplayCopyDisplayMode(display.displayID) { cfg.width = mode.pixelWidth; cfg.height = mode.pixelHeight }
+            else { cfg.width = display.width * 2; cfg.height = display.height * 2 }
             cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)
             cfg.showsCursor = true
             cfg.capturesAudio = true
@@ -210,30 +211,32 @@ final class ScreenRecorder: NSObject, SCRecordingOutputDelegate {
             let s = SCStream(filter: filter, configuration: cfg, delegate: nil)
             try s.addRecordingOutput(out)
             try await s.startCapture()
-            stream = s; output = out; fileURL = file; startedAt = Date()
-            appendAppLog("screen.log", "recording to \(file.lastPathComponent)")
-            return "Recording your screen. Say “Zuffi, stop recording” or click Stop when you’re done."
+            lock.lock(); stream = s; output = out; fileURL = file; startedAt = Date(); lock.unlock()
+            let name = file.lastPathComponent
+            Task { @MainActor in appendAppLog("screen.log", "recording to \(name)") }
+            return "Recording your screen. Say “Zuffi, stop recording” or press Stop when you’re done."
         } catch {
-            appendAppLog("screen.log", "start failed: \(error.localizedDescription)")
+            let msg = error.localizedDescription
+            Task { @MainActor in appendAppLog("screen.log", "start failed: \(msg)") }
             return "I couldn’t record the screen yet. Allow Zuffi in System Settings → Privacy & Security → Screen & System Audio Recording, then try again."
         }
     }
 
     func stop() async -> String {
-        guard let s = stream else { return "I’m not recording the screen right now." }
+        lock.lock(); let s = stream, o = output, u = fileURL, t = startedAt; stream = nil; output = nil; lock.unlock()
+        guard let s else { return "I’m not recording the screen right now." }
         try? await s.stopCapture()
-        if let o = output { try? s.removeRecordingOutput(o) }
-        stream = nil; output = nil
-        let mins = Int((Date().timeIntervalSince(startedAt ?? Date())) / 60)
-        guard let u = fileURL else { return "Stopped." }
+        if let o { try? s.removeRecordingOutput(o) }
+        let mins = Int(Date().timeIntervalSince(t ?? Date()) / 60)
+        guard let u else { return "Stopped." }
         try? await Task.sleep(nanoseconds: 600_000_000)   // let the file finish writing
-        NSWorkspace.shared.activateFileViewerSelecting([u])
+        await MainActor.run { NSWorkspace.shared.activateFileViewerSelecting([u]) }
         return "Saved your screen recording\(mins > 0 ? " (\(mins) min)" : "") in Movies → Zuffi recordings."
     }
 
-    nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {}
-    nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {}
-    nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: any Error) {
+    func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {}
+    func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {}
+    func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: any Error) {
         let msg = error.localizedDescription
         Task { @MainActor in appendAppLog("screen.log", "failed: \(msg)") }
     }

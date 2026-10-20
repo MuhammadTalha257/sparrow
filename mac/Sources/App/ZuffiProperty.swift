@@ -269,7 +269,7 @@ struct BizPropertiesView: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    TextField("Quick add: “10 marla house DHA 6, 2.5 crore, owner Kamran 0300…”", text: $smart).textFieldStyle(.roundedBorder)
+                    TextField("Quick add: type, size, area, price and the owner’s number", text: $smart).textFieldStyle(.roundedBorder)
                         .onSubmit(quickAdd)
                     Button(busy ? "…" : "Add") { quickAdd() }.disabled(smart.isEmpty || busy)
                 }
@@ -545,14 +545,14 @@ struct PropertyEditor: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Property \(p.id)").font(.system(size: 17, weight: .heavy, design: .rounded))
             Form {
-                TextField("Title (e.g. 10 Marla House)", text: $p.title)
+                TextField("Title", text: $p.title)
                 Picker("For", selection: $p.purpose) { Text("Sale").tag("Sale"); Text("Rent").tag("Rent") }.pickerStyle(.segmented)
                 Picker("Type", selection: $p.type) { Text("—").tag(""); ForEach(ZuffiProperties.types, id: \.self) { Text($0).tag($0) } }
-                TextField("Society / area (e.g. DHA, Bahria Town)", text: $p.area)
+                TextField("Society or area", text: $p.area)
                 TextField("Block / phase", text: $p.block)
-                TextField("Size (e.g. 10 Marla, 1 Kanal, 1200 sq ft)", text: $p.size)
+                TextField("Size (marla, kanal or sq ft)", text: $p.size)
                 HStack { TextField("Beds", text: $p.beds); TextField("Baths", text: $p.baths) }
-                TextField("Price / demand (e.g. 2.5 crore)", text: $p.price)
+                TextField("Price or demand", text: $p.price)
                 Picker("Status", selection: $p.status) { ForEach(ZuffiProperties.statuses, id: \.self) { Text($0).tag($0) } }
                 TextField("Owner", text: $p.owner)
                 TextField("Owner phone", text: $p.ownerPhone)
