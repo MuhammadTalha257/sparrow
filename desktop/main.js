@@ -581,6 +581,16 @@ ipcMain.handle('watch', (_e, action, dir) => {
   saveSettings(); return settings.watch;
 });
 ipcMain.handle('ollama', (_e, kind, body) => ollama(kind, body));
+// Status row in the island: how busy the PC is (processor, memory) and free disk space
+let lastCpu = null;
+ipcMain.handle('sysinfo', async () => {
+  const os = require('os');
+  const t = os.cpus().reduce((a, c) => { const v = c.times; a.idle += v.idle; a.total += v.user + v.nice + v.sys + v.irq + v.idle; return a; }, { idle: 0, total: 0 });
+  let cpu = null; if (lastCpu) { const dt = t.total - lastCpu.total, di = t.idle - lastCpu.idle; if (dt > 0) cpu = Math.round((1 - di / dt) * 100); } lastCpu = t;
+  const mem = Math.round((1 - os.freemem() / os.totalmem()) * 100);
+  let free = null; try { const st = await require('fs').promises.statfs(process.platform === 'win32' ? 'C:\\' : '/'); free = Math.round(st.bavail * st.bsize / 1e9); } catch {}
+  return { cpu, mem, free };
+});
 // Calendar links (Google / Outlook iCal): read-only GET for the page
 // Type anywhere: paste the text into the app you're in (Ctrl+V), then give the clipboard back
 ipcMain.handle('type-text', async (_e, text) => {

@@ -126,6 +126,8 @@ final class AppState: ObservableObject {
     @Published var noteIsAlert = false
     /// A question in the note with its own buttons: "meeting" (Take notes / Not now), "screen" (Stop recording).
     @Published var noteAction: String? = nil
+    /// What the note is about (an email id for "Open").
+    @Published var noteRef: String? = nil
 
     // Auto-close delay — persisted
     @Published var autoCloseInterval: TimeInterval = 15 {

@@ -1148,6 +1148,14 @@ struct NoteView: View {
                         }
                         noteButton("Not now", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
                     }.padding(.top, 4)
+                } else if state.noteAction == "mail" {
+                    HStack(spacing: 8) {
+                        noteButton("Open", icon: "envelope.open", primary: true) {
+                            if let id = state.noteRef { Task { await MailAgent.shared.open(id: id) } }
+                            state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil)
+                        }
+                        noteButton("Later", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+                    }.padding(.top, 4)
                 } else if state.noteAction == "screen" {
                     HStack(spacing: 8) {
                         noteButton("Stop recording", icon: "stop.fill", primary: true) {

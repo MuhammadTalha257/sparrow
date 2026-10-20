@@ -1580,6 +1580,9 @@ html.island-mode.isl-peek .cap-wave { display: none; }
 .ai-usage .au-bar { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--accent) 15%, transparent); overflow: hidden; }
 .ai-usage .au-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .ai-usage .au-note { opacity: .75; font-size: 11px !important; }
+.nh-status { display: flex; justify-content: center; gap: 5px; flex-wrap: wrap; margin: 2px 0 6px; }
+.nh-chip { font-size: 10.5px; font-weight: 650; color: #D5D7DE; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.10); font-variant-numeric: tabular-nums; }
+.nh-chip.low { color: #FF6B6B; } .nh-chip.ok { color: #3DDC97; } .nh-chip.warn { color: #FFB547; }
 .nh-usage { font-size: 10.5px; color: #8E9099; text-align: center; letter-spacing: .01em; }
 .personal-mode .nhome [data-h="business"], .personal-mode .nhome [data-h="call"] { display: none !important; }
 

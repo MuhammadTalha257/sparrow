@@ -349,14 +349,8 @@ struct ZuffiHomePanel: View {
                 }
                 .frame(width: W - 20)
                 Spacer(minLength: 0)
-                if !usage.notchLine.isEmpty {
-                    Text(usage.notchLine)
-                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white.opacity(0.45))
-                        .lineLimit(1)
-                        .help("AI used this month — details in Settings → AI")
-                        .padding(.bottom, 3)
-                }
+                // battery, weather, AirPods & co, and how busy the Mac is (AI usage lives in Settings → AI)
+                StatusChips().padding(.bottom, 3).help(usage.notchLine)
                 bottomRow.frame(width: W - 20)
             }
             .padding(.top, 8).padding(.bottom, 12)
@@ -542,6 +536,8 @@ struct ZuffiQuickSettings: View {
                 row("video.fill", "Camera", on: Binding(get: { VoiceEngine.cameraOn }, set: { VoiceEngine.shared.setCamera($0) }))
                 row("ear.fill", "Answer to “Hey Zuffi”", on: Binding(get: { wake }, set: { wake = $0; if $0 { VoiceEngine.shared.setMic(VoiceEngine.micOn) } }))
                 row("speaker.wave.2.fill", "Sounds", on: $state.soundEnabled)
+                row("bell.badge", "Notifications at the notch (email, battery, devices)", on: Binding(get: { MacStatus.shared.toastsOn }, set: { MacStatus.shared.toastsOn = $0 }))
+                row("waveform.badge.mic", "Ask to take notes when a call starts", on: Binding(get: { MeetingWatcher.shared.enabled }, set: { MeetingWatcher.shared.enabled = $0 }))
                 row("bell.badge.fill", "Read notifications out loud", on: Binding(
                     get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
                     set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))

@@ -1,7 +1,7 @@
 // The Zuffi island for Windows (and the old Mac build): a black glass island at the top of the screen that springs open.
 // Loaded only in the computer app, never on phones.
 import { store } from './store.js';
-import { greetingWord, fmtTime, tasksForDay } from './brain.js';
+import { greetingWord, fmtTime, tasksForDay, weather } from './brain.js';
 import * as mem from './memory.js';
 import { mountMascot } from './mascot.js';
 
@@ -85,6 +85,30 @@ nhome.innerHTML = `<div class="nh-apps"><span class="nh-zuffi">Zuffi</span></div
     <button class="nh-talk" data-h="talk" title="Talk to Zuffi" aria-label="Talk to Zuffi">${ico('wave', 14)}</button></div>
   <div class="nh-tip" hidden></div>`;
 island.insertBefore(nhome, body);
+// ---------- status row (battery, weather, processor & memory) + small notifications for battery ----------
+const nhStatus = document.createElement('div'); nhStatus.className = 'nh-status'; nhome.insertBefore(nhStatus, nhome.querySelector('.nh-bot'));
+let batt = null, lastPlug = null, toldFull = false; const warnedB = new Set();
+async function statusTick() {
+  try { if (!batt && navigator.getBattery) batt = await navigator.getBattery(); } catch {}
+  let sys = {}; try { sys = (await D.sysinfo?.()) || {}; } catch {}
+  let w = null; try { w = await weather(); } catch {}
+  const chips = [];
+  const noBattery = batt && batt.charging && batt.level === 1 && batt.chargingTime === 0 && batt.dischargingTime === Infinity;   // a desktop PC: nothing to show
+  if (batt && !noBattery) {
+    const pct = Math.round(batt.level * 100), ch = batt.charging;
+    chips.push(`<span class="nh-chip ${pct <= 20 && !ch ? 'low' : ch ? 'ok' : ''}" title="${pct}%${ch ? ' · charging' : ''}">${ch ? '⚡' : '🔋'} ${pct}%</span>`);
+    if (lastPlug !== null && lastPlug !== ch) peek(ch ? `⚡ Charging · ${pct}%` : `🔋 On battery · ${pct}%`, '', 4500);
+    if (ch) warnedB.clear();
+    if (ch && pct >= 100 && !toldFull) { toldFull = true; peek('🔋 Fully charged', 'You can unplug.', 5000); }
+    if (pct < 95) toldFull = false;
+    for (const lv of [20, 10]) if (!ch && pct <= lv && !warnedB.has(lv)) { warnedB.add(lv); peek(`🪫 ${pct}% battery left`, 'Time to plug in.', 7000); break; }
+    lastPlug = ch;
+  }
+  if (w) chips.push(`<span class="nh-chip" title="${w.sky}${w.city ? ' · ' + w.city : ''}">${w.temp}°</span>`);
+  if (sys.cpu != null) chips.push(`<span class="nh-chip ${sys.cpu > 85 ? 'warn' : ''}" title="Processor ${sys.cpu}% · memory ${sys.mem}%${sys.free != null ? ' · ' + sys.free + ' GB free' : ''}">CPU ${sys.cpu}% · RAM ${sys.mem}%</span>`);
+  nhStatus.innerHTML = chips.join('');
+}
+setInterval(statusTick, 20000); setTimeout(statusTick, 2500);
 const nhApps = nhome.querySelector('.nh-apps'), nhWords = nhome.querySelector('.nh-words'), nhTip = nhome.querySelector('.nh-tip');
 const head = mountMascot(nhome.querySelector('.nh-head'), { onTap: () => Voice.toggle() });
 let wordsHold = 0;

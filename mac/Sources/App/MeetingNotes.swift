@@ -183,7 +183,7 @@ final class ScreenRecorder: NSObject, SCRecordingOutputDelegate, @unchecked Send
     private var output: SCRecordingOutput?
     private var fileURL: URL?
     private var startedAt: Date?
-    var isRecording: Bool { lock.lock(); defer { lock.unlock() }; return stream != nil }
+    var isRecording: Bool { lock.withLock { stream != nil } }
 
     func start() async -> String {
         if isRecording { return "I’m already recording your screen. Say “stop recording” when you’re done." }
@@ -211,7 +211,7 @@ final class ScreenRecorder: NSObject, SCRecordingOutputDelegate, @unchecked Send
             let s = SCStream(filter: filter, configuration: cfg, delegate: nil)
             try s.addRecordingOutput(out)
             try await s.startCapture()
-            lock.lock(); stream = s; output = out; fileURL = file; startedAt = Date(); lock.unlock()
+            lock.withLock { stream = s; output = out; fileURL = file; startedAt = Date() }
             let name = file.lastPathComponent
             Task { @MainActor in appendAppLog("screen.log", "recording to \(name)") }
             return "Recording your screen. Say “Zuffi, stop recording” or press Stop when you’re done."
@@ -223,7 +223,9 @@ final class ScreenRecorder: NSObject, SCRecordingOutputDelegate, @unchecked Send
     }
 
     func stop() async -> String {
-        lock.lock(); let s = stream, o = output, u = fileURL, t = startedAt; stream = nil; output = nil; lock.unlock()
+        let (s, o, u, t): (SCStream?, SCRecordingOutput?, URL?, Date?) = lock.withLock {
+            let r = (stream, output, fileURL, startedAt); stream = nil; output = nil; return r
+        }
         guard let s else { return "I’m not recording the screen right now." }
         try? await s.stopCapture()
         if let o { try? s.removeRecordingOutput(o) }

@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   pickFolder: () => inv('pick-folder'),
   watch: (action, dir) => inv('watch', action, dir),
   ollama: (kind, body) => inv('ollama', kind, body),
+  sysinfo: () => inv('sysinfo'),
   mail: (kind, text) => inv('mail', kind, text),
   location: () => inv('location'),
   http: (url, headers, body) => inv('http', url, headers, body),

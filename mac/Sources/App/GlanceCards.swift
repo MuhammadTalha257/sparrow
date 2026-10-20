@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import IOKit.ps
+import Darwin
 
 // =====================================================================
 // MARK: - Home cards (like the Glance video): weather, calendar, agents
@@ -706,5 +707,222 @@ struct HelloView: View {
         }
         .frame(width: 260, height: 300, alignment: .top)
         .onChange(of: model.phase) { _, p in if p == 1 { wave.toggle() } }
+    }
+}
+
+
+// =====================================================================
+// MARK: - Mac status at the notch (battery, your devices, CPU / memory / disk) + small notifications
+// One look up: the Mac's battery, AirPods / Magic keyboard & mouse batteries, and how busy the Mac is.
+// Small notch notifications: new email, plugged in / fully charged / low battery, a device connecting.
+// They fold away by themselves and never pop up over something you're doing in Zuffi.
+// =====================================================================
+@MainActor
+final class MacStatus: ObservableObject {
+    static let shared = MacStatus()
+    struct Device: Identifiable, Equatable {
+        var id: String { name }
+        let name: String; let kind: String
+        let main: Int?; let left: Int?; let right: Int?; let caseLevel: Int?
+        var lowest: Int? { [main, left, right].compactMap { $0 }.min() }
+        var summary: String {
+            if left != nil || right != nil { return [left.map { "L \($0)%" }, right.map { "R \($0)%" }, caseLevel.map { "case \($0)%" }].compactMap { $0 }.joined(separator: " · ") }
+            return main.map { "\($0)%" } ?? "connected"
+        }
+        var icon: String {
+            let n = name.lowercased()
+            if n.contains("airpods max") { return "airpodsmax" }
+            if n.contains("airpods pro") { return "airpodspro" }
+            if n.contains("airpods") { return "airpods" }
+            if n.contains("keyboard") { return "keyboard" }
+            if n.contains("mouse") { return "magicmouse" }
+            if n.contains("trackpad") { return "rectangle.and.hand.point.up.left" }
+            return kind.lowercased().contains("head") ? "headphones" : "dot.radiowaves.left.and.right"
+        }
+    }
+    @Published var battery: Int?
+    @Published var charging = false
+    @Published var plugged = false
+    @Published var minutesLeft: Int?
+    @Published var devices: [Device] = []
+    @Published var cpu = 0
+    @Published var memory = 0
+    @Published var diskFreeGB = 0
+
+    var toastsOn: Bool {
+        get { UserDefaults.standard.object(forKey: "notchToasts") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "notchToasts"); objectWillChange.send() }
+    }
+    private var timer: Timer?
+    private var n = 0
+    private var knownDevices: Set<String>?
+    private var knownMail: Set<String>?
+    private var warned: Set<Int> = []
+    private var toldFull = false
+    private var wasPlugged: Bool?
+    private var prevTicks: [Double]?
+
+    func start() {
+        guard timer == nil else { return }
+        refreshPower(); refreshSystem()
+        Task { await refreshDevices() }
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in MainActor.assumeIsolated { MacStatus.shared.tick() } }
+    }
+    private func tick() {
+        n += 1
+        refreshPower(); refreshSystem()
+        if n % 4 == 0 { Task { await self.refreshDevices() } }
+        if n % 8 == 2 { Task { await self.checkMail() } }
+    }
+
+    // ---- battery ----
+    func refreshPower() {
+        guard let snap = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let list = IOPSCopyPowerSourcesList(snap)?.takeRetainedValue() as? [CFTypeRef] else { return }
+        for ps in list {
+            guard let d = IOPSGetPowerSourceDescription(snap, ps)?.takeUnretainedValue() as? [String: Any],
+                  (d[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType else { continue }
+            let cur = d[kIOPSCurrentCapacityKey] as? Int ?? 0, mx = d[kIOPSMaxCapacityKey] as? Int ?? 100
+            let pct = mx > 0 ? Int((Double(cur) / Double(mx) * 100).rounded()) : cur
+            let chg = d[kIOPSIsChargingKey] as? Bool ?? false
+            let onAC = (d[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue
+            let m = (chg ? d[kIOPSTimeToFullChargeKey] : d[kIOPSTimeToEmptyKey]) as? Int ?? -1
+            battery = pct; charging = chg; plugged = onAC; minutesLeft = m > 0 ? m : nil
+            notifyPower(pct: pct, onAC: onAC)
+            return
+        }
+    }
+    private func notifyPower(pct: Int, onAC: Bool) {
+        defer { wasPlugged = onAC }
+        if onAC { warned = [] }
+        if let was = wasPlugged, was != onAC {
+            if onAC { toast("Battery · charging", "\(pct)%\(minutesLeft.map { " — about \(Self.hm($0)) to full" } ?? "")", icon: "battery") }
+            else { toast("Battery · on battery", "\(pct)%\(minutesLeft.map { " — about \(Self.hm($0)) left" } ?? "")", icon: "battery") }
+        }
+        if onAC && pct >= 100 && !toldFull { toldFull = true; toast("Battery · fully charged", "100% — you can unplug.", icon: "battery") }
+        if pct < 95 { toldFull = false }
+        for level in [20, 10] where !onAC && pct <= level && !warned.contains(level) {
+            warned.insert(level)
+            toast("Battery · \(pct)% left", minutesLeft.map { "About \(Self.hm($0)) — time to plug in." } ?? "Time to plug in.", icon: "battery")
+            break
+        }
+    }
+    static func hm(_ m: Int) -> String { m >= 60 ? "\(m / 60) h\(m % 60 > 0 ? " \(m % 60) min" : "")" : "\(m) min" }
+
+    // ---- AirPods, Magic keyboard / mouse / trackpad ----
+    func refreshDevices() async {
+        let out: String = await Task.detached {
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+            p.arguments = ["SPBluetoothDataType", "-json", "-detailLevel", "basic"]
+            let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
+            do { try p.run() } catch { return "" }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
+            return String(data: data, encoding: .utf8) ?? ""
+        }.value
+        guard let j = (try? JSONSerialization.jsonObject(with: Data(out.utf8))) as? [String: Any],
+              let top = (j["SPBluetoothDataType"] as? [[String: Any]])?.first else { return }
+        let pct: (Any?) -> Int? = { ($0 as? String).flatMap { Int($0.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)) } }
+        var list: [Device] = []
+        for entry in (top["device_connected"] as? [[String: Any]]) ?? [] {
+            for (name, v) in entry {
+                guard let d = v as? [String: Any] else { continue }
+                list.append(Device(name: name, kind: d["device_minorType"] as? String ?? "",
+                                   main: pct(d["device_batteryLevelMain"]), left: pct(d["device_batteryLevelLeft"]),
+                                   right: pct(d["device_batteryLevelRight"]), caseLevel: pct(d["device_batteryLevelCase"])))
+            }
+        }
+        let names = Set(list.map(\.name))
+        if let known = knownDevices {
+            for d in list where !known.contains(d.name) { toast("\(d.name) · connected", d.summary, icon: d.icon) }
+            for d in list where (d.lowest ?? 100) <= 10 && devices.first(where: { $0.name == d.name })?.lowest ?? 100 > 10 {
+                toast("\(d.name) · low battery", d.summary, icon: d.icon)
+            }
+        }
+        knownDevices = names
+        devices = list
+    }
+
+    // ---- how busy the Mac is ----
+    func refreshSystem() {
+        var info = host_cpu_load_info()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count) } }
+        if kr == KERN_SUCCESS {
+            let t = info.cpu_ticks
+            let now = [Double(t.0), Double(t.1), Double(t.2), Double(t.3)]   // user, system, idle, nice
+            if let p = prevTicks {
+                let busy = (now[0] - p[0]) + (now[1] - p[1]) + (now[3] - p[3]), idle = now[2] - p[2]
+                if busy + idle > 0 { cpu = Int((busy / (busy + idle) * 100).rounded()) }
+            }
+            prevTicks = now
+        }
+        var vm = vm_statistics64()
+        var c2 = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        let k2 = withUnsafeMutablePointer(to: &vm) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(c2)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &c2) } }
+        if k2 == KERN_SUCCESS {
+            let page = Double(getpagesize())
+            let used = (Double(vm.active_count) + Double(vm.wire_count) + Double(vm.compressor_page_count)) * page
+            memory = Int((used / Double(ProcessInfo.processInfo.physicalMemory) * 100).rounded())
+        }
+        if let v = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+           let free = v.volumeAvailableCapacityForImportantUsage { diskFreeGB = Int(free / 1_000_000_000) }
+    }
+
+    // ---- new email (only while the Mail app is open; nothing is sent anywhere) ----
+    func checkMail() async {
+        guard toastsOn, !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").isEmpty else { return }
+        let r = await MailAgent.shared.inbox(limit: 5)
+        guard let mails = r["mails"] as? [[String: Any]] else { return }
+        let ids = Set(mails.compactMap { $0["id"] as? String })
+        if let known = knownMail, let m = mails.first(where: { !known.contains($0["id"] as? String ?? "") }) {
+            AppState.shared.noteRef = m["id"] as? String
+            toast("Mail · \(m["from"] as? String ?? "New email")", m["subject"] as? String ?? "", icon: "envelope", action: "mail")
+        }
+        knownMail = (knownMail ?? []).union(ids)
+    }
+
+    /// A small notification at the notch. Skipped while you're using Zuffi, recording notes, or if you turned them off.
+    func toast(_ head: String, _ body: String, icon: String, action: String? = nil) {
+        guard toastsOn, !MeetingNotes.shared.active else { return }
+        let st = AppState.shared
+        if st.mode == .expanded && st.view != .note { return }
+        st.noteIsAlert = false
+        st.noteAction = action
+        st.noteMessage = "\(String(head.prefix(58)))\n\(body)"
+        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+    }
+}
+
+/// Home panel: battery, weather, your devices and the Mac's load — one row, details on hover.
+struct StatusChips: View {
+    @ObservedObject private var st = MacStatus.shared
+    @ObservedObject private var weather = WeatherStore.shared
+    var body: some View {
+        HStack(spacing: 5) {
+            if let b = st.battery {
+                chip(st.charging ? "battery.100percent.bolt" : b > 70 ? "battery.100percent" : b > 40 ? "battery.75percent" : b > 20 ? "battery.25percent" : "battery.0percent",
+                     "\(b)%", tint: b <= 20 && !st.plugged ? Color(hex: "#FF6B6B") : st.charging ? Color(hex: "#3DDC97") : .white)
+                    .help("\(b)%\(st.charging ? " · charging" : st.plugged ? " · plugged in" : "")\(st.minutesLeft.map { st.charging ? " · \(MacStatus.hm($0)) to full" : " · \(MacStatus.hm($0)) left" } ?? "")")
+            }
+            if let c = weather.current, let r = weather.reports[c.name] {
+                chip(WeatherStore.symbol(r.code, night: WeatherStore.isNight(Date())), "\(r.temp)°", tint: .white).help("\(c.name): \(r.temp)°, high \(r.hi)° low \(r.lo)°")
+            }
+            ForEach(st.devices.filter { $0.lowest != nil }.prefix(2)) { d in
+                chip(d.icon, "\(d.lowest ?? 0)%", tint: (d.lowest ?? 100) <= 15 ? Color(hex: "#FF6B6B") : .white).help("\(d.name): \(d.summary)")
+            }
+            chip("cpu", "\(st.cpu)%", tint: st.cpu > 85 ? Color(hex: "#FFB547") : .white)
+                .help("Processor \(st.cpu)% · memory \(st.memory)% · \(st.diskFreeGB) GB free")
+        }
+        .onAppear { MacStatus.shared.start() }
+    }
+    private func chip(_ icon: String, _ text: String, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 9.5, weight: .semibold))
+            Text(text).font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+        }
+        .foregroundColor(tint.opacity(0.9))
+        .padding(.horizontal, 7).frame(height: 20)
+        .background(Capsule().fill(Color.white.opacity(0.08)))
+        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 0.6))
     }
 }
