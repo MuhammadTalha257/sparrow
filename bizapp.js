@@ -112,6 +112,13 @@ export function waiting() {
     return m >= 3 && m < 24 * 60 && !(when(l.replied) >= t) && !(when(l.last) >= t - 60000);
   }).map(l => ({ ...l, waitMin: mins(when(l.msgAt)) })).sort((a, b) => b.waitMin - a.waitMin);
 }
+/** For the main dashboard: which business this is (country decides the type). */
+export function profile() { return { country: country(), kind: kind(), estate: estate(), freelance: freelance(), name: bizName(), label: (PACKS[kind()] || {}).label || 'Business', icon: (PACKS[kind()] || {}).icon || '💼', cur: cur() }; }
+/** For the main dashboard: the numbers that need you today. */
+export function stats() {
+  const L = leads(), owed = bs.rows('Due').filter(({ r }) => !/paid/i.test(f(r, 'Status')));
+  return { waiting: waiting(), due: L.filter(dueToday), open: L.filter(isOpen).length, total: L.length, owed: owed.reduce((a, { r }) => a + num(f(r, 'Amount')), 0), owedCount: owed.length, cur: cur() };
+}
 /** Enquiries nobody followed up — the "lost money report". */
 function forgotten() {
   const cut = iso(addDays(new Date(), -3)), today = iso();

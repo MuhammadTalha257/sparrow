@@ -102,7 +102,7 @@ function micLabel() { const b = nhome.querySelector('[data-h="mic"]'); const on 
 function openFull(view) {
   html.classList.add('isl-full');
   if (state !== 'expanded') setState('expanded');
-  const b = document.querySelector(`nav.tabs button[data-v="${view}"]`); if (b) b.click();
+  const b = document.querySelector(`nav.tabs button[data-v="${view}"]`); if (b) b.click(); else window.Sparrow?.go?.(view);
   setTimeout(() => document.querySelector('#askInput')?.focus({ preventScroll: true }), 380);
 }
 const backHome = () => { html.classList.remove('isl-full'); homeWords(); };
@@ -111,9 +111,9 @@ nhome.addEventListener('click', e => {
   const h = b.dataset.h;
   if (h === 'chat') openFull('chat');
   else if (h === 'settings') { openFull('home'); setTimeout(() => document.querySelector('#settingsBtn')?.click(), 60); }
-  else if (h === 'more') openFull('tools');
+  else if (h === 'more') openFull('home');
   else if (h === 'today') openFull('plan');
-  else if (h === 'notes') { openFull('tools'); setTimeout(() => document.querySelector('[data-goto2="memory"]')?.click(), 60); }
+  else if (h === 'notes') openFull('memory');
   else if (h === 'call') D.openBusiness?.('today');
   else if (h === 'business') D.openBusiness?.();
   else if (h === 'whatsapp') { const ok = D.openApp?.('WhatsApp'); setWords(ok === false ? 'I couldn’t find WhatsApp on this computer — install WhatsApp from the Microsoft Store.' : 'Opening WhatsApp…', 4000); }

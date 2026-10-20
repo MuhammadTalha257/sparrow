@@ -551,7 +551,7 @@ struct IslandHeader: View {
                 TabButton(icon: "clock.arrow.circlepath", label: "", view: .history, state: state).help("History")
                 TabButton(icon: "sparkles", label: "Agents", view: .agents, state: state, badge: agents.approvals.count)
                 HeaderChip(icon: "sun.max.fill", label: "") { TodayWindow.shared.show() }.help("Today")
-                HeaderChip(icon: "square.grid.2x2.fill", label: "") { WebHub.shared.show() }.help("More")
+                HeaderChip(icon: "square.grid.2x2.fill", label: "") { WebHub.shared.show() }.help("Dashboard")
                 HeaderChip(icon: "hare.fill", label: "") { PetController.shared.toggle() }.help("Pet")
             }
             .padding(.leading, 4)

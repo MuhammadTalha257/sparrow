@@ -21,7 +21,7 @@ export const PROVIDERS = {
   gemini: { name: 'Google Gemini (free tier)', model: 'gemini-2.5-flash', site: 'https://aistudio.google.com/apikey' },
   openai: { name: 'ChatGPT (OpenAI)', url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini', site: 'https://platform.openai.com/api-keys' },
   claude: { name: 'Claude (Anthropic)', model: 'claude-sonnet-5-5', site: 'https://console.anthropic.com/settings/keys' },
-  grok: { name: 'Grok (xAI)', url: 'https://api.x.ai/v1/chat/completions', model: 'grok-4', site: 'https://console.x.ai' },
+  grok: { name: 'Grok (xAI)', url: 'https://api.x.ai/v1/chat/completions', model: 'grok-4-fast-non-reasoning', site: 'https://console.x.ai' },
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', site: 'https://platform.deepseek.com/api_keys' },
   mistral: { name: 'Mistral', url: 'https://api.mistral.ai/v1/chat/completions', model: 'mistral-small-latest', site: 'https://console.mistral.ai/api-keys' },
   perplexity: { name: 'Perplexity (answers with web search)', url: 'https://api.perplexity.ai/chat/completions', model: 'sonar', site: 'https://www.perplexity.ai/settings/api' },
@@ -78,29 +78,34 @@ export async function loadLocal(onProgress) {
 }
 
 /** Ollama models installed on this computer (desktop app only). */
+let ollamaCache = null, ollamaAt = 0;
+const pref = ['llama3.2', 'qwen2.5', 'gemma3', 'qwen3', 'phi3', 'mistral', 'llama3.1'];
 export async function ollamaModels() {
   const D = window.SparrowDesktop; if (!D) return [];
+  if (ollamaCache && Date.now() - ollamaAt < 60e3) return ollamaCache;   // asked on every question: remember it for a minute
   try {
     const list = await D.ollama('models');
-    const pref = ['llama3.2', 'qwen2.5', 'gemma3', 'qwen3', 'phi3', 'mistral', 'llama3.1'];
-    return list.sort((a, b) => (pref.findIndex(p => a.startsWith(p)) + 99) % 99 - (pref.findIndex(p => b.startsWith(p)) + 99) % 99);
+    ollamaAt = Date.now();
+    return (ollamaCache = list.sort((a, b) => (pref.findIndex(p => a.startsWith(p)) + 99) % 99 - (pref.findIndex(p => b.startsWith(p)) + 99) % 99));
   } catch { return []; }
 }
 
-function systemPrompt(extra = '') {
+/** Is the question about Zuffi herself (features, plans, prices, how to…)? Only then the long self-description goes along. */
+export const asksAboutZuffi = q => /\b(zuffi|sparrow|you|your|yourself|app|plans?|pro|business|price|prices|cost|subscription|trial|features?|settings?|how (do|can|to)|can i|where is|what can|help|lisan)\b/i.test(String(q || ''));
+function systemPrompt(extra = '', question = '') {
   const s = store.settings;
   // Always answer in the language (and script) the person used: Urdu, Roman Urdu, Hindi, Punjabi, Spanish, French, Portuguese…
   const langNote = ` Detect the language of the user's latest message and reply in that SAME language and script: Urdu script → Urdu script; Roman Urdu ("kia kar rahe ho") → Roman Urdu; Hindi → Hindi; Punjabi → Punjabi; Spanish, French, Brazilian Portuguese, Arabic, Turkish → the same; English → English. If they mix languages, mix the same way.${s.lang && s.lang !== 'en' ? ` If unsure, use ${{ ur: 'Urdu', hi: 'Hindi', pa: 'Punjabi', ar: 'Arabic' }[s.lang] || 'English'}.` : ''} If asked to translate, give the translation clearly.`;
-  return `You are Zuffi, a friendly, smart little assistant on the user's ${window.SparrowDesktop ? 'computer' : 'phone'}.${s.name ? ` The user's name is ${s.name}.` : ''}${window.zuffiProfileLine?.() || ''}${langNote}
+  return `You are Zuffi, a friendly, smart little assistant on the user's ${window.SparrowDesktop ? 'computer' : 'phone'}.${s.name ? ` The user's name is ${s.name}.` : ''}${langNote}${window.zuffiProfileLine?.() || ''}
 Be clear and concise (2–6 sentences unless asked for more). Plain text, no markdown symbols like ** or ##.
-${ABOUT}
+${asksAboutZuffi(question) ? ABOUT : 'You are made by Lisan Systems (lisansystems.com/zuffi).'}
 It is now ${new Date().toLocaleString()}. ${daySummary(new Date(), true)}
 Today's items: ${store.onDay(new Date()).map(i => `${i.title} at ${fmtTime(i.when)}`).join('; ') || 'none'}.
 Open tasks: ${store.openTasks().slice(0, 15).map(i => i.title).join('; ') || 'none'}.${extra}`;
 }
 // Only real conversation goes to the AI — not commands like "open Spotify" and their replies
 // (a small model would otherwise just repeat "Opening Spotify…").
-function history() { return store.chat.filter(m => m.text && !m.cmd).slice(-10).map(m => ({ role: m.role === 'me' ? 'user' : 'assistant', content: m.text })); }
+function history() { return store.chat.filter(m => m.text && !m.cmd).slice(-8).map(m => ({ role: m.role === 'me' ? 'user' : 'assistant', content: String(m.text).slice(0, 1500) })); }
 
 // Network: the desktop and Android apps send requests natively (no browser CORS limits).
 let reqId = 0; const pending = new Map();
@@ -229,12 +234,53 @@ export async function transcribeTimed(blob) {
   return null;
 }
 
-async function callProvider(p, key, messages, maxTokens = 1200) {
+// ---- Streaming: the answer appears word by word instead of after the whole reply is written ----
+// Works where the AI company allows calls from an app page (most do). If not, the normal request is used.
+const noStream = new Set();
+async function stream(url, body, headers, onEvent) {
+  const host = new URL(url).host;
+  if (noStream.has(host)) return null;
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
+  let r;
+  try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal: ctl.signal }); }
+  catch (e) { clearTimeout(t); if (e.name !== 'AbortError') { noStream.add(host); return null; } throw new Error('No answer after 30 seconds'); }
+  if (!r.ok || !r.body) {
+    clearTimeout(t);
+    const txt = await r.text().catch(() => ''); let j = {}; try { j = JSON.parse(txt); } catch {}
+    const msg = j.error?.message || j.error || j.message || `HTTP ${r.status}`;
+    throw new Error(r.status === 401 || r.status === 403 ? `${msg} — check the key in Settings.` : String(msg));
+  }
+  clearTimeout(t);
+  const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '', last = null;
+  for (;;) {
+    const { done, value } = await rd.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i; while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      const d = line.startsWith('data:') ? line.slice(5).trim() : line.startsWith('{') ? line : '';
+      if (!d || d === '[DONE]') continue;
+      try { const j = JSON.parse(d); last = j; onEvent(j); } catch {}
+    }
+  }
+  return last || {};
+}
+const gemCfg = (model, maxTokens) => /2\.5-flash/.test(model) ? { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } } : { maxOutputTokens: maxTokens };
+
+async function callProvider(p, key, messages, maxTokens = 1200, onToken = null) {
   const model = store.settings.models?.[p] || PROVIDERS[p].model;
   if (p === 'gemini') {
     const contents = messages.slice(1).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
     const body = { system_instruction: { parts: [{ text: messages[0].content }] }, contents };
-    const run = m => post(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, body, { 'x-goog-api-key': key });
+    const run = async m => {
+      const b = { ...body, generationConfig: gemCfg(m, maxTokens) };
+      if (onToken) {
+        let text = '';
+        const last = await stream(`https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse`, b, { 'x-goog-api-key': key },
+          j => { text += (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join(''); onToken(text); });
+        if (last) { try { trackUsage('googleapis', m, last); } catch {} return { candidates: [{ content: { parts: [{ text }] } }] }; }
+      }
+      return post(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, b, { 'x-goog-api-key': key });
+    };
     let j;
     try { j = await run(store.settings.models?.gemini || store.settings.geminiAuto || model); }
     catch (e) {
@@ -246,12 +292,30 @@ async function callProvider(p, key, messages, maxTokens = 1200) {
     return (j.candidates?.[0]?.content?.parts || []).map(x => x.text || '').join('').trim();
   }
   if (p === 'claude') {
-    const j = await post('https://api.anthropic.com/v1/messages', { model, max_tokens: maxTokens, system: messages[0].content, messages: messages.slice(1) },
-      { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' });
+    const body = { model, max_tokens: maxTokens, system: messages[0].content, messages: messages.slice(1) };
+    const hdr = { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+    if (onToken) {
+      let text = '', usage = {};
+      const last = await stream('https://api.anthropic.com/v1/messages', { ...body, stream: true }, hdr, j => {
+        if (j.type === 'content_block_delta' && j.delta?.text) { text += j.delta.text; onToken(text); }
+        if (j.message?.usage) usage = { ...usage, ...j.message.usage }; if (j.usage) usage = { ...usage, ...j.usage };
+      });
+      if (last) { try { trackUsage('anthropic', model, { usage }); } catch {} return text.trim(); }
+    }
+    const j = await post('https://api.anthropic.com/v1/messages', body, hdr);
     return (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
   }
   const extra = p === 'openrouter' ? { 'HTTP-Referer': 'https://lisansystems.com', 'X-Title': 'Zuffi' } : {};
-  const j = await post(PROVIDERS[p].url, { model, messages, temperature: 0.6 }, { Authorization: 'Bearer ' + key, ...extra });
+  const body = { model, messages, temperature: 0.6, max_tokens: maxTokens };
+  if (onToken) {
+    let text = '', usage = null;
+    const last = await stream(PROVIDERS[p].url, { ...body, stream: true, ...(p === 'openai' ? { stream_options: { include_usage: true } } : {}) }, { Authorization: 'Bearer ' + key, ...extra }, j => {
+      const d = j.choices?.[0]?.delta?.content; if (d) { text += d; onToken(text); }
+      if (j.usage) usage = j.usage; if (j.x_groq?.usage) usage = j.x_groq.usage;
+    });
+    if (last) { try { usage && trackUsage(PROVIDERS[p].url, model, { usage }); } catch {} return text.trim(); }
+  }
+  const j = await post(PROVIDERS[p].url, body, { Authorization: 'Bearer ' + key, ...extra });
   return j.choices?.[0]?.message?.content?.trim() || '';
 }
 
@@ -276,6 +340,29 @@ async function order() {
   return [...new Set(out)];
 }
 
+/** Ollama on this computer: streamed straight from it when possible (words appear at once), kept loaded for 30 minutes. */
+async function ollamaChat(model, messages, ctx, onToken) {
+  const body = { model, messages, keep_alive: '30m', options: { num_ctx: ctx } };
+  if (onToken) {
+    try {
+      let text = '';
+      const last = await stream('http://127.0.0.1:11434/api/chat', { ...body, stream: true }, {}, j => { if (j.message?.content) { text += j.message.content; onToken(text); } });
+      if (last) return text;
+    } catch {}
+  }
+  return window.SparrowDesktop.ollama('chat', { ...body, stream: false });
+}
+/** Loads the offline brain in the background so the first answer doesn't wait for it. */
+export async function warmUp() {
+  try {
+    const s = store.settings, keyed = Object.keys(PROVIDERS).some(p => s.keys?.[p] && !PROVIDERS[p].imageOnly);
+    if (!window.SparrowDesktop || !(s.provider === 'ollama' || (!keyed && !account.isPaid()))) return;
+    const list = await ollamaModels(); if (!list.length) return;
+    const model = s.ollamaModel && list.includes(s.ollamaModel) ? s.ollamaModel : list[0];
+    await fetch('http://127.0.0.1:11434/api/generate', { method: 'POST', body: JSON.stringify({ model, prompt: '', keep_alive: '30m' }) });
+  } catch {}
+}
+
 /**
  * Answer a question. opts: { context: extra text (e.g. from your files), onToken }.
  * Returns { text, source }.
@@ -283,7 +370,7 @@ async function order() {
 export async function ask(question, onToken, opts = {}) {
   const extra = opts.context ? `\n\nUse this information from the user's files to answer. If the answer isn't there, say so.\n<files>\n${opts.context}\n</files>` : '';
   // opts.system replaces Zuffi's chatty persona (used for structured jobs: CV analysis, cover letters, JSON).
-  const messages = [{ role: 'system', content: opts.system ? opts.system + extra : systemPrompt(extra) }, ...(opts.noHistory ? [] : history()), { role: 'user', content: question }];
+  const messages = [{ role: 'system', content: opts.system ? opts.system + extra : systemPrompt(extra, question) }, ...(opts.noHistory ? [] : history()), { role: 'user', content: question }];
   const tried = [];
   // AIs that just ran out of tokens go to the back of the line (they come back after an hour)
   const all = await order(), queue = [...all.filter(p => !resting(p)), ...all.filter(resting)];
@@ -292,7 +379,7 @@ export async function ask(question, onToken, opts = {}) {
       if (p === 'ollama') {
         const list = await ollamaModels();
         const model = store.settings.ollamaModel && list.includes(store.settings.ollamaModel) ? store.settings.ollamaModel : list[0];
-        const text = await window.SparrowDesktop.ollama('chat', { model, messages, stream: false, options: { num_ctx: opts.context ? 8192 : 4096 } });
+        const text = await ollamaChat(model, messages, opts.context ? 8192 : 4096, onToken);
         setCurrent('Ollama (offline)');
         return { text: text.trim(), source: 'Ollama · ' + model };
       }
@@ -311,7 +398,7 @@ export async function ask(question, onToken, opts = {}) {
       }
       const key = store.settings.keys?.[p];
       if (!key || !PROVIDERS[p]) continue;
-      return { text: await callProvider(p, key, messages, opts.maxTokens || 1200), source: PROVIDERS[p].name.split(' (')[0] };
+      return { text: await callProvider(p, key, messages, opts.maxTokens || 1200, onToken), source: PROVIDERS[p].name.split(' (')[0] };
     } catch (e) {
       tried.push(`${p}: ${e.message}`);
       // out of tokens / quota / credit (or the built-in AI's monthly limit): rest it and move on to the next AI

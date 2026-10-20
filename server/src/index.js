@@ -377,7 +377,7 @@ CLIENT: ${lead.name || lead.phone}. Known: ${[lead.interest, lead.area, lead.bud
 ${convo ? "CONVERSATION SO FAR:\n" + convo : ""}
 NEW MESSAGE: ${incoming.slice(0, 2000)}
 
-Reply in the client's own language and script (English, Urdu or Roman Urdu), 1-3 short warm sentences.
+Reply in EXACTLY the language and script the client used, whatever it is (English, Urdu script, Roman Urdu, Punjabi, Hindi, Arabic, Polish…; mixed if they mix), 1-3 short warm sentences.
 ${first ? "First message: greet them and ask only for what's missing." : ""}
 Use ONLY the facts above; never invent prices, discounts, stock, listings or free times.
 Set "handoff" to a short reason (and still write a polite holding reply) when they bargain, complain, ask for a person or call,

@@ -670,14 +670,14 @@ final class ZuffiCRM: ObservableObject {
         """
         let prompt = """
         BUSINESS FACTS (the only facts you may use):
-        \(businessInfo.isEmpty ? "(none written yet — just greet politely and ask how you can help)" : String(businessInfo.prefix(5000)))
+        \(businessInfo.isEmpty ? "(none written yet — just greet politely and ask how you can help)" : String(businessInfo.prefix(12000)))
         \(todaysUpdate.isEmpty ? "" : "TODAY'S UPDATE: \(todaysUpdate)")
         \(context)
         CLIENT: \(l.display.isEmpty ? "unknown" : l.display)
         \(past.isEmpty ? "" : "EARLIER IN THIS CHAT:\n\(past)")
         CLIENT'S NEW MESSAGE: \(incoming)
 
-        Write "reply": 1-2 short, natural WhatsApp sentences in the same language and script the client used (English, Urdu or Roman Urdu). \(first ? "Greet them; ask only for what's missing." : "Don't greet again.")
+        Write "reply": 1-2 short, natural WhatsApp sentences in EXACTLY the language and script the client used, whatever it is (English, Urdu script, Roman Urdu, Punjabi, Hindi, Arabic, Polish…); if they mix languages, mix the same way. \(first ? "Greet them; ask only for what's missing." : "Don't greet again.")
         Set "needs_human" true ONLY if: they bargain or ask for a discount not in today's update, complain, ask for a person or a call, raise payment / refund / legal issues, or the answer isn't in the facts. Then make "reply" a short holding message ("Thanks! Someone from our team will reply shortly.") and put a 3-6 word reason in "why".
         Also fill "lead" with anything the client said: name, interest (\(labels.interest.lowercased())), area, budget, priority (Hot = ready now / asks price, visit or availability; Warm; Cold = just looking). Use "" when not said.
         JSON: {"reply":"","needs_human":false,"why":"","lead":{"name":"","interest":"","area":"","budget":"","priority":""}}

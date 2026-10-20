@@ -109,6 +109,27 @@ final class MailAgent {
         return "\(head) \(gist) Want me to reply to any?"
     }
 
+    /// Unread email for the dashboard's Inbox: [total, mails: [{id, from, subject, age}]] or [error].
+    func inbox(limit: Int) async -> [String: Any] {
+        let got = await Self.osa(Self.listScript(limit: max(1, min(limit, 15))))
+        guard let res = got, !Self.failed(res) else { return ["error": "mail"] }
+        let (total, mails) = Self.parseList(res)
+        let rows: [[String: Any]] = mails.map { m -> [String: Any] in ["id": m.id, "from": m.name, "subject": m.subject, "age": m.age] }
+        return ["total": total, "mails": rows]
+    }
+    /// Opens one message in Mail.
+    func open(id: String) async {
+        guard Int(id) != nil else { return }
+        _ = await Self.osa("""
+        tell application "Mail"
+          activate
+          try
+            open (first message of inbox whose id is \(id))
+          end try
+        end tell
+        """)
+    }
+
     /// The newest email in the inbox (read or not), read out.
     func readLatest(show: Bool = false) async -> String {
         AgentRouter.lastChannel = .mail

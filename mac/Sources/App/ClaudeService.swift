@@ -159,9 +159,14 @@ final class ClaudeService {
     private let systemPrompt = """
     You are Zuffi, a friendly AI assistant that lives at the top of the user's computer screen. \
     You have web search access and can help with anything — research, writing, coding, places, recommendations, tasks, questions. \
-    Respond in the user's language. Be thorough and complete — use as much detail as the task requires. \
+    Respond in the user's language. Be clear and concise (a few sentences) unless the user asks for detail. \
     No markdown formatting (no **, no ##, no bullet dashes). Use plain text with line breaks.
     """
+
+    /// News, prices, scores, weather, "latest", "today", "who is"… → worth a web search.
+    nonisolated static func needsWeb(_ q: String) -> Bool {
+        q.lowercased().range(of: #"\b(news|latest|today|tonight|this week|current|currently|right now|price|prices|cost|rate|score|match|weather|forecast|who is|who won|when is|open now|near me|search|look up|google|website|stock|bitcoin|exchange rate|election|202[4-9])\b"#, options: .regularExpression) != nil
+    }
 
     private let webSearchTools: [[String: Any]] = [
         ["type": "web_search_20250305", "name": "web_search", "max_uses": 5]
@@ -197,16 +202,18 @@ final class ClaudeService {
 
         conversationMessages.append(["role": "user", "content": userContent])
 
-        let body: [String: Any] = [
+        // Web search only when the question needs fresh facts: answers come back much faster otherwise.
+        let fresh = Self.needsWeb(query)
+        var body: [String: Any] = [
             "model": model,
-            "max_tokens": 4096,
-            "tools": webSearchTools,
-            "system": systemPrompt + ZuffiTeam.shared.persona,
+            "max_tokens": fresh ? 2048 : 1200,
+            "system": systemPrompt + AIService.userFacts + "\n" + ZuffiTeam.shared.persona,
             "messages": conversationMessages,
         ]
+        if fresh { body["tools"] = webSearchTools }
 
         do {
-            let data = try await callAPI(body: body, key: key, beta: "web-search-2025-03-05")
+            let data = try await callAPI(body: body, key: key, beta: fresh ? "web-search-2025-03-05" : nil)
             await handleChatResult(data, state: state)
         } catch {
             conversationMessages.removeLast()

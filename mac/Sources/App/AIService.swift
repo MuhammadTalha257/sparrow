@@ -71,7 +71,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     /// OpenAI-compatible providers: (chat URL, default model, models URL, preferred model prefixes).
     var openAICompatible: (url: String, model: String, models: String, prefer: [String])? {
         switch self {
-        case .grok: return ("https://api.x.ai/v1/chat/completions", "grok-4", "https://api.x.ai/v1/models", ["grok-4", "grok-3", "grok"])
+        case .grok: return ("https://api.x.ai/v1/chat/completions", "grok-4-fast-non-reasoning", "https://api.x.ai/v1/models", ["grok-4-fast-non-reasoning", "grok-4-fast", "grok-3-mini", "grok-4", "grok"])
         case .deepseek: return ("https://api.deepseek.com/chat/completions", "deepseek-chat", "https://api.deepseek.com/models", ["deepseek-chat", "deepseek"])
         case .mistral: return ("https://api.mistral.ai/v1/chat/completions", "mistral-large-latest", "https://api.mistral.ai/v1/models", ["mistral-large", "mistral-medium", "mistral"])
         case .perplexity: return ("https://api.perplexity.ai/chat/completions", "sonar", "", ["sonar"])
@@ -105,10 +105,21 @@ final class AIService {
 
     /// System prompt plus the attached document (if any).
     private var oneShotSystem: String?
+    /// Does the current question ask about Zuffi herself (features, plans, prices, how to…)?
+    private var wantsAbout = true
+    /// Who the user is: the welcome form and everything they asked Zuffi to remember (sent by the app's web part), else the Mac's own copy of the form.
+    static var userFacts: String {
+        let f = UserDefaults.standard.string(forKey: "zuffiFacts") ?? ""
+        return f.isEmpty ? ZuffiPlan.shared.profileLine : f
+    }
+    nonisolated static func asksAboutZuffi(_ q: String) -> Bool {
+        q.lowercased().range(of: #"\b(zuffi|sparrow|you|your|yourself|app|plan|plans|pro|business|price|prices|cost|subscription|trial|feature|features|setting|settings|how (do|can|to)|can i|where is|what can|help|lisan)\b"#, options: .regularExpression) != nil
+    }
 
     var fullSystemPrompt: String {
         if let o = oneShotSystem { return o }
-        let base = Self.systemPrompt + ZuffiPlan.shared.profileLine + "\n" + ZuffiAbout.text + "\n" + ZuffiTeam.shared.persona
+        // Zuffi's long self-description only when the question is about Zuffi: a short prompt answers much faster.
+        let base = Self.systemPrompt + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : "") + ZuffiTeam.shared.persona
         guard let document else { return base }
         return base + """
 
@@ -185,6 +196,7 @@ final class AIService {
         // 3) Attachments. A file's text lives in the system prompt for the whole
         //    conversation, so follow-up questions still "see" it. A newly attached
         //    file starts a fresh conversation about that file.
+        wantsAbout = Self.asksAboutZuffi(query)
         var turn = ZuffiData.shared.augment(query)
         if let context, context.key != lastContextKey {
             lastContextKey = context.key
@@ -248,7 +260,7 @@ final class AIService {
     /// One prompt for a command-line AI: Zuffi's instructions, any document, and the recent conversation.
     private func cliPrompt() -> String {
         var t = oneShotSystem.map { $0 + " Do not use tools or edit files.\n" }
-            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + ZuffiPlan.shared.profileLine + ZuffiAbout.text + "\n" + ZuffiTeam.shared.persona + "\n")
+            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + Self.userFacts + ZuffiAbout.text + "\n" + ZuffiTeam.shared.persona + "\n")
         if let d = document { t += "\nDocument the user shared:\n\(d.prefix(20_000))\n" }
         for m in history.suffix(12) { t += "\n\(m.role == "assistant" ? "Zuffi" : "User"): \(m.text)" }
         return t + "\nZuffi:"
@@ -436,7 +448,7 @@ final class AIService {
         let chosen = UserDefaults.standard.string(forKey: "groqResolved") ?? "llama-3.3-70b-versatile"
         var json: [String: Any]
         do {
-            json = try await postJSON(url, body: ["model": chosen, "messages": messages], headers: ["Authorization": "Bearer \(k)"], timeout: 30)
+            json = try await postJSON(url, body: ["model": chosen, "messages": messages, "max_tokens": 1200], headers: ["Authorization": "Bearer \(k)"], timeout: 30)
         } catch let error where Self.isModelProblem(error) {
             let list = try await Self.listModels(URL(string: "https://api.groq.com/openai/v1/models")!, auth: "Bearer \(k)")
             guard let pick = Self.best(list.filter { !$0.contains("whisper") && !$0.contains("guard") && !$0.contains("tts") },
@@ -535,7 +547,7 @@ final class AIService {
         if p == .openrouter { headers["HTTP-Referer"] = "https://zuffi.app"; headers["X-Title"] = "Zuffi" }
         var json: [String: Any]
         do {
-            json = try await postJSON(url, body: ["model": chosen, "messages": messages], headers: headers, timeout: 60)
+            json = try await postJSON(url, body: ["model": chosen, "messages": messages, "max_tokens": 1200], headers: headers, timeout: 45)
         } catch let error where Self.isModelProblem(error) && !c.models.isEmpty {
             let list = try await Self.listModels(URL(string: c.models)!, auth: "Bearer \(k)")
             guard let pick = Self.best(list.filter { !$0.contains("image") && !$0.contains("embed") && !$0.contains("vision") }, prefer: c.prefer) else { throw error }
@@ -606,7 +618,9 @@ final class AIService {
             contents.append(["role": m.role == "assistant" ? "model" : "user", "parts": parts])
         }
         let chosen = state.geminiModel.isEmpty ? (UserDefaults.standard.string(forKey: "geminiResolved") ?? AppState.defaultGeminiModel) : state.geminiModel
-        let body: [String: Any] = ["system_instruction": ["parts": [["text": fullSystemPrompt]]], "contents": contents]
+        var body: [String: Any] = ["system_instruction": ["parts": [["text": fullSystemPrompt]]], "contents": contents]
+        // Flash models "think" before answering by default — off for chat, so replies start in about a second.
+        if chosen.contains("2.5-flash") { body["generationConfig"] = ["maxOutputTokens": 1500, "thinkingConfig": ["thinkingBudget": 0] as [String: Any]] as [String: Any] }
         func url(_ m: String) -> URL {
             let id = m.hasPrefix("models/") ? String(m.dropFirst(7)) : m
             return URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(id):generateContent")!

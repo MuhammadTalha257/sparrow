@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS = {
   keys: { gemini: '', openai: '', claude: '', grok: '', deepseek: '', mistral: '', groq: '', openrouter: '', perplexity: '' },
   models: {},
   lastBriefDay: '', morningOn: true, morningTime: '08:30', nightOn: true, nightTime: '21:30', lead: 5, lastMorning: '', lastNight: '',
-  theme: 'graphite', lang: 'en', simple: false,
+  theme: 'paper', lang: 'en', simple: false,
   wake: true, micButton: true, conversation: true, musicApp: 'spotify',
   prayer: { on: false, method: 'Auto', asr: 'Hanafi', before: 10, speak: true },
   // Water, coffee and medicine reminders: every N minutes or at set times, only between start and end.
@@ -35,6 +35,7 @@ function mergeSettings(saved) {
   if (!s.lookV4) { if (!s.theme || s.theme === 'sunset') s.theme = 'blossom'; s.lookV4 = true; }   // the pink sparrow look
   if (!s.lookV5) { if (!s.theme || s.theme === 'blossom') s.theme = 'space'; s.lookV5 = true; }    // Zuffi's night-sky look
   if (!s.lookV6) { if (!s.theme || s.theme === 'space') s.theme = 'graphite'; s.lookV6 = true; }   // calm, professional graphite
+  if (!s.lookV7) { if (!s.theme || ['graphite', 'space', 'blossom', 'petal', 'sunset'].includes(s.theme)) s.theme = 'paper'; s.eventColors = s.eventColors === true; s.lookV7 = true; }   // the professional dashboard
   for (const k of ['keys', 'prayer', 'business', 'memory']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
   // health: one object per reminder kind (older versions stored water/meds as simple switches)
   const oh = (saved || {}).health || {};

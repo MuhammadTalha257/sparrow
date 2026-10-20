@@ -9,7 +9,7 @@ import {
   spokenPlan, spokenList, tasksForDay, moveToTomorrow, nextOccurrence, repeatText, weather, location as getLocation, prayerToday, habitCount, bumpHabit,
   setLastAlert, lastAlert, findCustomer,
 } from './brain.js';
-import { transcribeAudio, transcribeTimed, ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary, currentAI } from './ai.js';
+import { transcribeAudio, transcribeTimed, ask, loadLocal, deviceSupport, aiReady, PROVIDERS, ollamaModels, localDownloaded, usageSummary, currentAI, warmUp } from './ai.js';
 import * as nv from './neuralvoice.js';
 import * as jobs from './jobs.js';
 import { mountMascot as mountBird } from './mascot.js';
@@ -22,6 +22,9 @@ import * as office from './office.js';
 import * as actlog from './actlog.js';
 import * as reels from './reels.js';
 import * as images from './images.js';
+import * as feats from './features.js';
+import * as bizknow from './bizknow.js';
+import * as promo from './promo.js';
 actlog.watch();
 const logAction = (kind, text) => actlog.add(kind, text);
 import * as bizsync from './bizsync.js';
@@ -38,6 +41,7 @@ const N = window.SparrowNative || null;     // Android app
 const D = window.SparrowDesktop || null;    // Windows app
 const M = window.SparrowHost === 'mac' ? window.SparrowMac : null;   // inside the native Mac island app
 const S = () => store.settings;
+let featCat = 'all', featQ = '', inKind = 'all', mailCache = { at: 0, list: null, total: 0, error: '' };   // dashboard state
 const dayKey = () => new Date().toDateString();
 // The big Business window on Windows (the island keeps doing reminders, voice and the relay).
 const DASH = new URLSearchParams(location.search).get('dash') === 'business';
@@ -54,7 +58,7 @@ if (M) document.addEventListener('pointerdown', e => {
 // ---------------- look: theme, language, simple mode ----------------
 function applyLook() {
   const html = document.documentElement;
-  html.dataset.theme = S().theme || 'daylight';
+  html.dataset.theme = S().theme || 'paper';
   html.classList.toggle('simple', !!S().simple);
   html.classList.toggle('no-mic', S().micButton === false);
   applyI18n();
@@ -350,18 +354,42 @@ function saveProfile(p) {
   if ($('#sCity')) $('#sCity').value = s.city || '';
   M?.post('profile', { name: p.name, city: p.city || '', type: p.type, country: p.country || '', business: p.biz?.name || '', kind: p.biz?.kind || '', dob: p.dob || '', founded: p.biz?.founded || '',
     role: p.biz?.role || '', hours: p.biz?.hours || '', notes: p.notes || '', help: (p.help || []).join(',') });
-  applyUseMode();
+  applyUseMode(); sendFacts();
   M?.post('look', { outfit: s.outfit || 'auto', birthday: s.birthday || '' });
 }
 /** One line for the AI so Zuffi always knows who she's helping. */
 function profileLine() {
-  const p = S().profile; if (!p?.doneAt) return '';
+  const p = S().profile || {};
   const help = (p.help || []).map(k => (HELP.find(h => h[0] === k)?.[1] || '').replace(/^\S+\s/, '')).filter(Boolean);
-  const b = p.biz, parts = [`About the user: ${p.type === 'business' ? 'uses Zuffi for their business and for themselves' : 'uses Zuffi personally'}`,
-    p.city && `lives in ${p.city}`, p.dob && `birthday ${p.dob.slice(5)}`, help.length && `wants help with ${help.join(', ')}`, p.notes && `notes: ${p.notes}`,
+  const b = p.biz, cname = { GB: 'the UK', PK: 'Pakistan' }[p.country] || '';
+  const parts = [p.doneAt && (p.type === 'business' ? 'uses Zuffi for their business and for themselves' : 'uses Zuffi personally'),
+    (p.name || S().name) && `name ${p.name || S().name}`, p.dob && `date of birth ${p.dob}`, p.city && `lives in ${p.city}`, cname && `country ${cname}`,
+    help.length && `wants help with ${help.join(', ')}`, p.notes && `always remember: ${p.notes}`,
     b && `business: ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.role ? `, they are the ${b.role}` : ''}${b.city ? `, in ${b.city}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}${b.founded ? `, opened ${b.founded}` : ''}`];
-  return ' ' + parts.filter(Boolean).join('; ') + '.';
+  const facts = userFacts();
+  const out = parts.filter(Boolean);
+  if (!out.length && !facts.length) return '';
+  return `\nABOUT THE USER (they told you this; you always remember it and can answer any question about it): ${out.join('; ')}.` + (facts.length ? `\nThings they asked you to remember: ${facts.join(' | ')}.` : '');
 }
+// Phone numbers stay off the AI prompt (they're answered offline by aboutMe).
+/** Everything the user told Zuffi to remember (notes), newest first — kept forever, on this device. */
+function userFacts() {
+  return store.ofType('note').sort((a, b) => new Date(b.created) - new Date(a.created)).slice(0, 40).map(n => String(n.title || '').slice(0, 160)).filter(Boolean);
+}
+/** "What do you know about me?" — answered straight from the profile and notes, no AI, works offline. */
+function aboutMe(text) {
+  if (!/^(zuffi,?\s*)?(what do you (know|remember) about me|who am i|tell me about (me|myself)|what('?s| is) my (profile|details|info)|my details|do you (know|remember) me|mere bare mein (kya )?(jaanti|janti|pata) ho)\??$/i.test(String(text).trim())) return null;
+  const p = S().profile || {}, b = p.biz, lines = [];
+  if (p.name || S().name) lines.push(`You're ${p.name || S().name}.`);
+  if (p.dob) lines.push(`Your birthday is ${new Date(p.dob + 'T12:00').toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}.`);
+  if (p.city) lines.push(`You live in ${p.city}.`);
+  if (p.phone) lines.push(`Your number is ${p.phone}.`);
+  if (b?.name) lines.push(`Your business is ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.role ? ` — you're the ${b.role}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}.`);
+  if (p.notes) lines.push(`You asked me to always remember: ${p.notes.replace(/[.!?]?\s*$/, '.')}`);
+  const f = userFacts(); if (f.length) lines.push(`You also told me: ${f.slice(0, 8).join('; ')}${f.length > 8 ? ` and ${f.length - 8} more` : ''}.`);
+  return lines.length ? lines.join(' ') + ' Change any of it in Settings → You → Edit my details.' : 'I don’t know much about you yet — tell me in Settings → You → Edit my details, or just say “remember that …”.';
+}
+function sendFacts() { try { M?.post('facts', { text: profileLine() }); } catch {} }
 window.zuffiProfileLine = profileLine;
 // ---- AI usage: built-in AI left this month, and tokens / rough cost with your own keys ----
 const fmtTok = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
@@ -502,16 +530,21 @@ function bizUpsell() {
   toast(`Business is part of Zuffi Business (${price('business')} a month): WhatsApp leads, follow-ups, money, staff and automations for your business.`, 6000);
   openSettings('account');
 }
+const INSIDE = ['chat', 'plan', 'inbox', 'memory', 'tools'];   // pages inside the Zuffi tab (each has a back button)
 function go(v) {
+  if (v === 'settings') { openSettings(); return; }
   if (v === 'biz' && document.body.classList.contains('personal-mode')) { toast('Business is off because you chose “Just me”. Turn it on in Settings → You → Edit my details.', 5000); v = 'home'; }
   if (v === 'biz' && !acct.isBusiness()) { bizUpsell(); v = 'home'; }
   $$('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
   if (v === 'tools') closeTool();
-  $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v || (b.dataset.v === 'home' && INSIDE.includes(v))));
   if (v === 'chat') setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
   else window.scrollTo({ top: 0 });
   if (v === 'memory') renderMemory();
+  if (v === 'inbox') { renderInbox(); loadMail(); try { localStorage.setItem('zuffiInboxSeen', String(Date.now())); } catch {} setTimeout(renderBell, 400); }
+  if (v === 'home') renderDash();
   document.body.classList.toggle('biz-on', v === 'biz');
+  renderSide();
   if (v === 'biz') bizapp.show();
   moveTabGlow();
 }
@@ -670,9 +703,176 @@ function addQuick() {
   const e = (prompt('Pick an emoji for the button:', '⭐') || '⭐').slice(0, 2);
   S().quick = [...getQuick(), { k: name.toLowerCase(), n: name, e, url }]; store.save(); renderQuick(); toast(`Added ${name}`);
 }
-function renderAll() { applyLook(); renderHeader(); renderToday(); renderPlan(); renderQuick(); renderChat(); renderWeather(); renderPrayer(); }
+function renderAll() { applyLook(); renderHeader(); renderToday(); renderPlan(); renderQuick(); renderChat(); renderWeather(); renderPrayer(); renderDash(); }
+
+// ---------------- the dashboard: features for your plan & country, sidebar, business numbers, inbox ----------------
+function bizOn() { try { return acct.isBusiness() && !document.body.classList.contains('personal-mode'); } catch { return false; } }
+function featCtx() {
+  let p = {}; try { p = bizapp.profile(); } catch {}
+  return { business: (() => { try { return acct.isBusiness(); } catch { return false; } })(), personal: document.body.classList.contains('personal-mode'),
+    estate: !!p.estate, freelance: !!p.freelance, country: p.country, desktop: !!D };
+}
+function renderFeatures() {
+  const grid = $('#featGrid'); if (!grid) return;
+  const all = feats.visible(featCtx());
+  const cats = feats.CATS.filter(([k]) => all.some(f => f.cat === k));
+  if (featCat !== 'all' && !cats.some(([k]) => k === featCat)) featCat = 'all';
+  $('#featChips').innerHTML = [['all', 'All'], ...cats].map(([k, l]) => `<button data-fc="${k}" class="${featCat === k ? 'on' : ''}">${l}</button>`).join('');
+  const list = feats.search(featCat === 'all' ? all : all.filter(f => f.cat === featCat), featQ);
+  $('#featCount').textContent = featQ ? `${list.length} found` : 'Tap one to start';
+  const tile = f => `<button class="feat" data-feat="${f.id}" style="--tint:${f.tint}" title="${esc(f.name + ' — ' + f.sub)}"><span class="fi">${feats.icon(f.icon, 24)}</span><b>${esc(f.short || f.name)}</b></button>`;
+  let html = '';
+  if (featCat === 'all' && !featQ) html = cats.map(([k, l]) => `<div class="feat-sec">${l}</div>` + all.filter(f => f.cat === k).map(tile).join('')).join('');
+  else html = list.map(tile).join('') || `<div class="feat-empty">Nothing called “${esc(featQ)}”. Try another word — or just ask Zuffi.</div>`;
+  // Pro (not "Just me"): one quiet line about Business, never a wall of locked tiles
+  const c = featCtx();
+  if (!c.business && !c.personal && !featQ && (featCat === 'all')) html += `<button class="feat-up" data-up="business"><span class="fi">${feats.icon('lock', 20)}</span><span><b>Running a business?</b><small>Business adds the WhatsApp agent, leads, posts & reels, money and staff — set up for ${C_country() === 'PK' ? 'estate agents in Pakistan' : 'UK small businesses'}.</small></span></button>`;
+  grid.innerHTML = html;
+}
+function C_country() { try { return bizapp.profile().country; } catch { return ''; } }
+function openFeature(id) {
+  const f = feats.FEATURES.find(x => x.id === id); if (!f) return;
+  try { N?.haptic?.(); } catch {}
+  if (f.open.go) return go(f.open.go);
+  if (f.open.biz) { go('biz'); if (bizOn()) bizapp.show(f.open.biz); return; }
+  if (f.open.tool) { if (f.open.tool !== 'jobs') go('tools'); openTool(f.open.tool); }
+}
+$('#featGrid')?.addEventListener('click', e => {
+  const b = e.target.closest('[data-feat]'); if (b) return openFeature(b.dataset.feat);
+  if (e.target.closest('[data-up]')) openSettings('account');
+});
+$('#featChips')?.addEventListener('click', e => { const b = e.target.closest('[data-fc]'); if (!b) return; featCat = b.dataset.fc; renderFeatures(); });
+$('#featSearch')?.addEventListener('input', e => {
+  featQ = e.target.value.trim();
+  if (featQ && !$('#view-home').classList.contains('active')) go('home');
+  renderFeatures();
+  if (featQ) $('#featTitle')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+});
+$('#featSearch')?.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const first = $('#featGrid [data-feat]'); if (first) { openFeature(first.dataset.feat); e.target.value = ''; featQ = ''; renderFeatures(); }
+});
+
+function renderSide() {
+  const nav = $('#sideNav'); if (!nav) return;
+  const cur = $$('.view').find(v => v.classList.contains('active'))?.id.replace('view-', '') || 'home';
+  const n = inboxCount();
+  const b = (v, ic, label, extra = '') => `<button data-sv="${v}" class="${cur === v ? 'on' : ''}">${feats.icon(ic, 18)}<span>${label}</span>${extra}</button>`;
+  const cur2 = INSIDE.includes(cur) ? 'home' : cur;
+  let h = `<button data-sv="home" class="${cur2 === 'home' ? 'on' : ''}">${feats.icon('grid', 18)}<span>Zuffi</span>${n ? `<span class="sn">${n}</span>` : ''}</button>`;
+  if (bizOn()) h += b('biz', 'briefcase', 'Business');
+  h += `<button data-ss="1">${feats.icon('settings', 18)}<span>Settings</span></button>`;
+  nav.innerHTML = h;
+}
+$('#sideNav')?.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.sv) go(b.dataset.sv);
+  else if (b.dataset.sf) openFeature(b.dataset.sf);
+  else if (b.dataset.sc) { featCat = b.dataset.sc; featQ = ''; const i = $('#featSearch'); if (i) i.value = ''; go('home'); renderFeatures(); setTimeout(() => $('#featTitle')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60); }
+  else if (b.dataset.ss) openSettings();
+});
+$('#sideStatus')?.addEventListener('click', () => openSettings('voice'));
+
+function renderBizStats() {
+  const el = $('#bizStats'); if (!el) return;
+  document.body.classList.toggle('has-biz', bizOn());
+  if (!bizOn()) { el.hidden = true; return; }
+  let st; try { st = bizapp.stats(); } catch { el.hidden = true; return; }
+  el.hidden = false;
+  const money = n => st.cur + Math.round(n).toLocaleString();
+  el.innerHTML = `<button class="bstat card ${st.waiting.length ? 'hot' : 'ok'}" data-bz="leads"><b>${st.waiting.length}</b><small>${st.waiting.length === 1 ? 'chat waiting' : 'chats waiting'}</small></button>
+    <button class="bstat card ${st.due.length ? 'warn' : ''}" data-bz="today"><b>${st.due.length}</b><small>follow-ups today</small></button>
+    <button class="bstat card" data-bz="money"><b>${st.owed ? money(st.owed) : '—'}</b><small>${st.owedCount ? `owed by ${st.owedCount}` : 'nobody owes you'}</small></button>`;
+}
+$('#bizStats')?.addEventListener('click', e => { const b = e.target.closest('[data-bz]'); if (b) { go('biz'); bizapp.show(b.dataset.bz); } });
+
+// ---- Inbox: reminders due, WhatsApp chats waiting, things from your other devices, mail, what Zuffi did ----
+function seenAt() { try { return +localStorage.getItem('zuffiInboxSeen') || 0; } catch { return 0; } }
+const ago = ms => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'now' : m < 60 ? m + 'm' : m < 1440 ? Math.floor(m / 60) + 'h' : Math.floor(m / 1440) + 'd'; };
+async function loadMail(force = false) {
+  if (!M) return;
+  if (!force && Date.now() - mailCache.at < 5 * 60e3) return;
+  mailCache.at = Date.now();
+  try { const r = await M.call('mailinbox', { limit: 8 }); if (r?.error) mailCache = { ...mailCache, error: r.error, list: [] }; else mailCache = { ...mailCache, error: '', list: r?.mails || [], total: r?.total || 0 }; }
+  catch { mailCache.error = 'unavailable'; }
+  renderInboxAll();
+}
+function inboxItems() {
+  const out = [], now = Date.now(), seen = seenAt();
+  for (const i of store.items) {
+    if (!i.when || i.done || !['reminder', 'meeting', 'task'].includes(i.type)) continue;
+    const t = new Date(i.when).getTime();
+    if (t < now - 7 * 86400e3 || t > now + 3 * 3600e3) continue;
+    out.push({ id: 'r' + i.id, kind: 'reminders', ic: i.type === 'meeting' ? 'calendar' : 'bell', c: t < now ? 'var(--bad)' : 'var(--accent)', t1: i.title,
+      t2: (t < now ? 'Overdue · ' : '') + whenText(i.when), at: t, unread: t < now, acts: [{ l: 'Done', a: 'done:' + i.id, pri: true }] });
+  }
+  if (bizOn()) {
+    try {
+      const st = bizapp.stats();
+      for (const l of st.waiting) out.push({ id: 'w' + l.k, kind: 'whatsapp', ic: 'whatsapp', c: '#25B868', t1: l.name || l.phone || 'New chat', t2: `Waiting ${l.waitMin < 60 ? l.waitMin + ' min' : Math.round(l.waitMin / 60) + ' h'}${l.msg ? ' · ' + l.msg : ''}`, at: now - l.waitMin * 60e3, unread: true, acts: [{ l: 'Reply', a: 'biz:leads', pri: true }] });
+      for (const l of st.due.slice(0, 6)) out.push({ id: 'f' + l.k, kind: 'whatsapp', ic: 'users', c: 'var(--warn)', t1: 'Follow up: ' + (l.name || l.phone), t2: [l.status, l.want].filter(Boolean).join(' · ') || 'Due today', at: now - 1, unread: false, acts: [{ l: 'Open', a: 'biz:today' }] });
+    } catch {}
+  }
+  try { for (const it of send.inbox().slice(0, 8)) out.push({ id: 'd' + it.id, kind: 'devices', ic: it.kind === 'file' ? 'doc' : 'send', c: '#2F6FEB', t1: it.kind === 'file' ? it.name : (it.text || '').slice(0, 80), t2: 'From your ' + (it.from || 'device'), at: it.at || 0, unread: (it.at || 0) > seen, acts: [{ l: 'Open', a: 'tool:send' }] }); } catch {}
+  for (const m of mailCache.list || []) out.push({ id: 'm' + m.id, kind: 'mail', ic: 'mail', c: '#5B8DEF', t1: m.from || 'Email', t2: m.subject || '(no subject)', at: now - (m.age || 0) * 1000, unread: true, acts: [{ l: 'Open', a: 'mail:' + m.id }] });
+  try { for (const a of actlog.list().slice(0, 6)) out.push({ id: 'a' + a.id, kind: 'activity', ic: 'history', c: 'var(--muted)', t1: a.text, t2: 'Zuffi', at: a.at, unread: false, acts: a.undo && !a.undone ? [{ l: 'Undo', a: 'undo:' + a.id }] : [] }); } catch {}
+  return out.sort((a, b) => (b.unread - a.unread) || (b.at - a.at));
+}
+function inboxCount() { try { return inboxItems().filter(i => i.unread && i.kind !== 'activity').length; } catch { return 0; } }
+function inRow(i) { return inRowH(i); }
+const inRowH = i => `<div class="in-row ${i.unread ? 'unread' : ''}"><span class="in-ic" style="--c:${i.c}">${feats.icon(i.ic, 17)}</span><div class="in-txt"><div class="in-t1">${esc(i.t1)}</div><div class="in-t2">${esc(i.t2)}</div></div>${i.acts.length ? `<div class="in-acts">${i.acts.map(a => `<button data-ia="${esc(a.a)}" class="${a.pri ? 'pri' : ''}">${a.l}</button>`).join('')}</div>` : `<span class="in-time">${ago(i.at)}</span>`}</div>`;
+function mailBlock() {
+  if (M) {
+    if (mailCache.error) return `<div class="in-empty">Zuffi reads your Mac’s Mail app. Open Mail once, then allow Zuffi in System Settings → Privacy &amp; Security → Automation.</div>`;
+    if (!mailCache.list) return `<div class="in-empty">Checking Mail…</div>`;
+    if (!mailCache.list.length) return `<div class="in-empty">No unread email. All caught up ✨</div>`;
+    return '';
+  }
+  return `<div class="in-empty">Say “email Ali about the invoice” and Zuffi writes it. Your inbox opens in your mail app:</div><div class="mail-cta"><button data-ia="open:gmail">Gmail</button><button data-ia="open:outlook">Outlook</button>${isIOS ? '<button data-ia="open:mail">Mail</button>' : ''}</div>`;
+}
+function renderInboxMini() {
+  const el = $('#inboxMini'); if (!el) return;
+  const list = inboxItems().filter(i => i.kind !== 'activity').slice(0, 5);
+  el.innerHTML = list.length ? list.map(inRow).join('') : `<div class="in-empty">You’re all caught up. Reminders, WhatsApp chats${M ? ', email' : ''} and files from your other devices show here.</div>`;
+}
+function renderInbox() {
+  const el = $('#inboxList'); if (!el) return;
+  const all = inboxItems(), kinds = { reminders: 'Reminders', whatsapp: 'WhatsApp', mail: 'Mail', devices: 'From your devices', activity: 'Zuffi did' };
+  $$('#inSeg button').forEach(b => { b.classList.toggle('on', b.dataset.k === inKind); if (b.dataset.k === 'whatsapp') b.hidden = !bizOn(); });
+  const groups = inKind === 'all' ? Object.keys(kinds) : [inKind];
+  el.innerHTML = groups.map(k => {
+    const items = all.filter(i => i.kind === k);
+    if (k === 'whatsapp' && !bizOn()) return '';
+    if (k === 'mail') return `<div class="in-group">Mail${mailCache.total ? ` · ${mailCache.total} unread` : ''}</div><div class="card">${items.map(inRow).join('')}${mailBlock()}</div>`;
+    if (!items.length && inKind === 'all') return '';
+    return `<div class="in-group">${kinds[k]}</div><div class="card">${items.map(inRow).join('') || '<div class="in-empty">Nothing here.</div>'}</div>`;
+  }).join('') || '<div class="in-empty">You’re all caught up.</div>';
+}
+function renderBell() {
+  const n = inboxCount();
+  for (const id of ['#bellN', '#tabInboxN']) { const b = $(id); if (b) { b.hidden = !n; b.textContent = n > 9 ? '9+' : String(n); } }
+}
+function renderInboxAll() { renderInboxMini(); renderBell(); renderSide(); if ($('#view-inbox')?.classList.contains('active')) renderInbox(); }
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-ia]'); if (!b) return;
+  const [k, v] = b.dataset.ia.split(/:(.*)/s);
+  if (k === 'done') { const it = store.items.find(x => x.id === v); if (it) { store.update(v, { done: true, doneAt: new Date().toISOString() }); chirp(); toast('Done ✓'); } }
+  else if (k === 'biz') { go('biz'); bizapp.show(v); }
+  else if (k === 'tool') { go('tools'); openTool(v); }
+  else if (k === 'undo') { toast(actlog.undo(v) || 'Nothing to undo'); }
+  else if (k === 'mail') { M?.post('mailopen', { id: v }); }
+  else if (k === 'open') openUrl({ gmail: 'https://mail.google.com', outlook: 'https://outlook.live.com/mail/', mail: 'message://' }[v]);
+  renderInboxAll();
+});
+$('#inSeg')?.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; inKind = b.dataset.k; if (inKind === 'mail') loadMail(true); renderInbox(); });
+$('#bellBtn')?.addEventListener('click', () => go('inbox'));
+function renderDash() { renderBizStats(); renderFeatures(); renderInboxAll(); }
+setInterval(renderInboxAll, 60000);
+try { actlog.onChange(renderInboxAll); send.onEvent(e => { if (e.t === 'got') renderInboxAll(); }); } catch {}
+document.addEventListener('zuffi-plan', () => renderDash());
+setTimeout(() => loadMail(), 6000);
 store.onChange(() => {
-  renderToday(); renderPlan(); syncAlarms();
+  renderToday(); renderPlan(); syncAlarms(); renderInboxAll(); sendFacts();
   $('#brief').textContent = `${hello()} ${daySummary(new Date(), true)}`;
 });
 
@@ -759,6 +959,7 @@ async function submit(text, fromVoice = false) {
   } else { addMsg('me', text); go('chat'); }
   mem.remember('chat', text);
 
+  { const me = !files.length && aboutMe(text); if (me) { const mine = store.chat[store.chat.length - 1]; if (mine?.role === 'me') mine.cmd = true; addMsg('bot', me, { cmd: true }); if (fromVoice || S().speak || zc.isOpen()) speak(me); return; } }
   // "undo", "undo that", "take that back" → reverses the last change Zuffi made
   if (!files.length && /^(zuffi,?\s*)?(please\s+)?(undo( that| it| the last( thing| change)?)?|take (that|it) back|revert( that)?|wapas karo)[.!]?$/i.test(text)) {
     const r = actlog.undo() || 'There’s nothing to undo.';
@@ -1448,15 +1649,108 @@ $$('.tool').forEach(b => b.onclick = () => openTool(b.dataset.tool));
 function pickFiles(accept, multiple = true) {
   return new Promise(res => { const i = $('#toolFile'); i.accept = accept; i.multiple = multiple; i.value = ''; i.onchange = () => res([...i.files]); i.click(); });
 }
-function updateTimerLabel() { const r = tools.runningTimer(); $('#timerLbl').textContent = r ? `⏹ ${r.title} · ${tools.fmtHours(tools.hours(r))}` : 'Time tracker'; }
+function updateTimerLabel() { const r = tools.runningTimer(), el = $('#timerLbl'); if (el) el.textContent = r ? `⏹ ${r.title} · ${tools.fmtHours(tools.hours(r))}` : 'Time tracker'; }
 setInterval(updateTimerLabel, 30000);
-function closeTool() { const P = $('#toolPanel'); if (P) { P.hidden = true; P.innerHTML = ''; } const g = $('#toolSecs'); if (g) g.hidden = false; }
+function closeTool() { const P = $('#toolPanel'); if (P) { P.hidden = true; P.innerHTML = ''; } }
 async function openTool(name) {
   if (name === 'jobs') { jobs.openJobs(); return; }
   const P = $('#toolPanel'); P.hidden = false;
   // An open tool gets the page to itself, with a way back.
-  const done = html => { $('#toolSecs').hidden = true; P.innerHTML = '<button class="tool-back" id="toolBack" type="button">‹ All tools</button>' + html; $('#toolBack').onclick = closeTool; window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const done = html => { P.innerHTML = '<button class="tool-back" id="toolBack" type="button">‹ Dashboard</button>' + html; $('#toolBack').onclick = () => { closeTool(); go('home'); }; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const cur = S().business.currency;
+  if ((name === 'agent' || name === 'promo') && !bizOn()) { closeTool(); go('home'); bizUpsell(); return; }
+  if (name === 'agent') {
+    const prof = (() => { try { return bizapp.profile(); } catch { return {}; } })();
+    let docs = [], chat = [];
+    done(`<h3>WhatsApp agent</h3><p class="small-text">Teach Zuffi your business once. She answers customers on WhatsApp from these facts only, in the language they write in — English, Urdu, Roman Urdu, Punjabi, Arabic, Polish and more — and passes bargaining, complaints and anything she doesn’t know to you.</p>
+      <div class="ag-steps">
+        <div class="ag-step"><span class="n">1</span><div style="flex:1"><b>Give Zuffi your details</b><p>Upload your price list, menu, brochure, ${prof.estate ? 'property list (Excel/CSV), payment plan' : 'services, booking rules'} or FAQ — PDF, Word, Excel, CSV or text. Or just type.</p>
+          <div class="ag-files" id="agFiles"></div>
+          <textarea class="field-in" id="agTyped" rows="3" placeholder="${prof.estate ? 'e.g. We deal in DHA Phase 6–9 plots. 5 marla Rs 1.6 crore. Office 11am–8pm. Site visits free, call first.' : 'e.g. Ladies & gents cuts £18–£35. Open Tue–Sat 9–6. Book on WhatsApp, £5 deposit.'}"></textarea>
+          <div class="row-btns tight"><button class="btn ghost" id="agUp">${feats.icon('upload', 16)} Upload files</button><button class="btn" id="agLearn">Learn my business</button></div></div></div>
+        <div class="ag-step"><span class="n">2</span><div style="flex:1"><b>Check what Zuffi knows</b><p>Edit anything — this is all she will tell customers.</p>
+          <textarea class="field-in ag-brief" id="agBrief" placeholder="Zuffi’s business brief appears here…">${esc(bizknow.brief())}</textarea>
+          <input class="field-in" id="agToday" placeholder="Today’s update (used today only), e.g. 20% off highlights / New 10 marla in Bahria" value="${esc(bizknow.todayUpdate())}">
+          <div class="row-btns tight"><button class="btn" id="agSave">Save</button></div></div></div>
+        <div class="ag-step"><span class="n">3</span><div style="flex:1"><b>Try it like a customer</b><p>Write in any language — Zuffi answers in the same one.</p>
+          <div class="ag-test" id="agChat"></div>
+          <div class="row-btns tight"><input class="field-in" id="agMsg" placeholder="${prof.estate ? 'e.g. 5 marla plot ka rate kya hai?' : 'e.g. Do you have anything Saturday morning?'}" style="flex:1;margin:0"><button class="btn" id="agSend">Send</button></div></div></div>
+        <div class="ag-step"><span class="n">4</span><div style="flex:1"><b>Switch on replies</b><p>${N ? '' : M ? 'On this Mac: Business → My business → Autopilot. ' : ''}${N ? '' : 'On your Android phone: Zuffi → Settings → WhatsApp on this phone → Autopilot. '}Your linked devices get these facts automatically.</p>
+          ${N ? `<label class="row"><input type="checkbox" id="agPilot" ${S().waBiz?.pilot ? 'checked' : ''}> Autopilot — reply to customers for me on this phone</label>` : ''}</div></div>
+      </div>`);
+    const showFiles = () => { $('#agFiles').innerHTML = docs.map(d => `<span>${esc(d.name)}${d.text ? '' : ' · couldn’t read'}</span>`).join(''); };
+    $('#agUp').onclick = async () => { const f = await pickFiles('.pdf,.docx,.xlsx,.csv,.txt,.md,.pptx,.json,.html,text/*'); if (!f.length) return; toast('Reading…'); docs = [...docs, ...(await bizknow.readFiles(f))]; showFiles(); };
+    $('#agLearn').onclick = async () => {
+      if (!aiReady()) return toast('Add a free AI key in Settings → AI (or use Zuffi’s built-in AI) so Zuffi can read your files.', 5000);
+      const b = $('#agLearn'); b.disabled = true; b.textContent = 'Reading your business…';
+      try { const t = await bizknow.learn({ docs, typed: $('#agTyped').value, kind: prof.kind, country: prof.country }); $('#agBrief').value = t; bizknow.save(t); toast('Learned ✓ — check it, then try a message', 4000); logAction('biz', 'WhatsApp agent learned the business'); }
+      catch (e) { toast(e.message, 5000); } finally { b.disabled = false; b.textContent = 'Learn my business'; }
+    };
+    $('#agSave').onclick = () => { bizknow.save($('#agBrief').value, $('#agToday').value); toast('Saved — WhatsApp replies use this now'); };
+    const sendTest = async () => {
+      const m = $('#agMsg').value.trim(); if (!m) return; $('#agMsg').value = '';
+      if (!aiReady()) return toast('Add a free AI key in Settings → AI first.', 4000);
+      if ($('#agBrief').value.trim() !== bizknow.brief()) bizknow.save($('#agBrief').value);
+      const box = $('#agChat'); box.insertAdjacentHTML('beforeend', `<div class="ag-bubble in">${esc(m)}</div><div class="ag-meta" id="agWait">Zuffi is typing…</div>`);
+      try {
+        const r = await bizknow.reply(m, chat); $('#agWait')?.remove();
+        chat.push({ in: m }, { out: r.reply });
+        box.insertAdjacentHTML('beforeend', `<div class="ag-bubble out ${r.human ? 'hand' : ''}">${esc(r.reply)}</div><div class="ag-meta" style="text-align:right">${esc(r.lang)} → ${esc(r.lang)}${r.human ? ` · passed to you: ${esc(r.why)}` : ''}</div>`);
+      } catch (e) { $('#agWait')?.remove(); toast(e.message, 4000); }
+    };
+    $('#agSend').onclick = sendTest; $('#agMsg').onkeydown = e => { if (e.key === 'Enter') sendTest(); };
+    $('#agPilot') && ($('#agPilot').onchange = e => { bizknow.setPilot(e.target.checked); toast(e.target.checked ? 'Autopilot on — Zuffi replies to new WhatsApp chats' : 'Autopilot off'); });
+    return;
+  }
+  if (name === 'promo') {
+    const prof = (() => { try { return bizapp.profile(); } catch { return {}; } })();
+    const kinds = promo.KINDS[prof.estate ? 'estate' : 'local'];
+    let kind = kinds[0][0], shape = 'post', photos = [];
+    const phone = S().profile?.biz?.phone || S().profile?.phone || '';
+    done(`<h3>Posts &amp; reels</h3><p class="small-text">Pick what to announce, add a few words and photos — Zuffi designs the post, Status or reel with your name and WhatsApp number, and writes the caption.</p>
+      <div class="pr-kinds" id="prKinds">${kinds.map(([k, l, d]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}<small>${d}</small></button>`).join('')}</div>
+      <input class="field-in" id="prHead" placeholder="${prof.estate ? 'Headline, e.g. 10 Marla House in DHA Phase 6' : 'Headline, e.g. 20% off all colour this week'}">
+      <div class="row-btns tight"><input class="field-in" id="prPrice" placeholder="${prof.estate ? 'Price, e.g. Rs 4.2 Crore' : 'Price, e.g. From £25'}" style="flex:1;margin:0"><input class="field-in" id="prPhone" placeholder="WhatsApp number" value="${esc(phone)}" style="flex:1;margin:0"></div>
+      <input class="field-in" id="prDet" placeholder="${prof.estate ? 'Details, comma separated: 5 Beds, Corner, Near park, Possession' : 'Details, comma separated: Tue–Sat, Book online, Walk-ins welcome'}">
+      <div class="seg small" id="prShape">${Object.entries(promo.SHAPES).map(([k, v]) => `<button data-s="${k}" class="${k === shape ? 'on' : ''}">${v.label}</button>`).join('')}</div>
+      <div class="row-btns tight"><button class="btn ghost" id="prPhotos">${feats.icon('image', 16)} Add photos</button><button class="btn ghost" id="prAI">${feats.icon('sparkle', 16)} AI background</button></div>
+      <p class="small-text" id="prNote">No photos? You get a clean branded design.</p>
+      <select id="prLang"><option value="auto">Caption language: same as headline</option><option>English</option><option>Urdu</option><option value="Roman Urdu">Roman Urdu</option><option>Punjabi</option><option>Arabic</option></select>
+      <button class="btn" id="prGo">Make it</button>
+      <div class="pr-out" id="prOut"></div>`);
+    const spec = () => ({ kind, headline: $('#prHead').value.trim() || kinds.find(x => x[0] === kind)[1], price: $('#prPrice').value.trim(), phone: $('#prPhone').value.trim(),
+      details: $('#prDet').value.split(',').map(x => x.trim()).filter(Boolean), biz: bizknow.name() || prof.name || S().business?.name || '', accent: prof.estate ? '#D4AF37' : getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4C8DFF',
+      cta: prof.estate ? 'Call or WhatsApp to book a visit' : 'Message us on WhatsApp to book' });
+    $('#prKinds').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return; kind = b.dataset.k; $$('#prKinds button').forEach(x => x.classList.toggle('on', x === b)); };
+    $('#prShape').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; shape = b.dataset.s; $$('#prShape button').forEach(x => x.classList.toggle('on', x === b)); };
+    $('#prPhotos').onclick = async () => { const f = await pickFiles('image/*'); if (!f.length) return; photos = await promo.loadImages(f); $('#prNote').textContent = `${photos.length} photo${photos.length === 1 ? '' : 's'} added${shape === 'reel' ? ' — each becomes a scene in the reel' : ''}.`; };
+    $('#prAI').onclick = async () => {
+      const b = $('#prAI'); b.disabled = true; $('#prNote').textContent = 'Making a background picture…';
+      try {
+        const sp = spec(); const pic = await images.make(`${prof.estate ? 'Professional real estate photo, ' : 'Bright, inviting photo for a ' + (prof.label || 'local business') + ', '}${sp.headline}. No text, no letters, no logos, photorealistic.`, { shape: shape === 'post' ? 'square' : 'portrait' });
+        const im = await promo.imageFromBytes(pic.bytes); if (im) { photos = [im, ...photos]; $('#prNote').textContent = `AI background ready (${images.MAKERS[pic.maker]}).`; }
+      } catch (e) { $('#prNote').textContent = e.message === 'NO_MAKER' ? 'To make pictures, add an OpenAI, Gemini, Grok, Together, Stability or OpenRouter key in Settings → AI, or an Ollama picture model.' : 'Couldn’t make a picture: ' + e.message; }
+      finally { b.disabled = false; }
+    };
+    $('#prGo').onclick = async () => {
+      const sp = spec(), out = $('#prOut'), b = $('#prGo'); b.disabled = true;
+      try {
+        let blob, fname;
+        if (shape === 'reel') { b.textContent = 'Recording reel… 0%'; blob = await promo.renderReel(sp, photos, p => { b.textContent = `Recording reel… ${Math.round(p * 100)}%`; }); fname = `zuffi-reel-${Date.now().toString(36)}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`; }
+        else { b.textContent = 'Designing…'; blob = await promo.renderImage(sp, shape, photos); fname = `zuffi-${shape}-${Date.now().toString(36)}.png`; }
+        const url = URL.createObjectURL(blob);
+        out.innerHTML = (shape === 'reel' ? `<video src="${url}" controls playsinline loop></video>` : `<img src="${url}" alt="Your post">`)
+          + `<div class="row-btns tight"><button class="btn" id="prSave">Save</button>${navigator.canShare ? '<button class="btn ghost" id="prShare">Share</button>' : ''}</div><div class="pr-cap" id="prCap">${aiReady() ? 'Writing the caption…' : 'Add an AI key in Settings → AI to get a caption written for you.'}</div><button class="btn ghost" id="prCopy" hidden>Copy caption</button>`;
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        $('#prSave').onclick = () => tools.deliver(fname, bytes, blob.type);
+        $('#prShare') && ($('#prShare').onclick = async () => { const file = new File([blob], fname, { type: blob.type }); try { await navigator.share({ files: [file], text: $('#prCap').textContent }); } catch {} });
+        logAction('photo', `Made a ${shape} for ${sp.headline.slice(0, 40)}`);
+        if (aiReady()) { try { const c = await promo.caption(sp, $('#prLang').value, bizknow.brief()); $('#prCap').textContent = c; $('#prCopy').hidden = false; $('#prCopy').onclick = async () => { try { await navigator.clipboard.writeText(c); toast('Copied'); } catch {} }; } catch { $('#prCap').textContent = 'Couldn’t write a caption right now.'; } }
+      } catch (e) { toast('Couldn’t make it: ' + e.message, 5000); }
+      finally { b.disabled = false; b.textContent = 'Make it'; }
+    };
+    return;
+  }
   if (name === 'quote') {
     done(`<h3>🧾 Quote or invoice</h3><p class="small-text">Type it like you'd say it. A PDF is made on this device.</p>
       <select id="qKind"><option>Quote</option><option>Invoice</option></select>
@@ -1906,7 +2200,7 @@ function fillSettings() {
 }
 async function openSettings(section) {
   fillSettings(); openSheet('#sheet');
-  renderOutfits(); renderAccount(); $('#sEventColors').checked = S().eventColors !== false; $('#sBirthday').value = S().birthday || '';
+  renderOutfits(); renderAccount(); $('#sEventColors').checked = S().eventColors === true; $('#sBirthday').value = S().birthday || '';
   if (section === 'account') { const d = $('#accDetails'); d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); }
   if (section === 'look') { const d = $('#lookDetails'); d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); }
   if (section === 'ai') { const d = $$('#sheet details').find(x => x.querySelector('summary').textContent.includes('AI')); if (d) { d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); } }
@@ -2149,6 +2443,7 @@ if (pre) { $('#askInput').value = pre; $('#askInput').focus(); }
 // Questions the Mac island passes on (spoken or typed there). Returns the reply to speak, or null if Zuffi's brain can't do it.
 async function voiceAsk(text) {
   text = String(text || '').trim(); if (!text) return null;
+  { const me = aboutMe(text); if (me) { addMsg('me', text, { cmd: true }); addMsg('bot', me, { cmd: true }); return me; } }
   const r = await handle(text).catch(() => null);
   if (!r) return null;
   addMsg('me', text, { cmd: true });
@@ -2232,7 +2527,7 @@ function sendVoicePrefs() {
   M.post('prefs', { listen, neural: S().neural !== false, studio: !!S().studio, lang: S().lang || 'en', voiceName: S().voiceName || '', gender: S().gender || 'female', handsFree: S().handsFree === true });
 }
 if (M) {
-  M.post('ready'); sendVoicePrefs();
+  M.post('ready'); sendVoicePrefs(); setTimeout(sendFacts, 1500);
   // Esc tucks the panel away (unless a sheet is open, then Esc closes the sheet first)
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('.sheet:not([hidden])')) M.post('hide'); });
 }   // the Mac app speaks with its own fast native voice engine
@@ -2379,3 +2674,4 @@ window.zuffiChargeTest = (c = true, l = .62) => chargeFx(c, l);
     }, 4000);
   }
 })();
+setTimeout(() => warmUp(), 4000);   // the offline brain loads in the background: the first answer comes quicker

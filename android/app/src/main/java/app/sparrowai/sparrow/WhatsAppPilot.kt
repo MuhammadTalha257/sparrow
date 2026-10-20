@@ -185,13 +185,13 @@ object WhatsAppPilot {
             "Never give yourself a personal name, never say you are an AI, never invent facts. Reply with one JSON object only."
         val prompt = """
             BUSINESS FACTS (the only facts you may use):
-            ${info.ifBlank { "(none written yet — greet politely and ask how you can help)" }.take(5000)}
+            ${info.ifBlank { "(none written yet — greet politely and ask how you can help)" }.take(12000)}
             ${if (today.isNotBlank()) "TODAY'S UPDATE: $today" else ""}
             CLIENT: $sender
             ${if (past.isNotEmpty()) "EARLIER IN THIS CHAT:\n$past" else ""}
             CLIENT'S NEW MESSAGE: $text
 
-            Write "reply": 1-2 short natural WhatsApp sentences in the client's own language and script (English, Urdu or Roman Urdu).
+            Write "reply": 1-3 short natural WhatsApp sentences in EXACTLY the language and script the client used, whatever it is (English, Urdu script, Roman Urdu, Punjabi, Hindi, Arabic, Polish, Bengali…). If they mix languages, mix the same way.
             Set "needs_human" true ONLY if they bargain or ask for a discount not in today's update, complain, ask for a person or a call,
             raise payment / refund / legal issues, or the answer isn't in the facts. Then "reply" is a short holding message and "why" a 3-6 word reason.
             JSON: {"reply":"","needs_human":false,"why":""}

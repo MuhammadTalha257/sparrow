@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en" data-theme="daylight">
+<html lang="en" data-theme="paper">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Zuffi</title>
 <meta name="description" content="Zuffi — your friendly little helper for meetings, tasks, reminders, files and more.">
-<meta name="theme-color" content="#EEF4FB">
+<meta name="theme-color" content="#F6F7FB">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -14,9 +14,17 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="dash.css">
 </head>
 <body>
 <div class="bg-shape"></div>
+
+<!-- Computer: sidebar (phones use the bar at the bottom) -->
+<aside class="side" id="side" aria-label="Zuffi">
+  <div class="side-logo"><span class="side-mark" aria-hidden="true"></span><b>Zuffi</b></div>
+  <nav class="side-nav" id="sideNav"></nav>
+  <button class="side-status" id="sideStatus" type="button"><i></i><span>Ready · say “Zuffi”</span></button>
+</aside>
 
 <header class="top">
   <div class="grab" aria-hidden="true"></div>
@@ -24,8 +32,13 @@
     <div class="hello" id="hello">Hello</div>
     <div class="today" id="todayLabel"></div>
   </div>
+  <label class="top-search" id="topSearch"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="featSearch" type="search" placeholder="Search features…" autocomplete="off" enterkeyhint="search" aria-label="Search features"></label>
+  <button class="icon-btn bell" id="bellBtn" aria-label="Inbox and notifications">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+    <span class="bell-n" id="bellN" hidden></span>
+  </button>
   <button class="icon-btn" id="settingsBtn" aria-label="Settings">
-    <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
   </button>
 </header>
 
@@ -38,7 +51,7 @@
 </div>
 
 <main>
-  <!-- HOME -->
+  <!-- HOME: one dashboard with everything -->
   <section class="view active" id="view-home">
     <div class="hero card">
       <div class="hero-fx" aria-hidden="true"></div>
@@ -48,10 +61,12 @@
         <div class="pulse" id="pulse"></div>
       </div>
       <div class="hero-text">
+        <div class="hero-k" id="heroK">Your day</div>
         <div class="brief" id="brief">Tap me and say what you need ✨</div>
         <div class="hero-actions">
-          <button class="chip" id="hearBriefBtn"><span>🔊</span> <span data-i18n="myDay">My day</span></button>
-          <button class="chip zc-open-btn" id="micHeroBtn"><i></i> <span>Zuffi Live</span></button>
+          <button class="chip solid zc-open-btn" id="micHeroBtn"><i></i> <span>Talk to Zuffi</span></button>
+          <button class="chip" id="hearBriefBtn"><span data-i18n="myDay">My day</span></button>
+          <button class="chip" data-goto="chat">Chats</button>
         </div>
       </div>
     </div>
@@ -63,33 +78,55 @@
       <div class="bday-btns"><button class="chip" id="bdayLater">Not now</button><button class="chip solid" id="bdaySave">Save</button></div>
     </div>
 
+    <div class="stats" id="stats">
+      <div class="stat day-card card">
+        <div class="ring" id="ring"><span id="ringTxt">✓</span></div>
+        <div class="txt"><div class="t1" id="ringLbl">No tasks today</div><button class="link small" id="checkinBtn"><span data-i18n="checkIn">Check-in</span></button></div>
+      </div>
+      <div class="stat weather-card card" id="weatherCard"><div class="w-temp" id="wTemp">–°</div><div class="w-sky" id="wSky">Weather</div></div>
+      <div id="bizStats" class="biz-stats" hidden></div>
+    </div>
     <div class="up-next card" id="upNext" hidden></div>
 
-    <div class="row2">
-      <div class="day-card card">
-        <div class="ring" id="ring"><span id="ringTxt">✓</span></div>
-        <div class="txt"><div class="t1" id="ringLbl">No tasks today</div><button class="link small" id="checkinBtn">🌙 <span data-i18n="checkIn">Check-in</span></button></div>
+    <div class="dcols">
+      <div class="dmain">
+        <div class="prayer-card card" id="prayerCard" hidden></div>
+        <div class="habits card" id="habitsCard" hidden></div>
+
+        <div class="section-title"><span data-i18n="today">Today</span><button class="link" data-goto="plan" data-i18n="seeAll">See all</button></div>
+        <div class="card list" id="todayList"></div>
+
+        <div class="section-title" id="featTitle"><span>What can Zuffi do?</span><small class="feat-count" id="featCount"></small></div>
+        <div class="feat-chips" id="featChips" role="tablist" hidden></div>
+        <div class="feat-grid" id="featGrid"></div>
       </div>
-      <div class="weather-card card" id="weatherCard"><div class="w-temp" id="wTemp">–°</div><div class="w-sky" id="wSky">Weather</div></div>
+      <div class="dside">
+        <div class="section-title in-title"><span>Inbox</span><button class="link" data-goto="inbox">Open</button></div>
+        <div class="card inbox-mini" id="inboxMini"></div>
+
+        <div class="section-title advanced"><span data-i18n="quick">Quick</span></div>
+        <div class="quick advanced" id="quick"></div>
+
+        <div class="section-title advanced"><span data-i18n="aiApps">AI apps</span></div>
+        <div class="ai-apps advanced" id="aiApps"></div>
+
+        <div class="install card" id="installHint" hidden></div>
+      </div>
     </div>
+  </section>
 
-    <div class="prayer-card card" id="prayerCard" hidden></div>
-    <div class="habits card" id="habitsCard" hidden></div>
-
-    <div class="section-title"><span data-i18n="today">Today</span><button class="link" data-goto="plan" data-i18n="seeAll">See all</button></div>
-    <div class="card list" id="todayList"></div>
-
-    <div class="section-title advanced"><span data-i18n="quick">Quick</span></div>
-    <div class="quick advanced" id="quick"></div>
-
-    <div class="section-title advanced"><span data-i18n="aiApps">AI apps</span></div>
-    <div class="ai-apps advanced" id="aiApps"></div>
-
-    <div class="install card" id="installHint" hidden></div>
+  <!-- INBOX: notifications, mail, WhatsApp and things sent from your other devices -->
+  <section class="view" id="view-inbox">
+    <div class="vback"><button class="tool-back" data-goto="home" type="button">‹ Zuffi</button><b>Inbox</b></div>
+    <div class="seg scroll small" id="inSeg">
+      <button data-k="all" class="on">All</button><button data-k="reminders">Reminders</button><button data-k="whatsapp">WhatsApp</button><button data-k="mail">Mail</button><button data-k="devices">Devices</button><button data-k="activity">Zuffi did</button>
+    </div>
+    <div id="inboxList"></div>
   </section>
 
   <!-- CHAT -->
   <section class="view" id="view-chat">
+    <div class="vback"><button class="tool-back" data-goto="home" type="button">‹ Zuffi</button><b>Chat</b></div>
     <div class="chat-bar"><button class="pill-btn" id="historyBtn" title="Past chats — open one to continue">🕘 History</button><button class="pill-btn" id="newChatBtn" title="Start a fresh conversation">✏️ New chat</button></div>
     <div class="history-list" id="historyList"></div>
     <div class="chat" id="chat"></div>
@@ -97,6 +134,7 @@
 
   <!-- PLAN -->
   <section class="view" id="view-plan">
+    <div class="vback"><button class="tool-back" data-goto="home" type="button">‹ Zuffi</button><b>Plan</b></div>
     <div class="seg scroll" id="seg">
       <button data-t="task" class="on" data-i18n="tasks">Tasks</button>
       <button data-t="meeting" data-i18n="meetings">Meetings</button>
@@ -112,6 +150,7 @@
 
   <!-- MEMORY -->
   <section class="view" id="view-memory">
+    <div class="vback"><button class="tool-back" data-goto="home" type="button">‹ Zuffi</button><b>Memory</b></div>
     <div class="search card"><span>🔎</span><input id="memSearch" data-i18n-ph="search" placeholder="Search your memory…" enterkeyhint="search"></div>
     <div class="seg scroll small" id="memSeg">
       <button data-k="" class="on">All</button><button data-k="file">Files</button><button data-k="chat">Chats</button>
@@ -124,44 +163,9 @@
   <!-- BUSINESS (same data as the Mac dashboard, synced by QR link) -->
   <section class="view" id="view-biz"><div id="bizRoot"></div></section>
 
-  <!-- TOOLS -->
+  <!-- A tool opened from the dashboard -->
   <section class="view" id="view-tools">
-    <div id="toolSecs">
-      <section class="tool-sec"><h3>Every day</h3><div class="tool-grid">
-        <button class="tool" data-tool="activity" style="--tc:#64748B"><span class="ti">🕘</span><span class="tt"><b>Activity &amp; undo</b><small>What Zuffi did — undo anything</small></span></button>
-        <button class="tool" data-goto2="memory" style="--tc:#8B7CF6"><span class="ti">🧠</span><span class="tt"><b>Memory</b><small>Notes &amp; files Zuffi remembers</small></span></button>
-        <button class="tool" data-tool="meeting" style="--tc:#EC5F8B"><span class="ti">🎤</span><span class="tt"><b>Meeting notes</b><small>Record, then get a clean summary</small></span></button>
-        <button class="tool" data-tool="focus" style="--tc:#F59E0B"><span class="ti">🎯</span><span class="tt"><b>Focus timer</b><small>25 minutes of deep work</small></span></button>
-        <button class="tool" data-tool="snippets" style="--tc:#14B8A6"><span class="ti">📋</span><span class="tt"><b>Snippets</b><small>Text you paste often</small></span></button>
-      </div></section>
-      <section class="tool-sec"><h3>Work &amp; money</h3><div class="tool-grid">
-        <button class="tool" data-tool="office" style="--tc:#2B579A"><span class="ti">📄</span><span class="tt"><b>Word, Excel &amp; PowerPoint</b><small>Describe it — get the file</small></span></button>
-        <button class="tool" data-tool="quote" style="--tc:#3B82F6"><span class="ti">🧾</span><span class="tt"><b>Quote / invoice</b><small>Say it, get a PDF</small></span></button>
-        <button class="tool" data-tool="expenses" style="--tc:#22C55E"><span class="ti">💸</span><span class="tt"><b>Expenses</b><small>Track what you spend</small></span></button>
-        <button class="tool" data-tool="timer" style="--tc:#06B6D4"><span class="ti">⏱️</span><span class="tt"><b><span id="timerLbl">Time tracker</span></b><small>Hours per client</small></span></button>
-        <button class="tool" data-tool="report" style="--tc:#6366F1"><span class="ti">📊</span><span class="tt"><b>Daily report</b><small>What you did today</small></span></button>
-        <button class="tool" data-tool="jobs" style="--tc:#A855F7"><span class="ti">💼</span><span class="tt"><b>Job agent</b><small>Find &amp; track jobs</small></span></button>
-      </div></section>
-      <section class="tool-sec"><h3>Photos, PDF &amp; files</h3><div class="tool-grid">
-        <button class="tool" data-tool="picture" style="--tc:#A855F7"><span class="ti">🎨</span><span class="tt"><b>Make a picture</b><small>Posts, posters &amp; images from words</small></span></button>
-        <button class="tool" data-tool="studio" style="--tc:#EC4899"><span class="ti">📸</span><span class="tt"><b>Photo studio</b><small>Brighten, resize, add your logo</small></span></button>
-        <button class="tool" data-tool="reels" style="--tc:#F43F5E"><span class="ti">🎬</span><span class="tt"><b>Quick reels</b><small>Trim, caption, ready for Reels &amp; Status</small></span></button>
-        <button class="tool" data-tool="convert" style="--tc:#0EA5E9"><span class="ti">🔀</span><span class="tt"><b>Convert files</b><small>JPG, PNG, WebP, PDF, text</small></span></button>
-        <button class="tool" data-tool="sign" style="--tc:#16A34A"><span class="ti">✍️</span><span class="tt"><b>Sign a PDF</b><small>Draw your signature, done</small></span></button>
-        <button class="tool" data-tool="merge" style="--tc:#EF4444"><span class="ti">📑</span><span class="tt"><b>Merge PDFs</b><small>Join several into one</small></span></button>
-        <button class="tool" data-tool="images" style="--tc:#F97316"><span class="ti">🖼️</span><span class="tt"><b>Photos → PDF</b><small>Pictures into one PDF</small></span></button>
-        <button class="tool" data-tool="pages" style="--tc:#EAB308"><span class="ti">✂️</span><span class="tt"><b>Keep pages</b><small>Pick the pages you need</small></span></button>
-        <button class="tool" data-tool="rotate" style="--tc:#0EA5E9"><span class="ti">🔄</span><span class="tt"><b>Rotate PDF</b><small>Turn pages the right way</small></span></button>
-      </div></section>
-      <section class="tool-sec"><h3>Your devices</h3><div class="tool-grid">
-        <button class="tool" data-tool="send" style="--tc:#2F6FEB"><span class="ti">📲</span><span class="tt"><b>Send to my devices</b><small>Files, photos &amp; links between phone and computer</small></span></button>
-        <button class="tool" data-tool="sync" style="--tc:#10B981"><span class="ti">🔁</span><span class="tt"><b>Sync devices</b><small>Same Zuffi everywhere</small></span></button>
-        <button class="tool desktop-only" data-tool="find" style="--tc:#64748B"><span class="ti">📁</span><span class="tt"><b>Find files</b><small>Search by what you remember</small></span></button>
-        <button class="tool desktop-only" data-tool="tidy" style="--tc:#F472B6"><span class="ti">🧹</span><span class="tt"><b>Tidy Downloads</b><small>Sort the mess in one tap</small></span></button>
-        <button class="tool desktop-only" data-tool="clipboard" style="--tc:#8B5CF6"><span class="ti">📎</span><span class="tt"><b>Clipboard</b><small>Everything you copied</small></span></button>
-        <button class="tool desktop-only" data-tool="watch" style="--tc:#0891B2"><span class="ti">👀</span><span class="tt"><b>Watch a folder</b><small>Act when new files arrive</small></span></button>
-      </div></section>
-    </div>
+    <div id="toolSecs" hidden></div>
     <div class="card tool-panel" id="toolPanel" hidden></div>
   </section>
 </main>
@@ -185,11 +189,9 @@
 
 <nav class="tabs">
   <i class="tab-glow" aria-hidden="true"></i>
-  <button data-v="home" class="on"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span data-i18n="home">Home</span></button>
-  <button data-v="chat"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg><span data-i18n="chat">Chat</span></button>
-  <button data-v="biz"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg><span>Business</span></button>
-  <button data-v="plan"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span data-i18n="plan">Plan</span></button>
-  <button data-v="tools"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>More</span></button>
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Zuffi</span><b class="tab-n" id="tabInboxN" hidden></b></button>
+  <button data-v="biz" class="biz-tab"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></svg><span>Business</span></button>
+  <button data-v="settings"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg><span data-i18n="settings">Settings</span></button>
 </nav>
 
 <div class="sheet-bg" id="sheetBg" hidden></div>
@@ -211,6 +213,8 @@
     <label class="field"><span>Your birthday — Zuffi wishes you and dresses up on the day</span><input id="sBirthday" type="date" max="2026-12-31"></label>
     <label class="field"><span>Language</span><select id="sLang"></select></label>
     <div class="field"><span>Look</span><div class="themes" id="sTheme">
+      <button data-th="paper"><i style="background:linear-gradient(135deg,#5B8CFF,#9B6BFF,#22C3A6)"></i>Bright</button>
+      <button data-th="studio"><i style="background:#14171C;outline:3px solid #4C8DFF"></i>Night</button>
       <button data-th="graphite"><i style="background:#18191E;outline:3px solid #EDB24E"></i>Graphite</button>
       <button data-th="space"><i style="background:linear-gradient(135deg,#7C5CFF,#E2648A)"></i>Space</button>
       <button data-th="daylight"><i style="background:#2F6FEB"></i>Daylight</button>

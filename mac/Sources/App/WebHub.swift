@@ -75,7 +75,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         webView = wv
         wv.load(URLRequest(url: URL(string: "app://sparrow/index.html")!))
         // A window that stays alive (hidden) so the page keeps running.
-        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 540),
+        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 640),
                         styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         w.title = "Zuffi"
@@ -87,7 +87,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         w.level = .floating
         w.contentMinSize = NSSize(width: 340, height: 420)
         w.isOpaque = false
-        w.backgroundColor = NSColor(red: 0.043, green: 0.039, blue: 0.122, alpha: 0.97)   // Zuffi night sky
+        w.backgroundColor = NSColor(red: 0.043, green: 0.051, blue: 0.063, alpha: 0.98)   // the Studio dashboard
         if let v = w.contentView?.superview { v.wantsLayer = true; v.layer?.cornerRadius = 18; v.layer?.masksToBounds = true }
         w.contentView = wv
         w.delegate = self
@@ -331,6 +331,19 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
                 if let v = KeychainStore.shared.get(kc), !v.isEmpty { k[web] = v }
             }
             reply(id, k)
+        case "facts":
+            // Everything the user told Zuffi (welcome form + "remember that…" notes): every AI answer on the Mac knows it
+            UserDefaults.standard.set(String((o["text"] as? String ?? "").prefix(8000)), forKey: "zuffiFacts")
+        case "mailinbox":
+            // The dashboard's Inbox: unread email from the Mac's Mail app
+            let limit = o["limit"] as? Int ?? 8
+            Task { self.reply(id, await MailAgent.shared.inbox(limit: limit)) }
+        case "mailopen":
+            if let mid = o["id"] as? String { Task { await MailAgent.shared.open(id: mid) } }
+        case "bizinfo":
+            // WhatsApp agent: what Zuffi knows about the business (typed or learned from uploaded files)
+            if let t = o["text"] as? String { ZuffiCRM.shared.businessInfo = String(t.prefix(12000)) }
+            reply(id, ZuffiCRM.shared.businessInfo)
         case "location":
             Task {
                 if let l = await LocationProvider.shared.current() { self.reply(id, ["lat": l.lat, "lon": l.lon, "city": l.city]) }

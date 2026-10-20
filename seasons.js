@@ -50,7 +50,7 @@ export const sheetsFor = id => id && id !== 'none'
   : { directions: 'mascots/zuffi-directions.webp', reactions: 'mascots/zuffi-reactions.webp' };
 
 /** The season's colour, when it should win over the chosen colour (null = keep the user's colour). */
-export function eventAccent() { const e = current(); return e.accent && store.settings.eventColors !== false ? e.accent : null; }
+export function eventAccent() { const e = current(); return e.accent && store.settings.eventColors === true ? e.accent : null; }
 
 /** Dress Zuffi, colour the app and set the scene on the Home card. */
 export function apply() {

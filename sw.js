@@ -1,6 +1,6 @@
 // Sparrow offline cache (only clears its own old copies — the downloaded AI model stays): always tries the network first (so updates arrive), falls back to the cache offline.
-const VERSION = 'sparrow-v30';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'brain.js', 'store.js', 'ai.js', 'i18n.js', 'prayer.js', 'memory.js', 'tools.js', 'sync.js', 'jobs.js', 'live.js', 'mascot.js', 'bird.js', 'maclink.js', 'companion.js', 'bizapp.js', 'bizsync.js', 'countries.js', 'petweb.js', 'zblob.js', 'seasons.js', 'account.js', 'about.js', 'studio.js', 'send.js', 'office.js', 'actlog.js', 'reels.js', 'images.js', 'fonts/bricolage.woff2', 'guides.json', 'mascots/zuffi-directions.webp', 'mascots/zuffi-reactions.webp',
+const VERSION = 'sparrow-v31';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'brain.js', 'store.js', 'ai.js', 'i18n.js', 'prayer.js', 'memory.js', 'tools.js', 'sync.js', 'jobs.js', 'live.js', 'mascot.js', 'bird.js', 'maclink.js', 'companion.js', 'bizapp.js', 'bizsync.js', 'countries.js', 'petweb.js', 'zblob.js', 'seasons.js', 'account.js', 'about.js', 'studio.js', 'send.js', 'office.js', 'actlog.js', 'reels.js', 'images.js', 'features.js', 'bizknow.js', 'promo.js', 'dash.css', 'fonts/bricolage.woff2', 'guides.json', 'mascots/zuffi-directions.webp', 'mascots/zuffi-reactions.webp',
   'lib/chrono.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

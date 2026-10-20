@@ -79,7 +79,9 @@ final class SmartPlanner {
     }
 
     private func post(_ url: URL, body: [String: Any], headers: [String: String]) async throws -> [String: Any] {
-        var req = URLRequest(url: url, timeoutInterval: body["contents"] != nil && (body["generationConfig"] == nil) ? 30 : 8)
+        // Understanding a command (JSON answer) must be quick; a free-text job (summaries) may take longer.
+        let json = body["response_format"] != nil || ((body["generationConfig"] as? [String: Any])?["responseMimeType"] != nil)
+        var req = URLRequest(url: url, timeoutInterval: json ? 8 : 30)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
@@ -103,7 +105,9 @@ final class SmartPlanner {
         let j = try await post(URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!, body: [
             "system_instruction": ["parts": [["text": systemPrompt()]]],
             "contents": [["role": "user", "parts": [["text": text]]]],
-            "generationConfig": ["temperature": 0, "responseMimeType": "application/json"],
+            "generationConfig": model.contains("2.5-flash")
+                ? ["temperature": 0, "responseMimeType": "application/json", "thinkingConfig": ["thinkingBudget": 0] as [String: Any]] as [String: Any]
+                : ["temperature": 0, "responseMimeType": "application/json"] as [String: Any],
         ], headers: ["x-goog-api-key": key])
         let parts = (((j["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
         return parts.compactMap { $0["text"] as? String }.joined()
@@ -118,8 +122,9 @@ final class SmartPlanner {
            let c = ((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String { return c }
         if let k = key("gemini-api-key") {
             let model = UserDefaults.standard.string(forKey: "geminiResolved") ?? AppState.defaultGeminiModel
+            let genCfg: [String: Any] = model.contains("2.5-flash") ? ["thinkingConfig": ["thinkingBudget": 0] as [String: Any]] : [:]
             if let j = try? await post(URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!,
-                                       body: ["contents": [["role": "user", "parts": [["text": prompt]]]]], headers: ["x-goog-api-key": k]) {
+                                       body: ["contents": [["role": "user", "parts": [["text": prompt]]]], "generationConfig": genCfg], headers: ["x-goog-api-key": k]) {
                 let parts = (((j["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
                 let t = parts.compactMap { $0["text"] as? String }.joined()
                 if !t.isEmpty { return t }

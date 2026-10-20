@@ -183,7 +183,7 @@ struct HomeAction: Identifiable {
     static let all: [HomeAction] = [
         HomeAction(id: "chat", icon: "bubble.left.fill", label: "Chat", tint: "#F58FA8"),
         HomeAction(id: "settings", icon: "gearshape.fill", label: "Settings", tint: "#A9B2C6"),
-        HomeAction(id: "more", icon: "square.grid.2x2.fill", label: "More", tint: "#F7C948"),
+        HomeAction(id: "more", icon: "square.grid.2x2.fill", label: "Dashboard", tint: "#4C8DFF"),
         HomeAction(id: "pet", icon: "hare.fill", label: "Zuffi on screen", tint: "#FFB7C5"),
         HomeAction(id: "screen", icon: "eye.fill", label: "What's on my screen?", tint: "#7CC4FF"),
         HomeAction(id: "agents", icon: "sparkles", label: "Agents", tint: "#F7C948"),
@@ -566,7 +566,7 @@ struct ZuffiQuickSettings: View {
                 homeButtons
                 HStack(spacing: 6) {
                     pill("clock.arrow.circlepath", "History") { ZuffiNav.go(.history) }
-                    pill("square.grid.2x2.fill", "More") { WebHub.shared.show() }
+                    pill("square.grid.2x2.fill", "Dashboard") { WebHub.shared.show() }
                     pill("slider.horizontal.3", "All settings") { NotificationCenter.default.post(name: .openFullSettings, object: nil) }
                 }
             }
