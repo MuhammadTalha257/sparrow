@@ -1761,7 +1761,7 @@ async function openTool(name) {
   if (name === 'jobs') { jobs.openJobs(); return; }
   const P = $('#toolPanel'); P.hidden = false;
   // An open tool gets the page to itself, with a way back.
-  const done = html => { P.innerHTML = '<button class="tool-back" id="toolBack" type="button">‹ Dashboard</button>' + html; $('#toolBack').onclick = () => { if (document.documentElement.classList.contains('tool-only') && M) { M.post('hide'); return; } closeTool(); go('home'); }; window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const done = html => { P.innerHTML = `<button class="tool-back" id="toolBack" type="button">${document.documentElement.classList.contains('tool-only') ? '✕ Close' : '‹ Dashboard'}</button>` + html; $('#toolBack').onclick = () => { if (document.documentElement.classList.contains('tool-only') && M) { M.post('hide'); return; } closeTool(); go('home'); }; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const cur = S().business.currency;
   if ((name === 'agent' || name === 'promo') && !bizOn()) { closeTool(); go('home'); bizUpsell(); return; }
   if (name === 'blur') {
@@ -2677,7 +2677,7 @@ window.Sparrow = {
     if (b64) { const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); window.zuffiPreload = new File([bytes], name, { type: studio.guessType(name) || '' }); }
     const f = feats.FEATURES.find(x => x.id === tool);
     if (f?.open.go) { go(f.open.go); return true; }
-    go('tools'); await openTool(f?.open.tool || tool);
+    go('tools'); openTool(f?.open.tool || tool);   // not awaited: some tools wait for a file
     if (window.zuffiPreload) setTimeout(() => $('#toolPanel button.btn:not(.ghost)')?.click(), 250);
     return true;
   },
