@@ -414,3 +414,9 @@ html.biz-dash .bz-side button.on svg { color: var(--accent); }
 .bl-opts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0; font-size: 14px; }
 .bl-opts label { display: flex; align-items: center; gap: 6px; }
 .bl-cv { width: 100%; height: auto; border-radius: 12px; touch-action: none; cursor: crosshair; background: #000; }
+
+/* Mac: one tool in a small window opened from the notch — no dashboard around it */
+html.tool-only .side, html.tool-only .top, html.tool-only .tabs, html.tool-only .ask, html.tool-only .listen-hint, html.tool-only .bg-shape { display: none !important; }
+html.tool-only body { padding-left: 0 !important; }
+html.tool-only main { padding: 14px 14px 40px !important; max-width: none !important; }
+html.tool-only .tool-panel { margin-top: 0; }

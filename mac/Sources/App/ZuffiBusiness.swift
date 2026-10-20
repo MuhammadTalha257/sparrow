@@ -78,19 +78,19 @@ final class ZuffiBusiness: ObservableObject {
                     + Self.leadRow(["name": "Sample Client 2", "phone": "03451234567", "source": "Zameen.com", "interest": "2 bed apartment", "area": "Bahria Town", "budget": "1 crore", "status": "Contacted", "added": ago4, "last contact": ago4, "next follow-up": tomorrow]) + "\n"),
                 ("Buyers", "Name,Phone,Budget (PKR),Wants,Area,Last contact,Next follow-up,Notes\nSample Client 1,03331234567,20000000,3 bed house,DHA,\(ago4),\(today),Wants to visit on Sunday\nSample Client 2,03451234567,10000000,2 bed apartment,Bahria Town,\(today),\(tomorrow),\n"),
             ]
-            HomeAction.right = ["business", "inbox", "callToday", "newLead"]
+            HomeAction.right = HomeAction.defaultRight
         case .salon:
             files = [
-                ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n\(today),10:00,Sample Client 2,07700900123,Cut & blow dry,Stylist,45,Booked\n\(tomorrow),14:30,Priya Patel,07700900456,Colour,Jade,85,Booked\n"),
+                ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n\(today),10:00,Sample Client 2,07700900123,Cut & blow dry,Stylist,45,Booked\n\(tomorrow),14:30,Sample Client 3,07700900456,Colour,Stylist,85,Booked\n"),
                 ("Clients", "Name,Phone,Last visit,Usual service,Notes\nSample Client 2,07700900123,\(today),Cut & blow dry,\nSample Client 3,07700900789,\(Self.iso(Date().addingTimeInterval(-50 * 86400))),Highlights,Prefers Saturdays\n"),
             ]
-            HomeAction.right = ["business", "appointments", "book", "inbox"]
+            HomeAction.right = HomeAction.defaultRight
         case .clinic, .restaurant:
             files = [
                 ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price,Status\n\(tomorrow),11:00,Sample Client,07700900123,\(p == .clinic ? "Check-up" : "Table for 4"),,,Booked\n"),
                 ("Clients", "Name,Phone,Last visit,Usual service,Notes\nSample Client,07700900123,\(today),\(p == .clinic ? "Check-up" : "Dinner"),\n"),
             ]
-            HomeAction.right = ["business", "appointments", "book", "inbox"]
+            HomeAction.right = HomeAction.defaultRight
         case .freelancer:
             files = [
                 ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
@@ -98,14 +98,14 @@ final class ZuffiBusiness: ObservableObject {
                 ("Projects", "Project,Client,Deadline,Fee,Status,Hours,Notes\nWebsite redesign,Sample Client 1,\(tomorrow),1500,Working,6,First draft sent\n"),
                 ("Invoices", "Invoice,Client,Date,Amount,Due,Status\nINV-001,Sample Client 1,\(ago4),750,\(today),Sent\n"),
             ]
-            HomeAction.right = ["business", "inbox", "newLead", "leads"]
+            HomeAction.right = HomeAction.defaultRight
         case .shop, .services:
             files = [
                 ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
                     + Self.leadRow(["name": "Sample Customer", "phone": "07700900123", "source": "WhatsApp", "interest": p == .shop ? "Asked about delivery" : "Kitchen fitting quote", "status": "New", "added": today, "next follow-up": today]) + "\n"),
                 ("Clients", "Name,Phone,Last visit,Usual service,Notes\n"),
             ]
-            HomeAction.right = ["business", "inbox", "newLead", "leads"]
+            HomeAction.right = HomeAction.defaultRight
         }
         ZuffiHomeModel.shared.reloadButtons()
         var made: [String] = []

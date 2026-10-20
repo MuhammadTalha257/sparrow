@@ -121,6 +121,10 @@ struct IslandContainer: View {
             if state.mode == .expanded && !greetingActive {
                 AccentStrip(width: islandWidth, height: islandHeight)
             }
+            // Charging, notifications and music light up the island's own edge (closed or open).
+            if state.mode != .hidden {
+                IslandRim(width: islandWidth, height: islandHeight, cornerRadius: cornerRadius, topRadius: islandTopRadius, open: state.mode == .expanded)
+            }
 
             // Single BotPlacement — always alive in the view tree so spring animations
             // fire from the current position (e.g. choose at 60,101) when canvas deactivates.
@@ -551,7 +555,7 @@ struct IslandHeader: View {
                     }
                     #endif
                 })
-                HeaderChip(icon: "square.grid.2x2.fill", label: "Features") { WebHub.shared.show() }.help("Everything Zuffi can do")
+                HeaderChip(icon: "square.grid.2x2.fill", label: "Features") { ZuffiNav.go(.features) }.help("Everything Zuffi can do")
                 if UserDefaults.standard.string(forKey: "zuffiUse") == "business" {
                     HeaderChip(icon: "briefcase.fill", label: "") { BusinessDashboard.shared.show() }.help("Business")
                 }

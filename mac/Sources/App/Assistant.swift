@@ -1110,6 +1110,7 @@ final class NotificationReader {
         // If the full Notification Centre is open there are lots of texts — don't read them all.
         guard !new.isEmpty, new.count <= 3 else { return }
         for b in new { ZuffiCRM.shared.fromNotification(b.texts, descriptions: b.descs) }
+        if let first = new.first { EdgeGlow.shared.flash(.notify(first.texts.first ?? "Notification"), seconds: 2.6) }   // light round the notch
         if speakOn, let first = new.first, new.count <= 2, first.joined.count < 400 {
             VoiceEngine.shared.speak("New notification. " + first.joined)
         }

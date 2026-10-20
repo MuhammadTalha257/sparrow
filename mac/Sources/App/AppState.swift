@@ -128,6 +128,8 @@ final class AppState: ObservableObject {
     @Published var noteAction: String? = nil
     /// What the note is about (an email id for "Open").
     @Published var noteRef: String? = nil
+    /// After a file drop: nil (the main buttons), "convert" (pick a format) or "more" (everything Zuffi can do with it).
+    @Published var chooseMode: String? = nil
 
     // Auto-close delay — persisted
     @Published var autoCloseInterval: TimeInterval = 15 {

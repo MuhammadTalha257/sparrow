@@ -183,7 +183,7 @@ struct HomeAction: Identifiable {
     static let all: [HomeAction] = [
         HomeAction(id: "chat", icon: "bubble.left.fill", label: "Chat", tint: "#F58FA8"),
         HomeAction(id: "settings", icon: "gearshape.fill", label: "Settings", tint: "#A9B2C6"),
-        HomeAction(id: "more", icon: "square.grid.2x2.fill", label: "Dashboard", tint: "#4C8DFF"),
+        HomeAction(id: "more", icon: "square.grid.2x2.fill", label: "All features", tint: "#4C8DFF"),
         HomeAction(id: "pet", icon: "hare.fill", label: "Zuffi on screen", tint: "#FFB7C5"),
         HomeAction(id: "screen", icon: "eye.fill", label: "What's on my screen?", tint: "#7CC4FF"),
         HomeAction(id: "agents", icon: "sparkles", label: "Agents", tint: "#F7C948"),
@@ -197,33 +197,37 @@ struct HomeAction: Identifiable {
         HomeAction(id: "newchat", icon: "square.and.pencil", label: "New chat", tint: "#F58FA8"),
         HomeAction(id: "lock", icon: "lock.fill", label: "Lock screen", tint: "#A9B2C6"),
         HomeAction(id: "whatsapp", icon: "message.fill", label: "WhatsApp", tint: "#34D399"),
-        HomeAction(id: "callToday", icon: "phone.fill", label: "Who to call today", tint: "#34D399"),
-        HomeAction(id: "quiet", icon: "hourglass", label: "Buyers gone quiet", tint: "#FBC56A"),
-        HomeAction(id: "appointments", icon: "calendar", label: "Today's appointments", tint: "#F58FA8"),
-        HomeAction(id: "reminders", icon: "bell.badge.fill", label: "Send tomorrow's reminders", tint: "#7CC4FF"),
-        HomeAction(id: "rebook", icon: "arrow.clockwise.heart.fill", label: "Clients to rebook", tint: "#C4B5FD"),
-        HomeAction(id: "leads", icon: "person.2.fill", label: "My leads", tint: "#34D399"),
-        HomeAction(id: "newLead", icon: "person.badge.plus", label: "Add a lead", tint: "#7CE0A8"),
-        HomeAction(id: "messageLeads", icon: "paperplane.fill", label: "Message new leads", tint: "#7CC4FF"),
-        HomeAction(id: "book", icon: "calendar.badge.plus", label: "Book an appointment", tint: "#F58FA8"),
-        HomeAction(id: "week", icon: "calendar.day.timeline.left", label: "This week's bookings", tint: "#FBC56A"),
         HomeAction(id: "save", icon: "square.and.arrow.down.fill", label: "Save some data", tint: "#FDE68A"),
-        HomeAction(id: "team", icon: "person.3.fill", label: "Zuffi's team", tint: "#C4B5FD"),
-        HomeAction(id: "business", icon: "briefcase.fill", label: "Business dashboard", tint: "#F58FA8"),
-        HomeAction(id: "inbox", icon: "tray.full.fill", label: "WhatsApp inbox", tint: "#34D399"),
+        HomeAction(id: "business", icon: "briefcase.fill", label: "Business", tint: "#F58FA8"),
+        HomeAction(id: "convert", icon: "arrow.triangle.2.circlepath", label: "Convert a file", tint: "#38BDF8"),
+        HomeAction(id: "record", icon: "record.circle", label: "Record my screen", tint: "#F87171"),
+        HomeAction(id: "meeting", icon: "waveform.badge.mic", label: "Meeting notes", tint: "#F472B6"),
+        HomeAction(id: "profile", icon: "person.crop.circle.fill", label: "Me (profile)", tint: "#C4B5FD"),
     ]
     static func find(_ id: String) -> HomeAction? { all.first { $0.id == id } }
-    static let defaultLeft = ["chat", "settings", "more", "pet"]
-    static let defaultRight = ["screen", "agents", "data", "today"]
+    static let defaultLeft = ["chat", "settings", "more", "profile"]
+    /// Only the important ones beside Zuffi; everything else is in All features. One Business button, no calendar/appointment buttons.
+    static let defaultRight = ["convert", "record", "screen", "business"]
+    /// Bumped when the home buttons are re-thought, so old saved choices (appointments, bookings…) are replaced once.
+    static let layoutVersion = 3
+    @MainActor static func migrate() {
+        let d = UserDefaults.standard
+        guard d.integer(forKey: "homeButtonsVersion") < layoutVersion else { return }
+        d.set(layoutVersion, forKey: "homeButtonsVersion")
+        d.removeObject(forKey: "homeLeft"); d.removeObject(forKey: "homeRight")
+    }
 
     @MainActor static var left: [String] {
-        get { (UserDefaults.standard.stringArray(forKey: "homeLeft") ?? defaultLeft).filter { find($0) != nil } }
+        get { migrate(); return (UserDefaults.standard.stringArray(forKey: "homeLeft") ?? defaultLeft).filter { find($0) != nil } }
         set { UserDefaults.standard.set(newValue, forKey: "homeLeft") }
     }
     @MainActor static var right: [String] {
         get {
-            let bizOnly: Set<String> = ["business", "inbox", "leads", "newLead", "messageLeads", "book", "week", "appointments", "callToday"]
-            return (UserDefaults.standard.stringArray(forKey: "homeRight") ?? defaultRight).filter { find($0) != nil && !(ZuffiPlan.shared.isPersonal && bizOnly.contains($0)) }
+            migrate()
+            // "Just me" or no Business plan → the Business button becomes Agents
+            let biz = ZuffiPlan.shared.isBusiness && !ZuffiPlan.shared.isPersonal
+            return (UserDefaults.standard.stringArray(forKey: "homeRight") ?? defaultRight)
+                .map { $0 == "business" && !biz ? "agents" : $0 }.filter { find($0) != nil }
         }
         set { UserDefaults.standard.set(newValue, forKey: "homeRight") }
     }
@@ -237,12 +241,25 @@ struct HomeAction: Identifiable {
         Task { await AIService.shared.chat(query: q, context: nil, state: s) }
     }
 
+    /// Choose a file → it lands in the notch like a dropped file (Ask · Convert · More · Email).
+    @MainActor static func pickAndDrop() {
+        let p = NSOpenPanel(); p.canChooseFiles = true; p.canChooseDirectories = false; p.allowsMultipleSelection = false
+        p.message = "Choose a file for Zuffi"
+        NSApp.activate(ignoringOtherApps: true)
+        guard p.runModal() == .OK, let url = p.url else { return }
+        Task { await FileDropHandler.handle(urls: [url], state: AppState.shared) }
+    }
+
     @MainActor static func run(_ id: String, home: ZuffiHomeModel) {
         if ZuffiPlan.shared.isLocked && id != "settings" { ZuffiPlan.shared.openAccount(); return }
         switch id {
         case "chat": ZuffiChat.shared.open()
         case "settings": ZuffiNav.go(.settings)
-        case "more": WebHub.shared.show()
+        case "more": ZuffiNav.go(.features)
+        case "convert": pickAndDrop()
+        case "record": Task { await Assistant.run(ScreenRecorder.shared.isRecording ? "stop recording" : "record my screen", spoken: false) }
+        case "meeting": Task { await Assistant.run(MeetingNotes.shared.active ? "stop meeting notes" : "take meeting notes", spoken: true) }
+        case "profile": ZuffiNav.go(.profile)
         case "pet": PetController.shared.toggle()
         case "screen": home.say("Let me look…"); Task { await Assistant.run("what's on my screen", spoken: true) }
         case "agents": ZuffiNav.go(.agents)
@@ -332,19 +349,7 @@ struct ZuffiHomePanel: View {
                 appsRow.frame(width: W - 20)
                 HStack(alignment: .center, spacing: 0) {
                     column(home.left, round: true).frame(width: side)
-                    VStack(spacing: 6) {
-                        // the little bunny head that follows your cursor
-                        SparrowSpriteView(model: head, size: 96, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
-                            .frame(width: 100, height: 100)
-                        Text(words)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.94))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(4)
-                            .frame(width: W - 20 - side * 2 - 8)
-                            .animation(.easeInOut(duration: 0.2), value: words)
-                    }
-                    .frame(width: W - 20 - side * 2)
+                    pager.frame(width: W - 20 - side * 2)
                     column(home.right, round: false).frame(width: side)
                 }
                 .frame(width: W - 20)
@@ -365,7 +370,50 @@ struct ZuffiHomePanel: View {
         }
         .frame(width: W, height: H)
         .clipped()
-        .onAppear { NowUsing.shared.start(); home.reloadButtons() }
+        .onAppear { NowUsing.shared.start(); NowPlaying.shared.start(); NotchGlance.shared.refresh(); home.reloadButtons() }
+    }
+
+    // Zuffi · Today (prayers, next reminder, weather) · Music · Me — swipe sideways or tap the dots; it never moves by itself.
+    @State private var page: Int? = 0
+    private static let pages = ["Zuffi", "Today", "Music", "Me"]
+    private var pager: some View {
+        let pw = W - 20 - side * 2
+        return VStack(spacing: 5) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    VStack(spacing: 6) {
+                        // the little bunny head that follows your cursor
+                        SparrowSpriteView(model: head, size: 92, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
+                            .frame(width: 96, height: 96)
+                        Text(words)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.94))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .frame(width: pw - 8)
+                            .animation(.easeInOut(duration: 0.2), value: words)
+                    }
+                    .frame(width: pw, height: 158).id(0)
+                    NotchTodayPage().padding(.horizontal, 8).frame(width: pw, height: 158).id(1)
+                    NowPlayingCard().padding(.horizontal, 8).frame(width: pw, height: 158).id(2)
+                    NotchMePage().frame(width: pw, height: 158).id(3)
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $page)
+            .frame(width: pw, height: 158)
+            HStack(spacing: 6) {
+                ForEach(0..<Self.pages.count, id: \.self) { i in
+                    Capsule().fill(Color.white.opacity((page ?? 0) == i ? 0.9 : 0.3))
+                        .frame(width: (page ?? 0) == i ? 14 : 5, height: 5)
+                        .contentShape(Rectangle().inset(by: -4))
+                        .onTapGesture { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { page = i } }
+                        .help(Self.pages[i])
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: page)
+        }
     }
 
     // the apps you have open (with a window) — click one to jump to it
@@ -562,7 +610,8 @@ struct ZuffiQuickSettings: View {
                 homeButtons
                 HStack(spacing: 6) {
                     pill("clock.arrow.circlepath", "History") { ZuffiNav.go(.history) }
-                    pill("square.grid.2x2.fill", "Dashboard") { WebHub.shared.show() }
+                    pill("person.crop.circle.fill", "Me") { ZuffiNav.go(.profile) }
+                    pill("square.grid.2x2.fill", "Features") { ZuffiNav.go(.features) }
                     pill("slider.horizontal.3", "All settings") { NotificationCenter.default.post(name: .openFullSettings, object: nil) }
                 }
             }
@@ -657,5 +706,216 @@ extension NSRunningApplication {
         } else {
             activate(options: [.activateAllWindows])
         }
+    }
+}
+
+// MARK: All features — a Settings-style list inside the notch (replaces the big dashboard window on the Mac)
+
+struct NotchFeature: Identifiable {
+    let id: String, cat: String, icon: String, tint: String, name: String, sub: String
+    var business = false
+}
+
+struct NotchFeaturesList: View {
+    @ObservedObject private var plan = ZuffiPlan.shared
+    @State private var query = ""
+
+    static let cats: [(String, String)] = [("business", "Business"), ("files", "Files & PDF"), ("everyday", "Every day"), ("create", "Create"), ("devices", "This Mac & devices")]
+    static let all: [NotchFeature] = [
+        NotchFeature(id: "business", cat: "business", icon: "briefcase.fill", tint: "#F58FA8", name: "Business", sub: "Leads, WhatsApp agent, posts, money, team", business: true),
+        NotchFeature(id: "convert", cat: "files", icon: "arrow.triangle.2.circlepath", tint: "#38BDF8", name: "Convert a file", sub: "JPG, PNG, WebP, PDF, text"),
+        NotchFeature(id: "sign", cat: "files", icon: "signature", tint: "#22A06B", name: "Sign a PDF", sub: "Draw your signature, done"),
+        NotchFeature(id: "merge", cat: "files", icon: "square.stack.3d.up.fill", tint: "#E25A5A", name: "Merge PDFs", sub: "Join several into one"),
+        NotchFeature(id: "images", cat: "files", icon: "photo.on.rectangle", tint: "#F08A3E", name: "Photos → PDF", sub: "Pictures into one PDF"),
+        NotchFeature(id: "pages", cat: "files", icon: "doc.on.doc.fill", tint: "#D9A21B", name: "Keep pages", sub: "Pick the pages you need"),
+        NotchFeature(id: "rotate", cat: "files", icon: "rotate.right.fill", tint: "#0EA5E9", name: "Rotate PDF", sub: "Turn pages the right way"),
+        NotchFeature(id: "office", cat: "files", icon: "doc.richtext.fill", tint: "#2B6CD8", name: "Word, Excel & PowerPoint", sub: "Describe it — get the file"),
+        NotchFeature(id: "data", cat: "files", icon: "tablecells.fill", tint: "#34D399", name: "My data (Excel)", sub: "Sheets Zuffi keeps for you"),
+        NotchFeature(id: "planday", cat: "everyday", icon: "calendar", tint: "#4F6BFF", name: "Plan my day", sub: "Fits tasks around your calendar"),
+        NotchFeature(id: "today", cat: "everyday", icon: "sun.max.fill", tint: "#FBC56A", name: "Today", sub: "Prayer times, reminders, weather"),
+        NotchFeature(id: "meeting", cat: "everyday", icon: "waveform.badge.mic", tint: "#E5577E", name: "Meeting notes", sub: "Record a call, get a clean summary"),
+        NotchFeature(id: "memory", cat: "everyday", icon: "brain.head.profile", tint: "#8B7CF6", name: "Memory", sub: "Notes, chats and files Zuffi remembers"),
+        NotchFeature(id: "history", cat: "everyday", icon: "clock.arrow.circlepath", tint: "#C4B5FD", name: "Past chats", sub: "Everything you asked"),
+        NotchFeature(id: "focus", cat: "everyday", icon: "scope", tint: "#E0A23B", name: "Focus timer", sub: "25 minutes of deep work"),
+        NotchFeature(id: "snippets", cat: "everyday", icon: "text.badge.plus", tint: "#14A39A", name: "Snippets", sub: "Text you paste often"),
+        NotchFeature(id: "activity", cat: "everyday", icon: "arrow.uturn.backward.circle.fill", tint: "#7A8496", name: "Activity & undo", sub: "What Zuffi did — undo anything"),
+        NotchFeature(id: "agents", cat: "everyday", icon: "sparkles", tint: "#F7C948", name: "Agents", sub: "Jobs Zuffi is doing for you"),
+        NotchFeature(id: "jobs", cat: "everyday", icon: "briefcase", tint: "#A161E8", name: "Job agent", sub: "Find jobs, tailor your CV"),
+        NotchFeature(id: "picture", cat: "create", icon: "wand.and.stars", tint: "#A161E8", name: "Make a picture", sub: "Images and posters from words"),
+        NotchFeature(id: "studio", cat: "create", icon: "camera.filters", tint: "#E5577E", name: "Photo studio", sub: "Brighten, resize, add your logo"),
+        NotchFeature(id: "blur", cat: "create", icon: "eye.slash.fill", tint: "#64748B", name: "Blur private info", sub: "Faces, emails and numbers in a picture"),
+        NotchFeature(id: "reels", cat: "create", icon: "film.fill", tint: "#EF5A5A", name: "Quick reels", sub: "Trim, caption, ready to post"),
+        NotchFeature(id: "record", cat: "devices", icon: "record.circle", tint: "#F87171", name: "Record my screen", sub: "With sound — saved in Movies"),
+        NotchFeature(id: "screen", cat: "devices", icon: "eye.fill", tint: "#7CC4FF", name: "What's on my screen?", sub: "Zuffi looks and explains"),
+        NotchFeature(id: "send", cat: "devices", icon: "paperplane.fill", tint: "#2F6FEB", name: "Send to my devices", sub: "Files and links to your phone"),
+        NotchFeature(id: "sync", cat: "devices", icon: "arrow.triangle.2.circlepath.circle.fill", tint: "#14A37F", name: "Sync devices", sub: "Same Zuffi everywhere"),
+        NotchFeature(id: "find", cat: "devices", icon: "magnifyingglass", tint: "#7A8496", name: "Find files", sub: "Search by what you remember"),
+        NotchFeature(id: "tidy", cat: "devices", icon: "tray.full.fill", tint: "#D9628F", name: "Tidy Downloads", sub: "Sort the mess in one tap"),
+        NotchFeature(id: "clipboard", cat: "devices", icon: "doc.on.clipboard.fill", tint: "#8B6CF0", name: "Clipboard", sub: "Everything you copied"),
+        NotchFeature(id: "watch", cat: "devices", icon: "folder.badge.gearshape", tint: "#0891B2", name: "Watch a folder", sub: "Act when new files arrive"),
+        NotchFeature(id: "pet", cat: "devices", icon: "hare.fill", tint: "#FFB7C5", name: "Zuffi on screen", sub: "A little friend on your desktop"),
+    ]
+
+    private var visible: [NotchFeature] {
+        let biz = plan.isBusiness && !plan.isPersonal
+        let words = query.lowercased().split(separator: " ").map(String.init)
+        return Self.all.filter { f in
+            if f.business && !biz { return false }
+            if f.id == "jobs" && biz { return false }
+            let hay = (f.name + " " + f.sub).lowercased()
+            return words.allSatisfy { hay.contains($0) }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.55))
+                TextField("Search features", text: $query).textFieldStyle(.plain).font(.system(size: 12)).foregroundColor(.white)
+            }
+            .padding(.horizontal, 10).frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.09)))
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 10) {
+                    let list = visible
+                    ForEach(0..<Self.cats.count, id: \.self) { ci in
+                        let rows = list.filter { $0.cat == Self.cats[ci].0 }
+                        if !rows.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(Self.cats[ci].1.uppercased()).font(.system(size: 9.5, weight: .heavy)).tracking(0.6)
+                                    .foregroundColor(.white.opacity(0.45)).padding(.leading, 6)
+                                VStack(spacing: 0) {
+                                    ForEach(0..<rows.count, id: \.self) { i in
+                                        NotchListRow(icon: rows[i].icon, tint: rows[i].tint, title: rows[i].name, sub: rows[i].sub) { Self.open(rows[i].id) }
+                                        if i < rows.count - 1 { Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 44) }
+                                    }
+                                }
+                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+                            }
+                        }
+                    }
+                    if list.isEmpty { Text("Nothing matches “\(query)”.").font(.system(size: 11)).foregroundColor(.white.opacity(0.6)).padding(8) }
+                }
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    /// Native when Zuffi can do it in the notch; otherwise a small window with just that one tool.
+    @MainActor static func open(_ id: String) {
+        if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
+        let home = ZuffiHomeModel.shared
+        switch id {
+        case "business", "convert", "record", "screen", "agents", "data", "history", "pet", "meeting", "today":
+            HomeAction.run(id, home: home)
+            if !["agents", "data", "history"].contains(id) { NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+        default:
+            WebHub.shared.showTool(id)
+            NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        }
+    }
+}
+
+/// One row in a notch list: coloured icon tile, title, a short line, chevron.
+struct NotchListRow: View {
+    let icon: String, tint: String, title: String, sub: String
+    var action: () -> Void
+    @State private var hover = false
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundColor(.white)
+                    .frame(width: 26, height: 26)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color(hex: tint).gradient))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 12, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                    Text(sub).font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right").font(.system(size: 9.5, weight: .bold)).foregroundColor(.white.opacity(0.35))
+            }
+            .padding(.horizontal, 9).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(hover ? 0.08 : 0)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+    }
+}
+
+// MARK: Me — the details from the welcome form, in the notch
+
+struct ZuffiProfilePanel: View {
+    @ObservedObject private var plan = ZuffiPlan.shared
+
+    private var p: [String: String] { plan.profile }
+    private func val(_ k: String) -> String? { let v = p[k]?.trimmingCharacters(in: .whitespaces) ?? ""; return v.isEmpty ? nil : v }
+
+    private var rows: [(String, String, String, String)] {   // icon, tint, label, value
+        var r: [(String, String, String, String)] = []
+        if let d = val("dob") { r.append(("gift.fill", "#F472B6", "Birthday", Self.niceDate(d))) }
+        if let c = val("city") { r.append(("mappin.circle.fill", "#38BDF8", "City", c)) }
+        if let c = val("country") { r.append(("globe", "#34D399", "Country", c == "PK" ? "Pakistan" : c == "GB" ? "United Kingdom" : c)) }
+        r.append(("person.2.fill", "#C4B5FD", "Zuffi is for", p["type"] == "business" ? "My business" : "Just me"))
+        if let b = val("business") { r.append(("briefcase.fill", "#F58FA8", "Business", b)) }
+        if let k = val("kind") { r.append(("tag.fill", "#FBC56A", "Type", Self.kindName(k))) }
+        if let role = val("role") { r.append(("person.text.rectangle.fill", "#7CC4FF", "My role", role)) }
+        if let h = val("hours") { r.append(("clock.fill", "#A7F3D0", "Hours", h)) }
+        if let h = val("help") { r.append(("hand.raised.fill", "#FDE68A", "Help me with", h.replacingOccurrences(of: ",", with: ", "))) }
+        if let n = val("notes") { r.append(("note.text", "#E5E7EB", "Notes", n)) }
+        return r
+    }
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    let name = val("name") ?? "You"
+                    Text(String(name.prefix(1)).uppercased()).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundColor(.white)
+                        .frame(width: 52, height: 52)
+                        .background(Circle().fill(LinearGradient(colors: [IslandConst.accent, Color(hex: "#F472B6")], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(.white).lineLimit(1)
+                        Text(plan.isBusiness ? "Business plan" : plan.isPaid ? "Pro plan" : "Free").font(.system(size: 10.5, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+                    }
+                    Spacer()
+                    Button { WebHub.shared.showTool("profile"); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
+                        Label("Edit", systemImage: "pencil").font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+                            .padding(.horizontal, 10).frame(height: 26).background(Capsule().fill(Color.white.opacity(0.14)))
+                    }.buttonStyle(.plain)
+                }
+                .padding(12).background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.07)))
+
+                if p.isEmpty {
+                    Text("Tell Zuffi about you once and she’ll remember it — your birthday, city, work and what you want help with.")
+                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.7)).multilineTextAlignment(.center).padding(8)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(0..<rows.count, id: \.self) { i in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: rows[i].0).font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+                                    .frame(width: 24, height: 24).background(RoundedRectangle(cornerRadius: 7).fill(Color(hex: rows[i].1).gradient))
+                                Text(rows[i].2).font(.system(size: 11)).foregroundColor(.white.opacity(0.6)).frame(width: 78, alignment: .leading).padding(.top, 4)
+                                Text(rows[i].3).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 3)
+                                    .textSelection(.enabled)
+                            }
+                            .padding(.horizontal, 9).padding(.vertical, 6)
+                            if i < rows.count - 1 { Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 42) }
+                        }
+                    }
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+                }
+                Text("Only on your devices. Zuffi uses this to answer questions about you.").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.4))
+            }
+        }
+    }
+
+    static func niceDate(_ iso: String) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        guard let d = f.date(from: iso) else { return iso }
+        let o = DateFormatter(); o.dateStyle = .long; return o.string(from: d)
+    }
+    static func kindName(_ k: String) -> String {
+        ["realEstate": "Estate agent", "salon": "Salon / barber", "clinic": "Clinic", "shop": "Shop", "restaurant": "Restaurant / café", "services": "Trades & services", "freelancer": "Freelancer"][k] ?? k
     }
 }

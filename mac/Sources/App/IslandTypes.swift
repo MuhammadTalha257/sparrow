@@ -13,7 +13,7 @@ enum IslandView: String, CaseIterable {
     case overview, empty, approval, question, error, finished
     case confused, upload, uploading, choose, mail, prompt
     case searching, result, note, settings, greeting
-    case agents, history, data
+    case agents, history, data, features, profile
 }
 
 // MARK: - Bot State
@@ -86,7 +86,7 @@ enum IslandConst {
     static let expandedWidth: CGFloat = 640
     /// The new Zuffi panels are narrow and tall (hand-drawn design): home, chat, settings, agents, history.
     static let viewWidths: [IslandView: CGFloat] = [
-        .overview: 330, .empty: 330, .prompt: 372, .settings: 340, .agents: 380, .history: 350, .data: 370,
+        .overview: 330, .empty: 330, .prompt: 372, .settings: 340, .agents: 380, .history: 350, .data: 370, .features: 350, .profile: 340,
     ]
     /// Short messages (reminders, answers, "done") stay small and close to the notch, so they never cover what you're working on.
     static let cardWidths: [IslandView: CGFloat] = [
@@ -108,12 +108,14 @@ enum IslandConst {
 
     static let viewLayouts: [IslandView: ViewLayout] = [
         // Home is the reference: height 150
-        .overview:  ViewLayout(height: 286, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills),
+        .overview:  ViewLayout(height: 300, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills),
         // All non-chat views match home height (150) — law
-        .empty:     ViewLayout(height: 286, botX: 150, botY: 100, botDiameter: 0, agentMode: .none),
+        .empty:     ViewLayout(height: 300, botX: 150, botY: 100, botDiameter: 0, agentMode: .none),
         .agents:    ViewLayout(height: 440, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
         .history:   ViewLayout(height: 420, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
         .data:      ViewLayout(height: 440, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
+        .features:  ViewLayout(height: 440, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
+        .profile:   ViewLayout(height: 420, botX: 40,  botY: nil, botDiameter: 0, agentMode: .none),
         .approval:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .question:  ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 56, agentMode: .column),
         .error:     ViewLayout(height: 160, botX: 62,  botY: nil, botDiameter: 58, agentMode: .column),

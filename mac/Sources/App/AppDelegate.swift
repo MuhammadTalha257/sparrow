@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openToday() { TodayWindow.shared.show() }
-    @objc private func openMore() { WebHub.shared.show() }
+    @objc private func openMore() { ZuffiNav.go(.features) }
 
     @objc private func togglePet() {
         PetController.shared.toggle()
@@ -87,17 +87,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             placeBelowIsland(w)
             w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
         }
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 720),
-                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 640),
+                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                            backing: .buffered, defer: false)
         win.title = "Settings — Zuffi"
         win.appearance = NSAppearance(named: .darkAqua)               // the same night look as Zuffi's other windows
         win.titlebarAppearsTransparent = true
+        win.titleVisibility = .hidden
         win.backgroundColor = NSColor(red: 0.043, green: 0.039, blue: 0.122, alpha: 1)
         let host = NSHostingView(rootView: SettingsView().preferredColorScheme(.dark))
         host.sizingOptions = [.minSize]
         win.contentView = host
-        win.contentMinSize = NSSize(width: 420, height: 320)
+        win.contentMinSize = NSSize(width: 680, height: 420)
         win.isReleasedWhenClosed = false
         placeBelowIsland(win)
         settingsWindow = win
@@ -143,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         VoiceboxVoice.shared.startWatching()
         ZuffiData.shared.start()
         EdgeGlow.shared.start()
+        NowPlaying.shared.start()          // music in the notch (only asks Spotify/Music when they're open)
         // Old "Sparrow" permission entries → fresh "Zuffi" ones (once)
         if SetupWizard.done { Task { await ScreenAgent.migrateFromSparrowOnce() } }
         // The bunny pops out and says hey, then the island opens with its tabs

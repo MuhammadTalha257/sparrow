@@ -40,14 +40,23 @@ struct SettingsView: View {
         )
     }
 
-    @State private var tab: SettingsTab = .general
+    @State private var tab: SettingsTab = .me
 
     var body: some View {
+        HStack(spacing: 0) {
+            SettingsSidebar(tab: $tab).frame(width: 214)
+            Rectangle().fill(Color.white.opacity(0.07)).frame(width: 1).ignoresSafeArea()
         VStack(spacing: 0) {
-            SettingsHeader(tab: $tab)
-            Divider().opacity(0.5)
+            SettingsPageTitle(tab: tab)
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+
+                if tab == .me {
+                ZuffiProfilePanel().frame(maxWidth: 480)
+                Button { ZuffiNav.go(.features) } label: {
+                    NotchListRowLabel(icon: "square.grid.2x2.fill", tint: "#4C8DFF", title: "All features", sub: "Everything Zuffi can do — also in the notch")
+                }.buttonStyle(.plain).frame(maxWidth: 480)
+                }
 
                 if tab == .general {
                 // MARK: First-run setup (permissions, AI, free local AI)
@@ -239,6 +248,7 @@ struct SettingsView: View {
             .padding(20)
         }
         }
+        }
         .background(
             ZStack {
                 Color(hex: "#0B0A1F")                                         // Zuffi night sky (same as the panel)
@@ -266,7 +276,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(minWidth: 420, maxWidth: .infinity, minHeight: 320, maxHeight: .infinity)
+        .frame(minWidth: 680, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
     }
 
     // MARK: - Actions
@@ -343,10 +353,43 @@ struct ShortcutRecorderButton: View {
 // MARK: - Settings tabs (friendlier than one long page)
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, look, routine, voice, ai, agents, apps, screen, health, iphone
+    case me, general, look, routine, voice, ai, agents, apps, screen, health, iphone
     var id: String { rawValue }
+    /// Its tile colour in the list.
+    var tint: String {
+        switch self {
+        case .me: return "#8B7CF6"
+        case .general: return "#7A8496"
+        case .look: return "#E0527E"
+        case .routine: return "#F2A516"
+        case .voice: return "#F06B3C"
+        case .ai: return "#4F6BFF"
+        case .agents: return "#3D4555"
+        case .apps: return "#0EA5C6"
+        case .screen: return "#2F80ED"
+        case .health: return "#E5484D"
+        case .iphone: return "#0F9F76"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .me: return "Your details from the welcome form — Zuffi remembers them"
+        case .general: return "Sounds, shortcut, startup and reset"
+        case .look: return "Zuffi’s fur, outfits and the notch"
+        case .routine: return "Prayer times, reminders and your morning"
+        case .voice: return "“Hey Zuffi”, voices and notifications"
+        case .ai: return "Which AI answers and your keys"
+        case .agents: return "Coding agents Zuffi watches"
+        case .apps: return "Apps and sites Zuffi can open"
+        case .screen: return "Seeing and clicking on your screen"
+        case .health: return "Water, coffee and medicine"
+        case .iphone: return "Control this Mac from your phone"
+        }
+    }
+    var group: Int { [.me].contains(self) ? 0 : [.general, .look, .routine, .voice].contains(self) ? 1 : 2 }
     var title: String {
         switch self {
+        case .me:        return "Me"
         case .general:   return "General"
         case .look:      return "Look"
         case .agents:    return "Agents"
@@ -361,6 +404,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
     var icon: String {
         switch self {
+        case .me:        return "person.crop.circle.fill"
         case .general:   return "slider.horizontal.3"
         case .look:      return "paintpalette.fill"
         case .agents:    return "terminal.fill"
@@ -372,6 +416,84 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .health:    return "heart.fill"
         case .iphone:    return "iphone"
         }
+    }
+}
+
+/// Settings as a list, like the notch's All features: coloured tiles, grouped.
+struct SettingsSidebar: View {
+    @Binding var tab: SettingsTab
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Settings").font(.system(size: 16, weight: .bold, design: .rounded))
+                    Text(ZuffiPlan.shared.email.isEmpty ? "Zuffi" : ZuffiPlan.shared.email).font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                }
+            }
+            .padding(.top, 30).padding(.horizontal, 6)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 12) {
+                    ForEach(0..<3, id: \.self) { g in
+                        VStack(spacing: 1) {
+                            ForEach(SettingsTab.allCases.filter { $0.group == g }) { t in
+                                Button { tab = t } label: {
+                                    HStack(spacing: 9) {
+                                        Image(systemName: t.icon).font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+                                            .frame(width: 24, height: 24)
+                                            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color(hex: t.tint).gradient))
+                                        Text(t.title).font(.system(size: 13, weight: tab == t ? .semibold : .regular))
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 7).frame(height: 34)
+                                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tab == t ? IslandConst.accent.opacity(0.28) : .clear))
+                                    .contentShape(Rectangle())
+                                }.buttonStyle(.plain).help(t.subtitle)
+                            }
+                        }
+                        .padding(4)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05)))
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10).padding(.bottom, 10)
+    }
+}
+
+struct SettingsPageTitle: View {
+    let tab: SettingsTab
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: tab.icon).font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: tab.tint).gradient))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(tab.title).font(.system(size: 20, weight: .bold, design: .rounded))
+                Text(tab.subtitle).font(.system(size: 11.5)).foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 6)
+    }
+}
+
+/// The label of a list row (for use inside a Button).
+struct NotchListRowLabel: View {
+    let icon: String, tint: String, title: String, sub: String
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundColor(.white)
+                .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 7).fill(Color(hex: tint).gradient))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 12.5, weight: .semibold))
+                Text(sub).font(.system(size: 10.5)).foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundColor(.secondary)
+        }
+        .padding(10).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+        .contentShape(Rectangle())
     }
 }
 

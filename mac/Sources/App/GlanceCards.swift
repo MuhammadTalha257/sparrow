@@ -453,9 +453,13 @@ final class EdgeGlow: ObservableObject {
     static let shared = EdgeGlow()
 
     enum Kind: Equatable {
-        case charging(Int), battery(Int), capsLock, shift, cut, copied, needsYou, autoApprove, done
+        case charging(Int), battery(Int), capsLock, shift, cut, copied, needsYou, autoApprove, done, notify(String), music(String)
+        /// Big moments light up the open island too; key presses only show when it's closed.
+        var showsWhenOpen: Bool { switch self { case .charging, .battery, .notify, .music, .needsYou, .done: return true; default: return false } }
         var color: Color {
             switch self {
+            case .notify: return IslandConst.accent
+            case .music: return Color(hex: "#F472B6")
             case .charging, .autoApprove, .done: return Color(hex: "#34D399")
             case .battery(let p): return p <= 20 ? Color(hex: "#F4505E") : Color(hex: "#34D399")
             case .capsLock, .shift: return Color(hex: "#7CC4FF")
@@ -470,6 +474,7 @@ final class EdgeGlow: ObservableObject {
             case .capsLock: return "capslock.fill"; case .shift: return "shift.fill"
             case .cut: return "scissors"; case .copied: return "doc.on.doc.fill"
             case .needsYou: return "sparkles"; case .autoApprove: return "checkmark.seal.fill"; case .done: return "checkmark.circle.fill"
+            case .notify: return "bell.fill"; case .music: return "music.note"
             }
         }
         var text: String {
@@ -478,6 +483,7 @@ final class EdgeGlow: ObservableObject {
             case .capsLock: return "Caps Lock"; case .shift: return "Shift"
             case .cut: return "Cut"; case .copied: return "Copied"
             case .needsYou: return "Needs you"; case .autoApprove: return "Auto-approved"; case .done: return "Done"
+            case .notify(let t): return String(t.prefix(28)); case .music(let t): return String(t.prefix(28))
             }
         }
     }
@@ -542,7 +548,7 @@ final class EdgeGlow: ObservableObject {
         let k: Kind? = (Date() <= flashUntil ? flashKind : nil) ?? sticky ?? (caps ? .capsLock : nil)
         if k != kind { kind = k }
         guard enabled else { return }
-        if k != nil && AppState.shared.mode != .expanded { show() } else if k == nil { panel?.orderOut(nil) }
+        if k != nil && AppState.shared.mode == .hidden { show() } else { panel?.orderOut(nil) }
     }
 
     private func show() {
@@ -890,6 +896,7 @@ final class MacStatus: ObservableObject {
         st.noteAction = action
         st.noteMessage = "\(String(head.prefix(58)))\n\(body)"
         NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+        if !head.lowercased().contains("charg") && !head.lowercased().contains("battery") { EdgeGlow.shared.flash(.notify(head), seconds: 2.6) }
     }
 }
 
@@ -924,5 +931,310 @@ struct StatusChips: View {
         .padding(.horizontal, 7).frame(height: 20)
         .background(Capsule().fill(Color.white.opacity(0.08)))
         .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 0.6))
+    }
+}
+
+
+// MARK: - Light on the island's own edge (charging sweep, notifications, music) — like Pulse
+
+struct IslandRim: View {
+    let width: CGFloat, height: CGFloat, cornerRadius: CGFloat, topRadius: CGFloat
+    let open: Bool
+    @ObservedObject private var glow = EdgeGlow.shared
+    var body: some View {
+        if let k = glow.kind, glow.enabled, !open || k.showsWhenOpen {
+            let shape = IslandShape(width: width, height: height, cornerRadius: cornerRadius, topRadius: topRadius)
+            TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+                let t = tl.date.timeIntervalSinceReferenceDate
+                let pulse = 0.55 + 0.45 * sin(t * 4)
+                let a = CGFloat((t * 0.55).truncatingRemainder(dividingBy: 1))
+                ZStack {
+                    shape.stroke(k.color.opacity(0.35 + 0.35 * pulse), lineWidth: 2)
+                    shape.stroke(k.color.opacity(0.6 * pulse), lineWidth: 5).blur(radius: 5)
+                    if case .charging = k {
+                        // a bright bead of light running round the edge, the way a charger fills up
+                        shape.trim(from: a, to: min(1, a + 0.18)).stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                            .shadow(color: k.color, radius: 6)
+                        if a + 0.18 > 1 {
+                            shape.trim(from: 0, to: a + 0.18 - 1).stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round)).shadow(color: k.color, radius: 6)
+                        }
+                    }
+                }
+                .frame(width: width, height: height)
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+}
+
+// MARK: - Now playing (Spotify or Apple Music) with controls in the notch
+
+@MainActor
+final class NowPlaying: ObservableObject {
+    static let shared = NowPlaying()
+    @Published private(set) var title = ""
+    @Published private(set) var artist = ""
+    @Published private(set) var app = ""
+    @Published private(set) var playing = false
+    @Published private(set) var artURL: URL?
+    @Published private(set) var position: Double = 0
+    @Published private(set) var duration: Double = 0
+    private var timer: Timer?
+    private var busy = false
+    var hasTrack: Bool { !title.isEmpty }
+
+    func start() {
+        guard timer == nil else { return }
+        poll()
+        timer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { _ in MainActor.assumeIsolated { NowPlaying.shared.poll() } }
+    }
+
+    private static func running(_ id: String) -> Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty }
+
+    func poll() {
+        guard !busy else { return }
+        // Never launches Spotify or Music — only asks them if they're already open.
+        let spot = Self.running("com.spotify.client"), music = Self.running("com.apple.Music")
+        guard spot || music else { if hasTrack { clear() }; return }
+        busy = true
+        let name = spot ? "Spotify" : "Music"
+        let script = spot
+            ? "tell application \"Spotify\"\nif player state is stopped then return \"\"\nset t to current track\nreturn (name of t) & linefeed & (artist of t) & linefeed & (player state as string) & linefeed & (player position as string) & linefeed & ((duration of t) / 1000 as string) & linefeed & (artwork url of t)\nend tell"
+            : "tell application \"Music\"\nif player state is stopped then return \"\"\nset t to current track\nreturn (name of t) & linefeed & (artist of t) & linefeed & (player state as string) & linefeed & (player position as string) & linefeed & (duration of t as string) & linefeed & \"\"\nend tell"
+        Task.detached(priority: .utility) {
+            let out = NowPlaying.osa(script)
+            await MainActor.run { NowPlaying.shared.apply(out, app: name) }
+        }
+    }
+
+    private func apply(_ out: String?, app name: String) {
+        busy = false
+        guard let out, !out.isEmpty else { if hasTrack { clear() }; return }
+        let p = out.components(separatedBy: "\n")
+        guard p.count >= 5 else { return }
+        let newTitle = p[0]
+        let num: (String) -> Double = { Double($0.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)) ?? 0 }
+        if newTitle != title, !newTitle.isEmpty, p[2] == "playing" { EdgeGlow.shared.flash(.music(newTitle), seconds: 2.4) }
+        title = newTitle; artist = p[1]; app = name; playing = p[2] == "playing"
+        position = num(p[3]); duration = num(p[4])
+        artURL = p.count > 5 && !p[5].isEmpty ? URL(string: p[5].trimmingCharacters(in: .whitespacesAndNewlines)) : nil
+    }
+
+    private func clear() { title = ""; artist = ""; playing = false; artURL = nil; position = 0; duration = 0 }
+
+    func send(_ cmd: String) {   // "playpause", "next track", "previous track"
+        let target = app.isEmpty ? (Self.running("com.spotify.client") ? "Spotify" : "Music") : app
+        if cmd == "playpause" { playing.toggle() }
+        Task.detached(priority: .userInitiated) {
+            _ = NowPlaying.osa("tell application \"\(target)\" to \(cmd)")
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            await MainActor.run { NowPlaying.shared.poll() }
+        }
+    }
+
+    nonisolated static func osa(_ script: String) -> String? {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript"); p.arguments = ["-e", script]
+        let pipe = Pipe(); p.standardOutput = pipe; p.standardError = Pipe()
+        do { try p.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Music page: artwork, title, a progress line and the three buttons.
+struct NowPlayingCard: View {
+    @ObservedObject private var np = NowPlaying.shared
+    var body: some View {
+        VStack(spacing: 8) {
+            if np.hasTrack {
+                HStack(spacing: 10) {
+                    Group {
+                        if let u = np.artURL {
+                            AsyncImage(url: u) { img in img.resizable().scaledToFill() } placeholder: { art }
+                        } else { art }
+                    }
+                    .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(np.title).font(.system(size: 12.5, weight: .bold, design: .rounded)).lineLimit(1)
+                        Text(np.artist).font(.system(size: 11)).foregroundColor(.white.opacity(0.65)).lineLimit(1)
+                        Text(np.app).font(.system(size: 9.5, weight: .semibold)).foregroundColor(Color(hex: np.app == "Spotify" ? "#1ED760" : "#FA586A"))
+                    }
+                    Spacer(minLength: 0)
+                    if np.playing { MusicBars().frame(width: 16, height: 14) }
+                }
+                if np.duration > 0 {
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.15))
+                            Capsule().fill(Color.white.opacity(0.85)).frame(width: g.size.width * CGFloat(min(1, np.position / np.duration)))
+                        }
+                    }.frame(height: 3)
+                }
+                HStack(spacing: 22) {
+                    control("backward.fill") { np.send("previous track") }
+                    control(np.playing ? "pause.fill" : "play.fill", big: true) { np.send("playpause") }
+                    control("forward.fill") { np.send("next track") }
+                }
+            } else {
+                Image(systemName: "music.note").font(.system(size: 26)).foregroundColor(Color(hex: "#F472B6"))
+                Text("Nothing playing").font(.system(size: 12, weight: .semibold, design: .rounded))
+                Text("Play something in Spotify or Music — it shows here with controls.").font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).multilineTextAlignment(.center)
+                Button { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Music.app")) } label: {
+                    Text("Open Music").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color.white.opacity(0.14)))
+                }.buttonStyle(.plain)
+            }
+        }
+        .foregroundColor(.white)
+        .onAppear { NowPlaying.shared.start() }
+    }
+    private var art: some View {
+        LinearGradient(colors: [Color(hex: "#F472B6"), Color(hex: "#7C5CFF")], startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay(Image(systemName: "music.note").font(.system(size: 18, weight: .bold)).foregroundColor(.white))
+    }
+    private func control(_ icon: String, big: Bool = false, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: big ? 17 : 13, weight: .bold))
+                .frame(width: big ? 38 : 30, height: big ? 38 : 30)
+                .background(Circle().fill(Color.white.opacity(big ? 0.2 : 0.08)))
+        }.buttonStyle(.plain)
+    }
+}
+
+/// Three little bars bouncing while music plays.
+struct MusicBars: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 20)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<3, id: \.self) { i in
+                    Capsule().fill(Color(hex: "#F472B6"))
+                        .frame(width: 3.5, height: 4 + 10 * CGFloat(abs(sin(t * (4 + Double(i)) + Double(i)))))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - The notch home's pages (swipe sideways; nothing moves by itself)
+
+@MainActor
+final class NotchGlance: ObservableObject {
+    static let shared = NotchGlance()
+    struct Prayer { let name: String; let at: Date }
+    @Published private(set) var prayers: [Prayer] = []
+    @Published private(set) var reminder: (title: String, at: Date)?
+    private var last = Date.distantPast
+
+    func refresh() {
+        guard Date().timeIntervalSince(last) > 60, WebHub.shared.isReady else { return }
+        last = Date()
+        Task {
+            guard let r = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.glance ? window.Sparrow.glance() : null") as? [String: Any] else { return }
+            let ps = (r["prayers"] as? [[String: Any]] ?? []).compactMap { d -> Prayer? in
+                guard let n = d["n"] as? String, let at = d["at"] as? Double else { return nil }
+                return Prayer(name: n, at: Date(timeIntervalSince1970: at / 1000))
+            }
+            self.prayers = ps
+            if let m = r["reminder"] as? [String: Any], let t = m["title"] as? String, let at = m["at"] as? Double {
+                self.reminder = (t, Date(timeIntervalSince1970: at / 1000))
+            } else { self.reminder = nil }
+        }
+    }
+    var nextPrayer: Prayer? { prayers.first { $0.at > Date() } }
+}
+
+struct NotchTodayPage: View {
+    @ObservedObject private var g = NotchGlance.shared
+    @ObservedObject private var weather = WeatherStore.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if let n = g.nextPrayer {
+                HStack(spacing: 8) {
+                    tile("moon.stars.fill", "#8B7CF6")
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("\(n.name) at \(Self.hm(n.at))").font(.system(size: 12, weight: .bold, design: .rounded))
+                        Text("in \(Self.until(n.at))").font(.system(size: 10)).foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                HStack(spacing: 4) {
+                    ForEach(0..<g.prayers.prefix(5).count, id: \.self) { i in
+                        let p = g.prayers[i]
+                        VStack(spacing: 1) {
+                            Text(String(p.name.prefix(3))).font(.system(size: 8.5, weight: .bold))
+                            Text(Self.hm(p.at)).font(.system(size: 8.5)).monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(p.name == n.name ? 0.22 : 0.07)))
+                        .opacity(p.at < Date() ? 0.5 : 1)
+                    }
+                }
+            }
+            if let r = g.reminder {
+                HStack(spacing: 8) {
+                    tile("bell.fill", "#F7C948")
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(r.title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1)
+                        Text(r.at < Date() ? "Overdue" : Self.until(r.at) == "now" ? "Now" : "in \(Self.until(r.at))").font(.system(size: 10)).foregroundColor(.white.opacity(0.6))
+                    }
+                }
+            }
+            if let c = weather.current, let w = weather.reports[c.name] {
+                HStack(spacing: 8) {
+                    tile(WeatherStore.symbol(w.code, night: WeatherStore.isNight(Date())), "#38BDF8")
+                    Text("\(c.name) \(w.temp)° · high \(w.hi)°").font(.system(size: 11.5, weight: .semibold)).lineLimit(1)
+                }
+            }
+            if g.nextPrayer == nil && g.reminder == nil && weather.current == nil {
+                Text("Nothing coming up. Turn on prayer times or add a reminder and they’ll show here.").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.6))
+            }
+        }
+        .foregroundColor(.white)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { NotchGlance.shared.refresh() }
+    }
+    private func tile(_ icon: String, _ hex: String) -> some View {
+        Image(systemName: icon).font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+            .frame(width: 24, height: 24).background(RoundedRectangle(cornerRadius: 7).fill(Color(hex: hex).gradient))
+    }
+    static func hm(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f.string(from: d) }
+    static func until(_ d: Date) -> String {
+        let m = Int(d.timeIntervalSinceNow / 60)
+        if m <= 0 { return "now" }
+        return m < 60 ? "\(m) min" : "\(m / 60) h \(m % 60) min"
+    }
+}
+
+struct NotchMePage: View {
+    @ObservedObject private var plan = ZuffiPlan.shared
+    var body: some View {
+        let p = plan.profile
+        let name = (p["name"] ?? "").isEmpty ? "You" : p["name"]!
+        VStack(spacing: 6) {
+            Text(String(name.prefix(1)).uppercased()).font(.system(size: 18, weight: .bold, design: .rounded))
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(LinearGradient(colors: [IslandConst.accent, Color(hex: "#F472B6")], startPoint: .topLeading, endPoint: .bottomTrailing)))
+            Text(name).font(.system(size: 13, weight: .bold, design: .rounded)).lineLimit(1)
+            if let b = Self.birthday(p["dob"]) { Text(b).font(.system(size: 10.5)).foregroundColor(.white.opacity(0.7)) }
+            if let c = p["city"], !c.isEmpty { Text(c).font(.system(size: 10.5)).foregroundColor(.white.opacity(0.6)) }
+            Button { ZuffiNav.go(.profile) } label: {
+                Text("See my details").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color.white.opacity(0.14)))
+            }.buttonStyle(.plain)
+        }
+        .foregroundColor(.white)
+    }
+    /// "Birthday in 12 days" (or today!).
+    static func birthday(_ iso: String?) -> String? {
+        guard let iso, iso.count == 10 else { return nil }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        guard let dob = f.date(from: iso) else { return nil }
+        let cal = Calendar.current
+        var c = cal.dateComponents([.month, .day], from: dob); c.year = cal.component(.year, from: Date())
+        guard var next = cal.date(from: c) else { return nil }
+        if cal.startOfDay(for: next) < cal.startOfDay(for: Date()) { next = cal.date(byAdding: .year, value: 1, to: next) ?? next }
+        let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: cal.startOfDay(for: next)).day ?? 0
+        return days == 0 ? "🎂 Happy birthday!" : "🎂 Birthday in \(days) day\(days == 1 ? "" : "s")"
     }
 }

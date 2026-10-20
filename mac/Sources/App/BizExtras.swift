@@ -74,7 +74,7 @@ struct BizCountrySheet: View {
                             Button { sel = c.code } label: {
                                 HStack { Text(c.flag); Text(c.name).foregroundColor(Ink.text); Spacer(); if sel == c.code { Image(systemName: "checkmark").foregroundColor(Ink.accent) } }
                                     .font(.system(size: 13)).padding(.horizontal, 10).frame(height: 30)
-                                    .background(RoundedRectangle(cornerRadius: 7).fill(sel == c.code ? Color.white.opacity(0.07) : .clear))
+                                    .background(RoundedRectangle(cornerRadius: 7).fill(sel == c.code ? Ink.ink.opacity(0.07) : .clear))
                                     .contentShape(Rectangle())
                             }.buttonStyle(.plain)
                         }
@@ -153,14 +153,14 @@ struct BizLearnView: View {
                     ForEach(guides) { g in
                         Button { sel = g.id } label: {
                             HStack(spacing: 10) {
-                                Text(g.icon).frame(width: 28, height: 28).background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.05)))
+                                Text(g.icon).frame(width: 28, height: 28).background(RoundedRectangle(cornerRadius: 7).fill(Ink.ink.opacity(0.05)))
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(g.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                                     Text(g.summary).font(.system(size: 11)).foregroundColor(Ink.muted).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }
-                            .padding(8).background(RoundedRectangle(cornerRadius: 9).fill(sel == g.id ? Color.white.opacity(0.07) : .clear))
+                            .padding(8).background(RoundedRectangle(cornerRadius: 9).fill(sel == g.id ? Ink.ink.opacity(0.07) : .clear))
                             .contentShape(Rectangle())
                         }.buttonStyle(.plain)
                     }

@@ -1751,6 +1751,7 @@ $('#memList').onclick = async e => {
 // ---------------- tools ----------------
 $$('.tool').forEach(b => b.onclick = () => openTool(b.dataset.tool));
 function pickFiles(accept, multiple = true) {
+  if (window.zuffiPreload) { const f = window.zuffiPreload; window.zuffiPreload = null; return Promise.resolve([f]); }   // a file dropped on the Mac notch
   return new Promise(res => { const i = $('#toolFile'); i.accept = accept; i.multiple = multiple; i.value = ''; i.onchange = () => res([...i.files]); i.click(); });
 }
 function updateTimerLabel() { const r = tools.runningTimer(), el = $('#timerLbl'); if (el) el.textContent = r ? `⏹ ${r.title} · ${tools.fmtHours(tools.hours(r))}` : 'Time tracker'; }
@@ -1760,7 +1761,7 @@ async function openTool(name) {
   if (name === 'jobs') { jobs.openJobs(); return; }
   const P = $('#toolPanel'); P.hidden = false;
   // An open tool gets the page to itself, with a way back.
-  const done = html => { P.innerHTML = '<button class="tool-back" id="toolBack" type="button">‹ Dashboard</button>' + html; $('#toolBack').onclick = () => { closeTool(); go('home'); }; window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const done = html => { P.innerHTML = '<button class="tool-back" id="toolBack" type="button">‹ Dashboard</button>' + html; $('#toolBack').onclick = () => { if (document.documentElement.classList.contains('tool-only') && M) { M.post('hide'); return; } closeTool(); go('home'); }; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const cur = S().business.currency;
   if ((name === 'agent' || name === 'promo') && !bizOn()) { closeTool(); go('home'); bizUpsell(); return; }
   if (name === 'blur') {
@@ -2652,6 +2653,34 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  /** Mac notch slider: today's prayer times, the next reminder and the user's name. Small and offline. */
+  glance: () => {
+    const s = S(), now = Date.now(), out = { prayers: [], reminder: null, name: s.profile?.name || s.name || '' };
+    if (s.prayer?.on && s.lastLoc) {
+      try {
+        const t = prayerTimes(new Date(), s.lastLoc.lat, s.lastLoc.lon, s.prayer.method, s.prayer.asr);
+        for (const n of PRAYERS) if (n !== 'Sunrise' && t[n]) out.prayers.push({ n, at: t[n].getTime() });
+        if (!out.prayers.some(p => p.at > now)) { const tm = prayerTimes(new Date(now + 86400e3), s.lastLoc.lat, s.lastLoc.lon, s.prayer.method, s.prayer.asr); if (tm.Fajr) out.prayers.push({ n: 'Fajr', at: tm.Fajr.getTime(), tomorrow: true }); }
+      } catch {}
+    }
+    const r = store.items.filter(i => i.when && !i.done && ['reminder', 'meeting', 'task'].includes(i.type) && new Date(i.when).getTime() > now - 3600e3)
+      .sort((a, b) => new Date(a.when) - new Date(b.when))[0];
+    if (r) out.reminder = { title: r.title, at: new Date(r.when).getTime(), meeting: r.type === 'meeting' };
+    return out;
+  },
+  /** Mac notch: open ONE tool as a small window (no dashboard). With a file, it is loaded straight in. tool=null → normal again. */
+  toolOnly: async (tool, name = '', b64 = '') => {
+    document.documentElement.classList.toggle('tool-only', !!tool);
+    if (!tool) { go('home'); return true; }
+    if (tool === 'profile') { showWelcome(true); return true; }
+    if (tool === 'account' || tool === 'settings') { await openSettings(tool === 'account' ? 'account' : undefined); return true; }
+    if (b64) { const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); window.zuffiPreload = new File([bytes], name, { type: studio.guessType(name) || '' }); }
+    const f = feats.FEATURES.find(x => x.id === tool);
+    if (f?.open.go) { go(f.open.go); return true; }
+    go('tools'); await openTool(f?.open.tool || tool);
+    if (window.zuffiPreload) setTimeout(() => $('#toolPanel button.btn:not(.ghost)')?.click(), 250);
+    return true;
+  },
   // The Mac notch: a dropped file → which formats, and the conversion itself
   formatsFor: name => conv.formatsFor({ name, type: studio.guessType(name) }),
   convertB64: async (name, b64, to) => {

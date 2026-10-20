@@ -51,6 +51,7 @@ enum FileDropHandler {
         // Start animation immediately — do NOT block on file copy.
         // Use original URL first; swap to inbox copy once background copy finishes.
         state.droppedFile = DroppedFile(url: url, name: name)
+        state.chooseMode = nil
         state.uploadProgress = 0
         state.fileDragOver = false
         state.promptContext = .file(name: name, fileURL: url)

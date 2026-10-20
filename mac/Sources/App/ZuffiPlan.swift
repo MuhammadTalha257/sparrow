@@ -164,11 +164,7 @@ final class ZuffiPlan: ObservableObject {
 
     /// Opens Settings → Zuffi account in the Zuffi panel (sign in / upgrade live there).
     func openAccount() {
-        WebHub.shared.show()
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            WebHub.shared.run("window.Sparrow && window.Sparrow.openSettings && window.Sparrow.openSettings('account')")
-        }
+        WebHub.shared.showTool("account")   // just the account page, in a small window
     }
 
     func askToUpgrade() {

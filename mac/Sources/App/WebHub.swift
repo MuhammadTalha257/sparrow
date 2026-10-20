@@ -120,7 +120,18 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         }
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        if let tab { run("window.Sparrow && window.Sparrow.go && window.Sparrow.go('\(tab)')") }
+        if let tab { run("document.documentElement.classList.remove('tool-only'); window.Sparrow && window.Sparrow.go && window.Sparrow.go('\(tab)')") }
+    }
+
+    /// One tool in a small window under the notch (Convert, Blur, Office…), with a dropped file already loaded if given.
+    /// The big dashboard isn't shown on the Mac — everything else lives inside the notch.
+    func showTool(_ tool: String, file: (String, Data)? = nil) {
+        start()
+        guard let w = window else { return }
+        if !w.isVisible { w.setContentSize(NSSize(width: 440, height: 600)) }
+        show()
+        let args: [String: Any] = ["t": tool, "n": file?.0 ?? "", "b": file?.1.base64EncodedString() ?? ""]
+        Task { _ = await self.callJS("return await window.Sparrow.toolOnly(t, n, b)", args) }
     }
 
     /// Drag the panel by its top bar (the web page swallows normal window drags).

@@ -7,6 +7,7 @@ import AppKit
 struct UploadCanvasView: View {
     @ObservedObject var state: AppState
     @State private var fileIcon: NSImage? = nil
+    @StateObject private var bunny = SparrowSpriteModel()
 
     private var engine: UploadSequenceEngine { .shared }
 
@@ -20,6 +21,14 @@ struct UploadCanvasView: View {
                     drawScene(ctx: ctx, f: f, wallTime: wallTime)
                 }
                 .frame(width: 640, height: 176)
+
+                // Zuffi the bunny (the same face as everywhere else), moving like the old drawn character
+                SparrowSpriteView(model: bunny, size: CGFloat(f.d) * 1.25, deadZone: 40, mood: .idle)
+                    .frame(width: CGFloat(f.d) * 1.3, height: CGFloat(f.d) * 1.3)
+                    .scaleEffect(x: CGFloat(f.sx), y: CGFloat(f.sy))
+                    .rotationEffect(.radians(f.tilt))
+                    .position(x: CGFloat(f.x), y: CGFloat(f.y + f.hop))
+                    .allowsHitTesting(false)
 
                 // Interactive choose buttons (invisible hit areas at reference positions)
                 if f.chooseAlpha > 0 {
@@ -47,42 +56,37 @@ struct UploadCanvasView: View {
 
     // MARK: - Choose overlay (transparent SwiftUI buttons over canvas)
 
+    /// After a drop: Ask · Convert · More · Email. (x, width) of each button in the 640-wide canvas.
+    static let chooseButtons: [(id: String, title: String, x: CGFloat, w: CGFloat)] = [
+        ("ask", "Ask about it", 114, 104), ("convert", "Convert", 224, 80), ("more", "More…", 310, 66), ("email", "Email", 382, 64),
+    ]
+
     @ViewBuilder
     private func chooseOverlay(f: USFrame) -> some View {
-        // Reference positions: button1 x=100 w=176 y=113 h=26, button2 x=284 w=128
         ZStack(alignment: .topLeading) {
-            // Primary: "Ask a question about it"
-            Button {
-                withAnimation(.easeInOut(duration: 0.22)) { state.view = .prompt }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-                    UploadSequenceEngine.shared.deactivate()
+            ForEach(0..<Self.chooseButtons.count, id: \.self) { i in
+                let b = Self.chooseButtons[i]
+                Button { pick(b.id) } label: {
+                    Color.clear.frame(width: b.w, height: 26).contentShape(Rectangle())
                 }
-            } label: {
-                Color.clear
-                    .frame(width: 168, height: 26)
-                    .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .frame(width: b.w, height: 26)
+                .position(x: b.x + b.w / 2, y: 113 + 13)
             }
-            .buttonStyle(.plain)
-            .frame(width: 168, height: 26)
-            .position(x: 114 + 84, y: 113 + 13)   // center = (198, 126)
-
-            // Secondary: "Send by email"
-            Button {
-                withAnimation(.easeInOut(duration: 0.22)) { state.view = .mail }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-                    UploadSequenceEngine.shared.deactivate()
-                }
-            } label: {
-                Color.clear
-                    .frame(width: 120, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .frame(width: 120, height: 26)
-            .position(x: 290 + 60, y: 113 + 13)   // center = (350, 126)
         }
         .opacity(f.chooseAlpha)
         .allowsHitTesting(f.chooseAlpha > 0.5)
+    }
+
+    private func pick(_ id: String) {
+        withAnimation(.easeInOut(duration: 0.22)) {
+            switch id {
+            case "ask": state.view = .prompt
+            case "email": state.view = .mail
+            default: state.chooseMode = id; state.view = .choose
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { UploadSequenceEngine.shared.deactivate() }
     }
 
     // MARK: - Main draw
@@ -148,7 +152,7 @@ struct UploadCanvasView: View {
         }
 
         // ── Mochi ─────────────────────────────────────────────────
-        drawMochi(ctx: &c, f: f)
+        // (the bunny is drawn as a SwiftUI view on top — see body)
 
         // ── File / suction ────────────────────────────────────────
         if f.fileVisible { drawFile(ctx: &c, f: f) }
@@ -273,21 +277,13 @@ struct UploadCanvasView: View {
             .foregroundColor(Color(hex:"#9398A1"))
         cCtx.draw(subText, at: CGPoint(x:114, y:100), anchor: .leading)
 
-        // Primary button (white fill)
-        cCtx.fill(roundedRect(CGRect(x:114,y:113,width:168,height:26), r:13),
-                  with: .color(Color(hex:"#F5F6F8")))
-        let btn1 = Text("Ask a question about it")
-            .font(.system(size:12.5, weight:.medium))
-            .foregroundColor(Color(red:0.043,green:0.047,blue:0.055))
-        cCtx.draw(btn1, at: CGPoint(x:198, y:126), anchor: .center)
-
-        // Secondary button (dim fill)
-        cCtx.fill(roundedRect(CGRect(x:290,y:113,width:120,height:26), r:13),
-                  with: .color(Color.white.opacity(0.09)))
-        let btn2 = Text("Send by email")
-            .font(.system(size:12.5, weight:.medium))
-            .foregroundColor(Color(hex:"#F1F2F4"))
-        cCtx.draw(btn2, at: CGPoint(x:350, y:126), anchor: .center)
+        for (i, b) in Self.chooseButtons.enumerated() {
+            cCtx.fill(roundedRect(CGRect(x: b.x, y: 113, width: b.w, height: 26), r: 13),
+                      with: .color(i == 0 ? Color(hex: "#F5F6F8") : Color.white.opacity(0.10)))
+            let t = Text(b.title).font(.system(size: 12.5, weight: .medium))
+                .foregroundColor(i == 0 ? Color(red: 0.043, green: 0.047, blue: 0.055) : Color(hex: "#F1F2F4"))
+            cCtx.draw(t, at: CGPoint(x: b.x + b.w / 2, y: 126), anchor: .center)
+        }
     }
 
     // MARK: - Zuffi body (eyes, beak, mouth)

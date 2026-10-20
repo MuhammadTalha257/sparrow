@@ -44,6 +44,8 @@ struct IslandViewContent: View {
         case .agents:    ZuffiTallPanel(title: "Agents", icon: "sparkles", view: .agents) { AgentsIslandView() }
         case .history:   ZuffiTallPanel(title: "History", icon: "clock.arrow.circlepath", view: .history) { HistoryIslandView() }
         case .data:      ZuffiTallPanel(title: "My data", icon: "tablecells.fill", view: .data) { ZuffiDataPanel() }
+        case .features:  ZuffiTallPanel(title: "All features", icon: "square.grid.2x2.fill", view: .features) { NotchFeaturesList() }
+        case .profile:   ZuffiTallPanel(title: "Me", icon: "person.crop.circle.fill", view: .profile) { ZuffiProfilePanel() }
         }
     }
 }
@@ -514,32 +516,103 @@ struct ChooseView: View {
     @State private var formats: [String] = []
     @State private var status = ""
 
+    /// What Zuffi can do with this kind of file (shown under "More…").
+    private var actions: [(id: String, icon: String, title: String)] {
+        let ext = (state.droppedFile?.url.pathExtension ?? "").lowercased()
+        let image = ["jpg", "jpeg", "png", "heic", "webp", "gif", "tiff", "bmp"].contains(ext)
+        var a: [(String, String, String)] = []
+        if image {
+            a += [("describe", "eye", "What’s in it"), ("blur", "eye.slash", "Blur faces & private info"), ("convert", "arrow.triangle.2.circlepath", "Convert"), ("pdf", "doc.richtext", "Make a PDF")]
+        } else {
+            a += [("summary", "text.alignleft", "Summarise"), ("points", "list.bullet", "Key points & to-dos"), ("translate", "character.bubble", "Translate"), ("convert", "arrow.triangle.2.circlepath", "Convert")]
+            if ext == "pdf" { a.append(("sign", "signature", "Sign it")) }
+        }
+        a.append(("email", "envelope", "Email it"))
+        return a
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             CardBackground(wash: nil)
             VStack(alignment: .leading, spacing: 8) {
                 let fileName = state.droppedFile?.name ?? "file"
                 (Text(fileName).font(.system(size: 14, weight: .semibold)) + Text(" is ready.").font(.system(size: 14, weight: .semibold)))
-                Text(status.isEmpty ? (formats.isEmpty ? "What do you want to do with it?" : "Convert it to…") : status)
-                    .font(.system(size: 12.5)).foregroundColor(Color(hex: "#A6988A")).lineLimit(2)
-                if formats.isEmpty {
-                    HStack(spacing: 8) {
-                        PrimaryButton("Ask a question") { state.view = .prompt }
-                        SecondaryButton("Convert") { Task { await loadFormats() } }
-                        SecondaryButton("Send by email") { state.view = .mail }
+                    .lineLimit(1).truncationMode(.middle)
+                Text(status.isEmpty ? (!formats.isEmpty ? "Convert it to…" : state.chooseMode == "more" ? "What shall I do with it?" : "What do you want to do with it?") : status)
+                    .font(.system(size: 12.5)).foregroundColor(Color(hex: "#9AA0AA")).lineLimit(2)
+                if !formats.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(formats, id: \.self) { f in SecondaryButton(Self.label(f)) { Task { await convert(to: f) } } }
+                        SecondaryButton("Back") { formats = []; status = ""; state.chooseMode = nil }
+                    }
+                } else if state.chooseMode == "more" {
+                    // two short rows of everything Zuffi can do with this file
+                    let list = actions
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(0..<((list.count + 2) / 3), id: \.self) { row in
+                            HStack(spacing: 6) {
+                                ForEach((row * 3)..<min(list.count, row * 3 + 3), id: \.self) { i in
+                                    actionChip(list[i].icon, list[i].title) { run(list[i].id) }
+                                }
+                            }
+                        }
                     }
                 } else {
-                    HStack(spacing: 6) {
-                        ForEach(formats, id: \.self) { f in
-                            SecondaryButton(Self.label(f)) { Task { await convert(to: f) } }
-                        }
-                        SecondaryButton("Back") { formats = []; status = "" }
+                    HStack(spacing: 8) {
+                        PrimaryButton("Ask about it") { state.view = .prompt }
+                        SecondaryButton("Convert") { Task { await loadFormats() } }
+                        SecondaryButton("More…") { state.chooseMode = "more" }
+                        SecondaryButton("Email") { state.view = .mail }
                     }
                 }
             }
             .padding(.leading, 98)
             .padding(.trailing, 18)
         }
+        .onAppear { if state.chooseMode == "convert" { Task { await loadFormats() } } }
+        .onChange(of: state.chooseMode) { _, m in if m == "convert" { Task { await loadFormats() } } }
+    }
+
+    private func actionChip(_ icon: String, _ title: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10.5, weight: .semibold))
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+            }
+            .foregroundColor(Color(hex: "#F1F2F4"))
+            .padding(.horizontal, 10).frame(height: 26)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
+        }.buttonStyle(.plain)
+    }
+
+    private func run(_ id: String) {
+        switch id {
+        case "convert": Task { await loadFormats() }
+        case "pdf": Task { await convert(to: "pdf") }
+        case "email": state.view = .mail
+        case "summary": ask("Summarise this file in a few clear points.")
+        case "points": ask("List the key points and any to-dos or deadlines in this file.")
+        case "translate": ask("Translate this file into English (or into Urdu if it is already in English). Keep the layout simple.")
+        case "describe": ask("What is in this picture? Describe it in two or three sentences.")
+        case "blur", "sign": openTool(id)
+        default: break
+        }
+        state.chooseMode = nil
+    }
+
+    /// The question goes to the chat, with the file attached.
+    private func ask(_ q: String) {
+        state.chatHistory.append(ChatMessage(role: .user, content: q))
+        state.stateOverride = .thinking
+        state.view = .prompt
+        Task { await AIService.shared.chat(query: q, context: state.promptContext, state: state) }
+    }
+
+    /// Blur / Sign open as a small window with this file already loaded.
+    private func openTool(_ tool: String) {
+        guard let f = state.droppedFile, let data = try? Data(contentsOf: f.url) else { status = "I couldn’t read the file."; return }
+        WebHub.shared.showTool(tool, file: (f.name, data))
+        NotificationCenter.default.post(name: .islandCollapse, object: nil)
     }
 }
 
