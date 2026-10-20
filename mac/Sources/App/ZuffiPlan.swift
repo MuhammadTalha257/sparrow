@@ -117,6 +117,30 @@ final class ZuffiPlan: ObservableObject {
     }
 
     /// One paragraph for every AI prompt, so Zuffi always knows who she's helping (phone numbers are left out).
+    /// "What's my date of birth / name / city?", "what do you know about me?" → the answer from the welcome form (the web part's
+    /// answer first, which also knows "remember that…" notes; this Mac's own copy of the form if the page isn't ready).
+    func aboutMe(_ q: String) async -> String? {
+        let js = "(window.zuffiAboutMe && window.zuffiAboutMe(\(Self.jsString(q)))) || ''"
+        if WebHub.shared.isReady, let r = await WebHub.shared.evalString(js), !r.isEmpty { return r }
+        let t = q.lowercased(), p = profile
+        let mine = t.range(of: #"\b(my|i|me|mera|meri)\b"#, options: .regularExpression) != nil
+        if mine, t.range(of: #"date of birth|\bdob\b|birthday|when was i born|salgirah"#, options: .regularExpression) != nil {
+            guard let d = p["dob"], d.count == 10 else { return "I don’t have your date of birth yet. Add it in Settings → You → Edit my details." }
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            guard let date = f.date(from: d) else { return "Your date of birth is \(d)." }
+            let out = DateFormatter(); out.dateStyle = .long
+            return "Your date of birth is \(out.string(from: date))."
+        }
+        if t.range(of: #"^(what'?s|what is) my name\??$|^who am i\??$"#, options: .regularExpression) != nil, let n = p["name"], !n.isEmpty { return "You’re \(n)." }
+        if t.range(of: #"^where do i live\??$|^(what'?s|what is) my city\??$"#, options: .regularExpression) != nil, let c = p["city"], !c.isEmpty { return "You live in \(c)." }
+        return nil
+    }
+    nonisolated static func jsString(_ s: String) -> String {
+        let d = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data("[\"\"]".utf8)
+        let a = String(data: d, encoding: .utf8) ?? "[\"\"]"
+        return String(a.dropFirst().dropLast())
+    }
+
     var profileLine: String {
         let p = profile
         guard !p.isEmpty else { return "" }
@@ -345,6 +369,7 @@ On the Mac you can also: open/quit apps and websites, control music, volume, bri
 Business (Business plan): WhatsApp agent (upload your price list, menu, brochure or property list — PDF, Word, Excel, CSV — or type; Zuffi learns the business and answers customers in whatever language they write, passing bargaining and complaints to you), Posts & reels (designed posts, Status images and reels with your name, price and WhatsApp number, plus captions; listing posts for estate agents, offers and free slots for UK businesses), Today page, WhatsApp inbox (new chats become leads; Zuffi drafts replies, Autopilot can answer), pipeline of stages, records table, money in/out and late payers, team and staff pay, automations, linked devices. The features follow the country and business type. In Pakistan Zuffi is set up for estate agents; in the UK for small businesses. Estate agents (Pakistan — plots, marla/kanal, DHA/Bahria areas, token money, installments, commission, dealer share, Zameen/Facebook leads), salons/barbers, restaurants/cafés, clinics/dentists (bookings, regulars, reminders), shops (orders, stock, delivery), trades (jobs, quotes, invoices) and freelancers (clients, projects, invoices). Business → Connect & devices can disconnect WhatsApp or erase business data.
 The Zuffi panel (one dashboard: tabs are just Zuffi, Business and Settings; search features at the top; the bell opens the Inbox with reminders, WhatsApp chats, unread Mail and files from your devices): Activity & undo (say "undo that"); Word, Excel & PowerPoint from a sentence (Business can export leads, money and late payers to Excel); Make a picture (OpenAI, Gemini, Grok, Together, Stability or OpenRouter keys, or offline with an Ollama picture model); Photo studio (auto fix, looks, Instagram/Status/portal sizes, watermark); Quick reels (trim, vertical crop, title, captions, your name); Convert files (photos to JPG/PNG/WebP/PDF, text to PDF); Sign a PDF; Send to my devices (link phone and computers once by QR code, then send files, photos, text and links, end-to-end encrypted). Meeting notes record the whole meeting and write an accurate transcript with speakers, summary, decisions and action items into Apple Notes.
 Your details: the welcome form (Just me / My business) — change it in Settings → You → Edit my details. "Just me" hides the business screens.
+New: Plan my day (fits tasks around meetings and your Google/Outlook/iCloud calendar — connect it in Settings → My day with the calendar's private iCal link); personalities (Settings → AI: Friendly, Professional, Butler, Big brother/sister, Coach, Teacher, Funny friend); Blur faces & private info in pictures (faces, emails, phone numbers, names); Screen recorder (Mac and Windows: “record my screen”, “stop recording”); meeting & call detection (Zoom, Teams, Google Meet, FaceTime, WhatsApp calls — Zuffi asks to take notes and stops when the call ends); drop any file and press Convert (photos, PDF, Word, Excel, CSV, text); type anywhere on Windows (Ctrl+Alt+Space, then again to type what you said); email in the Inbox is sorted into bills, invitations, security codes and orders (Mac); reminders in the Mac notch have Done and Later.
 Privacy and security: data stays on the device unless they link devices; sign-in is a 6-digit email code (no password); licences are signed so they can't be faked; Settings → General → Start fresh on this Mac erases everything on that Mac; Settings → AI → Remove all keys removes their keys.
 Help: Settings → How to use Zuffi (the guide), Business → Learn & help, or lisansystems.com/zuffi (questions form). Signed out or locked? Settings → Zuffi account → sign in with the email code.
 """#

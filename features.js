@@ -76,6 +76,7 @@ export const FEATURES = [
   { id: 'report', short: 'Report', cat: 'business', plan: 'business', icon: 'chart', tint: '#6366F1', name: 'Daily report', sub: 'What got done today', open: { tool: 'report' } },
   { id: 'bizMore', short: 'Business settings', cat: 'business', plan: 'business', icon: 'settings', tint: '#7A8496', name: 'Business settings', sub: 'Details, devices, automations', open: { biz: 'more' } },
   // ---- Every day ----
+  { id: 'planday', short: 'Plan my day', cat: 'everyday', plan: 'pro', icon: 'calendar', tint: '#4F6BFF', name: 'Plan my day', sub: 'Fits your tasks around meetings and your calendar', open: { tool: 'planday' } },
   { id: 'activity', short: 'Undo', cat: 'everyday', plan: 'pro', icon: 'history', tint: '#7A8496', name: 'Activity & undo', sub: 'What Zuffi did — undo anything', open: { tool: 'activity' } },
   { id: 'memory', short: 'Memory', cat: 'everyday', plan: 'pro', icon: 'brain', tint: '#8B7CF6', name: 'Memory', sub: 'Notes, chats and files Zuffi remembers', open: { go: 'memory' } },
   { id: 'meeting', short: 'Meeting notes', cat: 'everyday', plan: 'pro', icon: 'mic', tint: '#E5577E', name: 'Meeting notes', sub: 'Record, get a clean summary', open: { tool: 'meeting' } },
@@ -85,6 +86,7 @@ export const FEATURES = [
   // ---- Create ----
   { id: 'picture', short: 'Make a picture', cat: 'create', plan: 'pro', icon: 'sparkle', tint: '#A161E8', name: 'Make a picture', sub: 'Images and posters from words', open: { tool: 'picture' } },
   { id: 'studio', short: 'Photo studio', cat: 'create', plan: 'pro', icon: 'camera', tint: '#E5577E', name: 'Photo studio', sub: 'Brighten, resize, add your logo', open: { tool: 'studio' } },
+  { id: 'blur', short: 'Blur private info', cat: 'create', plan: 'pro', icon: 'eye', tint: '#475569', name: 'Blur faces & private info', sub: 'Hide faces, emails, phone numbers and names in a picture', open: { tool: 'blur' } },
   { id: 'reels', short: 'Reels', cat: 'create', plan: 'pro', icon: 'film', tint: '#EF5A5A', name: 'Quick reels', sub: 'Trim, caption, ready for Reels & Status', open: { tool: 'reels' } },
   // ---- Documents ----
   { id: 'office', short: 'Word & Excel', cat: 'documents', plan: 'pro', icon: 'doc', tint: '#2B6CD8', name: 'Word, Excel & PowerPoint', sub: 'Describe it — get the file', open: { tool: 'office' } },
@@ -95,6 +97,7 @@ export const FEATURES = [
   { id: 'pages', short: 'Keep pages', cat: 'documents', plan: 'pro', icon: 'pages', tint: '#D9A21B', name: 'Keep pages', sub: 'Pick the pages you need', open: { tool: 'pages' } },
   { id: 'rotate', short: 'Rotate PDF', cat: 'documents', plan: 'pro', icon: 'rotate', tint: '#0EA5E9', name: 'Rotate PDF', sub: 'Turn pages the right way', open: { tool: 'rotate' } },
   // ---- Devices ----
+  { id: 'screenrec', short: 'Record screen', cat: 'devices', plan: 'pro', icon: 'film', tint: '#E5484D', name: 'Screen recorder', sub: 'Record your screen with sound — saved as a video', open: { tool: 'screenrec' }, when: c => c.desktop || c.mac },
   { id: 'send', short: 'Send files', cat: 'devices', plan: 'pro', icon: 'send', tint: '#2F6FEB', name: 'Send to my devices', sub: 'Files and links between phone and computer', open: { tool: 'send' } },
   { id: 'sync', short: 'Sync', cat: 'devices', plan: 'pro', icon: 'sync', tint: '#14A37F', name: 'Sync devices', sub: 'Same Zuffi everywhere', open: { tool: 'sync' } },
   { id: 'find', short: 'Find files', cat: 'devices', plan: 'pro', icon: 'folder', tint: '#7A8496', name: 'Find files', sub: 'Search by what you remember', open: { tool: 'find' }, when: c => c.desktop },

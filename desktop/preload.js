@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   platform: () => process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux',
   openApp: name => ipcRenderer.sendSync('open-app', name),
   media: cmd => ipcRenderer.send('media', cmd),
+  httpGet: url => ipcRenderer.invoke('http-get', url),
+  typeText: text => ipcRenderer.invoke('type-text', text),
   window: what => ipcRenderer.send('window', what),
   show: () => ipcRenderer.send('show'),
   state: () => {},

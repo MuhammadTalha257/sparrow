@@ -13,7 +13,8 @@ const iso = (d = new Date()) => { const z = new Date(d.getTime() - d.getTimezone
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const N = window.SparrowNative || null;
 const LS = { get: (k, d = '') => { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
-const ROSE = '#F58FA8', AMBER = '#FBC56A', VIOLET = '#9A84FF', GREEN = '#34D399', GREY = '#8E88B3';
+// Professional colours (dash.css): red = needs you, amber = due, accent = your colour, green = done, grey = quiet
+const ROSE = 'var(--bz-hot)', AMBER = 'var(--bz-warn)', VIOLET = 'var(--accent)', GREEN = 'var(--bz-ok)', GREY = 'var(--bz-grey)';
 
 const PACKS = {
   realEstate: { label: 'Estate agent', icon: '🏠' }, salon: { label: 'Salon / barber / beauty', icon: '💇' }, clinic: { label: 'Clinic / dentist', icon: '🩺' },
@@ -375,7 +376,7 @@ function viewToday() {
     ${card('This month', `<b class="bz-big" style="color:${m.inc - m.exp >= 0 ? AMBER : ROSE}">${money(m.inc - m.exp)}</b><small class="bz-sub">profit · in ${money(m.inc)} · out ${money(m.exp)}</small>${bars()}`)}
     ${estate() ? stockMini() : ''}
     ${extras}
-    ${card('Today’s update for clients', `<textarea class="bz-in" data-cfg="today" rows="2" placeholder="e.g. 10% off colour today · new plots in Phase 8 · closed at 4pm">${esc(bs.cfg('today'))}</textarea><small class="bz-hint">Zuffi’s replies use this today, on every linked device.</small>`)}`;
+    ${card('Today’s update for clients', `<textarea class="bz-in" data-cfg="today" rows="2" placeholder="Today’s offer, news or changed hours">${esc(bs.cfg('today'))}</textarea><small class="bz-hint">Zuffi’s replies use this today, on every linked device.</small>`)}`;
 }
 
 /** Your day as a timeline: viewings, bookings, follow-ups and reminders, in time order. */
@@ -605,7 +606,8 @@ function viewTeam() {
 
 // ---------------- more: business, country, colour, phone, devices ----------------
 let moreFocus = '';
-const THEMES = [['rose', '#F58FA8', 0, 'Blossom'], ['violet', '#9A84FF', 55, 'Lavender'], ['sky', '#6EC1FF', 115, 'Sky'], ['mint', '#34D399', 170, 'Mint'], ['amber', '#FBC56A', 230, 'Honey'], ['coral', '#FF8A65', 330, 'Coral']];
+// App colour (Settings → You → Colour, or Business → My business): changes the accent everywhere
+export const THEMES = [['blue', '#4F6BFF', 0, 'Blue'], ['indigo', '#6366F1', 30, 'Indigo'], ['purple', '#8B5CF6', 55, 'Purple'], ['teal', '#0E9F9A', 115, 'Teal'], ['green', '#16A34A', 170, 'Green'], ['orange', '#EA7A2A', 230, 'Orange'], ['rose', '#E5487A', 330, 'Rose'], ['slate', '#475569', 200, 'Slate']];
 export function applyAccent() {
   const t = THEMES.find(x => x[0] === (bs.cfg('accent') || LS.get('zuffiAccent'))) || null;
   const de = document.documentElement;
@@ -725,7 +727,7 @@ function viewLearn() { return learnCard(); }
 function moreBusiness() {
   const p = feats();
   return `${card('My business', `
-      <label class="bz-lbl">Business name<input class="bz-in" data-cfg="name" value="${esc(bs.cfg('name'))}" placeholder="e.g. Al-Noor Estate, Glow Salon"></label>
+      <label class="bz-lbl">Business name<input class="bz-in" data-cfg="name" value="${esc(bs.cfg('name'))}" placeholder="Your business name"></label>
       <label class="bz-lbl">Your name<input class="bz-in" data-cfg="owner" value="${esc(bs.cfg('owner'))}" placeholder="for greetings and messages"></label>
       <button class="bz-pick" data-act="pickCountry"><span>${C.flag(country())}</span><span class="bz-rt"><b>${esc(C.name(country()))}</b><small>Country · features & currency</small></span><span>›</span></button>
       <div class="bz-grid2">
@@ -739,7 +741,7 @@ function moreBusiness() {
     ${card('Zuffi’s look', `<div class="bz-looks">
         <button class="${(bs.cfg('zstyle') || 'blob') === 'blob' ? 'on' : ''}" data-zstyle="blob"><span class="lk">${Z.svg('happy', zHue())}</span><b>Animated blob</b><small>Blinks, looks around, shows moods</small></button>
         <button class="${bs.cfg('zstyle') === 'bunny' ? 'on' : ''}" data-zstyle="bunny"><span class="lk"><img src="mascots/zuffi-body.webp" alt=""></span><b>Classic bunny</b><small>The original Zuffi</small></button></div>`)}
-    ${card('Zuffi’s colour', `<div class="bz-themes">${THEMES.map(([id, c, , n]) => `<button class="${(bs.cfg('accent') || 'rose') === id ? 'on' : ''}" data-theme="${id}" style="--c:${c}"><i></i><span>${n}</span></button>`).join('')}</div>
+    ${card('App colour', `<div class="bz-themes">${THEMES.map(([id, c, , n]) => `<button class="${(bs.cfg('accent') || 'blue') === id ? 'on' : ''}" data-theme="${id}" style="--c:${c}"><i></i><span>${n}</span></button>`).join('')}</div>
       <small class="bz-hint">Changes the app colour and Zuffi’s fur on all your linked devices.</small>`)}
     ${card('Business info for replies', `<textarea class="bz-in" data-cfg="info" rows="6" placeholder="Opening hours, prices, location, what you sell, how to book…">${esc(bs.cfg('info'))}</textarea>
       <small class="bz-hint">Zuffi only uses these facts when it answers clients. It never invents prices.</small>`)}
@@ -834,7 +836,7 @@ function onboarding(fromSettings) {
       <div class="bz-countries">${list.filter(c => !q || c.name.toLowerCase().includes(q.toLowerCase()) || c.code.toLowerCase() === q.toLowerCase()).map(c => `<button class="${sel === c.code ? 'on' : ''}" data-cc="${c.code}"><span>${c.flag}</span>${esc(c.name)}</button>`).join('')}</div>
       ${sel ? `<div class="bz-feat"><b>${C.flag(sel)} What you get in ${esc(C.name(sel))}</b>${C.featureList(sel).map(([i, t, s]) => `<div><span>${i}</span><span class="bz-rt"><b>${esc(t)}</b><small>${esc(s)}</small></span></div>`).join('')}</div>` : ''}
       ${!fromSettings ? `<label class="bz-lbl">Type of business<select class="bz-in" id="obKind">${Object.entries(PACKS).filter(([id]) => kindsFor(sel || country()).includes(id)).map(([id, x]) => `<option value="${id}" ${kind() === id ? 'selected' : ''}>${x.icon} ${x.label}</option>`).join('')}</select></label>
-      <label class="bz-lbl">Business name<input class="bz-in" id="obName" value="${esc(bs.cfg('name'))}" placeholder="e.g. Al-Noor Estate"></label>` : ''}</div>`;
+      <label class="bz-lbl">Business name<input class="bz-in" id="obName" value="${esc(bs.cfg('name'))}" placeholder="Your business name"></label>` : ''}</div>`;
   const { w } = sheet(fromSettings ? 'Country' : 'Welcome to Zuffi Business', html(), w => {
     if (!sel) { toast('Pick your country'); return false; }
     bs.setCfg('country', sel); bs.setCfg('currency', C.symbol(sel));
@@ -1000,9 +1002,9 @@ function editProp(k) {
   const old = k ? bs.rows('Listings').find(x => x.k === k)?.r || {} : { 'Property ID': 'P' + String(bs.rows('Listings').length + 1).padStart(3, '0'), Status: 'Available', Purpose: 'Sale', Added: iso() };
   const team = bs.rows('Team').map(({ r }) => f(r, 'Name')).filter(Boolean);
   const opt = (id, label, list) => `<label class="bz-lbl">${label}<select class="bz-in" id="${id}">${list.map(o => `<option ${f(old, label) === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
-  const { w } = sheet(k ? esc(f(old, 'Title') || f(old, 'Property ID')) : 'New property', `${field('pTitle', 'Title', f(old, 'Title'), 'placeholder="10 Marla house, DHA Phase 6"')}
+  const { w } = sheet(k ? esc(f(old, 'Title') || f(old, 'Property ID')) : 'New property', `${field('pTitle', 'Title', f(old, 'Title'), 'placeholder="Property title"')}
     <div class="bz-grid2">${opt('pPurpose', 'Purpose', ['Sale', 'Rent'])}${opt('pType', 'Type', ['Plot', 'House', 'Flat', 'Shop', 'Office', 'File', 'Farmhouse', 'Other'])}
-    ${field('pArea', 'Area', f(old, 'Area'))}${field('pBlock', 'Block / Phase', f(old, 'Block / Phase'))}${field('pSize', 'Size', f(old, 'Size'), 'placeholder="10 marla, 1 kanal…"')}${field('pPrice', 'Price', f(old, 'Price'), 'placeholder="2.5 crore"')}
+    ${field('pArea', 'Area', f(old, 'Area'))}${field('pBlock', 'Block / Phase', f(old, 'Block / Phase'))}${field('pSize', 'Size', f(old, 'Size'), 'placeholder="Size"')}${field('pPrice', 'Price', f(old, 'Price'), 'placeholder="Price"')}
     ${field('pBeds', 'Beds', f(old, 'Beds'), 'inputmode="numeric"')}${field('pBaths', 'Baths', f(old, 'Baths'), 'inputmode="numeric"')}
     ${opt('pStatus', 'Status', ['Available', 'On hold', 'Token received', 'Sold', 'Rented'])}
     <label class="bz-lbl">Agent<select class="bz-in" id="pAgent"><option value="">—</option>${team.map(t => `<option ${f(old, 'Agent') === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>

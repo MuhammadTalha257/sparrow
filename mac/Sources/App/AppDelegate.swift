@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         signal(SIGPIPE, SIG_IGN)
         // Warm up Keychain cache on main thread BEFORE any poller or view touches it
         _ = KeychainStore.shared
+        // Ask to take notes when a Zoom / Teams / Meet / FaceTime / WhatsApp call starts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { MainActor.assumeIsolated { MeetingWatcher.shared.start() } }
         NSApp.setActivationPolicy(.accessory)
         // First run: open Zuffi when the Mac starts (signed in already — the plan is remembered on this Mac).
         // Settings → General → Startup turns it off.

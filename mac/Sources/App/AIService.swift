@@ -149,7 +149,9 @@ final class AIService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         if ZuffiPlan.shared.isLocked { finish(ZuffiPlan.shared.lockedMessage, state: state, emote: .happy); ZuffiPlan.shared.openAccount(); return }
         var context = context
-        // 0) Your data: daily messages, and spreadsheets you hand over.
+        // 0) Questions about the user ("what's my date of birth?") — from the welcome form, no AI, works offline.
+        if context == nil, let me = await ZuffiPlan.shared.aboutMe(query) { finish(me, state: state, emote: .happy); return }
+        // 0b) Your data: daily messages, and spreadsheets you hand over.
         if let r = ZuffiTeam.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiCRM.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiMoney.shared.handle(query) { finish(r, state: state, emote: .happy); return }

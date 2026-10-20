@@ -581,6 +581,17 @@ ipcMain.handle('watch', (_e, action, dir) => {
   saveSettings(); return settings.watch;
 });
 ipcMain.handle('ollama', (_e, kind, body) => ollama(kind, body));
+// Calendar links (Google / Outlook iCal): read-only GET for the page
+// Type anywhere: paste the text into the app you're in (Ctrl+V), then give the clipboard back
+ipcMain.handle('type-text', async (_e, text) => {
+  const before = clipboard.readText();
+  clipboard.writeText(String(text || ''));
+  if (process.platform === 'win32') await ps(`$w=New-Object -ComObject WScript.Shell; $w.SendKeys('^v')`);
+  else if (process.platform === 'darwin') await new Promise(r => execFile('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down'], () => r()));
+  setTimeout(() => clipboard.writeText(before), 1500);
+  return true;
+});
+ipcMain.handle('http-get', async (_e, url) => { if (!/^https:\/\//.test(String(url))) throw new Error('bad url'); const r = await net.fetch(url); if (!r.ok) throw new Error('The calendar link answered ' + r.status); return r.text(); });
 ipcMain.handle('mail', (_e, kind, text) => mail(kind, text));
 ipcMain.handle('location', () => location());
 // AI requests go out from here (no browser CORS limits). Only known AI services are allowed.
@@ -602,6 +613,38 @@ ipcMain.handle('save-file', async (_e, name, base64) => {
   return r.filePath;
 });
 
+// ---------- meetings & calls (Windows) ----------
+// Every 12 s: the window titles of meeting apps + which apps are using the microphone right now.
+// A call starting → the panel asks "Take notes?"; ending → the notes stop by themselves.
+let meetingNow = null, meetingGone = 0;
+function meetingFromTitles(lines, micApps) {
+  for (const l of lines) {
+    const [proc, ...rest] = l.split('|'), p = (proc || '').toLowerCase(), t = rest.join('|').toLowerCase();
+    if (p === 'zoom' && (/zoom meeting|zoom webinar/.test(t) || micApps.some(a => /zoom/.test(a)))) return 'Zoom';
+    if (/teams/.test(p) && (/meeting|call/.test(t) || micApps.some(a => /teams/.test(a)))) return 'Teams';
+    if (/^meet - |google meet/.test(t)) return 'Google Meet';
+    if (/whatsapp/.test(p) && (/call/.test(t) || micApps.some(a => /whatsapp/.test(a)))) return 'WhatsApp call';
+    if (/slack/.test(p) && /huddle/.test(t)) return 'Slack huddle';
+    if (/webex|ciscocollab/.test(p) && /meeting/.test(t)) return 'Webex';
+    if (/skype/.test(p) && micApps.some(a => /skype/.test(a))) return 'Skype';
+  }
+  return null;
+}
+function pollMeetings() {
+  if (process.platform !== 'win32' || settings.meetingDetect === false) return;
+  const ps = "Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.ProcessName + '|' + $_.MainWindowTitle }; " +
+    "'---'; Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone\\NonPackaged' -ErrorAction SilentlyContinue | " +
+    "ForEach-Object { $p = Get-ItemProperty $_.PSPath; if ($p.LastUsedTimeStop -eq 0) { $_.PSChildName } }";
+  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', ps], { windowsHide: true, timeout: 9000 }, (err, out) => {
+    if (err) return;
+    const [titles, mics] = String(out).split(/\r?\n---\r?\n/);
+    const lines = (titles || '').split(/\r?\n/).filter(Boolean), micApps = (mics || '').split(/\r?\n/).map(s => s.toLowerCase()).filter(s => s && !/zuffi|sparrow|electron/.test(s));
+    const m = meetingFromTitles(lines, micApps);
+    if (m) { meetingGone = 0; if (meetingNow !== m) { meetingNow = m; toPanel('event', { type: 'meeting-start', app: m }); } }
+    else if (meetingNow && ++meetingGone >= 2) { toPanel('event', { type: 'meeting-end', app: meetingNow }); meetingNow = null; meetingGone = 0; }
+  });
+}
+
 // ---------- start ----------
 app.whenReady().then(async () => {
   loadSettings(); loadClips(); serveApp();
@@ -609,6 +652,14 @@ app.whenReady().then(async () => {
   const allow = ['media', 'notifications', 'geolocation', 'clipboard-read', 'clipboard-sanitized-write'];
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(allow.includes(perm)));
   session.defaultSession.setPermissionCheckHandler((_wc, perm) => allow.includes(perm));
+  // Screen recording from the panel (Zuffi → Screen recorder): the whole screen with the computer's sound
+  try {
+    const { desktopCapturer } = require('electron');
+    session.defaultSession.setDisplayMediaRequestHandler((_req, cb) => {
+      desktopCapturer.getSources({ types: ['screen'] }).then(src => cb({ video: src[0], audio: process.platform === 'win32' ? 'loopback' : undefined })).catch(() => cb({}));
+    });
+  } catch {}
+  setInterval(pollMeetings, 12000); setTimeout(pollMeetings, 15000);
   if (settings.firstRun) {
     settings.firstRun = false; saveSettings();
     app.setLoginItemSettings({ openAtLogin: settings.login, openAsHidden: true, args: ['--hidden'] });
@@ -624,6 +675,8 @@ app.whenReady().then(async () => {
   const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin;
   if (!hidden) panel.webContents.once('did-finish-load', () => setTimeout(showPanel, 1600));
   globalShortcut.register('CommandOrControl+Shift+Space', togglePanel);
+  // Type anywhere: Ctrl+Alt+Space starts listening, press again and Zuffi types what you said where your cursor is
+  try { globalShortcut.register('Control+Alt+Space', () => toPanel('event', { type: 'dictate' })); } catch {}
   screen.on('display-metrics-changed', () => { panel && panel.setBounds(islandBounds()); pet && pet.setBounds(petBounds()); });
 });
 app.on('before-quit', () => { quitting = true; });

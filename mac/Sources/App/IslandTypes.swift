@@ -87,9 +87,15 @@ enum IslandConst {
     static let viewWidths: [IslandView: CGFloat] = [
         .overview: 330, .empty: 330, .prompt: 372, .settings: 340, .agents: 380, .history: 350, .data: 370,
     ]
-    static func width(for v: IslandView) -> CGFloat { viewWidths[v] ?? expandedWidth }
+    /// Short messages (reminders, answers, "done") stay small and close to the notch, so they never cover what you're working on.
+    static let cardWidths: [IslandView: CGFloat] = [
+        .note: 480, .result: 500, .searching: 460, .finished: 460, .error: 480, .confused: 440,
+    ]
+    static func width(for v: IslandView) -> CGFloat { viewWidths[v] ?? cardWidths[v] ?? expandedWidth }
+    /// The accent the person picked in Zuffi (Settings → You → Colour); blue until the app tells us.
+    static var accent: Color { Color(hex: UserDefaults.standard.string(forKey: "zuffiAccentHex") ?? "#4F6BFF") }
     static func isPortrait(_ v: IslandView) -> Bool { viewWidths[v] != nil }
-    static let chatHeight: CGFloat = 470
+    static let chatHeight: CGFloat = 410   // tall enough to read, short enough to keep the screen visible
     static let earRadius: CGFloat   = 14
     static let roundedCorner: CGFloat = 14    // hidden/peek/compact
     /// How far the closed island reaches below the notch to show Zuffi's face.
@@ -116,7 +122,7 @@ enum IslandConst {
         .uploading: ViewLayout(height: 176, botX: 46,  botY: 118, botDiameter: 20, agentMode: .none),
         .choose:    ViewLayout(height: 176, botX: 60,  botY: 101, botDiameter: 52, agentMode: .column),
         .mail:      ViewLayout(height: 240, botX: 56,  botY: nil, botDiameter: 46, agentMode: .column),
-        .prompt:    ViewLayout(height: 470, botX: 52,  botY: nil, botDiameter: 0, agentMode: .column),
+        .prompt:    ViewLayout(height: 410, botX: 52,  botY: nil, botDiameter: 0, agentMode: .column),
         .searching: ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
         .result:    ViewLayout(height: 160, botX: 52,  botY: nil, botDiameter: 44, agentMode: .column),
         .note:      ViewLayout(height: 160, botX: 60,  botY: nil, botDiameter: 50, agentMode: .column),

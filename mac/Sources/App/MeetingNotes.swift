@@ -2,6 +2,8 @@ import Foundation
 import AppKit
 import AVFoundation
 import Speech
+import ScreenCaptureKit
+import CoreMedia
 
 /// "Zuffi, start meeting notes" … "Zuffi, stop meeting notes":
 /// Zuffi records the whole meeting (so no words are lost between listening sessions), then writes an accurate
@@ -165,5 +167,166 @@ final class MeetingNotes {
     private func asq(_ s: String) -> String { s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
     private func json(_ s: String) -> String {
         (try? String(data: JSONSerialization.data(withJSONObject: [s]), encoding: .utf8)).map { String($0.dropFirst().dropLast()) } ?? "\"\""
+    }
+}
+
+
+// =====================================================================
+// MARK: - Screen recording ("Zuffi, record my screen" / "stop recording")
+// Records the whole screen (with the Mac's sound) to Movies → Zuffi recordings. Zuffi hides itself from the video.
+// =====================================================================
+@MainActor
+final class ScreenRecorder: NSObject, SCRecordingOutputDelegate {
+    static let shared = ScreenRecorder()
+    private var stream: SCStream?
+    private var output: SCRecordingOutput?
+    private(set) var fileURL: URL?
+    private(set) var startedAt: Date?
+    var isRecording: Bool { stream != nil }
+
+    func start() async -> String {
+        guard stream == nil else { return "I’m already recording your screen. Say “stop recording” when you’re done." }
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else { return "I couldn’t find a screen to record." }
+            let me = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
+            let filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])
+            let cfg = SCStreamConfiguration()
+            let scale = Int(NSScreen.main?.backingScaleFactor ?? 2)
+            cfg.width = display.width * scale
+            cfg.height = display.height * scale
+            cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+            cfg.showsCursor = true
+            cfg.capturesAudio = true
+            let dir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("Zuffi recordings", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+            let file = dir.appendingPathComponent("Screen recording \(f.string(from: Date())).mov")
+            let rc = SCRecordingOutputConfiguration()
+            rc.outputURL = file
+            rc.outputFileType = .mov
+            rc.videoCodecType = .hevc
+            let out = SCRecordingOutput(configuration: rc, delegate: self)
+            let s = SCStream(filter: filter, configuration: cfg, delegate: nil)
+            try s.addRecordingOutput(out)
+            try await s.startCapture()
+            stream = s; output = out; fileURL = file; startedAt = Date()
+            appendAppLog("screen.log", "recording to \(file.lastPathComponent)")
+            return "Recording your screen. Say “Zuffi, stop recording” or click Stop when you’re done."
+        } catch {
+            appendAppLog("screen.log", "start failed: \(error.localizedDescription)")
+            return "I couldn’t record the screen yet. Allow Zuffi in System Settings → Privacy & Security → Screen & System Audio Recording, then try again."
+        }
+    }
+
+    func stop() async -> String {
+        guard let s = stream else { return "I’m not recording the screen right now." }
+        try? await s.stopCapture()
+        if let o = output { try? s.removeRecordingOutput(o) }
+        stream = nil; output = nil
+        let mins = Int((Date().timeIntervalSince(startedAt ?? Date())) / 60)
+        guard let u = fileURL else { return "Stopped." }
+        try? await Task.sleep(nanoseconds: 600_000_000)   // let the file finish writing
+        NSWorkspace.shared.activateFileViewerSelecting([u])
+        return "Saved your screen recording\(mins > 0 ? " (\(mins) min)" : "") in Movies → Zuffi recordings."
+    }
+
+    nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {}
+    nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {}
+    nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: any Error) {
+        let msg = error.localizedDescription
+        Task { @MainActor in appendAppLog("screen.log", "failed: \(msg)") }
+    }
+}
+
+// =====================================================================
+// MARK: - Meeting & call detection
+// Every few seconds Zuffi looks at the meeting apps that are open (Zoom, Teams, Google Meet in a browser, FaceTime,
+// WhatsApp, Slack huddles, Webex). When a call starts she asks once: “Take notes?” — and when the call ends she
+// stops the notes by herself and shows the summary. Nothing is recorded without your yes.
+// =====================================================================
+@MainActor
+final class MeetingWatcher {
+    static let shared = MeetingWatcher()
+    private var timer: Timer?
+    private(set) var current: String?          // the meeting we saw ("Zoom", "Google Meet"…)
+    private var askedFor: [String: Date] = [:]
+    private var goneSince: Date?
+    private var startedByUs = false
+    var enabled: Bool {
+        get { UserDefaults.standard.object(forKey: "meetingDetect") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "meetingDetect"); newValue ? start() : stop() }
+    }
+
+    func start() {
+        guard enabled, timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 6, repeats: true) { _ in MainActor.assumeIsolated { MeetingWatcher.shared.tick() } }
+    }
+    func stop() { timer?.invalidate(); timer = nil }
+
+    /// The meeting on screen right now, if any.
+    static func detect() -> String? {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier })
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        for w in info {
+            let owner = (w[kCGWindowOwnerName as String] as? String ?? "").lowercased()
+            let name = (w[kCGWindowName as String] as? String ?? "").lowercased()
+            let layer = w[kCGWindowLayer as String] as? Int ?? 0
+            guard layer == 0 || owner.contains("zoom") else { continue }
+            if owner.contains("zoom") && (name.contains("zoom meeting") || name.contains("zoom webinar") || name == "meeting") { return "Zoom" }
+            if owner.contains("teams") && (name.contains("meeting") || name.contains("call") || name.contains("| compact")) { return "Teams" }
+            if name.hasPrefix("meet - ") || name.contains("google meet") && !name.contains("start") { return "Google Meet" }
+            if owner == "facetime" && !name.isEmpty && name != "facetime" { return "FaceTime" }
+            if owner.contains("whatsapp") && (name.contains("voice call") || name.contains("video call") || name.contains("call with")) { return "WhatsApp call" }
+            if owner.contains("slack") && name.contains("huddle") { return "Slack huddle" }
+            if owner.contains("webex") && name.contains("meeting") { return "Webex" }
+            if owner.contains("discord") && name.contains("voice connected") { return "Discord call" }
+        }
+        _ = running
+        return nil
+    }
+
+    private func tick() {
+        guard enabled else { return }
+        let now = Self.detect()
+        if let m = now {
+            goneSince = nil
+            if current != m {
+                current = m
+                guard !MeetingNotes.shared.active else { return }
+                if let last = askedFor[m], Date().timeIntervalSince(last) < 45 * 60 { return }   // asked recently: don't nag
+                askedFor[m] = Date()
+                ask(m)
+            }
+        } else if current != nil {
+            if goneSince == nil { goneSince = Date() }
+            if let g = goneSince, Date().timeIntervalSince(g) > 20 {      // the call has ended
+                current = nil; goneSince = nil
+                if MeetingNotes.shared.active && startedByUs {
+                    startedByUs = false
+                    Task { @MainActor in
+                        let r = await MeetingNotes.shared.stop()
+                        AppState.shared.noteAction = nil
+                        AppState.shared.noteMessage = r
+                        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+                    }
+                }
+            }
+        }
+    }
+
+    private func ask(_ m: String) {
+        let st = AppState.shared
+        st.noteIsAlert = false
+        st.noteAction = "meeting"
+        st.noteMessage = "Looks like you’re in a \(m) call.\nShall I take notes? You get a summary and to-dos when it ends."
+        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+        NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
+    }
+
+    /// "Take notes" from the notch.
+    func acceptNotes() -> String {
+        startedByUs = true
+        return MeetingNotes.shared.start()
     }
 }

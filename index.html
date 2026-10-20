@@ -66,6 +66,7 @@
         <div class="hero-actions">
           <button class="chip solid zc-open-btn" id="micHeroBtn"><i></i> <span>Talk to Zuffi</span></button>
           <button class="chip" id="hearBriefBtn"><span data-i18n="myDay">My day</span></button>
+          <button class="chip" id="planDayBtn">Plan my day</button>
           <button class="chip" data-goto="chat">Chats</button>
         </div>
       </div>
@@ -177,7 +178,7 @@
   </button>
   <input type="file" id="fileInput" multiple hidden>
   <div class="attached" id="attached" hidden></div>
-  <input id="askInput" data-i18n-ph="ask" placeholder="Ask Zuffi… e.g. remind me to call mum at 6pm" enterkeyhint="send">
+  <input id="askInput" data-i18n-ph="ask" placeholder="Ask Zuffi anything, or tell her what to remember" enterkeyhint="send">
   <button type="button" class="mic" id="micBtn" aria-label="Talk">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
   </button>
@@ -205,9 +206,9 @@
 </div>
 <div class="sheet" id="sheet" hidden>
   <div class="grab"></div>
-  <div class="sheet-head"><h2 data-i18n="settings">Settings</h2><button class="pill-btn solid" id="closeSheet" data-i18n="done">Done</button></div>
+  <div class="sheet-head"><div><h2 data-i18n="settings">Settings</h2><p class="sheet-sub">Everything about Zuffi, in one place</p></div><button class="pill-btn solid" id="closeSheet" data-i18n="done">Done</button></div>
 
-  <details open><summary>👋 You</summary>
+  <details><summary><span class="si" data-ic="users" style="--c:#4F6BFF"></span><span class="st"><b>You</b><small>Name, birthday, language, look</small></span></summary>
     <button class="btn ghost guide-open" id="editProfile" type="button">📝 Edit my details (you or your business)</button>
     <label class="field"><span>Your name</span><input id="sName" placeholder="What should Zuffi call you?"></label>
     <label class="field"><span>Your birthday — Zuffi wishes you and dresses up on the day</span><input id="sBirthday" type="date" max="2026-12-31"></label>
@@ -215,33 +216,25 @@
     <div class="field"><span>Look</span><div class="themes" id="sTheme">
       <button data-th="paper"><i style="background:linear-gradient(135deg,#5B8CFF,#9B6BFF,#22C3A6)"></i>Bright</button>
       <button data-th="studio"><i style="background:#14171C;outline:3px solid #4C8DFF"></i>Night</button>
-      <button data-th="graphite"><i style="background:#18191E;outline:3px solid #EDB24E"></i>Graphite</button>
-      <button data-th="space"><i style="background:linear-gradient(135deg,#7C5CFF,#E2648A)"></i>Space</button>
-      <button data-th="daylight"><i style="background:#2F6FEB"></i>Daylight</button>
-      <button data-th="midnight"><i style="background:#C6F432;outline:3px solid #0B0F1A"></i>Midnight</button>
-      <button data-th="pop"><i style="background:#FFE14D;outline:2px solid #111"></i>Pop</button>
-      <button data-th="sage"><i style="background:#2E7D5B"></i>Sage</button>
-      <button data-th="blossom"><i style="background:linear-gradient(135deg,#FFB6C8,#EF7598)"></i>Blossom</button>
-      <button data-th="petal"><i style="background:#E0607E;outline:3px solid #FFF1F4"></i>Petal</button>
-      <button data-th="sunset"><i style="background:#F28A3C"></i>Sunset</button>
     </div></div>
+    <div class="field"><span>Colour</span><div class="accents" id="sAccent"></div></div>
     <label class="row"><input type="checkbox" id="sSimple"> 🔠 Simple mode — big text, fewer buttons, slower voice</label>
     <label class="field"><span>City for weather &amp; prayer times</span><input id="sCity" placeholder="Leave empty = where you are now"></label>
   </details>
 
   <button class="btn ghost guide-open" type="button" id="openGuide">📖 How to use Zuffi</button>
 
-  <details id="accDetails"><summary>👤 Zuffi account &amp; plan</summary>
+  <details id="accDetails"><summary><span class="si" data-ic="briefcase" style="--c:#111827"></span><span class="st"><b>Account &amp; plan</b><small>Sign in, trial, Pro or Business</small></span></summary>
     <div id="accBox"></div>
   </details>
 
-  <details id="lookDetails"><summary>🐰 Zuffi’s outfit &amp; seasons</summary>
+  <details id="lookDetails"><summary><span class="si" data-ic="sparkle" style="--c:#E5577E"></span><span class="st"><b>Zuffi’s look</b><small>Outfits and seasons</small></span></summary>
     <p class="small-text">Zuffi can dress up for the season — a scarf and woolly hat in winter, a lantern-lit sky in Ramadan, confetti for Eid and your birthday (set it under You).</p>
     <div class="outfits" id="sOutfit"></div>
     <label class="row"><input type="checkbox" id="sEventColors"> 🎨 Use the season’s colour for the app</label>
   </details>
 
-  <details><summary>🗣️ Voice</summary>
+  <details><summary><span class="si" data-ic="mic" style="--c:#8B5CF6"></span><span class="st"><b>Voice</b><small>How Zuffi listens and speaks</small></span></summary>
     <div class="field"><span>Zuffi's voice</span><div class="seg small" id="sGender"><button data-g="female">Female</button><button data-g="male">Male</button></div></div>
     <label class="field"><span>Voice</span><select id="sVoiceName"></select></label>
     <label class="row"><input type="checkbox" id="sNeural"> ✨ Natural voice (built in, works offline). Speaks Urdu, Hindi and Punjabi too</label>
@@ -267,25 +260,31 @@
     <button class="btn ghost" id="testVoice">🔊 Test voice</button>
   </details>
 
-  <details><summary>☀️ My day</summary>
+  <details><summary><span class="si" data-ic="calendar" style="--c:#F2994A"></span><span class="st"><b>My day</b><small>Morning briefing, evening check-in</small></span></summary>
     <label class="row"><input type="checkbox" id="rMorningOn"> Morning briefing — weather, meetings &amp; today's tasks</label>
     <label class="field"><span>Every morning at</span><input type="time" id="rMorning" value="08:30"></label>
     <label class="row"><input type="checkbox" id="rNightOn"> Evening check-in — tick what's done, move the rest</label>
     <label class="field"><span>Every evening at</span><input type="time" id="rNight" value="21:30"></label>
+    <div class="field"><span>Calendars (Google, Outlook, iCloud) — Zuffi plans around your events</span>
+      <div id="calList"></div>
+      <div class="row-btns tight"><input id="calUrl" placeholder="Paste your calendar’s private iCal link" style="flex:1;margin:0"><button class="btn" id="calAdd" type="button">Connect</button></div>
+      <p class="small-text">Google: Calendar settings → your calendar → “Secret address in iCal format”. Outlook: Settings → Calendar → Shared calendars → Publish → ICS link. Read-only — Zuffi never changes your calendar.</p>
+    </div>
+    <label class="row desktop-mac"><input type="checkbox" id="sMeetDetect"> 🎙️ When a call starts (Zoom, Teams, Meet, WhatsApp…), ask if I want notes</label>
     <label class="field"><span>Warn me before reminders &amp; meetings</span>
       <select id="rLead"><option value="0">Only on time</option><option value="1">1 minute before</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option></select></label>
   </details>
 
-  <details><summary>💧 Water, coffee &amp; medicine</summary>
+  <details><summary><span class="si" data-ic="bell" style="--c:#0EA5E9"></span><span class="st"><b>Water, coffee &amp; medicine</b><small>Health reminders</small></span></summary>
     <div id="healthList"></div>
     <p class="small-text">When it's time, Zuffi the bunny walks in with your water bottle, coffee cup or pills. You can also say “remind me to drink water every 30 minutes”.</p>
   </details>
 
-  <details id="macLinkDetails" class="no-mac"><summary>💻 Control my Mac</summary>
+  <details id="macLinkDetails" class="no-mac"><summary><span class="si" data-ic="phone" style="--c:#64748B"></span><span class="st"><b>Control my Mac</b><small>Use your Mac from this phone</small></span></summary>
     <div id="macLinkBox"></div>
   </details>
 
-  <details><summary>🕌 Prayer times</summary>
+  <details><summary><span class="si" data-ic="clock" style="--c:#14A37F"></span><span class="st"><b>Prayer times</b><small>Reminders before and on time</small></span></summary>
     <label class="row"><input type="checkbox" id="pOn"> Show prayer times and remind me — times follow your location automatically</label>
     <label class="field"><span>Method</span><select id="pMethod"></select></label>
     <label class="field"><span>Asr</span><select id="pAsr"><option value="Hanafi">Hanafi (later)</option><option value="Shafi">Shafi'i, Maliki, Hanbali</option></select></label>
@@ -294,7 +293,7 @@
     <button class="btn ghost" id="pCalendar">📅 Add this month to my phone calendar</button>
   </details>
 
-  <details><summary>✨ AI</summary>
+  <details><summary><span class="si" data-ic="bot" style="--c:#6366F1"></span><span class="st"><b>AI</b><small>Built-in AI, your keys, offline AI</small></span></summary>
     <p class="small-text">Everyday commands work without any AI. For open questions, Zuffi uses the first one that's available.</p>
     <div class="field ai-source" id="aiSourceBox">
       <span>Where Zuffi's answers come from</span>
@@ -302,6 +301,7 @@
       <label class="radio-row"><input type="radio" name="aiSource" value="own"> <b>My own AI key</b><small>Use your own Groq, OpenAI, Gemini… key below (free keys work), or the free AI on this device.</small></label>
     </div>
     <div class="ai-usage" id="aiUsage" aria-live="polite"></div>
+    <label class="field"><span>Zuffi’s personality</span><select id="sPersona"></select></label>
     <label class="field"><span>Preferred AI</span><select id="sProvider"></select></label>
     <div id="ollamaBox" class="desktop-only">
       <label class="field"><span>Ollama model on this computer (free)</span><select id="sOllama"><option value="">Automatic</option></select></label>
@@ -319,14 +319,14 @@
     <div id="keyFields"></div>
   </details>
 
-  <details><summary>💼 Business</summary>
-    <label class="field"><span>Business name (on quotes &amp; invoices)</span><input id="bName" placeholder="Lisan Systems"></label>
-    <label class="field"><span>Address / contact</span><input id="bAddr" placeholder="1 High St, Manchester, hello@…"></label>
+  <details><summary><span class="si" data-ic="briefcase" style="--c:#E0A23B"></span><span class="st"><b>Business details</b><small>Name and currency on invoices</small></span></summary>
+    <label class="field"><span>Business name (on quotes &amp; invoices)</span><input id="bName" placeholder="Your business name"></label>
+    <label class="field"><span>Address / contact</span><input id="bAddr" placeholder="Address, phone or email"></label>
     <label class="field"><span>Currency</span><select id="bCur"><option>£</option><option>$</option><option>€</option><option>₹</option><option value="Rs ">Rs</option><option value="AED ">AED</option><option value="SAR ">SAR</option></select></label>
     <label class="field"><span>Music app for “play …”</span><select id="sMusic"><option value="spotify">Spotify</option><option value="youtube">YouTube</option><option value="music">Apple Music</option></select></label>
   </details>
 
-  <details><summary>🧠 Memory</summary>
+  <details><summary><span class="si" data-ic="brain" style="--c:#A161E8"></span><span class="st"><b>Memory</b><small>What Zuffi remembers</small></span></summary>
     <label class="row"><input type="checkbox" id="mOn"> Remember what I do with Zuffi (on this device only)</label>
     <label class="row"><input type="checkbox" id="mCopies"> Keep a copy of files I give Zuffi</label>
     <label class="row desktop-only"><input type="checkbox" id="mRecent"> Also look at files I worked on recently (this computer)</label>
@@ -335,7 +335,7 @@
   </details>
 
   <div id="androidSection" hidden>
-    <details><summary>🤖 Android powers</summary>
+    <details><summary><span class="si" data-ic="phone" style="--c:#25B868"></span><span class="st"><b>Android powers</b><small>Bunny on screen, bubble, wake word</small></span></summary>
       <label class="row"><input type="checkbox" id="aPet"> 🐰 Zuffi walks on your screen and shows reminders</label>
       <label class="row"><input type="checkbox" id="aCharge"> ⚡ Charging light round the screen when you plug in</label>
       <label class="row"><input type="checkbox" id="aBubble"> 🫧 Floating Zuffi bubble over other apps</label>
@@ -343,20 +343,20 @@
       <label class="row"><input type="checkbox" id="aNotif"> 🔔 Read new notifications out loud</label>
       <p class="small-text" id="aNote"></p>
     </details>
-    <details><summary>💬 WhatsApp on this phone (business)</summary>
+    <details><summary><span class="si" data-ic="whatsapp" style="--c:#25B868"></span><span class="st"><b>WhatsApp on this phone</b><small>Leads and autopilot</small></span></summary>
       <p class="small-text">Zuffi reads WhatsApp notifications on this phone — even with the screen off — saves each chat as a lead, and with Autopilot on answers from the notification using what you write below. It needs “Notification access” and a free Groq or Gemini key (Settings → AI).</p>
       <label class="row"><input type="checkbox" id="waLeads"> 📥 Save new WhatsApp chats as leads</label>
       <label class="row"><input type="checkbox" id="waPilot"> 🤖 Autopilot — reply to clients for me</label>
       <label class="row"><input type="checkbox" id="waContacts"> 👥 Also my saved contacts (off = only new numbers; friends &amp; groups are left alone)</label>
-      <label class="field"><span>Business name</span><input id="waName" placeholder="e.g. Green Leaf Estates"></label>
-      <label class="field"><span>About your business (prices, area, hours, how booking works…)</span><textarea id="waInfo" rows="5" placeholder="We are a property agency in DHA Lahore. Plots, houses, rent. Office 10am–8pm Mon–Sat. Site visits free…"></textarea></label>
-      <label class="field"><span>Today's update (offers, new items — used today only)</span><input id="waToday" placeholder="e.g. New 5 marla plots in DHA 9, Rs 1.6 crore"></label>
+      <label class="field"><span>Business name</span><input id="waName" placeholder="Your business name"></label>
+      <label class="field"><span>About your business (prices, area, hours, how booking works…)</span><textarea id="waInfo" rows="5" placeholder="What you offer, prices, area, opening hours and how customers book"></textarea></label>
+      <label class="field"><span>Today's update (offers, new items — used today only)</span><input id="waToday" placeholder="Today’s offer or news (used today only)"></label>
       <div class="row-btns"><button class="btn" id="waOpen">See WhatsApp chats</button></div>
     </details>
   </div>
   <div id="desktopSection"></div>
 
-  <details><summary>🗂️ Your data</summary>
+  <details><summary><span class="si" data-ic="folder" style="--c:#7A8496"></span><span class="st"><b>Your data</b><small>Backup, delete, start fresh</small></span></summary>
     <p class="small-text">Everything is saved only on this device.</p>
     <div class="row-btns"><button class="btn ghost" id="exportBtn">Export backup</button><button class="btn danger" id="clearBtn">Delete everything</button></div>
     <div class="row-btns"><button class="btn ghost" id="removeKeysBtn">Remove all my AI keys</button><button class="btn ghost" id="eraseBizBtn">Erase all business data</button></div>

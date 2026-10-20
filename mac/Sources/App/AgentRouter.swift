@@ -101,6 +101,24 @@ final class AgentRouter {
         if lowered.range(of: #"^(hide|minimi[sz]e) (yourself|sparrow|the island)$|^go hide$"#, options: .regularExpression) != nil {
             SparrowBubble.shared.hideIsland(); return "I'll wait in my little bubble. Click it when you need me."
         }
+        // Screen recording: "record my screen", "start screen recording", "stop recording"
+        if lowered.range(of: #"^(start |begin )?(record|recording|capture)( my| the)? (screen|display)( recording)?$|^(start|begin|make) (a )?screen ?(recording|record|video)$|^screen ?record(ing)?$"#, options: .regularExpression) != nil {
+            let r = await ScreenRecorder.shared.start()
+            if ScreenRecorder.shared.isRecording {
+                // a small "recording" card with a Stop button, after the reply
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { MainActor.assumeIsolated {
+                    let st = AppState.shared
+                    st.noteIsAlert = false; st.noteAction = "screen"
+                    st.noteMessage = "● Recording your screen\nSay “Zuffi, stop recording” or press Stop."
+                    NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+                } }
+            }
+            return r
+        }
+        if ScreenRecorder.shared.isRecording, lowered.range(of: #"^(stop|end|finish|save)( the| my)?( screen)? (recording|record|video|capture)$|^stop$"#, options: .regularExpression) != nil {
+            AppState.shared.noteAction = nil
+            return await ScreenRecorder.shared.stop()
+        }
         if lowered.range(of: #"^(start|begin|take|record)( the| my)? (meeting )?(notes|minutes)|^(start|begin) (recording|transcribing) (the )?meeting|^meeting notes( start)?$|^take notes$"#, options: .regularExpression) != nil
             || (lowered.range(of: #"^(?:start|begin|take|turn on|record|start taking|switch on)(?:\s+(?:the|my|this|meeting|call|video|zoom|teams|whatsapp|notes|minutes|recording|transcript|taking|of|on))+$"#, options: .regularExpression) != nil
                 && lowered.range(of: #"\b(meeting|notes|minutes|recording|transcript)\b"#, options: .regularExpression) != nil) {

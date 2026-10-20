@@ -31,6 +31,8 @@ struct IslandViewContent: View {
         case .prompt:
             ZuffiTallPanel(title: "Chat", icon: "bubble.left.fill", view: .prompt, trailing: AnyView(HStack(spacing: 6) {
                 MicCamToggles()
+                Button { ZuffiNav.go(.history) } label: { Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .bold)).frame(width: 24, height: 24) }
+                    .buttonStyle(.plain).help("Past chats")
                 Button { AppState.shared.newChat() } label: { Image(systemName: "square.and.pencil").font(.system(size: 11, weight: .bold)).frame(width: 24, height: 24) }
                     .buttonStyle(.plain).help("New chat")
             })) { PromptView(state: state) }
@@ -509,6 +511,8 @@ struct UploadingView: View {
 
 struct ChooseView: View {
     @ObservedObject var state: AppState
+    @State private var formats: [String] = []
+    @State private var status = ""
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -516,15 +520,50 @@ struct ChooseView: View {
             VStack(alignment: .leading, spacing: 8) {
                 let fileName = state.droppedFile?.name ?? "file"
                 (Text(fileName).font(.system(size: 14, weight: .semibold)) + Text(" is ready.").font(.system(size: 14, weight: .semibold)))
-                Text("What do you want to do with it?").font(.system(size: 12.5)).foregroundColor(Color(hex: "#A6988A"))
-                HStack(spacing: 8) {
-                    PrimaryButton("Ask a question") { state.view = .prompt }
-                    SecondaryButton("Send by email") { state.view = .mail }
+                Text(status.isEmpty ? (formats.isEmpty ? "What do you want to do with it?" : "Convert it to…") : status)
+                    .font(.system(size: 12.5)).foregroundColor(Color(hex: "#A6988A")).lineLimit(2)
+                if formats.isEmpty {
+                    HStack(spacing: 8) {
+                        PrimaryButton("Ask a question") { state.view = .prompt }
+                        SecondaryButton("Convert") { Task { await loadFormats() } }
+                        SecondaryButton("Send by email") { state.view = .mail }
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        ForEach(formats, id: \.self) { f in
+                            SecondaryButton(Self.label(f)) { Task { await convert(to: f) } }
+                        }
+                        SecondaryButton("Back") { formats = []; status = "" }
+                    }
                 }
             }
             .padding(.leading, 98)
             .padding(.trailing, 18)
         }
+    }
+}
+
+extension ChooseView {
+    static func label(_ f: String) -> String { ["jpg": "JPG", "png": "PNG", "webp": "WebP", "pdf": "PDF", "docx": "Word", "txt": "Text", "xlsx": "Excel", "csv": "CSV"][f] ?? f.uppercased() }
+    /// The formats this file can become (the app's converter decides).
+    func loadFormats() async {
+        guard let f = state.droppedFile else { return }
+        let r = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.formatsFor ? window.Sparrow.formatsFor(n) : []", ["n": f.name]) as? [String] ?? []
+        if r.isEmpty { status = "I can’t convert this kind of file yet." } else { formats = Array(r.prefix(4)); status = "" }
+    }
+    /// Converts on this Mac, saves the new file in Downloads and shows it in Finder.
+    func convert(to fmt: String) async {
+        guard let f = state.droppedFile, let data = try? Data(contentsOf: f.url) else { status = "I couldn’t read the file."; return }
+        status = "Converting to \(Self.label(fmt))…"
+        let r = await WebHub.shared.callJS("return await window.Sparrow.convertB64(n, b, t)", ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any]
+        guard let name = r?["name"] as? String, let b64 = r?["b64"] as? String, let out = Data(base64Encoded: b64) else {
+            status = (r?["error"] as? String) ?? "That didn’t work — try another format."; return
+        }
+        let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        var dest = dir.appendingPathComponent(name), n = 2
+        while FileManager.default.fileExists(atPath: dest.path) { dest = dir.appendingPathComponent("\((name as NSString).deletingPathExtension) \(n).\((name as NSString).pathExtension)"); n += 1 }
+        do { try out.write(to: dest); NSWorkspace.shared.activateFileViewerSelecting([dest]); status = "✓ \(dest.lastPathComponent) is in Downloads."; formats = [] }
+        catch { status = "I couldn’t save it in Downloads." }
     }
 }
 
@@ -1075,7 +1114,7 @@ struct NoteView: View {
     var body: some View {
         let p = parts
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(hex: "#0B0B0D"))
+            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.black)
             VStack(alignment: .leading, spacing: 7) {
                 if let from = p.from {
                     Text(from).font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#4ADE80")).lineLimit(1)
@@ -1100,13 +1139,66 @@ struct NoteView: View {
                     .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(0.08)))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+                if state.noteAction == "meeting" {
+                    HStack(spacing: 8) {
+                        noteButton("Take notes", icon: "waveform", primary: true) {
+                            let r = MeetingWatcher.shared.acceptNotes()
+                            state.noteAction = nil; VoiceEngine.shared.speak(r)
+                            NotificationCenter.default.post(name: .islandCollapse, object: nil)
+                        }
+                        noteButton("Not now", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+                    }.padding(.top, 4)
+                } else if state.noteAction == "screen" {
+                    HStack(spacing: 8) {
+                        noteButton("Stop recording", icon: "stop.fill", primary: true) {
+                            state.noteAction = nil
+                            Task { @MainActor in
+                                let r = await ScreenRecorder.shared.stop()
+                                state.noteMessage = r
+                            }
+                        }
+                    }.padding(.top, 4)
+                } else if state.noteIsAlert {
+                    // A reminder or prayer: tick it off (or snooze) right here, then the notch closes.
+                    HStack(spacing: 8) {
+                        Button { answer(done: true) } label: {
+                            Label("Done", systemImage: "checkmark").font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.black).padding(.horizontal, 16).frame(height: 32)
+                                .background(Capsule().fill(Color.white))
+                        }.buttonStyle(.plain)
+                        Button { answer(done: false) } label: {
+                            Text("Later").font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white).padding(.horizontal, 16).frame(height: 32)
+                                .background(Capsule().fill(Color.white.opacity(0.14)))
+                        }.buttonStyle(.plain)
+                    }
+                    .padding(.top, 4)
+                }
             }
             .padding(.leading, 98).padding(.trailing, 18).padding(.vertical, 12)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: typed.count >= p.text.count)
         }
         .onAppear { type(p.text) }
         .onChange(of: state.noteMessage) { _, _ in type(parts.text) }
-        .onDisappear { typing?.cancel() }
+        .onDisappear { typing?.cancel(); state.noteIsAlert = false; if state.noteAction == "meeting" { state.noteAction = nil } }
+    }
+
+    private func noteButton(_ title: String, icon: String?, primary: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)) }
+                Text(title).font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundColor(primary ? .black : .white).padding(.horizontal, 16).frame(height: 32)
+            .background(Capsule().fill(primary ? Color.white : Color.white.opacity(0.14)))
+        }.buttonStyle(.plain)
+    }
+
+    private func answer(done: Bool) {
+        WebHub.shared.run(done ? "window.Sparrow && window.Sparrow.alertDone && window.Sparrow.alertDone()" : "window.Sparrow && window.Sparrow.alertLater && window.Sparrow.alertLater()")
+        state.noteIsAlert = false
+        NotificationCenter.default.post(name: .triggerEmote, object: done ? BotEmote.happy : BotEmote.wink)
+        NotificationCenter.default.post(name: .islandCollapse, object: nil)
     }
 
     /// Letters appear one by one, like Zuffi is writing (instant for long texts).

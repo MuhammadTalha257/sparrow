@@ -1,6 +1,9 @@
 import Foundation
 import AppKit
 import WebKit
+import Vision
+import NaturalLanguage
+import ImageIO
 import UniformTypeIdentifiers
 
 // =====================================================================
@@ -281,6 +284,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             appendAppLog("web.log", o["text"] as? String ?? "")
         case "note":
             let title = o["title"] as? String ?? ""
+            AppState.shared.noteIsAlert = (o["alert"] as? Bool) == true
             AppState.shared.noteMessage = [title, o["sub"] as? String ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
             NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
             NotificationCenter.default.post(name: .petSay, object: title)
@@ -331,6 +335,30 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
                 if let v = KeychainStore.shared.get(kc), !v.isEmpty { k[web] = v }
             }
             reply(id, k)
+        case "vision":
+            // Privacy blur: faces, emails, phone numbers and names in a picture — found on this Mac, nothing uploaded
+            let b64 = o["b64"] as? String ?? ""
+            Task {
+                let json = await Task.detached { WebHub.findPrivateJSON(b64) }.value
+                self.reply(id, (try? JSONSerialization.jsonObject(with: Data(json.utf8))) ?? [])
+            }
+        case "screenrec":
+            // Zuffi → Screen recorder: start, or stop when it's already recording
+            Task {
+                let r = ScreenRecorder.shared.isRecording ? await ScreenRecorder.shared.stop() : await ScreenRecorder.shared.start()
+                AppState.shared.noteAction = ScreenRecorder.shared.isRecording ? "screen" : nil
+                if ScreenRecorder.shared.isRecording {
+                    AppState.shared.noteIsAlert = false
+                    AppState.shared.noteMessage = "● Recording your screen\nSay “Zuffi, stop recording” or press Stop."
+                    NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+                }
+                self.reply(id, ["text": r])
+            }
+        case "meetingDetect":
+            MeetingWatcher.shared.enabled = (o["on"] as? Bool) != false
+        case "accent":
+            // Settings → You → Colour: the island's light and glow follow it
+            if let h = o["hex"] as? String, h.hasPrefix("#") { UserDefaults.standard.set(h, forKey: "zuffiAccentHex") }
         case "facts":
             // Everything the user told Zuffi (welcome form + "remember that…" notes): every AI answer on the Mac knows it
             UserDefaults.standard.set(String((o["text"] as? String ?? "").prefix(8000)), forKey: "zuffiFacts")
@@ -351,6 +379,41 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             }
         default: break
         }
+    }
+
+    /// Boxes (0…1, top-left origin) of faces and private text in an image: [{kind, x, y, w, h, text}]
+    nonisolated static func findPrivateJSON(_ b64: String) -> String {
+        let r = findPrivate(b64)
+        return (try? JSONSerialization.data(withJSONObject: r)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+    nonisolated static func findPrivate(_ b64: String) -> [[String: Any]] {
+        guard let data = Data(base64Encoded: b64), let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return [] }
+        var out: [[String: Any]] = []
+        func box(_ r: CGRect, _ kind: String, _ text: String = "") { out.append(["kind": kind, "x": r.minX, "y": 1 - r.maxY, "w": r.width, "h": r.height, "text": text]) }
+        let faces = VNDetectFaceRectanglesRequest()
+        let text = VNRecognizeTextRequest(); text.recognitionLevel = .accurate; text.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: img, options: [:]).perform([faces, text])
+        for f in faces.results ?? [] { box(f.boundingBox.insetBy(dx: -f.boundingBox.width * 0.12, dy: -f.boundingBox.height * 0.12), "face") }
+        let email = try? NSRegularExpression(pattern: #"[\w.+-]+@[\w-]+\.[\w.]+"#)
+        let phone = try? NSRegularExpression(pattern: #"(\+?\d[\d\s()-]{7,}\d)"#)
+        for t in text.results ?? [] {
+            guard let c = t.topCandidates(1).first else { continue }
+            let str = c.string, ns = str as NSString, all = NSRange(location: 0, length: ns.length)
+            var kinds: [(NSRange, String)] = []
+            email?.enumerateMatches(in: str, range: all) { m, _, _ in if let m { kinds.append((m.range, "email")) } }
+            phone?.enumerateMatches(in: str, range: all) { m, _, _ in if let m { kinds.append((m.range, "phone")) } }
+            let tagger = NLTagger(tagSchemes: [.nameType]); tagger.string = str
+            tagger.enumerateTags(in: str.startIndex..<str.endIndex, unit: .word, scheme: .nameType, options: [.omitPunctuation, .omitWhitespace, .joinNames]) { tag, r in
+                if tag == .personalName { kinds.append((NSRange(r, in: str), "name")) }
+                return true
+            }
+            for (r, k) in kinds {
+                if let sr = Range(r, in: str), let b = try? c.boundingBox(for: sr) { box(b.boundingBox, k, ns.substring(with: r)) }
+            }
+            box(t.boundingBox, "text", str)
+        }
+        return out
     }
 
     private func reply(_ id: Int, _ value: Any) {

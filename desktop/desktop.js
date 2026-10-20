@@ -274,6 +274,7 @@ D.onEvent(ev => {
     if (btn) { btn.dataset.id = ev.id || ''; btn.click(); }
     return;
   }
+  if (ev.type === 'dictate') { dictate(); return; }
   if (ev.type === 'file-arrived') {
     mem.remember('file', ev.name, '', { folder: ev.folder, path: ev.path });
     peek(`📥 ${ev.name}`, `New file in ${ev.folder}`);
@@ -439,3 +440,29 @@ D.onCommand(cmd => {
   if (cmd === 'listen') Voice.toggle();
   else if (typeof cmd === 'string' && cmd.startsWith('ask:')) send({ type: 'speech', text: cmd.slice(4) });   // typed in the Business window
 });
+
+
+// ---------- type anywhere (Ctrl+Alt+Space) ----------
+// Press once: Zuffi listens. Press again: what you said is typed where your cursor is, in any app.
+let dict = null;
+async function dictate() {
+  if (dict) { dict.rec.stop(); return; }
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const chunks = [], rec = new MediaRecorder(st, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
+    dict = { rec };
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    rec.onstop = async () => {
+      st.getTracks().forEach(t => t.stop()); dict = null;
+      peek('✍️ Writing it…', '', 4000);
+      const { transcribeAudio } = await import('./ai.js');
+      const text = await transcribeAudio(new Blob(chunks, { type: 'audio/webm' })).catch(() => null);
+      if (!text) { peek('I couldn’t hear that', 'Typing anywhere needs a free Groq or Gemini key (Settings → AI).', 7000); return; }
+      await D.typeText(text.trim());
+      peek('✓ Typed', text.slice(0, 60), 2500);
+    };
+    rec.start(500);
+    peek('🎙️ Listening — speak now', 'Press Ctrl+Alt+Space again to type it', 60000);
+    setTimeout(() => { if (dict?.rec === rec) rec.stop(); }, 120000);
+  } catch { dict = null; peek('I can’t use the microphone', 'Allow it in Windows Settings → Privacy → Microphone.', 7000); }
+}

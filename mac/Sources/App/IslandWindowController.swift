@@ -434,6 +434,19 @@ final class IslandWindowController: NSWindowController {
             }
         }
 
+        // Never in your way: a short message (answer, "done", note) folds itself away after a few
+        // seconds once your mouse isn't on it. Reminders that ask Done / Later wait for you (up to 30 s).
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.state.mode == .expanded, !self.state.isPinned else { return }
+                let passive: Set<IslandView> = [.note, .result, .finished, .searching, .confused, .error]
+                guard passive.contains(self.state.view) else { return }
+                if let w = self.window, w.frame.insetBy(dx: -6, dy: -6).contains(NSEvent.mouseLocation) { self.state.lastActivity = .now; return }
+                let idle = Date.now.timeIntervalSince(self.state.lastActivity)
+                if idle > (self.state.noteIsAlert || self.state.noteAction != nil ? 30 : 7) { self.collapse() }
+            }
+        }
+
         // Collapse requests from views (OK button, etc.)
         NotificationCenter.default.addObserver(forName: .islandCollapse, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.collapse() }

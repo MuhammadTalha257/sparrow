@@ -122,6 +122,10 @@ final class AppState: ObservableObject {
 
     // Short note message (shown in NoteView)
     @Published var noteMessage: String? = nil
+    /// The note is a reminder / prayer alert: show Done and Later in the notch.
+    @Published var noteIsAlert = false
+    /// A question in the note with its own buttons: "meeting" (Take notes / Not now), "screen" (Stop recording).
+    @Published var noteAction: String? = nil
 
     // Auto-close delay — persisted
     @Published var autoCloseInterval: TimeInterval = 15 {

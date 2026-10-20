@@ -71,8 +71,9 @@ struct IslandContainer: View {
                         LinearGradient(colors: [Color(hex: "#1B2131").opacity(0.62), Color(hex: "#2B3244").opacity(0.42)],
                                        startPoint: .top, endPoint: .bottom)
                     }
-                    RadialGradient(colors: [Color(hex: "#F9A830").opacity(0.22), .clear],
-                                   center: UnitPoint(x: 0.1, y: 0.7), startRadius: 4, endRadius: 260)
+                    // a soft wash of your colour behind Zuffi, nothing else competing with it
+                    RadialGradient(colors: [IslandConst.accent.opacity(0.20), .clear],
+                                   center: UnitPoint(x: 0.08, y: 0.75), startRadius: 4, endRadius: 240)
                 }
                 .clipShape(shape)
                 .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.12)],
@@ -114,6 +115,17 @@ struct IslandContainer: View {
                                               cornerRadius: cornerRadius, topRadius: islandTopRadius))
                         .transition(.opacity)
                 }
+            }
+
+            // Zuffi's light: one thin strip of your colour along the bottom edge of the open island.
+            if state.mode == .expanded && !greetingActive {
+                Capsule()
+                    .fill(LinearGradient(colors: [IslandConst.accent.opacity(0), IslandConst.accent, IslandConst.accent.opacity(0)], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: islandWidth * 0.42, height: 2.5)
+                    .shadow(color: IslandConst.accent.opacity(0.9), radius: 6)
+                    .offset(x: islandWidth * 0.29, y: islandHeight - 4)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
 
             // Single BotPlacement — always alive in the view tree so spring animations
@@ -533,7 +545,8 @@ struct IslandHeader: View {
             LittleSparrow(color: nil, size: 17)
                 .padding(.leading, 9)
                 .help("Drag to move Zuffi")
-            // Left: tabs like the video — Home · Chat · New chat · History · Agents
+            // Left: just what you need — Home, Chat, All features (the Zuffi panel) and Business.
+            // New chat and history live inside Chat; the pet, sound and Today live in Settings and the panel.
             HStack(spacing: 3) {
                 TabButton(icon: "house.fill", label: "Home", view: .overview, state: state)
                 TabButton(icon: "bubble.left.fill", label: "Chat", view: .prompt, state: state, badge: state.view == .prompt ? 0 : state.unreadReplies, preAction: {
@@ -544,15 +557,13 @@ struct IslandHeader: View {
                     }
                     #endif
                 })
-                HeaderChip(icon: "square.and.pencil", label: "") {
-                    state.newChat()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { state.view = .prompt }
-                }.help("New chat")
-                TabButton(icon: "clock.arrow.circlepath", label: "", view: .history, state: state).help("History")
-                TabButton(icon: "sparkles", label: "Agents", view: .agents, state: state, badge: agents.approvals.count)
-                HeaderChip(icon: "sun.max.fill", label: "") { TodayWindow.shared.show() }.help("Today")
-                HeaderChip(icon: "square.grid.2x2.fill", label: "") { WebHub.shared.show() }.help("Dashboard")
-                HeaderChip(icon: "hare.fill", label: "") { PetController.shared.toggle() }.help("Pet")
+                HeaderChip(icon: "square.grid.2x2.fill", label: "Features") { WebHub.shared.show() }.help("Everything Zuffi can do")
+                if UserDefaults.standard.string(forKey: "zuffiUse") == "business" {
+                    HeaderChip(icon: "briefcase.fill", label: "") { BusinessDashboard.shared.show() }.help("Business")
+                }
+                if !agents.approvals.isEmpty {
+                    TabButton(icon: "sparkles", label: "", view: .agents, state: state, badge: agents.approvals.count).help("An agent needs you")
+                }
             }
             .padding(.leading, 4)
 
@@ -581,16 +592,6 @@ struct IslandHeader: View {
                     Image(systemName: state.view == .settings ? "gearshape.fill" : "gearshape")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(state.view == .settings ? Color(hex: "#FBF3E9") : Color(hex: "#D8CCBF"))
-                        .frame(width: 24, height: 24)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
-                        .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
-                }
-                .buttonStyle(.plain)
-
-                Button(action: { state.soundEnabled.toggle() }) {
-                    Image(systemName: state.soundEnabled ? "speaker.wave.2" : "speaker.slash")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color(hex: "#D8CCBF"))
                         .frame(width: 24, height: 24)
                         .background(Circle().fill(Color.white.opacity(0.08)))
                         .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))

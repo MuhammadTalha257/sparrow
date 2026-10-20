@@ -25,6 +25,8 @@ import * as images from './images.js';
 import * as feats from './features.js';
 import * as bizknow from './bizknow.js';
 import * as promo from './promo.js';
+import * as conv from './convertall.js';
+import * as dayplan from './dayplan.js';
 actlog.watch();
 const logAction = (kind, text) => actlog.add(kind, text);
 import * as bizsync from './bizsync.js';
@@ -282,8 +284,8 @@ function drawWelcome() {
   const me = `<div class="wel-grid">
       <label class="field"><span>Your name *</span><input id="wName" autocomplete="given-name" value="${v(p.name ?? S().name)}" placeholder="What should I call you?"></label>
       ${biz ? '' : `<label class="field"><span>Date of birth</span><input id="wDob" type="date" value="${v(p.dob ?? S().birthday)}"></label>`}
-      <label class="field"><span>${biz ? 'City / area' : 'Your city'}</span><input id="wCity" autocomplete="address-level2" value="${v(p.city ?? S().city)}" placeholder="${biz ? 'e.g. DHA Lahore, Leeds' : 'For prayer times and weather'}"></label>
-      ${biz ? `<label class="field"><span>Business name *</span><input id="wBName" value="${v(b.name ?? bizsync.cfg('name'))}" placeholder="e.g. Green Leaf Estates"></label>
+      <label class="field"><span>${biz ? 'City / area' : 'Your city'}</span><input id="wCity" autocomplete="address-level2" value="${v(p.city ?? S().city)}" placeholder="${biz ? 'Town or city' : 'For prayer times and weather'}"></label>
+      ${biz ? `<label class="field"><span>Business name *</span><input id="wBName" value="${v(b.name ?? bizsync.cfg('name'))}" placeholder="Your business name"></label>
       <label class="field"><span>Business WhatsApp / phone</span><input id="wBPhone" type="tel" value="${v(b.phone)}" placeholder="Customers message this number"></label>
       <label class="field"><span>Opened on (anniversary)</span><input id="wFounded" type="date" value="${v(b.founded)}"></label>` : ''}</div>`;
   const ctry = p.country || guessCountry();
@@ -295,7 +297,7 @@ function drawWelcome() {
       <label class="field"><span>Opening hours</span><input id="wHours" value="${v(b.hours)}" placeholder="Mon–Sat 9am–6pm"></label>
       <label class="field"><span>People in the team</span><input id="wStaff" type="number" min="1" value="${v(b.staff)}" placeholder="1"></label>` : ''}
       <label class="field"><span>Your phone</span><input id="wPhone" type="tel" autocomplete="tel" value="${v(p.phone)}" placeholder="+44 7… / 03…"></label></div>
-      <label class="field"><span>Anything I should always remember?</span><textarea id="wNotes" rows="2" placeholder="e.g. my wife is Sara · I work night shifts · we close on Fridays">${v(p.notes)}</textarea></label></details>`;
+      <label class="field"><span>Anything I should always remember?</span><textarea id="wNotes" rows="2" placeholder="Anything Zuffi should always remember about you">${v(p.notes)}</textarea></label></details>`;
   const helps = new Set(p.help || (welType === 'business' ? ['remind', 'meet', 'money'] : ['remind', 'health', 'family']));
   w.innerHTML = `<div class="wel-card wel-form">${head}<h2 id="welTitle">${welType === 'business' ? 'Your business' : 'Tell me a little about you'}</h2>
     <p class="wel-sub">${welType === 'business' ? 'Pick your type and I’ll show only what your business needs.' : 'I’ll remember this always. It stays on your device.'}</p>
@@ -368,27 +370,47 @@ function profileLine() {
     b && `business: ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.role ? `, they are the ${b.role}` : ''}${b.city ? `, in ${b.city}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}${b.founded ? `, opened ${b.founded}` : ''}`];
   const facts = userFacts();
   const out = parts.filter(Boolean);
-  if (!out.length && !facts.length) return '';
-  return `\nABOUT THE USER (they told you this; you always remember it and can answer any question about it): ${out.join('; ')}.` + (facts.length ? `\nThings they asked you to remember: ${facts.join(' | ')}.` : '');
+  const cal = (() => { try { const ev = [...dayplan.eventsOn(new Date()), ...dayplan.eventsOn(new Date(Date.now() + 864e5))]; return ev.length ? `\nTheir calendar (today and tomorrow): ${ev.slice(0, 14).map(e => `${e.start.toLocaleDateString([], { weekday: 'short' })} ${e.allDay ? 'all day' : fmtTime(e.start)} ${e.title}`).join('; ')}.` : ''; } catch { return ''; } })();
+  const persona = dayplan.personalityLine();
+  if (!out.length && !facts.length) return cal + persona;
+  return `\nABOUT THE USER (they told you this; you always remember it and can answer any question about it): ${out.join('; ')}.` + (facts.length ? `\nThings they asked you to remember: ${facts.join(' | ')}.` : '') + cal + persona;
 }
 // Phone numbers stay off the AI prompt (they're answered offline by aboutMe).
 /** Everything the user told Zuffi to remember (notes), newest first — kept forever, on this device. */
 function userFacts() {
   return store.ofType('note').sort((a, b) => new Date(b.created) - new Date(a.created)).slice(0, 40).map(n => String(n.title || '').slice(0, 160)).filter(Boolean);
 }
-/** "What do you know about me?" — answered straight from the profile and notes, no AI, works offline. */
+/** Questions about the user ("what's my date of birth?", "what's my name?", "what do you know about me?") — answered straight from
+ *  the welcome form and notes: no AI, works offline, on every device. Returns null when it isn't such a question. */
 function aboutMe(text) {
-  if (!/^(zuffi,?\s*)?(what do you (know|remember) about me|who am i|tell me about (me|myself)|what('?s| is) my (profile|details|info)|my details|do you (know|remember) me|mere bare mein (kya )?(jaanti|janti|pata) ho)\??$/i.test(String(text).trim())) return null;
-  const p = S().profile || {}, b = p.biz, lines = [];
-  if (p.name || S().name) lines.push(`You're ${p.name || S().name}.`);
-  if (p.dob) lines.push(`Your birthday is ${new Date(p.dob + 'T12:00').toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}.`);
+  const t = String(text || '').trim().toLowerCase().replace(/^(hey |ok |hi )?zuffi[,!]?\s*/, '').replace(/[?.!]+$/, '');
+  const p = S().profile || {}, b = p.biz || {}, name = p.name || S().name;
+  const fmtDob = d => new Date(d + 'T12:00').toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+  const age = d => { const n = new Date(), x = new Date(d + 'T12:00'); let a = n.getFullYear() - x.getFullYear(); if (n < new Date(n.getFullYear(), x.getMonth(), x.getDate())) a--; return a; };
+  const nextBday = d => { const n = new Date(), x = new Date(d + 'T12:00'); let nb = new Date(n.getFullYear(), x.getMonth(), x.getDate()); if (nb < new Date(n.toDateString())) nb.setFullYear(n.getFullYear() + 1); return Math.round((nb - new Date(n.toDateString())) / 864e5); };
+  const unknown = what => `I don’t have your ${what} yet. Add it in Settings → You → Edit my details, or tell me “remember that …”.`;
+  if (/\b(date of birth|dob|birth ?day|bday|when (was|am) i born|my birth date|salgirah|saalgira|janam ?din|paidaish|paidaish ki tareekh)\b/.test(t) && /\b(my|i|me|mera|meri|mere)\b/.test(t)) {
+    if (!p.dob) return unknown('date of birth');
+    const n = nextBday(p.dob);
+    return `Your date of birth is ${fmtDob(p.dob)} — you’re ${age(p.dob)}. ${n === 0 ? 'It’s your birthday today — happy birthday! 🎂' : `Your next birthday is in ${n} day${n === 1 ? '' : 's'}.`}`;
+  }
+  if (/^(how old am i|what('?s| is) my age|meri (age|umar) kya hai)$/.test(t)) return p.dob ? `You’re ${age(p.dob)} (born ${fmtDob(p.dob)}).` : unknown('date of birth');
+  if (/^(what('?s| is) my name|who am i|do you know my name|mera naam kya hai)$/.test(t)) return name ? `You’re ${name}.` : unknown('name');
+  if (/^(where do i live|what('?s| is) my (city|town|address)|main kahan rehta hoon|main kahan rehti hoon)$/.test(t)) return p.city ? `You live in ${p.city}.` : unknown('city');
+  if (/^(what('?s| is) my (phone|mobile|number|phone number|mobile number)|mera number kya hai)$/.test(t)) return p.phone ? `Your number is ${p.phone}.` : unknown('phone number');
+  if (/^(what('?s| is) my business( called| name)?|what business do i (have|run|own)|my business name)$/.test(t)) return b.name ? `Your business is ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.hours ? `, open ${b.hours}` : ''}.` : unknown('business details');
+  if (!/^(what do you (know|remember) about me|tell me about (me|myself)|what('?s| is) my (profile|details|info)|my details|do you (know|remember) me|mere bare mein (kya )?(jaanti|janti|jante|pata) ho)$/.test(t)) return null;
+  const lines = [];
+  if (name) lines.push(`You're ${name}.`);
+  if (p.dob) lines.push(`Your birthday is ${fmtDob(p.dob)}.`);
   if (p.city) lines.push(`You live in ${p.city}.`);
   if (p.phone) lines.push(`Your number is ${p.phone}.`);
-  if (b?.name) lines.push(`Your business is ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.role ? ` — you're the ${b.role}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}.`);
+  if (b.name) lines.push(`Your business is ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.role ? ` — you're the ${b.role}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}.`);
   if (p.notes) lines.push(`You asked me to always remember: ${p.notes.replace(/[.!?]?\s*$/, '.')}`);
   const f = userFacts(); if (f.length) lines.push(`You also told me: ${f.slice(0, 8).join('; ')}${f.length > 8 ? ` and ${f.length - 8} more` : ''}.`);
   return lines.length ? lines.join(' ') + ' Change any of it in Settings → You → Edit my details.' : 'I don’t know much about you yet — tell me in Settings → You → Edit my details, or just say “remember that …”.';
 }
+window.zuffiAboutMe = aboutMe;
 function sendFacts() { try { M?.post('facts', { text: profileLine() }); } catch {} }
 window.zuffiProfileLine = profileLine;
 // ---- AI usage: built-in AI left this month, and tokens / rough cost with your own keys ----
@@ -534,7 +556,10 @@ const INSIDE = ['chat', 'plan', 'inbox', 'memory', 'tools'];   // pages inside t
 function go(v) {
   if (v === 'settings') { openSettings(); return; }
   if (v === 'biz' && document.body.classList.contains('personal-mode')) { toast('Business is off because you chose “Just me”. Turn it on in Settings → You → Edit my details.', 5000); v = 'home'; }
-  if (v === 'biz' && !acct.isBusiness()) { bizUpsell(); v = 'home'; }
+  if (v === 'biz' && !acct.isBusiness()) {
+    if (!go.waited) { go.waited = true; acct.whenReady().then(() => go('biz')); return; }   // the licence is still being checked: wait, don't upsell
+    bizUpsell(); v = 'home';
+  }
   $$('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
   if (v === 'tools') closeTool();
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v || (b.dataset.v === 'home' && INSIDE.includes(v))));
@@ -616,6 +641,8 @@ function renderToday() {
   const day = store.onDay(new Date()).filter(i => !(i.type === 'reminder' && i.done));
   const undated = store.openTasks().filter(i => !i.when).slice(0, 4);
   const items = [...day, ...undated];
+  const calRows = dayplan.eventsOn(new Date()).filter(e => e.allDay || e.end > new Date()).map(e => `<div class="item cal-ev"><div class="ic">📅</div><div class="txt"><div class="t1">${esc(e.title)}</div><div class="t2">${e.allDay ? 'All day' : fmtTime(e.start) + ' – ' + fmtTime(e.end)} · ${esc(e.source || 'Calendar')}</div></div></div>`).join('');
+  if (calRows) { $('#todayList').innerHTML = calRows + items.map(itemRow).join(''); return; }
   $('#todayList').innerHTML = items.length ? items.map(itemRow).join('')
     : `<div class="empty">Nothing planned yet.<br>Try <b>"meeting with Ali Friday 3pm"</b> or <b>"remind me every day at 8pm to take medicine"</b>.</div>`;
 }
@@ -703,6 +730,30 @@ function addQuick() {
   const e = (prompt('Pick an emoji for the button:', '⭐') || '⭐').slice(0, 2);
   S().quick = [...getQuick(), { k: name.toLowerCase(), n: name, e, url }]; store.save(); renderQuick(); toast(`Added ${name}`);
 }
+// Settings → You → Colour: one accent for the whole app (also in Business → My business)
+function renderAccents() {
+  const el = $('#sAccent'); if (!el) return;
+  const cur = bizsync.cfg('accent') || 'blue';
+  el.innerHTML = bizapp.THEMES.map(([id, c, , n]) => `<button type="button" data-acc="${id}" class="${cur === id ? 'on' : ''}" style="--c:${c}" title="${n}"><i></i><span>${n}</span></button>`).join('');
+}
+$('#sAccent')?.addEventListener('click', e => { const b = e.target.closest('[data-acc]'); if (!b) return; bizsync.setCfg('accent', b.dataset.acc); try { localStorage.setItem('zuffiAccent', b.dataset.acc); } catch {} bizapp.applyAccent(); renderAccents(); renderDash(); syncAccent(); });
+/** The Mac island's light follows the colour you pick. */
+function syncAccent() { try { const hex = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(); if (/^#[0-9a-f]{6}$/i.test(hex)) M?.post('accent', { hex }); } catch {} }
+setTimeout(syncAccent, 1500);
+renderAccents();
+// Settings → My day: ask to take notes when a call starts (Mac & Windows)
+{ const el = $('#sMeetDetect'); if (el) { el.closest('label').hidden = !(D || M); el.checked = S().meetDetect !== false;
+  el.onchange = () => { S().meetDetect = el.checked; store.save(); D?.setSetting?.('meetingDetect', el.checked); M?.post('meetingDetect', { on: el.checked }); }; } }
+// Settings → AI → personality, and → My day → calendars
+{ const sel = $('#sPersona'); if (sel) { sel.innerHTML = Object.entries(dayplan.PERSONALITIES).map(([k, [n, d]]) => `<option value="${k}">${n} — ${d}</option>`).join(''); sel.value = S().personality || 'friendly';
+  sel.onchange = () => { S().personality = sel.value; store.save(); sendFacts(); toast(`Zuffi is now: ${dayplan.PERSONALITIES[sel.value][0]}`); }; } }
+function renderCals() { const el = $('#calList'); if (!el) return; el.innerHTML = dayplan.calendars().map(c => `<div class="cal-row"><span>📅 ${esc(c.name)}${c.ok === false ? ` <small class="bad">· ${esc(c.error || 'not reachable')}</small>` : ''}</span><button class="link small" data-calrm="${esc(c.url)}" type="button">Remove</button></div>`).join(''); }
+$('#calAdd')?.addEventListener('click', async () => { const b = $('#calAdd'); b.disabled = true; try { const n = await dayplan.addCalendar($('#calUrl').value); $('#calUrl').value = ''; toast(`Calendar connected — ${n} event${n === 1 ? '' : 's'} in the next 3 weeks`); } catch (e) { toast(e.message, 6000); } b.disabled = false; renderCals(); });
+$('#calList')?.addEventListener('click', async e => { const b = e.target.closest('[data-calrm]'); if (!b) return; await dayplan.removeCalendar(b.dataset.calrm); renderCals(); renderToday(); });
+renderCals();
+$('#planDayBtn')?.addEventListener('click', () => { go('tools'); openTool('planday'); });
+// Settings: draw the line icons in each section header
+$$('#sheet .si[data-ic]').forEach(el => { el.innerHTML = feats.icon(el.dataset.ic, 17); });
 function renderAll() { applyLook(); renderHeader(); renderToday(); renderPlan(); renderQuick(); renderChat(); renderWeather(); renderPrayer(); renderDash(); }
 
 // ---------------- the dashboard: features for your plan & country, sidebar, business numbers, inbox ----------------
@@ -710,7 +761,7 @@ function bizOn() { try { return acct.isBusiness() && !document.body.classList.co
 function featCtx() {
   let p = {}; try { p = bizapp.profile(); } catch {}
   return { business: (() => { try { return acct.isBusiness(); } catch { return false; } })(), personal: document.body.classList.contains('personal-mode'),
-    estate: !!p.estate, freelance: !!p.freelance, country: p.country, desktop: !!D };
+    estate: !!p.estate, freelance: !!p.freelance, country: p.country, desktop: !!D, mac: !!M };
 }
 function renderFeatures() {
   const grid = $('#featGrid'); if (!grid) return;
@@ -719,16 +770,18 @@ function renderFeatures() {
   if (featCat !== 'all' && !cats.some(([k]) => k === featCat)) featCat = 'all';
   $('#featChips').innerHTML = [['all', 'All'], ...cats].map(([k, l]) => `<button data-fc="${k}" class="${featCat === k ? 'on' : ''}">${l}</button>`).join('');
   const list = feats.search(featCat === 'all' ? all : all.filter(f => f.cat === featCat), featQ);
-  $('#featCount').textContent = featQ ? `${list.length} found` : 'Tap one to start';
-  const tile = f => `<button class="feat" data-feat="${f.id}" style="--tint:${f.tint}" title="${esc(f.name + ' — ' + f.sub)}"><span class="fi">${feats.icon(f.icon, 24)}</span><b>${esc(f.short || f.name)}</b></button>`;
+  $('#featCount').textContent = featQ ? `${list.length} found` : `${all.length} features`;
+  // Settings-style list: each group is one card of rows (coloured icon, name, one line, ›). Tap a row → it opens in Zuffi.
+  const row = f => `<button class="frow" data-feat="${f.id}" style="--tint:${f.tint}"><span class="fi">${feats.icon(f.icon, 18)}</span><span class="ft"><b>${esc(f.name)}</b><small>${esc(f.sub)}</small></span><span class="fchev" aria-hidden="true">›</span></button>`;
+  const group = (label, items) => items.length ? `<section class="fgroup"><h4>${label}</h4><div class="fcard">${items.map(row).join('')}</div></section>` : '';
   let html = '';
-  if (featCat === 'all' && !featQ) html = cats.map(([k, l]) => `<div class="feat-sec">${l}</div>` + all.filter(f => f.cat === k).map(tile).join('')).join('');
-  else html = list.map(tile).join('') || `<div class="feat-empty">Nothing called “${esc(featQ)}”. Try another word — or just ask Zuffi.</div>`;
-  // Pro (not "Just me"): one quiet line about Business, never a wall of locked tiles
+  if (featCat === 'all' && !featQ) html = cats.map(([k, l]) => group(l, all.filter(f => f.cat === k))).join('');
+  else html = list.length ? group(featQ ? 'Results' : (cats.find(([k]) => k === featCat) || [, ''])[1], list) : `<div class="feat-empty">Nothing called “${esc(featQ)}”. Try another word — or just ask Zuffi.</div>`;
   const c = featCtx();
   if (!c.business && !c.personal && !featQ && (featCat === 'all')) html += `<button class="feat-up" data-up="business"><span class="fi">${feats.icon('lock', 20)}</span><span><b>Running a business?</b><small>Business adds the WhatsApp agent, leads, posts & reels, money and staff — set up for ${C_country() === 'PK' ? 'estate agents in Pakistan' : 'UK small businesses'}.</small></span></button>`;
   grid.innerHTML = html;
 }
+function FaceDetectorOK() { return typeof window.FaceDetector === 'function'; }
 function C_country() { try { return bizapp.profile().country; } catch { return ''; } }
 function openFeature(id) {
   const f = feats.FEATURES.find(x => x.id === id); if (!f) return;
@@ -814,9 +867,19 @@ function inboxItems() {
     } catch {}
   }
   try { for (const it of send.inbox().slice(0, 8)) out.push({ id: 'd' + it.id, kind: 'devices', ic: it.kind === 'file' ? 'doc' : 'send', c: '#2F6FEB', t1: it.kind === 'file' ? it.name : (it.text || '').slice(0, 80), t2: 'From your ' + (it.from || 'device'), at: it.at || 0, unread: (it.at || 0) > seen, acts: [{ l: 'Open', a: 'tool:send' }] }); } catch {}
-  for (const m of mailCache.list || []) out.push({ id: 'm' + m.id, kind: 'mail', ic: 'mail', c: '#5B8DEF', t1: m.from || 'Email', t2: m.subject || '(no subject)', at: now - (m.age || 0) * 1000, unread: true, acts: [{ l: 'Open', a: 'mail:' + m.id }] });
+  for (const m of mailCache.list || []) { const tg = mailTag(m); out.push({ id: 'm' + m.id, kind: 'mail', ic: tg.ic, c: tg.c, t1: (tg.label ? tg.label + ' · ' : '') + (m.from || 'Email'), t2: m.subject || '(no subject)', at: now - (m.age || 0) * 1000, unread: true, pri: tg.pri, acts: [{ l: 'Open', a: 'mail:' + m.id }] }); }
   try { for (const a of actlog.list().slice(0, 6)) out.push({ id: 'a' + a.id, kind: 'activity', ic: 'history', c: 'var(--muted)', t1: a.text, t2: 'Zuffi', at: a.at, unread: false, acts: a.undo && !a.undone ? [{ l: 'Undo', a: 'undo:' + a.id }] : [] }); } catch {}
-  return out.sort((a, b) => (b.unread - a.unread) || (b.at - a.at));
+  return out.sort((a, b) => (b.unread - a.unread) || ((b.pri || 0) - (a.pri || 0)) || (b.at - a.at));
+}
+/** Email sorting: bills, invitations, security codes and orders stand out; newsletters and promotions sink. */
+function mailTag(m) {
+  const t = `${m.subject || ''} ${m.from || ''}`.toLowerCase();
+  if (/\b(invoice|bill|payment (due|reminder|failed)|amount due|overdue|statement|direct debit|renewal|receipt|your order total|council tax|rent due)\b|£\s?\d|rs\.?\s?\d/.test(t)) return { label: 'Bill', ic: 'receipt', c: '#E5484D', pri: 3 };
+  if (/\b(invit|invitation|meeting|calendar|webinar|rsvp|event|interview|appointment|booking confirmed|reservation)\b/.test(t)) return { label: 'Invitation', ic: 'calendar', c: '#E8930C', pri: 2 };
+  if (/\b(verify|verification|security code|one-time|otp|sign[- ]in|login attempt|password|2fa|confirm your)\b/.test(t)) return { label: 'Security', ic: 'lock', c: '#8B5CF6', pri: 2 };
+  if (/\b(order|delivery|delivered|shipped|dispatched|tracking|parcel|out for delivery)\b/.test(t)) return { label: 'Order', ic: 'send', c: '#0E9F9A', pri: 1 };
+  if (/\b(newsletter|sale|% off|deal|offer|unsubscribe|digest|weekly|promo)\b|no-?reply|noreply/.test(t)) return { label: '', ic: 'mail', c: '#94A3B8', pri: -1 };
+  return { label: '', ic: 'mail', c: '#5B8DEF', pri: 0 };
 }
 function inboxCount() { try { return inboxItems().filter(i => i.unread && i.kind !== 'activity').length; } catch { return 0; } }
 function inRow(i) { return inRowH(i); }
@@ -911,6 +974,9 @@ function renderChat() {
     let extra = '';
     if (m.itemId) { const it = store.items.find(x => x.id === m.itemId); if (it?.when) extra = `<div class="cal"><button class="chip" data-cal="${it.id}">📅 Add to calendar</button></div>`; }
     if (m.action === 'ai') extra = `<div class="cal"><button class="chip" data-settings="ai">✨ Set up free AI</button></div>`;
+    if (m.fileActs) extra = `<div class="cal fileacts">${m.fileActs.filter(id => dropped.has(id)).map(id => { const f = dropped.get(id), fm = conv.formatsFor(f);
+      return `${m.fileActs.length > 1 ? `<span class="fa-name">${esc(f.name)}</span>` : ''}${fm.length ? `<button class="chip solid" data-fconv="${id}">🔀 Convert</button>` : ''}<button class="chip" data-fsum="${id}">📝 Summarise</button><button class="chip" data-fmail="${id}">✉️ Email it</button>`; }).join('')}</div>`;
+    if (m.convFor) extra = `<div class="cal fileacts">${conv.formatsFor(dropped.get(m.convFor) || { name: '' }).map(t => `<button class="chip" data-fto="${m.convFor}:${t}">${conv.LABELS[t] || t.toUpperCase()}</button>`).join('')}</div>`;
     if (m.draft) extra = `<div class="cal"><button class="chip" data-mailto="${esc(m.draft)}">✉️ Open in email</button><button class="chip" data-copy="${esc(m.draftBody || '')}">📋 Copy</button></div>`;
     return `<div class="msg ${m.role}">${esc(m.text)}${m.src ? `<span class="src">${esc(m.src)}</span>` : ''}${resultRows(m)}${extra}</div>`;
   }).join('');
@@ -925,9 +991,22 @@ $('#chat').onclick = async e => {
   if (b.dataset.clip !== undefined) { const clips = await D.clips('get'); D.clips('copy', clips[+b.dataset.clip].text); toast('Copied'); }
   if (b.dataset.mailto) openUrl(b.dataset.mailto);
   if (b.dataset.copy !== undefined) { try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied'); } catch {} }
+  if (b.dataset.fconv) { const f = dropped.get(b.dataset.fconv); if (f) addMsg('bot', `Convert ${f.name} to…`, { convFor: b.dataset.fconv, cmd: true }); }
+  if (b.dataset.fto) {
+    const [id, to] = b.dataset.fto.split(':'), f = dropped.get(id); if (!f) return toast('That file is gone — drop it again.');
+    const wait = addMsg('bot', `🔀 Converting to ${conv.LABELS[to] || to}…`, { cmd: true });
+    try {
+      const r = await conv.convertAny(f, to); { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); }
+      await tools.deliver(r.name, r.bytes, r.mime); logAction('file', `Converted ${f.name} to ${r.name}`);
+      addMsg('bot', `✅ ${r.name} is ready — it’s in your Downloads.`, { cmd: true });
+    } catch (e) { { const i = store.chat.indexOf(wait); if (i >= 0) store.chat.splice(i, 1); } addMsg('bot', `I couldn’t convert it: ${e.message}`, { cmd: true }); }
+  }
+  if (b.dataset.fsum) { const f = dropped.get(b.dataset.fsum); if (f) submit(`Summarise ${f.name} in a few clear points`); }
+  if (b.dataset.fmail) { const f = dropped.get(b.dataset.fmail); if (f) submit(`Write a short email to send ${f.name}, explaining what it is`); }
 };
 
 let attachments = [];       // files attached to the next question
+const dropped = new Map();   // files given to Zuffi this session (for Convert / Summarise / Email buttons)
 let activeDocs = [];        // file ids the conversation is about
 let lastWasVoice = false, replyKind = 'cmd', followUps = 0;
 async function submit(text, fromVoice = false) {
@@ -953,13 +1032,20 @@ async function submit(text, fromVoice = false) {
     }
     if (!text) {
       const words = saved.reduce((n, s) => n + (s.text ? s.text.split(/\s+/).length : 0), 0);
-      addMsg('bot', `Got it — I saved ${saved.map(s => s.name).join(', ')} in your memory${words ? ` (${words.toLocaleString()} words)` : ''}. Ask me anything about ${saved.length > 1 ? 'them' : 'it'}.`);
+      const ids = files.map(f => { const id = 'f' + Math.random().toString(36).slice(2, 9); dropped.set(id, f); return id; });
+      addMsg('bot', `Got ${saved.map(s => s.name).join(', ')}${words ? ` (${words.toLocaleString()} words)` : ''}. What shall I do with ${files.length > 1 ? 'them' : 'it'}? Or just ask me anything about ${files.length > 1 ? 'them' : 'it'}.`, { fileActs: ids, cmd: true });
       return;
     }
   } else { addMsg('me', text); go('chat'); }
   mem.remember('chat', text);
 
   { const me = !files.length && aboutMe(text); if (me) { const mine = store.chat[store.chat.length - 1]; if (mine?.role === 'me') mine.cmd = true; addMsg('bot', me, { cmd: true }); if (fromVoice || S().speak || zc.isOpen()) speak(me); return; } }
+  if (!files.length && /^(zuffi,?\s*)?(please\s+)?(plan|organi[sz]e|schedule) my (day|today)[.!?]?$/i.test(text)) {
+    const mine = store.chat[store.chat.length - 1]; if (mine?.role === 'me') mine.cmd = true;
+    const p = dayplan.planDay({ startHour: +(S().workStart || 9), endHour: +(S().workEnd || 18) }), n = p.blocks.filter(b => b.kind === 'task').length;
+    const r = n ? `Here’s your day: I fitted ${n} task${n === 1 ? '' : 's'} around your meetings. Tap “Add these times” to set them.` : 'You have no open tasks to plan — a free day!';
+    addMsg('bot', r, { cmd: true }); if (fromVoice || S().speak || zc.isOpen()) speak(r); go('tools'); openTool('planday'); return;
+  }
   // "undo", "undo that", "take that back" → reverses the last change Zuffi made
   if (!files.length && /^(zuffi,?\s*)?(please\s+)?(undo( that| it| the last( thing| change)?)?|take (that|it) back|revert( that)?|wapas karo)[.!]?$/i.test(text)) {
     const r = actlog.undo() || 'There’s nothing to undo.';
@@ -1400,7 +1486,7 @@ function showAlert(title, sub, itemId) {
   if (M && item) M.post('reminder', { itemId, kind: item.type || 'reminder', title: item.title || title, sub: sub || '' });
   // Windows: Zuffi walks to the middle of the screen with it
   if (D?.pet) D.pet('remind', { id: itemId || '', title: item?.title || title.replace(/^[^\p{L}\p{N}]+/u, ''), head: item?.type === 'meeting' ? 'Meeting' : 'Reminder' });
-  else if (M) M.post('note', { title, sub: sub || '' });
+  else if (M) M.post('note', { title, sub: sub || '', alert: true, itemId: itemId || '' });
   window.SparrowIsland?.peek(title, sub || '', 9000);
   $('#alert').dataset.health = '';
   $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
@@ -1411,6 +1497,24 @@ function showAlert(title, sub, itemId) {
 $('#alertSnooze').onclick = () => { const id = $('#alertSnooze').dataset.id; const it = store.items.find(i => i.id === id); if (it) { store.update(id, { snoozeUntil: Date.now() + 10 * 60000, snoozed: false, done: false }); toast('😴 Snoozed for 10 minutes'); } $('#alert').hidden = true; };
 $('#alertDone').addEventListener('click', () => { const k = $('#alert').dataset.health; if (k && S().health?.[k]) { S().health[k].last = Date.now(); store.save(); } $('#alert').dataset.health = ''; });
 $('#alertDone').onclick = () => { const id = $('#alertDone').dataset.id; const it = store.items.find(i => i.id === id); if (it && !it.repeat) store.update(id, { done: true, doneAt: new Date().toISOString() }); $('#alert').hidden = true; window.zuffiPetDance?.(it?.type === 'meeting' ? 'Good luck! 🍀' : undefined); };
+/** A question in the alert banner with its own two buttons (e.g. a call started: Take notes / Not now). */
+function askAlert(title, sub, yes, no, onYes) {
+  const A = $('#alert'), d = $('#alertDone'), z = $('#alertSnooze');
+  $('#alertTitle').textContent = title; $('#alertSub').textContent = sub || '';
+  const dTxt = d.textContent, zTxt = z.textContent, dOn = d.onclick, zOn = z.onclick;
+  const restore = () => { d.textContent = dTxt; z.textContent = zTxt; d.onclick = dOn; z.onclick = zOn; A.hidden = true; };
+  d.textContent = yes; z.textContent = no;
+  d.onclick = () => { restore(); onYes(); }; z.onclick = restore;
+  A.hidden = false; chime();
+  window.SparrowIsland?.peek(title, sub || '', 12000);
+  setTimeout(() => { if (d.textContent === yes) restore(); }, 60000);
+}
+// Windows: a Zoom / Teams / Meet / WhatsApp call started → offer notes; it ended → stop and summarise
+let meetingByUs = false;
+D?.onEvent?.(ev => {
+  if (ev.type === 'meeting-start' && !$('#live')) askAlert(`Looks like you’re in a ${ev.app} call`, 'Shall I take notes? You get a summary and to-dos when it ends.', 'Take notes', 'Not now', () => { meetingByUs = true; startMeetingNotes(); });
+  if (ev.type === 'meeting-end' && meetingByUs && $('#live')) { meetingByUs = false; stopMeetingNotes(); }
+});
 function alertNow(spoken, shown, tag, itemId) {
   chime(); showAlert(shown, itemId ? 'Or say “snooze”' : '', itemId); birdMood('happy');
   if (itemId) setLastAlert(itemId);
@@ -1659,6 +1763,90 @@ async function openTool(name) {
   const done = html => { P.innerHTML = '<button class="tool-back" id="toolBack" type="button">‹ Dashboard</button>' + html; $('#toolBack').onclick = () => { closeTool(); go('home'); }; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const cur = S().business.currency;
   if ((name === 'agent' || name === 'promo') && !bizOn()) { closeTool(); go('home'); bizUpsell(); return; }
+  if (name === 'blur') {
+    done(`<h3>Blur faces &amp; private info</h3><p class="small-text">Pick a picture. ${M ? 'Zuffi finds faces, emails, phone numbers and names on this Mac — nothing is uploaded.' : FaceDetectorOK() ? 'Zuffi finds faces by itself.' : ''} Drag on the picture to blur anything else; tap a box to remove it.</p>
+      <button class="btn" id="blPick">Choose a picture</button>
+      <div id="blWrap" hidden><div class="bl-opts"><label><input type="checkbox" id="blFaces" checked> Faces</label><label><input type="checkbox" id="blPriv" checked> Emails &amp; phone numbers</label><label><input type="checkbox" id="blNames" checked> Names</label><label><input type="checkbox" id="blText"> All text</label></div>
+      <canvas id="blCv" class="bl-cv"></canvas><p class="small-text" id="blNote"></p>
+      <div class="row-btns"><button class="btn" id="blSave">Save blurred picture</button><button class="btn ghost" id="blClear">Clear my boxes</button></div></div>`);
+    let img = null, file = null, found = [], manual = [], drag = null;
+    const cv = $('#blCv'), g = cv.getContext('2d');
+    const boxes = () => [...found.filter(b => (b.kind === 'face' && $('#blFaces').checked) || (['email', 'phone'].includes(b.kind) && $('#blPriv').checked) || (b.kind === 'name' && $('#blNames').checked) || (b.kind === 'text' && $('#blText').checked)), ...manual];
+    const draw = (preview = true) => {
+      g.drawImage(img, 0, 0, cv.width, cv.height);
+      for (const b of boxes()) {
+        const x = b.x * cv.width, y = b.y * cv.height, w = b.w * cv.width, h = b.h * cv.height; if (w < 2 || h < 2) continue;
+        // a strong blur of the original picture, only inside the box (then a soft mosaic so nothing can be read back)
+        g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+        g.filter = `blur(${Math.max(10, Math.round(Math.min(w, h) / 4))}px)`; g.drawImage(img, 0, 0, cv.width, cv.height);
+        g.filter = 'none'; const px = Math.max(8, Math.round(Math.min(w, h) / 8)), t = document.createElement('canvas'); t.width = Math.max(1, Math.ceil(w / px)); t.height = Math.max(1, Math.ceil(h / px));
+        t.getContext('2d').drawImage(cv, x, y, w, h, 0, 0, t.width, t.height); g.imageSmoothingEnabled = true; g.drawImage(t, 0, 0, t.width, t.height, x, y, w, h); g.restore();
+      }
+      if (preview) for (const b of boxes()) { g.strokeStyle = 'rgba(79,107,255,.9)'; g.lineWidth = Math.max(2, cv.width / 400); g.setLineDash([8, 6]); g.strokeRect(b.x * cv.width, b.y * cv.height, b.w * cv.width, b.h * cv.height); g.setLineDash([]); }
+      if (drag) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(drag.x * cv.width, drag.y * cv.height, drag.w * cv.width, drag.h * cv.height); }
+    };
+    const pos = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; };
+    cv.onpointerdown = e => { const p = pos(e); const hit = manual.findIndex(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h); if (hit >= 0) { manual.splice(hit, 1); draw(); return; } drag = { x: p.x, y: p.y, w: 0, h: 0, sx: p.x, sy: p.y }; cv.setPointerCapture(e.pointerId); };
+    cv.onpointermove = e => { if (!drag) return; const p = pos(e); drag.x = Math.min(p.x, drag.sx); drag.y = Math.min(p.y, drag.sy); drag.w = Math.abs(p.x - drag.sx); drag.h = Math.abs(p.y - drag.sy); draw(); };
+    cv.onpointerup = () => { if (drag && drag.w > 0.01 && drag.h > 0.01) manual.push({ x: drag.x, y: drag.y, w: drag.w, h: drag.h, kind: 'manual' }); drag = null; draw(); };
+    ['#blFaces', '#blPriv', '#blNames', '#blText'].forEach(id => $(id).onchange = () => draw());
+    $('#blClear').onclick = () => { manual = []; draw(); };
+    $('#blPick').onclick = async () => {
+      const f = await pickFiles('image/*', false); if (!f.length) return; file = f[0];
+      img = await createImageBitmap(file); cv.width = img.width; cv.height = img.height; found = []; manual = [];
+      $('#blWrap').hidden = false; draw(); $('#blNote').textContent = 'Looking for faces and private details…';
+      try {
+        if (M) { const b64 = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(file); }); found = (await M.call('vision', { b64 })) || []; }
+        else if (FaceDetectorOK()) { found = (await new window.FaceDetector({ maxDetectedFaces: 30 }).detect(img)).map(d => ({ kind: 'face', x: d.boundingBox.x / img.width - .02, y: d.boundingBox.y / img.height - .03, w: d.boundingBox.width / img.width + .04, h: d.boundingBox.height / img.height + .06 })); }
+      } catch {}
+      const n = k => found.filter(b => b.kind === k).length;
+      $('#blNote').textContent = M || FaceDetectorOK() ? `Found ${n('face')} face${n('face') === 1 ? '' : 's'}${M ? `, ${n('email') + n('phone')} email${n('email') + n('phone') === 1 ? '' : 's'}/phone number${n('email') + n('phone') === 1 ? '' : 's'} and ${n('name')} name${n('name') === 1 ? '' : 's'}` : ''}. Drag to blur more.` : 'Drag over anything you want to hide.';
+      draw();
+    };
+    $('#blSave').onclick = async () => { draw(false); const blob = await new Promise(r => cv.toBlob(r, file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.92)); draw(); await tools.deliver(file.name.replace(/\.[^.]+$/, '') + ' (blurred).' + (file.type === 'image/png' ? 'png' : 'jpg'), new Uint8Array(await blob.arrayBuffer()), blob.type); logAction('photo', `Blurred private details in ${file.name}`); toast('Saved'); };
+    return;
+  }
+  if (name === 'planday') {
+    const plan = dayplan.planDay({ startHour: +(S().workStart || 9), endHour: +(S().workEnd || 18) });
+    const row = b => `<div class="pd-row pd-${b.kind}"><span class="pd-t">${fmtTime(b.start)}<small>${fmtTime(b.end)}</small></span><span class="pd-dot"></span><span class="pd-x"><b>${esc(b.title)}</b><small>${{ event: 'Calendar', meeting: 'Meeting', reminder: 'Reminder', task: 'Task — planned by Zuffi' }[b.kind]}</small></span></div>`;
+    const tasksIn = plan.blocks.filter(b => b.kind === 'task').length;
+    done(`<h3>Plan my day</h3><p class="small-text">Zuffi fitted your open tasks into the free time between your meetings${dayplan.calendars().length ? ' and calendar' : ''}, from ${fmtTime(plan.from)} to ${fmtTime(plan.to)}.</p>
+      <div class="pd">${plan.blocks.map(row).join('') || '<p class="small-text">Nothing planned and no open tasks — a free day.</p>'}</div>
+      ${plan.unplaced.length ? `<p class="small-text">Didn’t fit today: ${plan.unplaced.map(t => esc(t.title)).join(', ')}.</p>` : ''}
+      <div class="row-btns">${tasksIn ? `<button class="btn" id="pdGo">Add these times to my tasks</button>` : ''}<button class="btn ghost" id="pdHours">Working hours: ${S().workStart || 9}:00 – ${S().workEnd || 18}:00</button></div>
+      ${dayplan.calendars().length ? '' : '<p class="small-text">Tip: connect Google or Outlook Calendar in Settings → My day, so Zuffi plans around your events.</p>'}`);
+    $('#pdGo') && ($('#pdGo').onclick = () => { const n = dayplan.applyPlan(plan); toast(`Planned ${n} task${n === 1 ? '' : 's'} — I’ll remind you at each time`); logAction('task', `Planned the day (${n} tasks)`); closeTool(); go('home'); });
+    $('#pdHours').onclick = () => { const a = prompt('Start of your working day (hour, 0–23):', S().workStart || 9); if (a === null) return; const b = prompt('End of your working day (hour, 1–24):', S().workEnd || 18); if (b === null) return; S().workStart = Math.max(0, Math.min(23, +a || 9)); S().workEnd = Math.max(S().workStart + 1, Math.min(24, +b || 18)); store.save(); openTool('planday'); };
+    return;
+  }
+  if (name === 'screenrec') {
+    if (M) {   // the Mac records natively (ScreenCaptureKit) to Movies → Zuffi recordings
+      const r = await M.call('screenrec', {}); toast(r?.text || 'OK', 6000); closeTool(); go('home'); return;
+    }
+    done(`<h3>Screen recorder</h3><p class="small-text">Records your whole screen${D ? ' with the computer’s sound' : ''}. Zuffi saves it as a video when you stop.</p>
+      <button class="btn" id="srGo">Start recording</button><p class="small-text" id="srNote"></p>`);
+    let rec = null, chunks = [], t0 = 0, tick = null;
+    $('#srGo').onclick = async () => {
+      if (rec) { rec.stop(); return; }
+      try {
+        const st = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true });
+        const type = reels.outputType(); chunks = [];
+        rec = new MediaRecorder(st, { mimeType: type, videoBitsPerSecond: 8_000_000 });
+        rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+        rec.onstop = async () => {
+          st.getTracks().forEach(t => t.stop()); clearInterval(tick);
+          const blob = new Blob(chunks, { type: type.split(';')[0] }), name = `Screen recording ${new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')}.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+          await tools.deliver(name, new Uint8Array(await blob.arrayBuffer()), blob.type); logAction('file', 'Recorded the screen');
+          rec = null; if ($('#srGo')) { $('#srGo').textContent = 'Start recording'; $('#srNote').textContent = `Saved ${name}.`; }
+        };
+        st.getVideoTracks()[0].onended = () => rec?.state === 'recording' && rec.stop();
+        rec.start(1000); t0 = Date.now();
+        $('#srGo').textContent = '■ Stop recording';
+        tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); if ($('#srNote')) $('#srNote').textContent = `● Recording ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }, 500);
+      } catch (e) { $('#srNote').textContent = 'Recording didn’t start: ' + (e.message || 'permission denied'); rec = null; }
+    };
+    return;
+  }
   if (name === 'agent') {
     const prof = (() => { try { return bizapp.profile(); } catch { return {}; } })();
     let docs = [], chat = [];
@@ -1666,15 +1854,15 @@ async function openTool(name) {
       <div class="ag-steps">
         <div class="ag-step"><span class="n">1</span><div style="flex:1"><b>Give Zuffi your details</b><p>Upload your price list, menu, brochure, ${prof.estate ? 'property list (Excel/CSV), payment plan' : 'services, booking rules'} or FAQ — PDF, Word, Excel, CSV or text. Or just type.</p>
           <div class="ag-files" id="agFiles"></div>
-          <textarea class="field-in" id="agTyped" rows="3" placeholder="${prof.estate ? 'e.g. We deal in DHA Phase 6–9 plots. 5 marla Rs 1.6 crore. Office 11am–8pm. Site visits free, call first.' : 'e.g. Ladies & gents cuts £18–£35. Open Tue–Sat 9–6. Book on WhatsApp, £5 deposit.'}"></textarea>
+          <textarea class="field-in" id="agTyped" rows="3" placeholder="${prof.estate ? 'Areas you cover, property types, prices, office hours and how viewings work' : 'Services and prices, opening hours, how to book and any deposit'}"></textarea>
           <div class="row-btns tight"><button class="btn ghost" id="agUp">${feats.icon('upload', 16)} Upload files</button><button class="btn" id="agLearn">Learn my business</button></div></div></div>
         <div class="ag-step"><span class="n">2</span><div style="flex:1"><b>Check what Zuffi knows</b><p>Edit anything — this is all she will tell customers.</p>
           <textarea class="field-in ag-brief" id="agBrief" placeholder="Zuffi’s business brief appears here…">${esc(bizknow.brief())}</textarea>
-          <input class="field-in" id="agToday" placeholder="Today’s update (used today only), e.g. 20% off highlights / New 10 marla in Bahria" value="${esc(bizknow.todayUpdate())}">
+          <input class="field-in" id="agToday" placeholder="Today’s update — an offer or news (used today only)" value="${esc(bizknow.todayUpdate())}">
           <div class="row-btns tight"><button class="btn" id="agSave">Save</button></div></div></div>
         <div class="ag-step"><span class="n">3</span><div style="flex:1"><b>Try it like a customer</b><p>Write in any language — Zuffi answers in the same one.</p>
           <div class="ag-test" id="agChat"></div>
-          <div class="row-btns tight"><input class="field-in" id="agMsg" placeholder="${prof.estate ? 'e.g. 5 marla plot ka rate kya hai?' : 'e.g. Do you have anything Saturday morning?'}" style="flex:1;margin:0"><button class="btn" id="agSend">Send</button></div></div></div>
+          <div class="row-btns tight"><input class="field-in" id="agMsg" placeholder="Write a message as a customer would, in any language" style="flex:1;margin:0"><button class="btn" id="agSend">Send</button></div></div></div>
         <div class="ag-step"><span class="n">4</span><div style="flex:1"><b>Switch on replies</b><p>${N ? '' : M ? 'On this Mac: Business → My business → Autopilot. ' : ''}${N ? '' : 'On your Android phone: Zuffi → Settings → WhatsApp on this phone → Autopilot. '}Your linked devices get these facts automatically.</p>
           ${N ? `<label class="row"><input type="checkbox" id="agPilot" ${S().waBiz?.pilot ? 'checked' : ''}> Autopilot — reply to customers for me on this phone</label>` : ''}</div></div>
       </div>`);
@@ -1709,8 +1897,8 @@ async function openTool(name) {
     const phone = S().profile?.biz?.phone || S().profile?.phone || '';
     done(`<h3>Posts &amp; reels</h3><p class="small-text">Pick what to announce, add a few words and photos — Zuffi designs the post, Status or reel with your name and WhatsApp number, and writes the caption.</p>
       <div class="pr-kinds" id="prKinds">${kinds.map(([k, l, d]) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${l}<small>${d}</small></button>`).join('')}</div>
-      <input class="field-in" id="prHead" placeholder="${prof.estate ? 'Headline, e.g. 10 Marla House in DHA Phase 6' : 'Headline, e.g. 20% off all colour this week'}">
-      <div class="row-btns tight"><input class="field-in" id="prPrice" placeholder="${prof.estate ? 'Price, e.g. Rs 4.2 Crore' : 'Price, e.g. From £25'}" style="flex:1;margin:0"><input class="field-in" id="prPhone" placeholder="WhatsApp number" value="${esc(phone)}" style="flex:1;margin:0"></div>
+      <input class="field-in" id="prHead" placeholder="${prof.estate ? 'Headline — property type, size and area' : 'Headline — your offer or news'}">
+      <div class="row-btns tight"><input class="field-in" id="prPrice" placeholder="Price (optional)" style="flex:1;margin:0"><input class="field-in" id="prPhone" placeholder="WhatsApp number" value="${esc(phone)}" style="flex:1;margin:0"></div>
       <input class="field-in" id="prDet" placeholder="${prof.estate ? 'Details, comma separated: 5 Beds, Corner, Near park, Possession' : 'Details, comma separated: Tue–Sat, Book online, Walk-ins welcome'}">
       <div class="seg small" id="prShape">${Object.entries(promo.SHAPES).map(([k, v]) => `<button data-s="${k}" class="${k === shape ? 'on' : ''}">${v.label}</button>`).join('')}</div>
       <div class="row-btns tight"><button class="btn ghost" id="prPhotos">${feats.icon('image', 16)} Add photos</button><button class="btn ghost" id="prAI">${feats.icon('sparkle', 16)} AI background</button></div>
@@ -1767,7 +1955,7 @@ async function openTool(name) {
     const week = store.items.filter(i => i.type === 'timer' && i.start > Date.now() - 7 * 86400e3);
     const byLabel = {}; week.forEach(i => byLabel[i.title] = (byLabel[i.title] || 0) + tools.hours(i));
     done(`<h3>⏱️ Time tracker</h3>${r ? `<p><b>Running:</b> ${esc(r.title)} · ${tools.fmtHours(tools.hours(r))}</p><button class="btn" id="tStop">Stop</button>`
-      : `<input id="tLabel" placeholder="What are you working on? e.g. Ali website"><button class="btn" id="tStart">Start</button>`}
+      : `<input id="tLabel" placeholder="What are you working on?"><button class="btn" id="tStart">Start</button>`}
       <p class="small-text" style="margin-top:14px"><b>This week</b></p>${Object.entries(byLabel).map(([k, v]) => `<div class="res-row"><div class="txt"><div class="t1">${esc(k)}</div></div><b>${tools.fmtHours(v)}</b></div>`).join('') || '<p class="small-text">No time tracked yet.</p>'}
       <p class="small-text">Then say “invoice Ali at £40” — tracked hours go straight onto the invoice.</p>`);
     $('#tStart') && ($('#tStart').onclick = () => { tools.startTimer($('#tLabel').value || 'Work'); updateTimerLabel(); openTool('timer'); });
@@ -1795,7 +1983,7 @@ async function openTool(name) {
       <label class="field"><span>Brightness</span><input type="range" id="psB" min="0.6" max="1.6" step="0.02" value="1"></label>
       <label class="field"><span>Warmth</span><input type="range" id="psW" min="-0.25" max="0.25" step="0.01" value="0"></label>
       <label class="field"><span>Size</span><select id="psSize">${Object.entries(studio.SIZES).map(([k, s]) => `<option value="${k}">${s.label}</option>`).join('')}</select></label>
-      <label class="field"><span>Watermark (your name or logo text)</span><input id="psMark" value="${esc(mark0)}" placeholder="e.g. Ali Estates"></label>
+      <label class="field"><span>Watermark (your name or logo text)</span><input id="psMark" value="${esc(mark0)}" placeholder="Client or company name"></label>
       <button class="btn" id="psSave">Save ${files.length > 1 ? 'all ' + files.length + ' photos' : 'photo'}</button>`);
     let look = 'auto';
     const opts = () => ({ look, b: +$('#psB').value, w: +$('#psW').value, size: $('#psSize').value, mark: $('#psMark').value.trim() });
@@ -1865,7 +2053,7 @@ async function openTool(name) {
       <div class="row-2"><label class="field"><span>Length</span><select id="rlLen">${[15, 30, 60].filter(n => n < dur + 1).map(n => `<option value="${n}" ${n === 30 ? 'selected' : ''}>${n} seconds</option>`).join('')}<option value="${Math.min(90, Math.floor(dur))}">Whole clip${dur > 90 ? ' (first 90 s)' : ''}</option></select></label>
       <label class="field"><span>Start at (seconds)</span><input id="rlStart" type="number" min="0" max="${Math.floor(dur)}" value="0"></label></div>
       <label class="field"><span>Shape</span><select id="rlShape">${Object.entries(reels.SHAPES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select></label>
-      <label class="field"><span>Title (first 3 seconds)</span><input id="rlTitle" placeholder="e.g. 3-bed house in Riverside — £1,250 pcm"></label>
+      <label class="field"><span>Title (first 3 seconds)</span><input id="rlTitle" placeholder="Short title for the post"></label>
       <label class="field"><span>Captions</span><select id="rlCapMode">${hasKey ? '<option value="auto">Automatic, from what’s said</option>' : ''}<option value="typed">I’ll type them</option><option value="none">No captions</option></select></label>
       <textarea class="field-in" id="rlCaps" placeholder="One caption per line — they’re spread evenly over the reel" ${hasKey ? 'hidden' : ''}></textarea>
       <label class="field"><span>Your name in the corner</span><input id="rlMark" value="${esc(S().business?.name || '')}"></label>
@@ -1913,7 +2101,7 @@ async function openTool(name) {
     let kind = 'docx';
     done(`<h3>📄 Word, Excel &amp; PowerPoint</h3><p class="small-text">Describe what you need. Zuffi writes it and builds the file on this device.</p>
       <div class="ps-chips" id="ofKind"><button class="chip on" data-k="docx">📝 Word</button><button class="chip" data-k="xlsx">📊 Excel</button><button class="chip" data-k="pptx">📽️ PowerPoint</button></div>
-      <textarea class="field-in" id="ofReq" placeholder="e.g. A letter to my tenant about the rent going up from 1 December"></textarea>
+      <textarea class="field-in" id="ofReq" placeholder="Describe the document you need"></textarea>
       <div class="ps-chips" id="ofIdeas"></div>
       <button class="btn" id="ofGo">Make it</button><div id="ofOut"></div>
       ${ex.length ? `<h3 style="margin-top:18px">Your business → Excel</h3><p class="small-text">Straight from your data, no AI needed.</p><div class="ps-chips" id="ofEx">${ex.map(n => `<button class="chip" data-ex="${n}">${office.EXPORTS[n]}</button>`).join('')}<button class="chip" data-ex="*">Everything</button></div>` : ''}`);
@@ -1951,7 +2139,7 @@ async function openTool(name) {
     return;
   }
   if (name === 'find' && D) {
-    done(`<h3>📁 Find files</h3><input id="fQ" placeholder="e.g. invoice Ali, contract, CV" enterkeyhint="search"><div id="fRes"></div>`);
+    done(`<h3>📁 Find files</h3><input id="fQ" placeholder="Words from the file name or what it’s about" enterkeyhint="search"><div id="fRes"></div>`);
     $('#fQ').onkeydown = async e => { if (e.key !== 'Enter') return; $('#fRes').innerHTML = '<p class="small-text">Searching…</p>'; const files = await D.findFiles($('#fQ').value);
       $('#fRes').innerHTML = files.map(f => `<div class="res-row"><div class="txt"><div class="t1">${esc(f.name)}</div><div class="t2">${new Date(f.mtime).toLocaleDateString()}</div></div><button data-o="${esc(f.path)}">Open</button><button data-r="${esc(f.path)}">Show</button></div>`).join('') || '<p class="small-text">Nothing found.</p>'; };
     $('#fQ').focus();
@@ -2200,7 +2388,7 @@ function fillSettings() {
 }
 async function openSettings(section) {
   fillSettings(); openSheet('#sheet');
-  renderOutfits(); renderAccount(); $('#sEventColors').checked = S().eventColors === true; $('#sBirthday').value = S().birthday || '';
+  renderOutfits(); renderAccount(); $('#sEventColors').checked = S().eventColors === true; $('#sBirthday').value = S().birthday || S().profile?.dob || '';
   if (section === 'account') { const d = $('#accDetails'); d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); }
   if (section === 'look') { const d = $('#lookDetails'); d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); }
   if (section === 'ai') { const d = $$('#sheet details').find(x => x.querySelector('summary').textContent.includes('AI')); if (d) { d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth' }), 100); } }
@@ -2413,10 +2601,10 @@ if (N) {
 if (D && !DASH) import('./desktop.js').catch(e => console.error('desktop', e));
 if (DASH) {
   document.title = 'Zuffi Business';
-  const bar = document.createElement('div'); bar.className = 'dash-drag'; bar.innerHTML = '<span>🐰 Zuffi Business</span>'; document.body.prepend(bar);
+  const bar = document.createElement('div'); bar.className = 'dash-drag'; bar.innerHTML = '<span>Zuffi Business</span>'; document.body.prepend(bar);
   go('biz'); bizapp.show(new URLSearchParams(location.search).get('tab') || undefined);
   D?.onCommand?.(c => { if (typeof c === 'string' && c.startsWith('biz:')) bizapp.show(c.slice(4)); });
-  $('#askInput').removeAttribute('data-i18n-ph'); $('#askInput').placeholder = 'Tell Zuffi… e.g. “new lead Ali 0333 1234567 wants 10 marla” or “expense 2500 fuel”';
+  $('#askInput').removeAttribute('data-i18n-ph'); $('#askInput').placeholder = 'Tell Zuffi a new lead, a payment, an expense or a follow-up';
 }
 
 // ---------------- start ----------------
@@ -2464,6 +2652,18 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  // The Mac notch: a dropped file → which formats, and the conversion itself
+  formatsFor: name => conv.formatsFor({ name, type: studio.guessType(name) }),
+  convertB64: async (name, b64, to) => {
+    try {
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const r = await conv.convertAny(new File([bytes], name, { type: studio.guessType(name) }), to);
+      let s = ''; for (let i = 0; i < r.bytes.length; i += 0x8000) s += String.fromCharCode(...r.bytes.subarray(i, i + 0x8000));
+      logAction('file', `Converted ${name} to ${r.name}`);
+      return { name: r.name, b64: btoa(s) };
+    } catch (e) { return { error: e.message }; }
+  },
+  alertDone: () => $('#alertDone')?.click(), alertLater: () => $('#alertSnooze')?.click(),
   catchUp: () => checkDue(),
   // The Mac's morning briefing reads Zuffi's own list (not only Apple Calendar / Reminders).
   todayPlan: () => {
@@ -2674,4 +2874,7 @@ window.zuffiChargeTest = (c = true, l = .62) => chargeFx(c, l);
     }, 4000);
   }
 })();
-setTimeout(() => warmUp(), 4000);   // the offline brain loads in the background: the first answer comes quicker
+setTimeout(() => warmUp(), 4000);
+// Calendars: refresh every 30 minutes; the dashboard and the AI follow
+setTimeout(() => dayplan.refresh().catch(() => {}), 5000); setInterval(() => dayplan.refresh().catch(() => {}), 30 * 60e3);
+document.addEventListener('zuffi-calendar', () => { renderToday(); sendFacts(); });   // the offline brain loads in the background: the first answer comes quicker

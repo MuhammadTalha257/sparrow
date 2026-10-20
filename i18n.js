@@ -9,7 +9,7 @@ const RTL = new Set(['ur', 'ar', 'pa']);
 const T = {
   en: {
     home: 'Home', chat: 'Chat', plan: 'Plan', memory: 'Memory', tools: 'Tools', settings: 'Settings', today: 'Today', seeAll: 'See all',
-    quick: 'Quick', aiApps: 'AI apps', myDay: 'My day', talk: 'Talk', upNext: 'UP NEXT', checkIn: 'Check-in', ask: 'Ask Zuffi… e.g. remind me to call mum at 6pm',
+    quick: 'Quick', aiApps: 'AI apps', myDay: 'My day', talk: 'Talk', upNext: 'UP NEXT', checkIn: 'Check-in', ask: 'Ask Zuffi anything, or tell her what to remember',
     tasks: 'Tasks', meetings: 'Meetings', reminders: 'Reminders', notes: 'Notes', customers: 'Customers', money: 'Money', habits: 'Habits',
     prayer: 'Prayer times', nextPrayer: 'Next prayer', done: 'Done', later: 'Later', snooze: 'Snooze 10 min', search: 'Search your memory…',
     morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening', night: 'Hello', noTasks: 'No tasks today', clear: 'Your day is clear',
@@ -17,7 +17,7 @@ const T = {
   },
   ur: {
     home: 'ہوم', chat: 'گفتگو', plan: 'منصوبہ', memory: 'یادداشت', tools: 'ٹولز', settings: 'ترتیبات', today: 'آج', seeAll: 'سب دیکھیں',
-    quick: 'فوری', aiApps: 'اے آئی ایپس', myDay: 'میرا دن', talk: 'بات کریں', upNext: 'اگلا', checkIn: 'جائزہ', ask: 'اسپیرو سے پوچھیں… مثلاً کل 5 بجے یاد دلانا',
+    quick: 'فوری', aiApps: 'اے آئی ایپس', myDay: 'میرا دن', talk: 'بات کریں', upNext: 'اگلا', checkIn: 'جائزہ', ask: 'زوفی سے کچھ بھی پوچھیں',
     tasks: 'کام', meetings: 'میٹنگز', reminders: 'یاد دہانیاں', notes: 'نوٹس', customers: 'گاہک', money: 'حساب', habits: 'عادتیں',
     prayer: 'نماز کے اوقات', nextPrayer: 'اگلی نماز', done: 'ہو گیا', later: 'بعد میں', snooze: '10 منٹ بعد', search: 'اپنی یادداشت میں تلاش کریں…',
     morning: 'صبح بخیر', afternoon: 'سہ پہر بخیر', evening: 'شام بخیر', night: 'السلام علیکم', noTasks: 'آج کوئی کام نہیں', clear: 'آج کا دن خالی ہے',
@@ -25,7 +25,7 @@ const T = {
   },
   hi: {
     home: 'होम', chat: 'चैट', plan: 'योजना', memory: 'याददाश्त', tools: 'टूल्स', settings: 'सेटिंग्स', today: 'आज', seeAll: 'सब देखें',
-    quick: 'झटपट', aiApps: 'एआई ऐप्स', myDay: 'मेरा दिन', talk: 'बात करें', upNext: 'आगे', checkIn: 'चेक-इन', ask: 'स्पैरो से पूछें… जैसे कल 5 बजे याद दिलाना',
+    quick: 'झटपट', aiApps: 'एआई ऐप्स', myDay: 'मेरा दिन', talk: 'बात करें', upNext: 'आगे', checkIn: 'चेक-इन', ask: 'ज़ूफ़ी से कुछ भी पूछें',
     tasks: 'काम', meetings: 'मीटिंग', reminders: 'रिमाइंडर', notes: 'नोट्स', customers: 'ग्राहक', money: 'हिसाब', habits: 'आदतें',
     prayer: 'नमाज़ का समय', nextPrayer: 'अगली नमाज़', done: 'हो गया', later: 'बाद में', snooze: '10 मिनट बाद', search: 'अपनी याददाश्त में खोजें…',
     morning: 'सुप्रभात', afternoon: 'नमस्ते', evening: 'शुभ संध्या', night: 'नमस्ते', noTasks: 'आज कोई काम नहीं', clear: 'आज का दिन खाली है',
