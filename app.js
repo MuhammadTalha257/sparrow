@@ -24,6 +24,7 @@ import * as reels from './reels.js';
 import * as images from './images.js';
 import * as feats from './features.js';
 import * as bizknow from './bizknow.js';
+import * as walink from './walink.js';
 import * as promo from './promo.js';
 import * as conv from './convertall.js';
 import * as dayplan from './dayplan.js';
@@ -758,6 +759,9 @@ function renderAll() { applyLook(); renderHeader(); renderToday(); renderPlan();
 
 // ---------------- the dashboard: features for your plan & country, sidebar, business numbers, inbox ----------------
 function bizOn() { try { return acct.isBusiness() && !document.body.classList.contains('personal-mode'); } catch { return false; } }
+// WhatsApp linked to Zuffi (Windows app): notifications, read-out, leads, autopilot replies
+setTimeout(() => walink.init({ toast: t => toast(t, 4000), speak: t => speak(t), bizOn,
+  notify: (title, body) => { try { if (D?.pet) D.pet('remind', { id: '', title: body, head: title }); else new Notification(title, { body }); } catch {} } }), 1500);
 function featCtx() {
   let p = {}; try { p = bizapp.profile(); } catch {}
   return { business: (() => { try { return acct.isBusiness(); } catch { return false; } })(), personal: document.body.classList.contains('personal-mode'),
@@ -1045,6 +1049,17 @@ async function submit(text, fromVoice = false) {
     const p = dayplan.planDay({ startHour: +(S().workStart || 9), endHour: +(S().workEnd || 18) }), n = p.blocks.filter(b => b.kind === 'task').length;
     const r = n ? `Here’s your day: I fitted ${n} task${n === 1 ? '' : 's'} around your meetings. Tap “Add these times” to set them.` : 'You have no open tasks to plan — a free day!';
     addMsg('bot', r, { cmd: true }); if (fromVoice || S().speak || zc.isOpen()) speak(r); go('tools'); openTool('planday'); return;
+  }
+  // Linked WhatsApp (Windows): "link whatsapp", "read my whatsapp messages", "read whatsapp out loud"
+  if (!files.length && walink.available()) {
+    const lt = text.toLowerCase().replace(/^(zuffi,?\s*)?(please\s+)?/, '').replace(/[?!.]+$/, '').trim();
+    let r = null;
+    if (/^(link|connect|set ?up) (my )?whats ?app( to zuffi)?$/.test(lt)) { walink.link(); r = 'Opening WhatsApp. On your phone: WhatsApp → Settings → Linked devices → Link a device, then scan the code.'; }
+    else if (/^(unlink|disconnect) (my )?whats ?app$/.test(lt)) { walink.unlink(); r = 'WhatsApp is unlinked from Zuffi.'; }
+    else if (/^(read|check|any) (my |new |unread )*whats ?app( messages| chats)?$/.test(lt)) r = await walink.unreadText();
+    else if (/^(read|say) (my )?(new )?whats ?app (messages )?(out loud|aloud)$/.test(lt)) { S().waReadAloud = true; store.save(); r = 'Okay — I’ll read new WhatsApp messages out loud.'; }
+    else if (/^stop reading (my )?whats ?app( messages)?$/.test(lt)) { S().waReadAloud = false; store.save(); r = 'Okay, I’ll stop reading them out.'; }
+    if (r) { const mine = store.chat[store.chat.length - 1]; if (mine?.role === 'me') mine.cmd = true; addMsg('bot', r, { cmd: true }); if (fromVoice || S().speak || zc.isOpen()) speak(r); return; }
   }
   // "undo", "undo that", "take that back" → reverses the last change Zuffi made
   if (!files.length && /^(zuffi,?\s*)?(please\s+)?(undo( that| it| the last( thing| change)?)?|take (that|it) back|revert( that)?|wapas karo)[.!]?$/i.test(text)) {
@@ -1818,6 +1833,24 @@ async function openTool(name) {
       ${dayplan.calendars().length ? '' : '<p class="small-text">Tip: connect Google or Outlook Calendar in Settings → My day, so Zuffi plans around your events.</p>'}`);
     $('#pdGo') && ($('#pdGo').onclick = () => { const n = dayplan.applyPlan(plan); toast(`Planned ${n} task${n === 1 ? '' : 's'} — I’ll remind you at each time`); logAction('task', `Planned the day (${n} tasks)`); closeTool(); go('home'); });
     $('#pdHours').onclick = () => { const a = prompt('Start of your working day (hour, 0–23):', S().workStart || 9); if (a === null) return; const b = prompt('End of your working day (hour, 1–24):', S().workEnd || 18); if (b === null) return; S().workStart = Math.max(0, Math.min(23, +a || 9)); S().workEnd = Math.max(S().workStart + 1, Math.min(24, +b || 18)); store.save(); openTool('planday'); };
+    return;
+  }
+  if (name === 'walink') {
+    const paint = () => {
+      const st = walink.getState(), pilot = !!S().waBiz?.pilot;
+      done(`<h3>WhatsApp linked to Zuffi</h3><p class="small-text">Like WhatsApp Web, inside Zuffi. New messages arrive instantly, can be read out, become leads, and with Autopilot Zuffi answers in the customer’s language in a second or two.</p>
+        <p><b>${st === 'ready' ? '✅ Linked' : st === 'qr' ? 'Scan the code in the WhatsApp window' : st === 'off' ? 'Not linked' : 'Connecting…'}</b></p>
+        <div class="row-btns">${st === 'ready' ? '<button class="btn ghost" id="waShow">Show WhatsApp</button><button class="btn ghost" id="waOff">Unlink</button>' : '<button class="btn" id="waOn">Link WhatsApp</button>'}</div>
+        <label class="field-row"><input type="checkbox" id="waRead" ${S().waReadAloud ? 'checked' : ''}> Read new messages out loud</label>
+        ${bizOn() ? `<label class="field-row"><input type="checkbox" id="waPilot" ${pilot ? 'checked' : ''}> Autopilot: reply to customers by myself</label>` : ''}
+        <p class="small-text">On your phone: WhatsApp → Settings → Linked devices → Link a device. This uses WhatsApp Web, which isn’t an official business API — WhatsApp can limit numbers that send lots of automatic messages, so keep Autopilot for people who wrote to you.</p>`);
+      $('#waOn') && ($('#waOn').onclick = () => walink.link());
+      $('#waShow') && ($('#waShow').onclick = () => walink.show());
+      $('#waOff') && ($('#waOff').onclick = () => walink.unlink());
+      $('#waRead').onchange = e => { S().waReadAloud = e.target.checked; store.save(); };
+      $('#waPilot') && ($('#waPilot').onchange = e => bizknow.setPilot(e.target.checked));
+    };
+    paint(); const off = walink.onChange(() => { if ($('#waRead')) paint(); else off(); });
     return;
   }
   if (name === 'screenrec') {

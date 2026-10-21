@@ -656,6 +656,46 @@ function pollMeetings() {
 }
 
 // ---------- start ----------
+// ---------------- WhatsApp linked to Zuffi (WhatsApp Web in Zuffi's own hidden window) ----------------
+// Link once with the QR code. New messages reach Zuffi instantly; replies are sent in the background.
+// Uses whatsapp-web.js's helpers (Apache-2.0), loaded from www/wabridge.js.
+let wa = null, waState = 'off';
+function startWA(show) {
+  if (wa && !wa.isDestroyed()) { if (show) { wa.show(); wa.focus(); } return; }
+  wa = new BrowserWindow({ width: 1000, height: 760, show: !!show, autoHideMenuBar: true,
+    title: 'Link WhatsApp to Zuffi — on your phone: WhatsApp → Linked devices → Link a device',
+    webPreferences: { partition: 'persist:whatsapp', preload: path.join(__dirname, 'wapreload.js'), contextIsolation: true, backgroundThrottling: false } });
+  const ua = wa.webContents.session.getUserAgent().replace(/\s*Electron\/\S+/, '').replace(/\s*(zuffi|sparrow)\S*/ig, '');
+  wa.webContents.setUserAgent(ua);
+  wa.on('close', e => { if (!quitting) { e.preventDefault(); wa.hide(); } });
+  wa.webContents.on('did-finish-load', () => {
+    try { wa.webContents.executeJavaScript(fs.readFileSync(path.join(WWW, 'wabridge.js'), 'utf8')).catch(() => {}); } catch {}
+  });
+  waState = 'loading';
+  wa.loadURL('https://web.whatsapp.com', { userAgent: ua });
+}
+function stopWA() { if (wa && !wa.isDestroyed()) wa.destroy(); wa = null; waState = 'off'; }
+ipcMain.on('wa-ev', (_e, m) => {
+  if (!m || typeof m !== 'object') return;
+  if (m.type === 'state') {
+    waState = m.state;
+    if (m.state === 'qr' && wa && !wa.isDestroyed()) { wa.show(); wa.focus(); }
+    if (m.state === 'ready' && wa && !wa.isDestroyed()) wa.hide();
+  }
+  panel?.webContents.send('wa', m);
+});
+ipcMain.handle('wa', async (_e, kind, a, b) => {
+  if (kind === 'start') { settings.waLink = true; saveSettings(); startWA(true); return waState; }
+  if (kind === 'stop') { settings.waLink = false; saveSettings(); stopWA(); return 'off'; }
+  if (kind === 'show') { startWA(true); return waState; }
+  if (kind === 'state') return waState;
+  if (!wa || wa.isDestroyed() || waState !== 'ready') return kind === 'unread' ? [] : { error: 'not linked' };
+  if (kind === 'send') return wa.webContents.executeJavaScript(`window.ZuffiWA.send(${JSON.stringify(String(a))}, ${JSON.stringify(String(b))})`).catch(e => ({ error: String(e) }));
+  if (kind === 'unread') return wa.webContents.executeJavaScript('window.ZuffiWA.unread()').catch(() => []);
+  if (kind === 'logout') { await wa.webContents.executeJavaScript('window.ZuffiWA.logout()').catch(() => {}); settings.waLink = false; saveSettings(); stopWA(); return 'off'; }
+  return null;
+});
+
 app.whenReady().then(async () => {
   loadSettings(); loadClips(); serveApp();
   if (isMac && app.dock) app.dock.hide();     // lives in the menu bar
@@ -676,6 +716,7 @@ app.whenReady().then(async () => {
   }
   if (isMac) { try { await systemPreferences.askForMediaAccess('microphone'); } catch {} }
   createPanel(); createTray(); loadApps();
+  if (settings.waLink) setTimeout(() => startWA(false), 6000);   // stays linked after restarts
   if (settings.pet !== false) setTimeout(createPet, 4000);
   powerMonitor.on('on-ac', () => { showGlow(true); updateAwake(); });
   powerMonitor.on('on-battery', () => { showGlow(false); updateAwake(); });

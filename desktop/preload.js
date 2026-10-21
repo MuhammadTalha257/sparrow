@@ -41,6 +41,13 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   onPet: f => ipcRenderer.on('pet', (_e, v) => f(v)),
   onCommand: f => ipcRenderer.on('command', (_e, c) => f(c)),
   onEvent: f => ipcRenderer.on('event', (_e, ev) => f(ev)),
+  // WhatsApp linked to Zuffi
+  wa: {
+    start: () => ipcRenderer.invoke('wa', 'start'), stop: () => ipcRenderer.invoke('wa', 'stop'), show: () => ipcRenderer.invoke('wa', 'show'),
+    logout: () => ipcRenderer.invoke('wa', 'logout'), state: () => ipcRenderer.invoke('wa', 'state'),
+    send: (to, text) => ipcRenderer.invoke('wa', 'send', to, text), unread: () => ipcRenderer.invoke('wa', 'unread'),
+    on: f => ipcRenderer.on('wa', (_e, m) => f(m)),
+  },
   // Mac speech engine (Apple): listening + natural voices
   nativeVoice: {
     available: () => ipcRenderer.sendSync('nv-available'),

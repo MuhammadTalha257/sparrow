@@ -1188,6 +1188,38 @@ struct NoteView: View {
     @ObservedObject var state: AppState
     @State private var typed = ""
     @State private var typing: Task<Void, Never>?
+    @State private var shown = false             // entrance: slides up and fades in
+    @State private var finishing: Bool? = nil    // true = Done (tick), false = Later (clock) — then the notch folds away
+
+    /// One colour per kind of note: water, prayer, medicine, mail, WhatsApp, meeting…
+    private var tint: Color {
+        let t = (state.noteMessage ?? "").lowercased()
+        switch state.noteAction {
+        case "whatsapp": return Color(hex: "#25D366")
+        case "mail": return Color(hex: "#5B8CFF")
+        case "meeting": return Color(hex: "#F5A524")
+        case "screen": return Color(hex: "#F4505E")
+        default: break
+        }
+        if t.contains("💧") || t.contains("water") { return Color(hex: "#38BDF8") }
+        if t.contains("🕌") || t.contains("prayer") || t.contains("namaz") { return Color(hex: "#A78BFA") }
+        if t.contains("💊") || t.contains("medicine") { return Color(hex: "#F472B6") }
+        if t.contains("☕") || t.contains("coffee") { return Color(hex: "#D9A066") }
+        if t.contains("meeting") || t.contains("call") { return Color(hex: "#F5A524") }
+        return IslandConst.accent
+    }
+    /// The first sentence is the title; anything after it is a quieter line underneath.
+    private func split(_ text: String) -> (String, String) {
+        if let r = text.range(of: #"(?<=[.!?])\s+|\s{2,}"#, options: .regularExpression), text.distance(from: text.startIndex, to: r.lowerBound) < 90 {
+            return (String(text[..<r.lowerBound]), String(text[r.upperBound...]))
+        }
+        // "Time for a glass of water Stay fresh!" — a title and a tagline joined without a full stop
+        let words = text.split(separator: " ")
+        if let i = words.indices.dropFirst(3).first(where: { words[$0].first?.isUppercase == true && !["I", "I'm", "I’ll"].contains(String(words[$0])) }) {
+            return (words[..<i].joined(separator: " "), words[i...].joined(separator: " "))
+        }
+        return (text, "")
+    }
 
     /// "From line\nMessage\n✓ Card title — card detail": the first and last lines are optional.
     private var parts: (from: String?, text: String, card: (String, String)?) {
@@ -1204,15 +1236,29 @@ struct NoteView: View {
 
     var body: some View {
         let p = parts
+        let (title, sub) = split(typed.isEmpty ? " " : typed)
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.black)
-            VStack(alignment: .leading, spacing: 7) {
-                if let from = p.from {
-                    Text(from).font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#4ADE80")).lineLimit(1)
+            // No hard black box: the glass carries on, with a soft wash of this note's colour behind Zuffi.
+            LinearGradient(colors: [tint.opacity(0.26), tint.opacity(0.06), .clear], startPoint: .leading, endPoint: .trailing)
+                .overlay(alignment: .leading) {
+                    Circle().fill(tint.opacity(0.35)).frame(width: 120, height: 120).blur(radius: 40).offset(x: -10)
                 }
-                Text(typed.isEmpty ? " " : typed)
-                    .font(.system(size: 14.5, weight: .medium)).foregroundColor(.white.opacity(0.95))
-                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                .allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 6) {
+                if let from = p.from {
+                    Text(from).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(tint).lineLimit(1)
+                } else if state.noteIsAlert {
+                    HStack(spacing: 5) {
+                        Circle().fill(tint).frame(width: 6, height: 6)
+                        Text(Self.timeNow()).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(tint)
+                    }
+                }
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundColor(.white)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                if !sub.isEmpty {
+                    Text(sub).font(.system(size: 12.5)).foregroundColor(.white.opacity(0.62)).lineLimit(2)
+                }
                 if let card = p.card, typed.count >= p.text.count {
                     HStack(spacing: 10) {
                         RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white)
@@ -1250,10 +1296,10 @@ struct NoteView: View {
                 } else if state.noteAction == "whatsapp" {
                     HStack(spacing: 8) {
                         noteButton("Read it", icon: "speaker.wave.2.fill", primary: true) {
-                            VoiceEngine.shared.speak(state.noteMessage.replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from "))
+                            VoiceEngine.shared.speak((state.noteMessage ?? "").replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from "))
                         }
                         noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: false) {
-                            let who = state.noteMessage.components(separatedBy: "\n").first?.replacingOccurrences(of: "WhatsApp · ", with: "") ?? ""
+                            let who = (state.noteMessage ?? "").components(separatedBy: "\n").first?.replacingOccurrences(of: "WhatsApp · ", with: "") ?? ""
                             state.noteAction = nil
                             ZuffiChat.shared.open(prefill: "Reply to \(who) on WhatsApp: ")
                         }
@@ -1270,26 +1316,44 @@ struct NoteView: View {
                         }
                     }.padding(.top, 4)
                 } else if state.noteIsAlert {
-                    // A reminder or prayer: tick it off (or snooze) right here, then the notch closes.
+                    // A reminder or prayer: tick it off (or snooze) right here; the button answers, then the notch folds away.
                     HStack(spacing: 8) {
                         Button { answer(done: true) } label: {
-                            Label("Done", systemImage: "checkmark").font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.black).padding(.horizontal, 16).frame(height: 32)
-                                .background(Capsule().fill(Color.white))
-                        }.buttonStyle(.plain)
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark").font(.system(size: 12, weight: .heavy))
+                                    .scaleEffect(finishing == true ? 1.35 : 1)
+                                Text(finishing == true ? "Done!" : "Done").font(.system(size: 13, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.white).padding(.horizontal, 18).frame(height: 34)
+                            .background(Capsule().fill(tint.gradient))
+                            .shadow(color: tint.opacity(0.55), radius: finishing == true ? 14 : 6, y: 2)
+                        }.buttonStyle(NotePress())
                         Button { answer(done: false) } label: {
-                            Text("Later").font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white).padding(.horizontal, 16).frame(height: 32)
-                                .background(Capsule().fill(Color.white.opacity(0.14)))
-                        }.buttonStyle(.plain)
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock").font(.system(size: 12, weight: .bold))
+                                    .rotationEffect(.degrees(finishing == false ? 360 : 0))
+                                Text("In 10 min").font(.system(size: 13, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.white.opacity(0.9)).padding(.horizontal, 16).frame(height: 34)
+                            .background(Capsule().fill(Color.white.opacity(0.10)))
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8))
+                        }.buttonStyle(NotePress())
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 6)
+                    .disabled(finishing != nil)
                 }
             }
-            .padding(.leading, 98).padding(.trailing, 18).padding(.vertical, 12)
+            .padding(.leading, 108).padding(.trailing, 20).padding(.vertical, 12)
+            .offset(y: shown ? 0 : 10).opacity(shown ? 1 : 0)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: typed.count >= p.text.count)
         }
-        .onAppear { type(p.text) }
+        .scaleEffect(finishing == nil ? 1 : 0.97, anchor: .top)
+        .opacity(finishing == nil ? 1 : 0.0)
+        .animation(.easeIn(duration: 0.28).delay(0.32), value: finishing)
+        .onAppear {
+            type(p.text)
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.82).delay(0.05)) { shown = true }
+        }
         .onChange(of: state.noteMessage) { _, _ in type(parts.text) }
         .onDisappear { typing?.cancel(); state.noteIsAlert = false; if state.noteAction == "meeting" { state.noteAction = nil } }
     }
@@ -1300,17 +1364,26 @@ struct NoteView: View {
                 if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)) }
                 Text(title).font(.system(size: 13, weight: .semibold))
             }
-            .foregroundColor(primary ? .black : .white).padding(.horizontal, 16).frame(height: 32)
-            .background(Capsule().fill(primary ? Color.white : Color.white.opacity(0.14)))
-        }.buttonStyle(.plain)
+            .foregroundColor(.white).padding(.horizontal, 16).frame(height: 34)
+            .background(Capsule().fill(primary ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color.white.opacity(0.10))))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(primary ? 0 : 0.14), lineWidth: 0.8))
+        }.buttonStyle(NotePress())
     }
 
     private func answer(done: Bool) {
         WebHub.shared.run(done ? "window.Sparrow && window.Sparrow.alertDone && window.Sparrow.alertDone()" : "window.Sparrow && window.Sparrow.alertLater && window.Sparrow.alertLater()")
-        state.noteIsAlert = false
         NotificationCenter.default.post(name: .triggerEmote, object: done ? BotEmote.happy : BotEmote.wink)
-        NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        if done { EdgeGlow.shared.flash(.done, seconds: 1.2) }
+        // the button answers first (tick pops / clock spins), the card fades, then the notch folds away
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { finishing = done }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            MainActor.assumeIsolated {
+                state.noteIsAlert = false
+                NotificationCenter.default.post(name: .islandCollapse, object: nil)
+            }
+        }
     }
+    static func timeNow() -> String { let f = DateFormatter(); f.timeStyle = .short; return "Reminder · " + f.string(from: Date()) }
 
     /// Letters appear one by one, like Zuffi is writing (instant for long texts).
     private func type(_ text: String) {
@@ -2238,5 +2311,15 @@ enum NativeConvert {
         }
         ctx.closePDF()
         return out as Data
+    }
+}
+
+
+/// Buttons in notes sink a little when pressed.
+struct NotePress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }

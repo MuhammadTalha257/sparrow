@@ -98,6 +98,7 @@ export const FEATURES = [
   { id: 'rotate', short: 'Rotate PDF', cat: 'documents', plan: 'pro', icon: 'rotate', tint: '#0EA5E9', name: 'Rotate PDF', sub: 'Turn pages the right way', open: { tool: 'rotate' } },
   // ---- Devices ----
   { id: 'screenrec', short: 'Record screen', cat: 'devices', plan: 'pro', icon: 'film', tint: '#E5484D', name: 'Screen recorder', sub: 'Record your screen with sound — saved as a video', open: { tool: 'screenrec' }, when: c => c.desktop || c.mac },
+  { id: 'walink', short: 'Link WhatsApp', cat: 'devices', plan: 'pro', icon: 'whatsapp', tint: '#25B868', name: 'Link WhatsApp', sub: 'New messages instantly, read out, auto-replies', open: { tool: 'walink' }, when: c => c.desktop && !c.mac },
   { id: 'send', short: 'Send files', cat: 'devices', plan: 'pro', icon: 'send', tint: '#2F6FEB', name: 'Send to my devices', sub: 'Files and links between phone and computer', open: { tool: 'send' } },
   { id: 'sync', short: 'Sync', cat: 'devices', plan: 'pro', icon: 'sync', tint: '#14A37F', name: 'Sync devices', sub: 'Same Zuffi everywhere', open: { tool: 'sync' } },
   { id: 'find', short: 'Find files', cat: 'devices', plan: 'pro', icon: 'folder', tint: '#7A8496', name: 'Find files', sub: 'Search by what you remember', open: { tool: 'find' }, when: c => c.desktop },

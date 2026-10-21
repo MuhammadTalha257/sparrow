@@ -1123,6 +1123,10 @@ struct BizAutomationsView: View {
         case .leadExports: return "square.and.arrow.down.fill"
         case .roundRobin: return "arrow.triangle.2.circlepath"
         case .quietFollowUp: return "hourglass"
+        case .afterHours: return "moon.zzz.fill"
+        case .thankAndReview: return "star.bubble.fill"
+        case .paymentReminders: return "banknote.fill"
+        case .hotLeadAlert: return "flame.fill"
         case .ownerSummary: return "doc.text.fill"
         case .staffDigest: return "person.3.sequence.fill"
         }

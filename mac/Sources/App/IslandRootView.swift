@@ -545,9 +545,11 @@ struct IslandHeader: View {
                 .help("Drag to move Zuffi")
             // Left: just what you need — Home, Chat, All features (the Zuffi panel) and Business.
             // New chat and history live inside Chat; the pet, sound and Today live in Settings and the panel.
+            // Small cards (reminders, answers) are narrow: icons only, so nothing gets cut off ("Ho…").
+            let compact = IslandConst.cardWidths[state.view] != nil
             HStack(spacing: 3) {
-                TabButton(icon: "house.fill", label: "Home", view: .overview, state: state)
-                TabButton(icon: "bubble.left.fill", label: "Chat", view: .prompt, state: state, badge: state.view == .prompt ? 0 : state.unreadReplies, preAction: {
+                TabButton(icon: "house.fill", label: compact ? "" : "Home", view: .overview, state: state)
+                TabButton(icon: "bubble.left.fill", label: compact ? "" : "Chat", view: .prompt, state: state, badge: state.view == .prompt ? 0 : state.unreadReplies, preAction: {
                     state.unreadReplies = 0
                     #if !APPSTORE
                     if state.promptContext == nil {
@@ -555,7 +557,7 @@ struct IslandHeader: View {
                     }
                     #endif
                 })
-                HeaderChip(icon: "square.grid.2x2.fill", label: "Features") { ZuffiNav.go(.features) }.help("Everything Zuffi can do")
+                HeaderChip(icon: "square.grid.2x2.fill", label: compact ? "" : "Features") { ZuffiNav.go(.features) }.help("Everything Zuffi can do")
                 if UserDefaults.standard.string(forKey: "zuffiUse") == "business" {
                     HeaderChip(icon: "briefcase.fill", label: "") { BusinessDashboard.shared.show() }.help("Business")
                 }
