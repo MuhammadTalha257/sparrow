@@ -9,7 +9,8 @@ const S = () => store.settings;
 const D = () => window.SparrowDesktop;
 export const available = () => !!D()?.wa;
 export const recent = [];                 // newest first, kept in memory only
-const history = new Map();                // chatId → [{ in } | { out }] for better replies
+const history = new Map();
+const held = new Set();                   // holding replies already sent today                // chatId → [{ in } | { out }] for better replies
 let state = 'off';
 const listeners = new Set();
 export const getState = () => state;
@@ -52,7 +53,12 @@ export function init(ui) {
     try {
       const r = await bizknow.reply(text, h.slice(0, -1));
       if (!r.reply) return;
-      if (r.human) { ui.notify(`${name} needs you`, r.why || 'Please answer this one yourself.'); return; }
+      if (r.human) {
+        // Zuffi doesn't know: the customer still gets a polite holding reply (once a day), and you're told.
+        ui.notify(`${name} needs you`, r.why || 'Please answer this one yourself.');
+        const k = 'hold|' + m.chatId + new Date().toISOString().slice(0, 10);
+        if (held.has(k)) return; held.add(k);
+      }
       const sent = await D().wa.send(m.chatId, r.reply);
       if (sent?.ok) { h.push({ out: r.reply }); history.set(m.chatId, h.slice(-8)); }
     } catch {}
