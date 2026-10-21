@@ -617,7 +617,8 @@ final class ZuffiCRM: ObservableObject {
 
     /// Customers can only get real answers when Zuffi knows the business. Nudge the owner (at most twice a day).
     func remindBusinessInfo(force: Bool = false) {
-        guard ZuffiBusiness.shared.pack != nil, businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count < 40 else { return }
+        let info = businessInfo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ZuffiBusiness.shared.pack != nil, info.count < 40 || info.contains("[address]") else { return }   // empty, or still the example
         let d = UserDefaults.standard, last = d.double(forKey: "bizInfoNudge")
         guard Date().timeIntervalSince1970 - last > (force ? 3 * 3600 : 12 * 3600) else { return }
         d.set(Date().timeIntervalSince1970, forKey: "bizInfoNudge")
@@ -798,13 +799,18 @@ final class ZuffiCRM: ObservableObject {
         CLIENT'S NEW MESSAGE: \(incoming)
 
         Write "reply": 1-2 short, natural WhatsApp sentences in EXACTLY the language and script the client used, whatever it is (English, Urdu script, Roman Urdu, Punjabi, Hindi, Arabic, Polish…); if they mix languages, mix the same way. \(first ? "Greet them; ask only for what's missing." : "Don't greet again.")
-        Set "needs_human" true ONLY if: they bargain or ask for a discount not in today's update, complain, ask for a person or a call, raise payment / refund / legal issues, or the answer isn't in the facts. Then make "reply" a short holding message ("Thanks! Someone from our team will reply shortly.") and put a 3-6 word reason in "why".
+        Set "needs_human" true ONLY if: they bargain or ask for a discount not in today's update, complain, ask for a person or a call, raise a payment problem, refund or legal issue, or the answer really isn't in the facts. Questions about services, prices, payment methods or plans, hours, location and booking ARE answered from the facts. Then make "reply" a short holding message ("Thanks! Someone from our team will reply shortly.") and put a 3-6 word reason in "why".
         BOOKING: today is \(ZuffiBusiness.iso(Date())) (\(Self.weekday())). If the client agrees to a specific day and time for an appointment or visit that is NOT in "TIMES ALREADY TAKEN" and is within opening hours, fill "booking" with {"date":"YYYY-MM-DD","time":"HH:MM","what":"service or property"} and make "reply" confirm it. If the time is taken, offer the nearest free time instead and leave "booking" empty. Never book without a clear day and time.
         Also fill "lead" with anything the client said: name, interest (\(labels.interest.lowercased())), area, budget, priority (Hot = ready now / asks price, visit or availability; Warm; Cold = just looking). Use "" when not said.
         JSON: {"reply":"","needs_human":false,"why":"","booking":{"date":"","time":"","what":""},"lead":{"name":"","interest":"","area":"","budget":"","priority":""}}
         """
+        // 1) the full answer as JSON (fast cloud AI); 2) if that fails — e.g. a small model on this Mac that can't do JSON —
+        //    a plain-text answer from the same facts; 3) only then a polite holding message. Never the same greeting twice.
+        // No fast cloud AI (only a model on this Mac)? Go straight to the plain reply — one quick call instead of two.
+        let cloud = ["groq-api-key", "gemini-api-key", "openai-api-key"].contains { !(KeychainStore.shared.get($0) ?? "").isEmpty }
+        if !cloud { return await plainReply(incoming: incoming, first: first, past: past, context: context, fallback: fallback) }
         guard let j = await AIService.shared.fastJSON(prompt, system: system) else {
-            return (fallback, first ? nil : "no AI is connected", [:])
+            return await plainReply(incoming: incoming, first: first, past: past, context: context, fallback: fallback)
         }
         var reply = (j["reply"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // Never send JSON or code by mistake.
@@ -821,8 +827,46 @@ final class ZuffiCRM: ObservableObject {
            d.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil, tm.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil, d >= ZuffiBusiness.iso(Date()) {
             details["booking_date"] = d; details["booking_time"] = tm; details["booking_what"] = (b["what"] as? String) ?? ""
         }
-        if reply.isEmpty { return (fallback, first ? nil : "couldn't write a good reply", details) }
+        if reply.isEmpty {
+            let p = await plainReply(incoming: incoming, first: first, past: past, context: context, fallback: fallback)
+            return (p.reply, p.handoff, details)
+        }
         return (reply, human ? (why.isEmpty ? "needs a person" : why) : nil, details)
+    }
+
+    /// Plain-text reply (works with small local models too). "HANDOFF" or nothing → a polite holding message.
+    private func plainReply(incoming: String, first: Bool, past: String, context: String, fallback: String) async -> (reply: String, handoff: String?, details: [String: String]) {
+        let biz = ZuffiBusiness.shared.businessName
+        let holding = Self.holdingText(for: incoming)
+        guard businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count >= 20 else {
+            return (first ? fallback : holding, first ? nil : "your business details are empty", [:])
+        }
+        let prompt = """
+        You reply to customers on WhatsApp for \(biz.isEmpty ? "our business" : biz). Use ONLY these facts:
+        \(String(businessInfo.prefix(6000)))
+        \(todaysUpdate.isEmpty ? "" : "Today's offer/update: \(todaysUpdate)")
+        \(context)
+        \(past.isEmpty ? "" : "Chat so far:\n\(past)")
+        Customer: \(incoming)
+
+        Write the reply only: 1-3 short friendly sentences, in the same language as the customer, answering exactly what they asked from the facts \(first ? "(start with a short hello)" : "(no greeting)").
+        If the facts don't contain the answer, or they complain or ask for a person, write only the word HANDOFF.
+        """
+        let raw = (await AIService.shared.oneShot(prompt, system: "You are a helpful business receptionist on WhatsApp. Reply with the message text only.")) ?? ""
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"^(reply|answer|business)\s*:\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"“” \n"))
+        if let j = AIService.jsonIn(text) as? [String: Any], let r = j["reply"] as? String { text = r }   // a model that still answered in JSON
+        if text.isEmpty || text.uppercased().contains("HANDOFF") || text.hasPrefix("{") {
+            return (holding, text.isEmpty ? "couldn't write a reply (is your AI running?)" : "the answer isn't in your business details", [:])
+        }
+        return (String(text.prefix(700)), nil, [:])
+    }
+
+    static func holdingText(for incoming: String) -> String {
+        if incoming.range(of: #"[\u0600-\u06FF]"#, options: .regularExpression) != nil { return "آپ کے پیغام کا شکریہ! ہم جلد ہی آپ سے رابطہ کریں گے۔" }
+        if incoming.lowercased().range(of: #"\b(kya|hai|aap|kitna|chahiye|mujhe|bhai|btau|batao|gi|ji)\b"#, options: .regularExpression) != nil { return "Message ka shukriya! Hum thori dair mein aap se rabta karte hain. 🙏" }
+        return "Thanks for your message! We'll get back to you shortly. 🙏"
     }
 
     /// Sends a WhatsApp message to a lead (via the server when connected, else WhatsApp on this Mac) and logs it.

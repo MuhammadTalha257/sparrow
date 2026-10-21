@@ -1337,6 +1337,7 @@ struct BizBusinessView: View {
                     .frame(width: 300)
                 }
                 // About the business
+                GlassBox { BizDetailsForm() }
                 GlassBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -1357,7 +1358,7 @@ struct BizBusinessView: View {
                              : crm.country == "GB" ? "United Kingdom: set up for small businesses — bookings, staff hours and wages, deposits, expenses and VAT categories."
                              : "Pick the business type that fits you.")
                             .font(.system(size: 10.5)).foregroundColor(Biz.pink)
-                        Text("Write it like you'd brief a new receptionist: what you sell, prices, address, opening hours, how booking / buying works, delivery, payment, and anything clients always ask. Zuffi only uses what's written here.")
+                        Text("Everything Zuffi knows about your business (the form above fills this in). Add anything else clients ask about. Zuffi only uses what's written here.")
                             .font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                         editor($crm.businessInfo, minHeight: 220)
                         HStack {
@@ -1955,5 +1956,87 @@ struct BizWALinkBox: View {
             Text("Phone: WhatsApp → Settings → Linked devices → Link a device. This uses WhatsApp Web, which isn’t an official business API — WhatsApp can limit numbers that send a lot of automatic messages, so keep Autopilot for replies to people who wrote to you.")
                 .font(.system(size: 10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+
+/// Business → My business: a simple form. Saving it writes a clear brief Zuffi answers customers from.
+struct BizDetailsForm: View {
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var biz = ZuffiBusiness.shared
+    @State private var f: [String: String] = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+    @State private var saved = false
+
+    static let fields: [(key: String, label: String, hint: String, tall: Bool)] = [
+        ("address", "Address / area", "Shop 4, High Street, Maidstone ME14", false),
+        ("phone", "Phone / WhatsApp", "Customers message this number", false),
+        ("hours", "Opening hours", "Mon–Sat 9am–6pm, closed Sunday", false),
+        ("services", "Services or products & prices", "One per line, e.g.\nHaircut £25\nColour from £85", true),
+        ("payment", "Payment", "Cash, card, bank transfer, instalments…", false),
+        ("booking", "How to book / buy", "Message us the service and a day; £10 deposit for colour", false),
+        ("extra", "Delivery, parking, anything else", "Free parking behind the shop", false),
+        ("faq", "Questions customers often ask (with answers)", "Do you do walk-ins? Yes, if a chair is free.", true),
+    ]
+
+    private var filled: Int { Self.fields.filter { !(f[$0.key] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }.count }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Your business details", systemImage: "list.clipboard.fill").font(.system(size: 13, weight: .heavy))
+                Spacer()
+                Text("\(filled) of \(Self.fields.count) filled").font(.system(size: 11, weight: .semibold)).foregroundColor(filled >= 4 ? Biz.green : Ink.accent)
+            }
+            Text("Zuffi answers WhatsApp customers only from these details. The more you fill in, the better she answers.")
+                .font(.system(size: 11.5)).foregroundColor(Ink.muted)
+            TextField("Business name", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
+                .textFieldStyle(.roundedBorder)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], alignment: .leading, spacing: 10) {
+                ForEach(Self.fields.filter { !$0.tall }, id: \.key) { fd in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(fd.label).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+                        TextField(fd.hint, text: binding(fd.key)).textFieldStyle(.roundedBorder)
+                    }
+                }
+            }
+            ForEach(Self.fields.filter(\.tall), id: \.key) { fd in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(fd.label).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+                    TextEditor(text: binding(fd.key)).font(.system(size: 12.5)).scrollContentBackground(.hidden)
+                        .frame(minHeight: 70).padding(6).foregroundColor(Ink.text)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Ink.panelHi))
+                        .overlay(alignment: .topLeading) {
+                            if (f[fd.key] ?? "").isEmpty { Text(fd.hint).font(.system(size: 12)).foregroundColor(Ink.faint).padding(.horizontal, 11).padding(.vertical, 8).allowsHitTesting(false) }
+                        }
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Biz.stroke))
+                }
+            }
+            HStack {
+                BizMainButton(title: saved ? "Saved ✓" : "Save — Zuffi will use this", icon: "checkmark") { save() }
+                Spacer()
+            }
+        }
+    }
+
+    private func binding(_ k: String) -> Binding<String> {
+        Binding(get: { f[k] ?? "" }, set: { f[k] = $0; saved = false })
+    }
+
+    private func save() {
+        UserDefaults.standard.set(f, forKey: "bizForm")
+        var lines: [String] = []
+        if !biz.businessName.isEmpty { lines.append("Business: \(biz.businessName)") }
+        for fd in Self.fields {
+            let v = (f[fd.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !v.isEmpty { lines.append(fd.tall ? "\(fd.label):\n\(v)" : "\(fd.label): \(v)") }
+        }
+        let marker = "\n— More notes —\n"
+        // keep anything written by hand below the form part (and drop the old example text)
+        var rest = crm.businessInfo.components(separatedBy: marker).count > 1 ? crm.businessInfo.components(separatedBy: marker).last ?? "" : crm.businessInfo
+        if rest.contains("[address]") || lines.isEmpty == false && rest.hasPrefix("Business:") { rest = "" }
+        rest = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+        crm.businessInfo = lines.joined(separator: "\n") + (rest.isEmpty ? "" : marker + rest)
+        saved = true
+        BizNav.shared.say("Saved — Zuffi will answer customers from these details.")
     }
 }

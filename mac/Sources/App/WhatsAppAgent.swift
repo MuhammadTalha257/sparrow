@@ -100,7 +100,8 @@ final class WhatsAppAgent {
 
     private func makeDraft(to who: String, saying what: String) async -> String {
         AgentRouter.lastChannel = .whatsapp
-        let phone = await Self.phone(for: who)
+        var phone = await Self.phone(for: who)
+        if phone.isEmpty, let c = await WhatsAppLink.shared.lookup(who) { phone = c.chatId.isEmpty ? c.phone : c.chatId }
         guard !phone.isEmpty else {
             return "I don't have a number for \(who.capitalized). Say \"save \(who) number 0300…\" and try again."
         }
@@ -132,8 +133,9 @@ final class WhatsAppAgent {
     }
 
     private func send(_ d: Draft) async -> String {
+        if d.phone.contains("@") && !WhatsAppLink.shared.ready { return "WhatsApp isn't linked right now — link it in Business → Connect & devices." }
         // Linked WhatsApp: sent in the background, instantly, without opening anything.
-        if WhatsAppLink.shared.ready, await WhatsAppLink.shared.send(to: d.phone.isEmpty ? d.name : d.phone, text: d.text) {
+        if WhatsAppLink.shared.ready, await WhatsAppLink.shared.send(to: d.phone.isEmpty ? d.name : d.phone, text: d.text) {   // phone may be a chat id
             draft = nil
             appendAppLog("agents.log", "whatsapp (linked): sent to \(d.name)")
             return "Sent to \(d.name) on WhatsApp! ✅"
@@ -376,6 +378,7 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
         var name = (m["name"] as? String) ?? ""
         if name.isEmpty { name = phone.isEmpty ? "Someone" : "+" + phone }
         let text = body.isEmpty ? (kind == "ptt" || kind == "audio" ? "🎤 Voice note" : kind == "image" ? "📷 Photo" : "[\(kind)]") : body
+        remember(name: name, phone: phone, chatId: chatId)
         recent.insert(Incoming(chatId: chatId, name: name, phone: phone, body: text, at: Date()), at: 0)
         if recent.count > 40 { recent.removeLast() }
         handle(chatId: chatId, name: name, phone: phone, text: text, voice: kind == "ptt" || kind == "audio", saved: m["saved"] as? Bool)
@@ -396,6 +399,31 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
     /// phone or name → WhatsApp chat id (for replies to people whose number WhatsApp hides).
     private var chatIds: [String: String] = [:]
 
+    // MARK: People Zuffi knows on WhatsApp (saved on this Mac: name → number / chat)
+
+    private(set) var contacts: [String: [String: String]] = (UserDefaults.standard.dictionary(forKey: "waContacts") as? [String: [String: String]]) ?? [:]
+    func remember(name: String, phone: String, chatId: String) {
+        let key = name.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty, key != "someone" else { return }
+        contacts[key] = ["name": name, "phone": phone, "chatId": chatId, "at": ZuffiBusiness.iso(Date())]
+        if contacts.count > 2000 { contacts.remove(at: contacts.startIndex) }
+        UserDefaults.standard.set(contacts, forKey: "waContacts")
+    }
+    /// "Begum" → her chat: people who wrote before, then a search through all chats in linked WhatsApp.
+    func lookup(_ who: String) async -> (name: String, phone: String, chatId: String)? {
+        let q = who.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return nil }
+        if let c = contacts[q] ?? contacts.first(where: { $0.key.contains(q) || q.contains($0.key) })?.value {
+            return (c["name"] ?? who, c["phone"] ?? "", c["chatId"] ?? "")
+        }
+        guard ready, let wv = web,
+              let r = (try? await wv.callAsyncJavaScript("return await window.ZuffiWA.find(q)", arguments: ["q": who], in: nil, contentWorld: .page)) as? [[String: Any]],
+              let f = r.first, let id = f["chatId"] as? String else { return nil }
+        let name = (f["name"] as? String) ?? who, phone = (f["phone"] as? String) ?? ""
+        remember(name: name, phone: phone, chatId: id)
+        return (name, phone, id)
+    }
+
     /// Sends right away. to: phone number, name of someone who wrote recently, or a chat id.
     func send(to: String, text: String) async -> Bool {
         guard ready, let wv = web else { return false }
@@ -403,7 +431,9 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
         let target = to.contains("@") ? to : (chatIds[key] ?? chatIds[to.filter(\.isNumber)]
             ?? recent.first { $0.name.lowercased() == key }?.chatId
             ?? recent.first { $0.name.lowercased().hasPrefix(key) || key.hasPrefix($0.name.lowercased()) }?.chatId ?? to)
-        let r = try? await wv.callAsyncJavaScript("return await window.ZuffiWA.send(t, x)", arguments: ["t": target, "x": text], in: nil, contentWorld: .page)
+        var to2 = target
+        if !to2.contains("@"), to2.filter(\.isNumber).count < 7, let c = await lookup(to2) { to2 = c.chatId.isEmpty ? c.phone : c.chatId }
+        let r = try? await wv.callAsyncJavaScript("return await window.ZuffiWA.send(t, x)", arguments: ["t": to2, "x": text], in: nil, contentWorld: .page)
         return ((r as? [String: Any])?["ok"] as? Bool) == true
     }
 

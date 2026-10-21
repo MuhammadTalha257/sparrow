@@ -291,6 +291,11 @@ function drawWelcome() {
       <label class="field"><span>Opened on (anniversary)</span><input id="wFounded" type="date" value="${v(b.founded)}"></label>` : ''}</div>`;
   const ctry = p.country || guessCountry();
   const countryBox = `<label class="field wel-country"><span>Country</span><select id="wCountry">${COUNTRIES.map(([k, l]) => `<option value="${k}"${ctry === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  const about = `<div class="wel-grid">
+      <label class="field"><span>Work or studies</span><input id="wJob" value="${v(p.job)}" placeholder="e.g. student, nurse, developer"></label>
+      <label class="field"><span>Hobbies & interests</span><input id="wHobbies" value="${v(p.hobbies)}" placeholder="e.g. cricket, cooking, reading"></label>
+      <label class="field"><span>Family & people who matter</span><input id="wFamily" value="${v(p.family)}" placeholder="e.g. married, 2 kids, mum's birthday 3 May"></label>
+      <label class="field"><span>Favourites</span><input id="wFav" value="${v(p.fav)}" placeholder="Food, music, places you love"></label></div>`;
   const kinds = !biz ? '' : `<h3 class="wel-h3">What kind of business?</h3><div class="wel-kinds" id="wKinds">${kindCards(ctry, b.kind || welKind)}</div>`;
   const more = `<details class="wel-more"><summary>More about you (optional)</summary><div class="wel-grid">
       ${biz ? `<label class="field"><span>Your date of birth</span><input id="wDob" type="date" value="${v(p.dob ?? S().birthday)}"></label>
@@ -303,6 +308,7 @@ function drawWelcome() {
   w.innerHTML = `<div class="wel-card wel-form">${head}<h2 id="welTitle">${welType === 'business' ? 'Your business' : 'Tell me a little about you'}</h2>
     <p class="wel-sub">${welType === 'business' ? 'Pick your type and I’ll show only what your business needs.' : 'I’ll remember this always. It stays on your device.'}</p>
     ${countryBox}${kinds}${me}
+    <h3 class="wel-h3">A bit more about you <span class="small-text">(optional — helps me know you)</span></h3>${about}
     ${biz ? '' : `<h3 class="wel-h3">What should I help with most?</h3><div class="wel-chips">${HELP.map(([k, l]) => `<button data-w="chip" data-k="${k}" class="${helps.has(k) ? 'on' : ''}" aria-pressed="${helps.has(k)}">${l}</button>`).join('')}</div>`}
     ${more}
     <p class="small-text" id="welMsg" role="alert"></p>
@@ -332,6 +338,7 @@ function welClick(e) {
     if (welType === 'business' && !g('wBName')) { $('#wBName').focus(); return msg('What is your business called?'); }
     const dob = g('wDob'); if (dob && (dob > new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) || dob < '1900-01-01')) return msg('That date of birth doesn’t look right.');
     const p = { type: welType, name, dob, phone: g('wPhone'), city: g('wCity'), notes: g('wNotes').slice(0, 600), country: $('#wCountry')?.value || guessCountry(),
+      job: g('wJob').slice(0, 120), hobbies: g('wHobbies').slice(0, 200), family: g('wFamily').slice(0, 300), fav: g('wFav').slice(0, 200),
       help: welType === 'business' ? ['remind', 'meet', 'money'] : [...$('#welcome').querySelectorAll('[data-w="chip"].on')].map(x => x.dataset.k), doneAt: S().profile?.doneAt || Date.now(), updatedAt: Date.now() };
     if (welType === 'business') p.biz = { name: g('wBName'), role: g('wRole'), kind: kindPick, phone: g('wBPhone'), city: g('wCity'), founded: g('wFounded'), hours: g('wHours'), staff: g('wStaff') };
     saveProfile(p);
@@ -356,7 +363,8 @@ function saveProfile(p) {
   if ($('#sName')) $('#sName').value = s.name;
   if ($('#sCity')) $('#sCity').value = s.city || '';
   M?.post('profile', { name: p.name, city: p.city || '', type: p.type, country: p.country || '', business: p.biz?.name || '', kind: p.biz?.kind || '', dob: p.dob || '', founded: p.biz?.founded || '',
-    role: p.biz?.role || '', hours: p.biz?.hours || '', notes: p.notes || '', help: (p.help || []).join(',') });
+    role: p.biz?.role || '', hours: p.biz?.hours || '', notes: p.notes || '', help: (p.help || []).join(','),
+    job: p.job || '', hobbies: p.hobbies || '', family: p.family || '', fav: p.fav || '' });
   applyUseMode(); sendFacts();
   M?.post('look', { outfit: s.outfit || 'auto', birthday: s.birthday || '' });
 }
@@ -368,6 +376,7 @@ function profileLine() {
   const parts = [p.doneAt && (p.type === 'business' ? 'uses Zuffi for their business and for themselves' : 'uses Zuffi personally'),
     (p.name || S().name) && `name ${p.name || S().name}`, p.dob && `date of birth ${p.dob}`, p.city && `lives in ${p.city}`, cname && `country ${cname}`,
     help.length && `wants help with ${help.join(', ')}`, p.notes && `always remember: ${p.notes}`,
+    p.job && `work/studies: ${p.job}`, p.hobbies && `hobbies: ${p.hobbies}`, p.family && `family: ${p.family}`, p.fav && `favourites: ${p.fav}`,
     b && `business: ${b.name}${b.kind ? ` (${kindName(b.kind)})` : ''}${b.role ? `, they are the ${b.role}` : ''}${b.city ? `, in ${b.city}` : ''}${b.hours ? `, open ${b.hours}` : ''}${b.staff ? `, ${b.staff} people` : ''}${b.founded ? `, opened ${b.founded}` : ''}`];
   const facts = userFacts();
   const out = parts.filter(Boolean);

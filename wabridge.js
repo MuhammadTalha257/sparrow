@@ -1893,6 +1893,15 @@ window.ZuffiWA = {
     const m = await window.WWebJS.sendMessage(chat, '', { media: { data: b64, mimetype, filename, filesize: Math.round(b64.length * 0.75) }, caption: caption || ' ', isCaptionByUser: !!caption });
     return { ok: !!m };
   },
+  /** Find people by name across all chats (newest first). */
+  find: async name => {
+    if (!hooked) return [];
+    const q = String(name || '').toLowerCase().trim(); if (!q) return [];
+    const { Chat } = mod('WAWebCollections');
+    return Chat.getModelsArray().filter(c => !/@g\.us$|broadcast|newsletter/.test(c.id._serialized))
+      .map(c => ({ chatId: c.id._serialized, name: c.formattedTitle || c.name || (c.contact && (c.contact.name || c.contact.pushname)) || '', phone: /@c\.us$/.test(c.id._serialized) ? c.id.user : '', t: c.t || 0 }))
+      .filter(c => c.name.toLowerCase().includes(q)).sort((a, b) => b.t - a.t).slice(0, 5);
+  },
   seen: async chatId => { try { await window.WWebJS.sendSeen(chatId); return true; } catch (e) { return false; } },
   /** Chats with unread messages (not groups), newest first. */
   unread: async () => {

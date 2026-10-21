@@ -159,6 +159,9 @@ final class ZuffiPlan: ObservableObject {
         } else { parts.append("uses Zuffi personally (not for a business)") }
         if let h = p["help"], !h.isEmpty { parts.append("wants help with: \(h)") }
         if let n = p["notes"], !n.isEmpty { parts.append("always remember: \(n)") }
+        for (k, label) in [("job", "work/studies"), ("hobbies", "hobbies"), ("family", "family"), ("fav", "favourites")] {
+            if let v = p[k], !v.isEmpty { parts.append("\(label): \(v)") }
+        }
         return "\nABOUT THE USER (they filled this in when they set Zuffi up; answer questions about it): " + parts.joined(separator: "; ") + ".\n"
     }
 

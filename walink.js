@@ -9,8 +9,8 @@ const S = () => store.settings;
 const D = () => window.SparrowDesktop;
 export const available = () => !!D()?.wa;
 export const recent = [];                 // newest first, kept in memory only
-const history = new Map();
-const held = new Set();                   // holding replies already sent today                // chatId → [{ in } | { out }] for better replies
+const history = new Map();                // chatId → [{ in } | { out }] for better replies
+const held = new Set();                   // holding replies already sent today
 let state = 'off';
 const listeners = new Set();
 export const getState = () => state;

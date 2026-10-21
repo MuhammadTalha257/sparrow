@@ -904,6 +904,10 @@ struct ZuffiProfilePanel: View {
         if let role = val("role") { r.append(("person.text.rectangle.fill", "#7CC4FF", "My role", role)) }
         if let h = val("hours") { r.append(("clock.fill", "#A7F3D0", "Hours", h)) }
         if let h = val("help") { r.append(("hand.raised.fill", "#FDE68A", "Help me with", h.replacingOccurrences(of: ",", with: ", "))) }
+        if let j = val("job") { r.append(("bag.fill", "#7CC4FF", "Work", j)) }
+        if let h = val("hobbies") { r.append(("figure.run", "#34D399", "Hobbies", h)) }
+        if let f = val("family") { r.append(("heart.fill", "#F472B6", "Family", f)) }
+        if let f = val("fav") { r.append(("star.fill", "#FBC56A", "Favourites", f)) }
         if let n = val("notes") { r.append(("note.text", "#E5E7EB", "Notes", n)) }
         return r
     }
