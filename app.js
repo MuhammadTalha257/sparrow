@@ -2698,6 +2698,30 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  /** Mac: "make a post / reel for our business (about …)" → { b64, mime, name, caption } — a designed post with an AI photo. */
+  makeBizPost: async (about = '', kind = 'post') => {
+    try {
+      const prof = bizapp.profile(), biz = bizknow.name() || prof.name || S().business?.name || '';
+      const headline = String(about || bizknow.todayUpdate() || 'Message us on WhatsApp').slice(0, 90);
+      const spec = { kind: prof.estate ? 'listing' : 'offer', headline, price: '', phone: S().business?.phone || '', details: [], biz,
+        accent: prof.estate ? '#D4AF37' : getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4C8DFF',
+        cta: prof.estate ? 'Call or WhatsApp to book a visit' : 'Message us on WhatsApp to book' };
+      const photos = [];
+      const scenes = kind === 'reel' ? 3 : 1;
+      for (let i = 0; i < scenes; i++) {
+        try {
+          const pic = await images.make(`Photorealistic ${kind === 'reel' ? 'vertical ' : ''}photo for a ${prof.estate ? 'real estate' : (prof.label || 'local business')} ad: ${headline}. ${['inviting, golden hour', 'inside, warm light', 'close-up detail'][i]}. No text, no letters, no logos.`, { shape: kind === 'reel' ? 'portrait' : 'square' });
+          const im = await promo.imageFromBytes(pic.bytes); if (im) photos.push(im);
+        } catch { break; }
+      }
+      const blob = kind === 'reel' ? await promo.renderReel(spec, photos) : await promo.renderImage(spec, 'post', photos);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let b64 = ''; for (let i = 0; i < bytes.length; i += 0x8000) b64 += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const caption = await promo.caption(spec, 'auto', bizknow.brief()).catch(() => headline);
+      const mime = blob.type.split(';')[0] || (kind === 'reel' ? 'video/mp4' : 'image/png');
+      return { b64: btoa(b64), mime, name: `zuffi-${kind}-${Date.now().toString(36)}.${mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : 'png'}`, caption };
+    } catch (e) { return { error: String(e.message || e) }; }
+  },
   newsLine: async () => { try { return await (await import('./freeapis.js')).newsLine(); } catch { return ''; } },
   /** Mac notch slider: today's prayer times, the next reminder and the user's name. Small and offline. */
   glance: () => {

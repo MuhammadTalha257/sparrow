@@ -293,6 +293,8 @@ final class WhatsAppAgent {
 @MainActor
 final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate, NSWindowDelegate {
     static let shared = WhatsAppLink()
+    /// Leads that arrived through the link carry this source, so they hide while WhatsApp is unlinked.
+    static let leadSource = "WhatsApp (linked)"
     struct Incoming: Identifiable { let id = UUID(); let chatId: String; let name: String; let phone: String; let body: String; let at: Date }
 
     /// "off", "loading", "qr" (waiting for the phone to scan), "ready"
@@ -312,6 +314,8 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
     func startIfEnabled() { if enabled { start() } }
 
     func start() {
+        // WhatsApp (leads, auto-replies) is part of Zuffi Business; Pro is for your own day.
+        guard ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal else { state = "off"; return }
         guard web == nil else { window?.makeKeyAndOrderFront(nil); return }
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()                       // stays linked after restarts
@@ -348,6 +352,7 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
 
     /// Show the WhatsApp window (to link, or to look at chats).
     func showWindow() {
+        guard ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal else { BusinessDashboard.shared.show(); return }   // explains Business
         if web == nil { enabled = true }
         window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
@@ -373,18 +378,19 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
         let text = body.isEmpty ? (kind == "ptt" || kind == "audio" ? "🎤 Voice note" : kind == "image" ? "📷 Photo" : "[\(kind)]") : body
         recent.insert(Incoming(chatId: chatId, name: name, phone: phone, body: text, at: Date()), at: 0)
         if recent.count > 40 { recent.removeLast() }
-        handle(chatId: chatId, name: name, phone: phone, text: text, voice: kind == "ptt" || kind == "audio")
+        handle(chatId: chatId, name: name, phone: phone, text: text, voice: kind == "ptt" || kind == "audio", saved: m["saved"] as? Bool)
     }
 
-    private func handle(chatId: String, name: String, phone: String, text: String, voice: Bool) {
+    private func handle(chatId: String, name: String, phone: String, text: String, voice: Bool, saved: Bool?) {
         // the notch: a small card + light round the edge
+        AppState.shared.noteRef = chatId        // Reply in the notch goes straight back to this chat
         MacStatus.shared.toast("WhatsApp · \(name)", String(text.prefix(140)), icon: "message.fill", action: "whatsapp")
         if readAloud { VoiceEngine.shared.speak("WhatsApp from \(name): \(text.prefix(200))") }
         // Business: every chat becomes a lead, and with auto-reply Zuffi answers here — no typing on your screen.
         let crm = ZuffiCRM.shared
         if ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal, crm.isOn(.watchWhatsApp) {
             chatIds[(phone.isEmpty ? name : phone).lowercased()] = chatId
-            Task { await crm.handleIncoming(name: name, preview: voice ? "🎤" : text, source: "WhatsApp", phone: phone) }
+            Task { await crm.handleIncoming(name: name, preview: voice ? "🎤" : text, source: Self.leadSource, phone: phone, savedContact: saved) }
         }
     }
     /// phone or name → WhatsApp chat id (for replies to people whose number WhatsApp hides).
@@ -394,8 +400,20 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
     func send(to: String, text: String) async -> Bool {
         guard ready, let wv = web else { return false }
         let key = to.lowercased()
-        let target = chatIds[key] ?? chatIds[to.filter(\.isNumber)] ?? recent.first { $0.name.lowercased() == key }?.chatId ?? to
+        let target = to.contains("@") ? to : (chatIds[key] ?? chatIds[to.filter(\.isNumber)]
+            ?? recent.first { $0.name.lowercased() == key }?.chatId
+            ?? recent.first { $0.name.lowercased().hasPrefix(key) || key.hasPrefix($0.name.lowercased()) }?.chatId ?? to)
         let r = try? await wv.callAsyncJavaScript("return await window.ZuffiWA.send(t, x)", arguments: ["t": target, "x": text], in: nil, contentWorld: .page)
+        return ((r as? [String: Any])?["ok"] as? Bool) == true
+    }
+
+    /// A picture / video with a caption.
+    func sendMedia(to: String, data: Data, mime: String, name: String, caption: String) async -> Bool {
+        guard ready, let wv = web else { return false }
+        let key = to.lowercased()
+        let target = to.contains("@") ? to : (chatIds[key] ?? chatIds[to.filter(\.isNumber)] ?? recent.first { $0.name.lowercased() == key }?.chatId ?? to)
+        let r = try? await wv.callAsyncJavaScript("return await window.ZuffiWA.sendMedia(t, b, m, n, c)",
+                                                  arguments: ["t": target, "b": data.base64EncodedString(), "m": mime, "n": name, "c": caption], in: nil, contentWorld: .page)
         return ((r as? [String: Any])?["ok"] as? Bool) == true
     }
 

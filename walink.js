@@ -44,6 +44,7 @@ export function init(ui) {
     ui.notify(`WhatsApp · ${name}`, text.slice(0, 160));
     if (S().waReadAloud) ui.speak(`WhatsApp from ${name}: ${text.slice(0, 200)}`);
     if (!ui.bizOn()) return;
+    if (m.saved && !S().waBiz?.contacts) return;   // friends & family in your contacts are left alone
     const isNew = upsertLead(name, m.phone, text);
     if (isNew) ui.toast(`New WhatsApp lead: ${name}`);
     const pilot = S().waBiz?.pilot;

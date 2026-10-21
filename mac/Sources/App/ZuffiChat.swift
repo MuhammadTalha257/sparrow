@@ -32,6 +32,19 @@ final class ZuffiChat: ObservableObject {
 
     var isOpen: Bool { panel?.isVisible == true }
 
+    /// macOS selects all the text when a field gets focus — with a prefilled line that looked like a white-on-peach block.
+    /// Put the cursor at the end instead, ready to type.
+    func caretToEnd() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            MainActor.assumeIsolated {
+                if let tv = ZuffiChat.shared.panel?.firstResponder as? NSTextView {
+                    tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+                    tv.selectedTextAttributes = [.backgroundColor: NSColor(white: 1, alpha: 0.22), .foregroundColor: NSColor.white]
+                }
+            }
+        }
+    }
+
     func open(prefill: String = "") {
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }   // trial over: choose a plan first
         if !prefill.isEmpty { draft = prefill }
@@ -115,8 +128,8 @@ struct ZuffiChatView: View {
         }
         .frame(width: chat.width, height: 520, alignment: .top)
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: state.chatHistory.isEmpty)
-        .onChange(of: chat.focusTick) { _, _ in focused = true }
-        .onAppear { focused = true }
+        .onChange(of: chat.focusTick) { _, _ in focused = true; ZuffiChat.shared.caretToEnd() }
+        .onAppear { focused = true; ZuffiChat.shared.caretToEnd() }
         .onChange(of: state.chatHistory.count) { _, _ in
             if let start = sentAt, let last = state.chatHistory.last, last.role == .assistant {
                 let secs = max(0.1, Date().timeIntervalSince(start))

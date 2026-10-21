@@ -26,6 +26,8 @@ final class AgentRouter {
         if let r = await screen(raw) { return r }
         if let r = await askChatApp(raw) { return r }
         // Email first: a reply like "tell him yes and thanks" must not be split into steps.
+        // Business jobs said in one breath ("make a post and share it with all clients", "we have 20% off today") stay whole.
+        if ZuffiPlan.shared.isBusiness, let r = ZuffiCRM.shared.handle(raw) { return r }
         if WhatsAppAgent.shared.claims(raw), let r = await WhatsAppAgent.shared.handle(raw) { return r }
         if MailAgent.shared.claims(raw), let r = await MailAgent.shared.handle(raw) { return r }
         let steps = split(raw)

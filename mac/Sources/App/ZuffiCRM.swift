@@ -512,7 +512,8 @@ final class ZuffiCRM: ObservableObject {
 
     /// One incoming message (from this Mac, a notification or the server): find or create the lead,
     /// fill in details, write a reply — and with autopilot on, send it.
-    func handleIncoming(name rawName: String, preview: String, source: String, phone rawPhone: String = "") async {
+    /// savedContact: linked WhatsApp knows whether the sender is in your contacts (nil = unknown).
+    func handleIncoming(name rawName: String, preview: String, source: String, phone rawPhone: String = "", savedContact: Bool? = nil) async {
         let isNumber = rawName.filter(\.isNumber).count >= 9 && rawName.filter(\.isLetter).isEmpty
         let phone = rawPhone.isEmpty ? (isNumber ? rawName.filter { $0.isNumber || $0 == "+" } : "") : rawPhone
         let name = isNumber ? "" : rawName
@@ -525,9 +526,12 @@ final class ZuffiCRM: ObservableObject {
         //  not just because Zuffi saw a WhatsApp message from that person once.)
         let known = leads.contains { l in
             ((!phone.isEmpty && ZuffiPA.samePhone(l.phone, phone)) || (!name.isEmpty && l.name.lowercased() == name.lowercased()))
-            && (l.source.lowercased() != "whatsapp" || l.stage != "New")
+            && (!l.source.lowercased().hasPrefix("whatsapp") || l.stage != "New")
         }
-        if !isNumber && rawPhone.isEmpty && !known && !isOn(.includeContacts) { return }
+        if let saved = savedContact {
+            // Linked WhatsApp: friends & family in your contacts are left alone (unless you said clients are saved too).
+            if saved && !known && !isOn(.includeContacts) { return }
+        } else if !isNumber && rawPhone.isEmpty && !known && !isOn(.includeContacts) { return }
         // The same message can arrive twice (banner + chat list): ignore the repeat.
         let who = (phone.isEmpty ? name : String(phone.filter(\.isNumber).suffix(10))).lowercased()
         if let r = recentIn[who], Date().timeIntervalSince(r.at) < 600,
@@ -565,9 +569,13 @@ final class ZuffiCRM: ObservableObject {
         guard !voice, wantsReply, let lead = leads.first(where: { $0.key == key }) else { return }
         let r = await smartReply(for: lead, incoming: text, first: existing == nil)
         // Details the AI picked up in the same call go into the lead.
+        if let d = r.details["booking_date"], let tm = r.details["booking_time"], r.handoff == nil {
+            let msg = autoBook(lead: lead, date: d, time: tm, what: r.details["booking_what"] ?? "")
+            MacStatus.shared.toast("Booked · \(lead.display)", msg, icon: "calendar.badge.plus")
+        }
         if !r.details.isEmpty {
             edit(key) { b, i in
-                for (k, v) in r.details where !v.isEmpty {
+                for (k, v) in r.details where !v.isEmpty && !k.hasPrefix("booking_") {
                     if k == "priority" { if b.get(b.rows[i], ["priority"]).isEmpty || v == "Hot" { b.set(i, ["priority"], v) } }
                     else if b.get(b.rows[i], [k]).isEmpty { b.set(i, [k], v) }
                 }
@@ -597,6 +605,24 @@ final class ZuffiCRM: ObservableObject {
     }
 
     // MARK: More automations
+
+    static func weekday() -> String { let f = DateFormatter(); f.dateFormat = "EEEE"; return f.string(from: Date()) }
+
+    /// A booking the customer agreed to on WhatsApp goes straight into Appointments (estate agents: a property visit).
+    @discardableResult
+    func autoBook(lead: CRMLead, date: String, time: String, what: String) -> String {
+        var b = ZuffiPA.load("Appointments", header: ZuffiPA.apptHeader)
+        let taken = b.rows.contains { b.get($0, ["date"]) == date && b.get($0, ["time"]) == time && b.get($0, ["status"]).lowercased() != "cancelled" }
+        var row = Array(repeating: "", count: b.header.count)
+        func put(_ k: [String], _ v: String) { if let x = b.i(k) { row[x] = v } }
+        put(["date"], date); put(["time"], time); put(["client", "name"], lead.display); put(["phone"], lead.phone)
+        put(["service"], what.isEmpty ? (isEstate ? "Property visit" : "") : what); put(["status"], "Booked")
+        b.rows.append(row)
+        ZuffiPA.save("Appointments", b)
+        edit(lead.key) { bb, i in bb.set(i, ["status"], isEstate ? "Site visit" : "Booked") }
+        log(lead: lead.display, staff: "Zuffi", kind: "Booked", detail: "\(date) \(time) \(what)")
+        return "\(date) at \(time)\(what.isEmpty ? "" : " — \(what)")" + (taken ? " (heads up: another booking is at the same time)" : "")
+    }
 
     private var afterHoursSent: [String: String] = [:]
     /// Inside opening hours? (My business → opening hours; 9 to 8 if not set; Sundays count as open unless closed is set)
@@ -671,11 +697,11 @@ final class ZuffiCRM: ObservableObject {
                         if self.autoSent.count > 30 { self.autoSent.removeLast() }
                     }
                     appendAppLog("agents.log", "autopilot: \(res)")
-                    if let front, !WhatsAppAgent.isWhatsApp(front), front.bundleIdentifier != Bundle.main.bundleIdentifier {
+                    if !WhatsAppLink.shared.ready, let front, !WhatsAppAgent.isWhatsApp(front), front.bundleIdentifier != Bundle.main.bundleIdentifier {
                         try? await Task.sleep(nanoseconds: 700_000_000)
                         front.bringForward()
                     }
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    try? await Task.sleep(nanoseconds: WhatsAppLink.shared.ready ? 250_000_000 : 1_500_000_000)
                 } else {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                 }
@@ -754,8 +780,9 @@ final class ZuffiCRM: ObservableObject {
 
         Write "reply": 1-2 short, natural WhatsApp sentences in EXACTLY the language and script the client used, whatever it is (English, Urdu script, Roman Urdu, Punjabi, Hindi, Arabic, Polish…); if they mix languages, mix the same way. \(first ? "Greet them; ask only for what's missing." : "Don't greet again.")
         Set "needs_human" true ONLY if: they bargain or ask for a discount not in today's update, complain, ask for a person or a call, raise payment / refund / legal issues, or the answer isn't in the facts. Then make "reply" a short holding message ("Thanks! Someone from our team will reply shortly.") and put a 3-6 word reason in "why".
+        BOOKING: today is \(ZuffiBusiness.iso(Date())) (\(Self.weekday())). If the client agrees to a specific day and time for an appointment or visit that is NOT in "TIMES ALREADY TAKEN" and is within opening hours, fill "booking" with {"date":"YYYY-MM-DD","time":"HH:MM","what":"service or property"} and make "reply" confirm it. If the time is taken, offer the nearest free time instead and leave "booking" empty. Never book without a clear day and time.
         Also fill "lead" with anything the client said: name, interest (\(labels.interest.lowercased())), area, budget, priority (Hot = ready now / asks price, visit or availability; Warm; Cold = just looking). Use "" when not said.
-        JSON: {"reply":"","needs_human":false,"why":"","lead":{"name":"","interest":"","area":"","budget":"","priority":""}}
+        JSON: {"reply":"","needs_human":false,"why":"","booking":{"date":"","time":"","what":""},"lead":{"name":"","interest":"","area":"","budget":"","priority":""}}
         """
         guard let j = await AIService.shared.fastJSON(prompt, system: system) else {
             return (fallback, first ? nil : "no AI is connected", [:])
@@ -770,6 +797,10 @@ final class ZuffiCRM: ObservableObject {
             for k in ["name", "interest", "area", "budget", "priority"] {
                 if let v = (lead[k] as? String)?.trimmingCharacters(in: .whitespaces), !v.isEmpty { details[k] = k == "priority" ? v.capitalized : v }
             }
+        }
+        if let b = j["booking"] as? [String: Any], let d = b["date"] as? String, let tm = b["time"] as? String,
+           d.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil, tm.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil, d >= ZuffiBusiness.iso(Date()) {
+            details["booking_date"] = d; details["booking_time"] = tm; details["booking_what"] = (b["what"] as? String) ?? ""
         }
         if reply.isEmpty { return (fallback, first ? nil : "couldn't write a good reply", details) }
         return (reply, human ? (why.isEmpty ? "needs a person" : why) : nil, details)
@@ -827,6 +858,31 @@ final class ZuffiCRM: ObservableObject {
             return "Got it ✅ I'll tell clients today: “\(body)”." + (isOn(.autopilot) ? "" : " (Turn on Autopilot in Business → My business if you want me to reply by myself.)")
         }
         if l.range(of: #"^(clear|remove|delete) (today'?s|the) update$"#, options: .regularExpression) != nil { todayUpdate = ""; return "Cleared today's update." }
+        // Said naturally: "we have 20% off today", "today we have new plots in DHA", "there's a sale today on…"
+        let lc = l.replacingOccurrences(of: #"^(zuffi,?\s*|hey zuffi,?\s*)"#, with: "", options: .regularExpression)
+        if lc.range(of: #"^(we (have|got|are giving|are offering)|today we (have|are)|there('?s| is) (a |an )?)(.*)\b(discount|offer|sale|deal|% ?off|off on|special|promotion|new stock|new arrivals?|free)\b"#, options: .regularExpression) != nil,
+           lc.range(of: #"\b(share|send|post|make|create)\b"#, options: .regularExpression) == nil {
+            let body = t.replacingOccurrences(of: #"(?i)^(zuffi,?\s*|hey zuffi,?\s*)"#, with: "", options: .regularExpression)
+            todayUpdate = body
+            return "Got it ✅ I'll tell customers today: “\(body)”. Want me to make a post about it and share it with your clients on WhatsApp? Just say “make a post and share it”."
+        }
+        // "remember we open 10 to 8", "remember our prices: …" → business info
+        if let r = t.range(of: #"(?i)^(?:zuffi,?\s*)?(?:remember|note|save)(?: that)?\s+(?=(?:we|our|my business|the shop|the office)\b)"#, options: .regularExpression), ZuffiBusiness.shared.pack != nil {
+            let body = String(t[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if !body.isEmpty { businessInfo = businessInfo.isEmpty ? body : businessInfo + "\n" + body; return "Saved to your business info ✅ I'll use it when I reply to customers." }
+        }
+        // "make a post / image / reel (about …) and share it with all my clients on WhatsApp"
+        if lc.range(of: #"\b(make|create|design)\b.*\b(post|image|picture|poster|flyer|reel|video|status)\b"#, options: .regularExpression) != nil,
+           lc.range(of: #"\b(share|send|post it|broadcast)\b.*\b(all|everyone|clients?|customers?|leads?|whats ?app|contacts)\b"#, options: .regularExpression) != nil {
+            let reel = lc.range(of: #"\b(reel|video)\b"#, options: .regularExpression) != nil
+            var about = ""
+            if let m = t.range(of: #"(?i)\b(?:about|for|on)\s+(.+?)(?:\s+and\s+(?:share|send|post)\b|$)"#, options: .regularExpression) {
+                about = String(t[m]).replacingOccurrences(of: #"(?i)^(about|for|on)\s+|\s+and\s+(share|send|post)\b.*$"#, with: "", options: .regularExpression)
+                if about.lowercased().range(of: #"^(our|my|the) business$"#, options: .regularExpression) != nil { about = "" }
+            }
+            return BizBroadcast.shared.start(reel: reel, about: about.isEmpty ? todaysUpdate : about)
+        }
+        if lc.range(of: #"^(stop|cancel) (sharing|the broadcast|sending)( it)?$"#, options: .regularExpression) != nil { BizBroadcast.shared.cancel = true; return "Stopped sharing." }
         if let r = t.range(of: #"(?i)^(?:add to (?:my )?business info|remember for (?:my )?clients|business info|for clients)\s*[:\-–]\s*"#, options: .regularExpression) {
             let body = String(t[r.upperBound...]).trimmingCharacters(in: .whitespaces)
             guard !body.isEmpty else { return nil }
@@ -1027,4 +1083,62 @@ enum VoiceNotes {
 
 extension String {
     fileprivate func ifBlank(_ s: String) -> String { isEmpty ? s : self }
+}
+
+
+// =====================================================================
+// MARK: - "Make a post and share it with my clients" — done by itself, even with the laptop closed in a bag (Mac awake)
+// =====================================================================
+@MainActor
+final class BizBroadcast {
+    static let shared = BizBroadcast()
+    private(set) var running = false
+    var cancel = false
+
+    /// Who gets it: your leads and clients with WhatsApp (not friends & family), active in the last 90 days, at most 60.
+    private func recipients() -> [CRMLead] {
+        let crm = ZuffiCRM.shared
+        let cut = ZuffiBusiness.iso(Date().addingTimeInterval(-90 * 86400))
+        return Array(crm.leads.filter { l in
+            l.stage != "Lost" && (!l.phone.isEmpty || l.source == WhatsAppLink.leadSource)
+                && ((l.lastMessageAt.isEmpty ? l.added : l.lastMessageAt) >= cut)
+        }.prefix(60))
+    }
+
+    func start(reel: Bool, about: String) -> String {
+        guard WhatsAppLink.shared.ready else { return "Link WhatsApp first (Business → Connect & devices → Link WhatsApp), then ask me again." }
+        guard !running else { return "I'm already sharing a post — say “stop sharing” to cancel it." }
+        let people = recipients()
+        guard !people.isEmpty else { return "You don't have any WhatsApp clients from the last 3 months yet." }
+        running = true; cancel = false
+        Task { await self.run(reel: reel, about: about, people: people) }
+        return "On it ✅ I'm making a \(reel ? "reel" : "post")\(about.isEmpty ? "" : " about “\(about)”") and then I'll send it to \(people.count) client\(people.count == 1 ? "" : "s") on WhatsApp, a few seconds apart. You can close the laptop lid only if it stays awake (plugged in) — I'll tell you when it's done."
+    }
+
+    private func run(reel: Bool, about: String, people: [CRMLead]) async {
+        defer { running = false }
+        MacPower.shared.keepAwake(true, reason: "Sharing a post on WhatsApp")
+        defer { MacPower.shared.keepAwake(false, reason: "") }
+        guard let r = await WebHub.shared.callJS("return await window.Sparrow.makeBizPost(a, k)", ["a": about, "k": reel ? "reel" : "post"]) as? [String: Any],
+              let b64 = r["b64"] as? String, let data = Data(base64Encoded: b64) else {
+            MacStatus.shared.toast("Couldn't make the post", "Try again, or make it in Business → Posts & reels.", icon: "exclamationmark.triangle.fill")
+            return
+        }
+        let mime = (r["mime"] as? String) ?? "image/png", name = (r["name"] as? String) ?? "post.png", caption = (r["caption"] as? String) ?? about
+        // keep a copy in Downloads
+        if let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first { try? data.write(to: dir.appendingPathComponent(name)) }
+        var sent = 0
+        for l in people {
+            if cancel { break }
+            if await WhatsAppLink.shared.sendMedia(to: l.phone.isEmpty ? l.name : l.phone, data: data, mime: mime, name: name, caption: caption) {
+                sent += 1
+                ZuffiCRM.shared.log(lead: l.display, staff: "Zuffi", kind: "Shared post", detail: String(caption.prefix(60)))
+            }
+            // a human pace — WhatsApp doesn't like bursts
+            try? await Task.sleep(nanoseconds: UInt64.random(in: 7_000_000_000...12_000_000_000))
+        }
+        let msg = "Shared your \(reel ? "reel" : "post") with \(sent) client\(sent == 1 ? "" : "s") on WhatsApp ✅ A copy is in Downloads."
+        MacStatus.shared.toast("Post shared", msg, icon: "paperplane.fill")
+        ZuffiHomeModel.shared.say(msg)
+    }
 }

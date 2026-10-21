@@ -1190,6 +1190,52 @@ struct NoteView: View {
     @State private var typing: Task<Void, Never>?
     @State private var shown = false             // entrance: slides up and fades in
     @State private var finishing: Bool? = nil    // true = Done (tick), false = Later (clock) — then the notch folds away
+    @State private var replying = false
+    @State private var replyText = ""
+    @State private var writing = false
+    @FocusState private var replyFocus: Bool
+
+    /// Who the note is from ("WhatsApp · Name" / "Mail · Name").
+    private var sender: String {
+        let first = (state.noteMessage ?? "").components(separatedBy: "\n").first ?? ""
+        return first.components(separatedBy: " · ").dropFirst().joined(separator: " · ")
+    }
+    private var incoming: String { (state.noteMessage ?? "").components(separatedBy: "\n").dropFirst().joined(separator: " ") }
+
+    private func fold() { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+    private func startReply() {
+        state.isPinned = true          // stay open while you type
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { replying = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { replyFocus = true }
+    }
+    private func writeForMe() async {
+        writing = true; defer { writing = false }
+        let ask = state.noteAction == "mail"
+            ? "Write a short, polite email reply to \(sender) about: \(incoming). Reply with the email text only."
+            : "Write a short, natural WhatsApp reply to this message from \(sender): \"\(incoming)\". Same language and tone as their message. Reply with the message text only."
+        if let r = await AIService.shared.oneShot(ask, system: "You write short replies for the user. Reply with the text only, no quotes.") {
+            replyText = r.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        }
+    }
+    private func sendReply() {
+        let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let mail = state.noteAction == "mail", chat = state.noteRef ?? sender, who = sender
+        state.isPinned = false
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { finishing = true }
+        Task { @MainActor in
+            if mail {
+                // draft the reply to that email, then send it (you already wrote / approved the words)
+                if await MailAgent.shared.handle("reply to \(who) saying \(text)") != nil { _ = await MailAgent.shared.handle("send") }
+            } else {
+                let ok = await WhatsAppLink.shared.send(to: chat, text: text)
+                if !ok { _ = await WhatsAppAgent.shared.sendScheduled(to: who, text: text) }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            MainActor.assumeIsolated { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+        }
+    }
 
     /// One colour per kind of note: water, prayer, medicine, mail, WhatsApp, meeting…
     private var tint: Color {
@@ -1210,12 +1256,12 @@ struct NoteView: View {
     }
     /// The first sentence is the title; anything after it is a quieter line underneath.
     private func split(_ text: String) -> (String, String) {
-        if let r = text.range(of: #"(?<=[.!?])\s+|\s{2,}"#, options: .regularExpression), text.distance(from: text.startIndex, to: r.lowerBound) < 90 {
+        if let r = text.range(of: #"(?<=[.!?])\s+|\s{2,}"#, options: .regularExpression), text.distance(from: text.startIndex, to: r.lowerBound) < 90, text.distance(from: text.startIndex, to: r.lowerBound) > 12 {
             return (String(text[..<r.lowerBound]), String(text[r.upperBound...]))
         }
-        // "Time for a glass of water Stay fresh!" — a title and a tagline joined without a full stop
+        // "Time for a glass of water Stay fresh!" — a title and a tagline joined without a full stop (reminders only)
         let words = text.split(separator: " ")
-        if let i = words.indices.dropFirst(3).first(where: { words[$0].first?.isUppercase == true && !["I", "I'm", "I’ll"].contains(String(words[$0])) }) {
+        if state.noteIsAlert, let i = words.indices.dropFirst(3).first(where: { words[$0].first?.isUppercase == true && !["I", "I'm", "I’ll"].contains(String(words[$0])) }) {
             return (words[..<i].joined(separator: " "), words[i...].joined(separator: " "))
         }
         return (text, "")
@@ -1255,9 +1301,12 @@ struct NoteView: View {
                 }
                 Text(title)
                     .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundColor(.white)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                if !sub.isEmpty {
-                    Text(sub).font(.system(size: 12.5)).foregroundColor(.white.opacity(0.62)).lineLimit(2)
+                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !sub.isEmpty && !replying {
+                    Text(sub).font(.system(size: 12.5)).foregroundColor(.white.opacity(0.62))
+                        .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let card = p.card, typed.count >= p.text.count {
                     HStack(spacing: 10) {
@@ -1285,25 +1334,44 @@ struct NoteView: View {
                         }
                         noteButton("Not now", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
                     }.padding(.top, 4)
+                } else if replying {
+                    // Quick reply, right in the notch: type (or let Zuffi write it) and send.
+                    HStack(spacing: 6) {
+                        TextField(state.noteAction == "mail" ? "Your reply…" : "Message…", text: $replyText)
+                            .textFieldStyle(.plain).font(.system(size: 13)).foregroundColor(.white)
+                            .padding(.horizontal, 12).frame(height: 32)
+                            .background(Capsule().fill(Color.white.opacity(0.10)))
+                            .overlay(Capsule().strokeBorder(tint.opacity(0.6), lineWidth: 1))
+                            .focused($replyFocus)
+                            .onSubmit { sendReply() }
+                        Button { Task { await writeForMe() } } label: {
+                            Image(systemName: writing ? "ellipsis" : "sparkles").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                                .frame(width: 32, height: 32).background(Circle().fill(Color.white.opacity(0.10)))
+                        }.buttonStyle(NotePress()).help("Let Zuffi write it")
+                        Button { sendReply() } label: {
+                            Image(systemName: "arrow.up").font(.system(size: 13, weight: .heavy)).foregroundColor(.white)
+                                .frame(width: 32, height: 32).background(Circle().fill(tint.gradient))
+                        }.buttonStyle(NotePress()).disabled(replyText.trimmingCharacters(in: .whitespaces).isEmpty).help("Send")
+                    }
+                    .padding(.top, 4)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if state.noteAction == "mail" {
+                    // Email: read it to me · reply · later
                     HStack(spacing: 8) {
-                        noteButton("Open", icon: "envelope.open", primary: true) {
-                            if let id = state.noteRef { Task { await MailAgent.shared.open(id: id) } }
-                            state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil)
+                        noteButton("Read", icon: "speaker.wave.2.fill", primary: true) {
+                            Task { let r = await MailAgent.shared.readLatest(); VoiceEngine.shared.speak(r); state.noteMessage = r }
                         }
-                        noteButton("Later", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+                        noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: false) { startReply() }
+                        noteButton("Later", icon: "clock", primary: false) { fold() }
                     }.padding(.top, 4)
                 } else if state.noteAction == "whatsapp" {
+                    // WhatsApp: reply · read it out · later
                     HStack(spacing: 8) {
-                        noteButton("Read it", icon: "speaker.wave.2.fill", primary: true) {
+                        noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: true) { startReply() }
+                        noteButton("Read it", icon: "speaker.wave.2.fill", primary: false) {
                             VoiceEngine.shared.speak((state.noteMessage ?? "").replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from "))
                         }
-                        noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: false) {
-                            let who = (state.noteMessage ?? "").components(separatedBy: "\n").first?.replacingOccurrences(of: "WhatsApp · ", with: "") ?? ""
-                            state.noteAction = nil
-                            ZuffiChat.shared.open(prefill: "Reply to \(who) on WhatsApp: ")
-                        }
-                        noteButton("Later", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+                        noteButton("Later", icon: "clock", primary: false) { fold() }
                     }.padding(.top, 4)
                 } else if state.noteAction == "screen" {
                     HStack(spacing: 8) {
@@ -1344,6 +1412,7 @@ struct NoteView: View {
                 }
             }
             .padding(.leading, 108).padding(.trailing, 20).padding(.vertical, 12)
+            .frame(width: IslandConst.width(for: .note), alignment: .leading)
             .offset(y: shown ? 0 : 10).opacity(shown ? 1 : 0)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: typed.count >= p.text.count)
         }
@@ -1355,7 +1424,7 @@ struct NoteView: View {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.82).delay(0.05)) { shown = true }
         }
         .onChange(of: state.noteMessage) { _, _ in type(parts.text) }
-        .onDisappear { typing?.cancel(); state.noteIsAlert = false; if state.noteAction == "meeting" { state.noteAction = nil } }
+        .onDisappear { typing?.cancel(); state.noteIsAlert = false; replying = false; state.isPinned = false; if state.noteAction == "meeting" { state.noteAction = nil } }
     }
 
     private func noteButton(_ title: String, icon: String?, primary: Bool, action: @escaping () -> Void) -> some View {

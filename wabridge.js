@@ -1855,6 +1855,7 @@ function start() {
         phone: /@c\.us$/.test(chatId) ? chatId.split('@')[0] : '',
         body: msg.body && msg.type === 'chat' ? String(msg.body) : (msg.caption || ''),
         kind: msg.type || 'chat', t: msg.t || Math.floor(Date.now() / 1000), id: msg.id && msg.id._serialized || '',
+        saved: !!(sender.isMyContact || sender.isAddressBookContact),
       });
     } catch (e) {}
   });
@@ -1881,6 +1882,15 @@ window.ZuffiWA = {
     const chat = await window.WWebJS.getChat(id, { getAsModel: false });
     if (!chat) return { error: 'chat not found' };
     const m = await window.WWebJS.sendMessage(chat, String(text), {});
+    return { ok: !!m };
+  },
+  /** A picture or video with a caption (b64 = base64 data). */
+  sendMedia: async (to, b64, mimetype, filename, caption) => {
+    if (!hooked) return { error: 'not ready' };
+    const id = /@/.test(to) ? to : String(to).replace(/\D/g, '') + '@c.us';
+    const chat = await window.WWebJS.getChat(id, { getAsModel: false });
+    if (!chat) return { error: 'chat not found' };
+    const m = await window.WWebJS.sendMessage(chat, '', { media: { data: b64, mimetype, filename, filesize: Math.round(b64.length * 0.75) }, caption: caption || ' ', isCaptionByUser: !!caption });
     return { ok: !!m };
   },
   seen: async chatId => { try { await window.WWebJS.sendSeen(chatId); return true; } catch (e) { return false; } },

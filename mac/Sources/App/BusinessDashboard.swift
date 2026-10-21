@@ -493,39 +493,41 @@ struct BizTodayView: View {
                 BizStartGuide()
                 let today = ZuffiBusiness.iso(Date())
                 let monthAgo = ZuffiBusiness.iso(Date().addingTimeInterval(-30 * 86400))
-                HStack(spacing: 12) {
+                let sales = crm.leads.filter { $0.isSale && $0.lastContact >= monthAgo }
+                // four numbers, short words, never cut off (they wrap onto two rows on a small window)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                     tile("New today", "\(crm.leads.filter { $0.added == today }.count)", "tray.and.arrow.down.fill", Biz.blue)
-                    tile("Follow up today", "\(crm.leads.filter(\.dueToday).count)", "phone.fill", Ink.accent)
-                    tile("Hot leads", "\(crm.leads.filter { $0.isOpen && $0.priority.lowercased() == "hot" }.count)", "flame.fill", Biz.pink)
-                    tile("Overdue", "\(crm.leads.filter(\.overdue).count)", "exclamationmark.triangle.fill", Biz.red)
-                    tile("Sales · 30 days", "\(crm.leads.filter { $0.isSale && $0.lastContact >= monthAgo }.count)", "trophy.fill", Biz.green)
-                    tile("Revenue · 30 days", crm.currency + " " + Int(crm.leads.filter { $0.isSale && $0.lastContact >= monthAgo }.reduce(0) { $0 + $1.valueNumber }).formatted(), "banknote.fill", Biz.green)
+                    tile("To call", "\(crm.leads.filter(\.dueToday).count)", "phone.fill", Ink.accent)
+                    tile("Hot", "\(crm.leads.filter { $0.isOpen && $0.priority.lowercased() == "hot" }.count)", "flame.fill", Biz.pink)
+                    tile("Sales (30 days)", "\(sales.count)", "trophy.fill", Biz.green)
+                }
+                if !sales.isEmpty {
+                    Text("Money from sales in the last 30 days: \(crm.currency) \(Int(sales.reduce(0) { $0 + $1.valueNumber }).formatted())")
+                        .font(.system(size: 12)).foregroundColor(Ink.muted)
                 }
                 BizTodayExtras()
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 14) {
                         GlassBox {
                             VStack(alignment: .leading, spacing: 8) {
-                                header("Follow up today", "phone.arrow.up.right.fill")
+                                // one list: who to call back (overdue first), then hot leads — no duplicates
                                 let due = crm.leads.filter(\.dueToday).sorted { $0.overdue && !$1.overdue }
-                                if due.isEmpty { empty("Nobody to chase today 🎉") }
+                                let hot = crm.leads.filter { $0.isOpen && $0.priority.lowercased() == "hot" && !$0.dueToday }
+                                HStack {
+                                    header("Needs you today", "person.crop.circle.badge.exclamationmark")
+                                    Spacer()
+                                    Text("\(due.count + hot.count)").font(.system(size: 12, weight: .semibold)).foregroundColor(Ink.muted)
+                                }
+                                if due.isEmpty && hot.isEmpty { empty("Nobody to chase today 🎉 New chats will show up here.") }
                                 ForEach(due.prefix(10)) { l in BizLeadRow(lead: l, showDue: true) }
-                            }
-                        }
-                        GlassBox {
-                            VStack(alignment: .leading, spacing: 8) {
-                                header("Hot leads", "flame.fill")
-                                let hot = crm.leads.filter { $0.isOpen && $0.priority.lowercased() == "hot" }
-                                if hot.isEmpty { empty("Mark a lead hot: open it, or say “mark Ali as hot”.") }
-                                ForEach(hot.prefix(8)) { l in BizLeadRow(lead: l) }
+                                ForEach(hot.prefix(6)) { l in BizLeadRow(lead: l) }
                             }
                         }
                     }
                     VStack(alignment: .leading, spacing: 14) {
-                        GlassBox {
+                        if !crm.team.isEmpty { GlassBox {
                             VStack(alignment: .leading, spacing: 8) {
-                                header(crm.team.isEmpty ? "Your team" : "Who isn't following up", "person.fill.questionmark")
-                                if crm.team.isEmpty { empty("Add your team in the Team tab to see this.") }
+                                header("Who isn't following up", "person.fill.questionmark")
                                 ForEach(crm.reports()) { r in
                                     HStack {
                                         Text(r.name).font(.system(size: 12.5, weight: .semibold))
@@ -534,10 +536,10 @@ struct BizTodayView: View {
                                     }
                                 }
                             }
-                        }
+                        } }
                         GlassBox {
                             VStack(alignment: .leading, spacing: 8) {
-                                header("Owner's daily summary", "doc.text.fill")
+                                header("Your daily summary", "doc.text.fill")
                                 Text(crm.summary()).font(.system(size: 11.5)).foregroundColor(Ink.ink.opacity(0.85))
                                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                                 HStack {
@@ -618,8 +620,12 @@ struct BizInboxView: View {
     @ObservedObject private var nav = BizNav.shared
     @State private var filter = "All"
 
+    @ObservedObject private var wa = WhatsAppLink.shared
+    @State private var confirmDelete: CRMLead?
+
     private var list: [CRMLead] {
-        var l = crm.leads
+        // Chats that came through linked WhatsApp only show while it's linked (link again → they're back).
+        var l = crm.leads.filter { wa.enabled || $0.source != WhatsAppLink.leadSource }
         switch filter {
         case "Needs reply": l = l.filter { crm.drafts[$0.key] != nil }
         case "WhatsApp": l = l.filter { $0.source.lowercased().contains("whatsapp") }
@@ -639,6 +645,18 @@ struct BizInboxView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 8) {
+                // WhatsApp status + the auto-reply switch, always in view
+                HStack(spacing: 8) {
+                    Circle().fill(wa.ready ? Biz.green : Ink.faint).frame(width: 8, height: 8)
+                    Text(wa.ready ? "WhatsApp linked" : wa.enabled ? "WhatsApp connecting…" : "WhatsApp not linked").font(.system(size: 11.5, weight: .semibold))
+                    if !wa.ready { Button(wa.enabled ? "Show code" : "Link") { wa.showWindow() }.buttonStyle(.link).font(.system(size: 11.5, weight: .semibold)) }
+                    Spacer()
+                    Toggle("Auto-reply", isOn: Binding(get: { crm.isOn(.autopilot) }, set: { crm.set(.autopilot, $0) }))
+                        .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11.5, weight: .semibold))
+                        .help("Zuffi answers customers by itself from your business info, in their language — and hands over to you for bargaining, complaints or anything it doesn't know.")
+                }
+                .padding(.horizontal, 10).frame(height: 34)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Ink.panel))
                 Picker("", selection: $filter) { ForEach(["All", "Needs reply", "Needs you", "WhatsApp", "Mine due"], id: \.self) { Text($0) } }
                     .pickerStyle(.segmented).labelsHidden()
                 ScrollView {
@@ -666,6 +684,9 @@ struct BizInboxView: View {
                                 .background(RoundedRectangle(cornerRadius: 12).fill(nav.selected == l.key ? Ink.ink.opacity(0.12) : .clear))
                                 .contentShape(Rectangle())
                             }.buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Delete chat…", role: .destructive) { confirmDelete = l }
+                            }
                         }
                         if list.isEmpty {
                             empty(filter == "Needs reply" ? "No replies waiting." : "No leads yet. Open WhatsApp on this Mac — new chats appear here by themselves. Or press “Add lead”.")
@@ -675,6 +696,10 @@ struct BizInboxView: View {
                 }
             }
             .frame(width: 330).padding(.leading, 18).padding(.bottom, 14)
+            .alert("Delete \(confirmDelete?.display ?? "this chat")?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
+                Button("Delete", role: .destructive) { if let l = confirmDelete { if nav.selected == l.key { nav.selected = nil }; crm.delete(l.key) }; confirmDelete = nil }
+                Button("Cancel", role: .cancel) { confirmDelete = nil }
+            } message: { Text("Removes the lead and its notes from Zuffi. The chat stays in WhatsApp on your phone.") }
             Divider().overlay(Biz.stroke).padding(.horizontal, 10)
             if let key = nav.selected, let l = crm.leads.first(where: { $0.key == key }) {
                 BizLeadDetail(lead: l).id(l.key)
@@ -1752,8 +1777,8 @@ private struct BizTile: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Circle().fill(color).frame(width: 6, height: 6)
-                Text(title).font(.system(size: 11.5, weight: .medium)).foregroundColor(Ink.muted).lineLimit(1)
-                Spacer(minLength: 0)
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
+                Spacer(minLength: 4)
                 Image(systemName: icon).font(.system(size: 11, weight: .medium)).foregroundColor(Ink.faint)
             }
             Text(value).font(.system(size: 26, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.55).foregroundColor(Ink.text)
@@ -1798,7 +1823,7 @@ struct BizStartGuide: View {
         [
             Step(id: 1, title: "Tell Zuffi about your business", detail: "Your business name and type", done: !biz.businessName.isEmpty && biz.pack != nil, button: "Fill in") { nav.tab = .business },
             Step(id: 2, title: "Write your prices & opening hours", detail: "Zuffi uses this to answer clients", done: crm.businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count > 20, button: "Write") { nav.tab = .business },
-            Step(id: 3, title: "Connect WhatsApp", detail: "New chats become clients automatically", done: crm.isOn(.watchWhatsApp) && WhatsAppAgent.installed, button: "Connect") { nav.tab = .connect },
+            Step(id: 3, title: "Connect WhatsApp", detail: "New chats become clients automatically", done: crm.isOn(.watchWhatsApp) && (WhatsAppLink.shared.ready || WhatsAppAgent.installed), button: "Connect") { nav.tab = .connect },
             Step(id: 4, title: "Add your first client", detail: "Or just tell Zuffi about a new lead", done: !crm.leads.isEmpty, button: "Add") { nav.tab = .records },
             Step(id: 5, title: "Link your phone", detail: "Same business on your phone — scan a QR code", done: sync.linked, button: "Link") { nav.tab = .connect },
             Step(id: 6, title: "Add your staff (optional)", detail: "Salaries, hours, who follows up", done: !crm.team.isEmpty, button: "Add") { nav.tab = .team },
@@ -1807,48 +1832,27 @@ struct BizStartGuide: View {
 
     var body: some View {
         let s = steps, done = s.filter(\.done).count
-        if !hidden && done < s.count {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle().stroke(Ink.ink.opacity(0.12), lineWidth: 5)
-                        Circle().trim(from: 0, to: CGFloat(done) / CGFloat(s.count))
-                            .stroke(LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#7C5CFF")], startPoint: .top, endPoint: .bottom), style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                        Text("\(done)/\(s.count)").font(.system(size: 12, weight: .heavy))
-                    }.frame(width: 46, height: 46)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Let's set up your business").font(.system(size: 16, weight: .heavy))
-                        Text("A few small steps — about 5 minutes. Zuffi does the rest.").font(.system(size: 11.5)).foregroundColor(Ink.muted)
-                    }
-                    Spacer()
-                    Button("Hide") { hidden = true }.buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.faint)
+        if !hidden && done < s.count, let next = s.first(where: { !$0.done }) {
+            // One slim bar: how far you are and the next step — the finished ones don't need space.
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().stroke(Ink.ink.opacity(0.12), lineWidth: 4)
+                    Circle().trim(from: 0, to: CGFloat(done) / CGFloat(s.count))
+                        .stroke(Ink.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round)).rotationEffect(.degrees(-90))
+                    Text("\(done)/\(s.count)").font(.system(size: 10.5, weight: .bold)).monospacedDigit()
+                }.frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Next step: \(next.title)").font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
+                    Text(next.detail).font(.system(size: 11.5)).foregroundColor(Ink.muted).lineLimit(1)
                 }
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(s) { st in
-                        HStack(spacing: 10) {
-                            Image(systemName: st.done ? "checkmark.circle.fill" : "\(st.id).circle")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(st.done ? Color(hex: "#34D399") : Ink.ink.opacity(0.75))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(st.title).font(.system(size: 12, weight: .bold)).strikethrough(st.done, color: Ink.ink.opacity(0.4))
-                                    .foregroundColor(st.done ? Ink.ink.opacity(0.5) : Ink.text).lineLimit(1).minimumScaleFactor(0.8)
-                                Text(st.detail).font(.system(size: 10)).foregroundColor(Ink.faint).lineLimit(1)
-                            }
-                            Spacer(minLength: 4)
-                            if !st.done {
-                                Button(st.button, action: st.go).buttonStyle(.plain)
-                                    .font(.system(size: 11, weight: .bold)).foregroundColor(Ink.onAccent)
-                                    .padding(.horizontal, 10).frame(height: 24)
-                                    .background(Capsule().fill(Ink.accent))
-                            }
-                        }
-                        .padding(10)
-                        .inkPanel(RoundedRectangle(cornerRadius: 10, style: .continuous), raised: !st.done)
-                    }
-                }
+                Spacer(minLength: 8)
+                Button(next.button, action: next.go).buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold)).foregroundColor(Ink.onAccent)
+                    .padding(.horizontal, 14).frame(height: 30).background(Capsule().fill(Ink.accent))
+                Button { hidden = true } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundColor(Ink.faint) }
+                    .buttonStyle(.plain).help("Hide")
             }
-            .padding(16)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             .inkPanel(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }

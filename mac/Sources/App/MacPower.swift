@@ -38,6 +38,14 @@ final class MacPower: ObservableObject {
         }
     }
 
+    /// While a job runs (e.g. sharing a post), the Mac doesn't fall asleep from being idle.
+    private var jobActivity: NSObjectProtocol?
+    func keepAwake(_ on: Bool, reason: String) {
+        if on, jobActivity == nil {
+            jobActivity = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .suddenTerminationDisabled], reason: reason)
+        } else if !on, let a = jobActivity { ProcessInfo.processInfo.endActivity(a); jobActivity = nil }
+    }
+
     func setLid(_ on: Bool) {
         let script = "do shell script \"pmset -a disablesleep \(on ? 1 : 0)\" with administrator privileges with prompt \"Zuffi: \(on ? "keep working when the lid is closed" : "let the Mac sleep when the lid is closed again")\""
         var err: NSDictionary?
