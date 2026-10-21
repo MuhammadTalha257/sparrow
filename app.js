@@ -2698,6 +2698,9 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  /** Voice commands from the Mac: "change your colour to green", "male voice". */
+  setAccent: name => { const t = bizapp.THEMES.find(x => x[0] === name || x[3].toLowerCase() === name); if (!t) return false; bizsync.setCfg('accent', t[0]); try { localStorage.setItem('zuffiAccent', t[0]); } catch {} bizapp.applyAccent(); syncAccent(); return t[1]; },
+  setVoice: g => { S().gender = g === 'male' ? 'male' : 'female'; S().voiceName = ''; store.save(); return true; },
   /** Mac: "make a post / reel for our business (about …)" → { b64, mime, name, caption } — a designed post with an AI photo. */
   makeBizPost: async (about = '', kind = 'post') => {
     try {

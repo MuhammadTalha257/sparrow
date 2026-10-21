@@ -327,6 +327,7 @@ struct ZuffiHomePanel: View {
     @ObservedObject private var music = NowPlaying.shared
     @StateObject private var head = SparrowSpriteModel()
     @State private var hover: String?
+    @State private var entered = false
 
     private let W = IslandConst.width(for: .overview)
     private let H = IslandConst.viewLayouts[.overview]!.height
@@ -381,7 +382,8 @@ struct ZuffiHomePanel: View {
         }
         .frame(width: W, height: H)
         .clipped()
-        .onAppear { NowUsing.shared.start(); NowPlaying.shared.start(); NotchGlance.shared.refresh(); home.reloadButtons() }
+        .onAppear { NowUsing.shared.start(); NowPlaying.shared.start(); NotchGlance.shared.refresh(); home.reloadButtons(); entered = true }
+        .onDisappear { entered = false }
     }
 
     // Zuffi · Today (prayers, next reminder, weather) · Music · Me — swipe sideways or tap the dots; it never moves by itself.
@@ -473,7 +475,11 @@ struct ZuffiHomePanel: View {
                             .modifier(SideGlass(round: round, square: i >= 2, tint: Color(hex: a.tint)))
                             .overlay(alignment: .topTrailing) { badge(id) }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NotePress())
+                    // opening the notch: the buttons pop in one after another, from the bunny outwards
+                    .scaleEffect(entered ? 1 : 0.5).opacity(entered ? 1 : 0)
+                    .offset(x: entered ? 0 : (round ? 18 : -18))
+                    .animation(.spring(response: 0.42, dampingFraction: 0.7).delay(0.05 + Double(i) * 0.045), value: entered)
                     .onHover { hover = $0 ? a.label : nil }
                     .help(a.label)
                 }

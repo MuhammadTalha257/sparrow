@@ -459,6 +459,7 @@ final class ZuffiCRM: ObservableObject {
         if !serverURL.isEmpty, now.timeIntervalSince(lastSync) > 60 { lastSync = now; Task { await self.pullServer() } }
         if isOn(.quietFollowUp) { draftQuietFollowUps() }
         if isOn(.thankAndReview) { draftThankYous() }
+        if Calendar.current.component(.hour, from: now) >= 10 { remindBusinessInfo() }
         let cal = Calendar.current
         if isOn(.paymentReminders), cal.component(.hour, from: now) >= summaryHour,
            UserDefaults.standard.string(forKey: "crmPayReminders") != ZuffiBusiness.iso(now) {
@@ -589,12 +590,20 @@ final class ZuffiCRM: ObservableObject {
         guard !r.reply.isEmpty else { return }
         drafts[key] = r.reply
         if let why = r.handoff {
-            // Zuffi doesn't know or shouldn't answer: you take over.
+            // Zuffi doesn't know or shouldn't answer: you take over — but with Auto-reply on, the customer still gets
+            // a polite "we'll get back to you" straight away (once a day per customer), so nobody is left waiting.
             edit(key) { b, i in b.set(i, ["priority"], "Hot") }
             log(lead: lead.display, staff: lead.assigned, kind: "Needs you", detail: why)
             let msg = "\(lead.display) needs you: \(why)"
             NotificationCenter.default.post(name: .petSay, object: msg)
             ZuffiHomeModel.shared.say(msg)
+            MacStatus.shared.toast("\(lead.display) needs you", why + (businessInfo.count < 40 ? " — add your business details so Zuffi can answer next time." : ""), icon: "person.fill.questionmark")
+            let holdKey = "hold|" + key + ZuffiBusiness.iso(Date())
+            if pilot, autoCount[holdKey, default: 0] == 0 {
+                autoCount[holdKey] = 1
+                enqueueAuto(key, r.reply)
+            }
+            if businessInfo.count < 40 { remindBusinessInfo(force: true) }
             return
         }
         let countKey = key + ZuffiBusiness.iso(Date())
@@ -605,6 +614,16 @@ final class ZuffiCRM: ObservableObject {
     }
 
     // MARK: More automations
+
+    /// Customers can only get real answers when Zuffi knows the business. Nudge the owner (at most twice a day).
+    func remindBusinessInfo(force: Bool = false) {
+        guard ZuffiBusiness.shared.pack != nil, businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count < 40 else { return }
+        let d = UserDefaults.standard, last = d.double(forKey: "bizInfoNudge")
+        guard Date().timeIntervalSince1970 - last > (force ? 3 * 3600 : 12 * 3600) else { return }
+        d.set(Date().timeIntervalSince1970, forKey: "bizInfoNudge")
+        AppState.shared.noteRef = nil
+        MacStatus.shared.toast("Tell Zuffi about your business", "Prices, services, opening hours, location — then I can answer customers on WhatsApp by myself.", icon: "building.2.fill", action: "bizinfo")
+    }
 
     static func weekday() -> String { let f = DateFormatter(); f.dateFormat = "EEEE"; return f.string(from: Date()) }
 

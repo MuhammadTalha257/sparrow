@@ -1355,6 +1355,11 @@ struct NoteView: View {
                     }
                     .padding(.top, 4)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if state.noteAction == "bizinfo" {
+                    HStack(spacing: 8) {
+                        noteButton("Fill in now", icon: "pencil", primary: true) { BizNav.shared.tab = .business; BusinessDashboard.shared.show(.business); fold() }
+                        noteButton("Later", icon: "clock", primary: false) { fold() }
+                    }.padding(.top, 4)
                 } else if state.noteAction == "mail" {
                     // Email: read it to me · reply · later
                     HStack(spacing: 8) {

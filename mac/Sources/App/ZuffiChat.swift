@@ -98,7 +98,8 @@ final class ZuffiChat: ObservableObject {
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         p.hidesOnDeactivate = false
         p.isMovableByWindowBackground = false
-        let host = NSHostingView(rootView: ZuffiChatView(state: AppState.shared, chat: self))
+        p.appearance = NSAppearance(named: .darkAqua)     // the chat is dark: icons, placeholder and menus must be light
+        let host = NSHostingView(rootView: ZuffiChatView(state: AppState.shared, chat: self).environment(\.colorScheme, .dark))
         host.frame = NSRect(x: 0, y: 0, width: width, height: 520)
         p.contentView = host
         return p

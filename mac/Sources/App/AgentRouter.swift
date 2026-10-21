@@ -24,6 +24,7 @@ final class AgentRouter {
     /// Handles a request if any agent can. nil = nobody could (the caller asks the AI instead).
     func handle(_ raw: String) async -> String? {
         if let r = await screen(raw) { return r }
+        if let r = await ZuffiSelf.handle(raw) { return r }          // Zuffi's own controls, instantly
         if let r = await askChatApp(raw) { return r }
         // Email first: a reply like "tell him yes and thanks" must not be split into steps.
         // Business jobs said in one breath ("make a post and share it with all clients", "we have 20% off today") stay whole.
@@ -31,11 +32,15 @@ final class AgentRouter {
         if WhatsAppAgent.shared.claims(raw), let r = await WhatsAppAgent.shared.handle(raw) { return r }
         if MailAgent.shared.claims(raw), let r = await MailAgent.shared.handle(raw) { return r }
         let steps = split(raw)
-        if steps.count <= 1 { return await single(raw) }
+        if steps.count <= 1 {
+            if let r = await single(raw) { return r }
+            return await ZuffiSelf.aiRoute(raw)                      // a command the rules didn't know → one quick AI pick
+        }
         var replies: [String] = []
         var anyDone = false
         for (i, step) in steps.enumerated() {
-            var r = await single(step)
+            var r = await ZuffiSelf.handle(step)
+            if r == nil { r = await single(step) }
             if r == nil { r = await WebHub.shared.ask(step) }
             if let r { replies.append(r); anyDone = true } else { replies.append("I couldn't do \"\(step)\".") }
             // Give an app a moment to open before the next step talks to it.
@@ -499,4 +504,212 @@ private func firstMatch(_ pattern: String, in s: String) -> String? {
           let m = re.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)), m.numberOfRanges > 1,
           m.range(at: 1).location != NSNotFound else { return nil }
     return (s as NSString).substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
+}
+
+// =====================================================================
+// MARK: - Zuffi's own controls by voice ("change your colour", "male voice", "turn on water reminders",
+//   "make a folder called Invoices", "open WhatsApp", "open the business page"…)
+//   Fast rules first (instant); anything else that sounds like a command goes to a quick AI that picks one action.
+//   Zuffi only says she did something when she actually did it.
+// =====================================================================
+@MainActor
+enum ZuffiSelf {
+    static let colours: [String: String] = [
+        "blue": "#4F6BFF", "indigo": "#6366F1", "purple": "#8B5CF6", "violet": "#8B5CF6", "teal": "#0E9F9A", "green": "#16A34A",
+        "orange": "#EA7A2A", "rose": "#E5487A", "pink": "#E5487A", "red": "#E5484D", "slate": "#475569", "grey": "#475569", "gray": "#475569",
+        "yellow": "#E0A126", "gold": "#D4AF37", "mint": "#0F9F76", "black": "#3D4555",
+    ]
+    static let furWords: [String: String] = ["white": "snow", "snow": "snow", "pink": "blush", "blush": "blush", "peach": "peach", "orange": "peach",
+        "honey": "honey", "yellow": "honey", "gold": "honey", "mint": "mint", "green": "mint", "sky": "sky", "blue": "sky", "lilac": "lilac",
+        "purple": "lilac", "brown": "cocoa", "cocoa": "cocoa", "grey": "storm", "gray": "storm", "storm": "storm"]
+
+    private static func clean(_ raw: String) -> String {
+        raw.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " .!?,"))
+            .replacingOccurrences(of: #"^(ok(ay)? )?(hey )?zuffi[, ]+|^(please |can you |could you )+|( please)$"#, with: "", options: .regularExpression)
+    }
+    private static func m(_ t: String, _ p: String) -> [String]? {
+        guard let re = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]),
+              let r = re.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) else { return nil }
+        return (0..<r.numberOfRanges).map { i in Range(r.range(at: i), in: t).map { String(t[$0]) } ?? "" }
+    }
+
+    /// The instant rules. nil = not one of Zuffi's own controls.
+    static func handle(_ raw: String) async -> String? {
+        let t = clean(raw)
+        if m(t, #"^(open|show|go to)( up)? (your |the |my |zuffi'?s? )?(business|business page|business dashboard|dashboard)( page)?$"#) != nil {
+            return perform("open_business", [:])
+        }
+        if m(t, #"^(open|show)( up)? (your |my |the )?whats ?app$"#) != nil { return perform("open_whatsapp", [:]) }
+        if m(t, #"^(open|show)( up)? (your |the )?(features|all features)$"#) != nil { return perform("open", ["what": "features"]) }
+        if m(t, #"^(open|show)( up)? (your |the |my )?(settings)$"#) != nil { return perform("open", ["what": "settings"]) }
+        if m(t, #"^(open|show)( up)? (the )?chat$"#) != nil { return perform("open", ["what": "chat"]) }
+        if m(t, #"^(open|show)( up)? (my )?(profile|details)$"#) != nil { return perform("open", ["what": "profile"]) }
+        if let c = m(t, #"^(change|set|make|turn)( your| the| zuffi'?s?| my)? (colou?r|theme|accent)( colou?r)?( to| into)? ([a-z]+)$"#) { return perform("set_colour", ["colour": c[6]]) }
+        if let c = m(t, #"^(change|set|make|turn)( your| the)? (fur|bunny|bunny colou?r|fur colou?r)( to| into)? ([a-z]+)$"#) { return perform("set_fur", ["colour": c[5]]) }
+        if let c = m(t, #"^(switch|change|use|set|give me)( to| me)?( a| the)? (male|man|boy|men'?s|female|woman|girl|lady|bunny|cute|normal)( voice| version)+$"#)
+            ?? m(t, #"^(talk|speak) (in|with) (a )?(male|man|boy|female|woman|girl|bunny|cute|normal) voice$"#) {
+            return perform("voice", ["kind": c[4]])
+        }
+        if let c = m(t, #"^(turn on|start|enable|switch on|on|set up|remind me to drink|turn off|stop|disable|switch off|off)( the| my)? (water|coffee|tea|medicine|meds|pill)( reminders?)?( every (\d+) ?(min|minutes|hours?))?$"#) {
+            let on = !["turn off", "stop", "disable", "switch off", "off"].contains(c[1])
+            var mins = Int(c[6]) ?? 0
+            if c[7].hasPrefix("hour") { mins *= 60 }
+            return await health(kind: c[3], on: on, every: mins)
+        }
+        if let c = m(t, #"^(make|create|add|new)( me)?( a)?( new)? folder( called| named| name)?( "?([^"]+?)"?)?( on (the |my )?(desktop|documents|downloads))?$"#)
+            ?? m(t, #"^(desktop|documents|downloads) (pe|par|mein|me) (ek )?(naya )?folder (bana|banao|create kar|create karna)( (.+))?$"#) {
+            let place = c.count > 10 ? c[10] : (c.count > 1 ? c[1] : "desktop")
+            let name = c.count > 7 ? c[7] : (c.count > 6 ? c[6] : "")
+            return makeFolder(name.trimmingCharacters(in: .whitespaces), place: ["desktop", "documents", "downloads"].contains(place) ? place : "desktop")
+        }
+        if let c = m(t, #"^(search|look up|find)( the)? (meaning|definition) of (.+)$|^(what does|what's the meaning of|meaning of|define) (.+?)( mean)?$"#) {
+            let w = (c[4].isEmpty ? c[6] : c[4]).trimmingCharacters(in: .whitespaces)
+            if !w.isEmpty, w.split(separator: " ").count <= 3, let r = await WebHub.shared.ask("define \(w)") { return r }
+        }
+        if let c = m(t, #"^(search|google)( for| on google for| google for)? (.+?)( on google| online)?$"#), !c[3].contains("meaning") {
+            let q = c[3].addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? c[3]
+            if let u = URL(string: "https://www.google.com/search?q=\(q)") { NSWorkspace.shared.open(u); return "Searching Google for “\(c[3])”." }
+        }
+        if m(t, #"^(turn on|start|switch on) room mode$|^room mode on$"#) != nil { RoomListener.shared.start(); return "Room mode is on — nothing is saved." }
+        if let c = m(t, #"^(turn|switch|make)( the)? (business|business page|business window)( to)? (dark|light)( mode)?$|^(dark|light) mode( for)?( the)? business$"#) {
+            let dark = (c[5] + c[7]) == "dark"; BizLook.shared.set(dark: dark); return "Business is now \(dark ? "dark" : "light")."
+        }
+        if m(t, #"^(turn|switch) (the )?(mic|microphone) on$|^(mic|microphone) on$"#) != nil { VoiceEngine.shared.setMic(true); return "Mic is on." }
+        if m(t, #"^(turn|switch) (the )?(mic|microphone) off$|^(mic|microphone) off$|^mute( yourself)?$"#) != nil { VoiceEngine.shared.setMic(false); return "Mic is off." }
+        return nil
+    }
+
+    /// Anything else that sounds like an instruction to Zuffi → one quick AI call that picks an action (or none).
+    static func aiRoute(_ raw: String) async -> String? {
+        let t = clean(raw)
+        // only for things about Zuffi herself — ordinary questions go straight to the answer (no extra wait)
+        guard t.range(of: #"\b(colou?r|theme|accent|voice|reminders?|water|coffee|medicine|folder|business|whats ?app|mic|microphone|pet|sound|record|recording|music|song|dark|light|fur|room mode|settings|features|profile|chat|zuffi)\b"#, options: .regularExpression) != nil else { return nil }
+        guard t.count < 160, t.range(of: #"^(open|show|change|set|make|create|turn|switch|start|stop|enable|disable|use|put|add|remove|hide|close|go|take|play|pause|mute|unmute|link|connect|remind|karo|kar do|bana|kholo|chalao|band)\b|\b(karo|kar do|banao|kholo|band karo)$"#, options: .regularExpression) != nil else { return nil }
+        let prompt = """
+        The user said to their Mac assistant Zuffi: "\(raw)"
+        Pick ONE action Zuffi can do itself, or "none" if it's not one of these:
+        open {what: business|whatsapp|features|settings|chat|profile|history|today|data|agents|room}, set_colour {colour}, set_fur {colour},
+        voice {kind: male|female|bunny}, health {kind: water|coffee|medicine, on: true|false, every_minutes}, make_folder {name, place: desktop|documents|downloads},
+        mic {on}, pet {on}, sound {on}, record_screen {on}, music {cmd: playpause|next track|previous track}, business_look {dark: true|false},
+        search_web {query}, define {word}.
+        JSON only: {"action":"","args":{}}
+        """
+        guard let j = await AIService.shared.fastJSON(prompt, system: "You map a spoken command to one app action. Reply with JSON only."),
+              let a = j["action"] as? String, a != "none", !a.isEmpty else { return nil }
+        let args = (j["args"] as? [String: Any]) ?? [:]
+        switch a {
+        case "health":
+            return await health(kind: args["kind"] as? String ?? "water", on: (args["on"] as? Bool) ?? true, every: (args["every_minutes"] as? Int) ?? 0)
+        case "make_folder": return makeFolder(args["name"] as? String ?? "", place: args["place"] as? String ?? "desktop")
+        case "define": if let w = args["word"] as? String { return await WebHub.shared.ask("define \(w)") }; return nil
+        default: return perform(a, args)
+        }
+    }
+
+    static func perform(_ action: String, _ args: [String: Any]) -> String? {
+        func bool(_ k: String) -> Bool { (args[k] as? Bool) ?? ((args[k] as? String).map { ["true", "on", "yes"].contains($0.lowercased()) } ?? true) }
+        switch action {
+        case "open_business": BusinessDashboard.shared.show(); return "Opening your business page."
+        case "open_whatsapp":
+            if ZuffiPlan.shared.isBusiness, WhatsAppLink.shared.enabled { WhatsAppLink.shared.showWindow(); return "Here's WhatsApp." }
+            if let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "net.whatsapp.WhatsApp") ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "desktop.WhatsApp") {
+                NSWorkspace.shared.openApplication(at: u, configuration: .init()); return "Opening WhatsApp."
+            }
+            NSWorkspace.shared.open(URL(string: "https://web.whatsapp.com")!); return "Opening WhatsApp Web."
+        case "open":
+            let what = (args["what"] as? String ?? "").lowercased()
+            switch what {
+            case "business": return perform("open_business", [:])
+            case "whatsapp": return perform("open_whatsapp", [:])
+            case "features": ZuffiNav.go(.features)
+            case "settings": ZuffiNav.go(.settings)
+            case "chat": ZuffiChat.shared.open()
+            case "profile": ZuffiNav.go(.profile)
+            case "history": ZuffiNav.go(.history)
+            case "data": ZuffiNav.go(.data)
+            case "agents": ZuffiNav.go(.agents)
+            case "today": TodayWindow.shared.show()
+            case "room": RoomListener.shared.start()
+            default: return nil
+            }
+            return "Opened \(what)."
+        case "set_colour":
+            let name = (args["colour"] as? String ?? "").lowercased()
+            guard let hex = colours[name] else { return "I have blue, indigo, purple, teal, green, orange, rose, red, yellow, gold, mint and slate — which one?" }
+            UserDefaults.standard.set(hex, forKey: "zuffiAccentHex")
+            BizLook.shared.set(accent: hex)
+            WebHub.shared.run("window.Sparrow && window.Sparrow.setAccent && window.Sparrow.setAccent('\(name)')")
+            if let fur = furWords[name] { ZuffiLook.shared.kind = .bunny; ZuffiLook.shared.fur = fur }
+            NotificationCenter.default.post(name: .zuffiSwitch, object: IslandView.overview)
+            return "Done — I'm \(name) now 🎨"
+        case "set_fur":
+            let name = (args["colour"] as? String ?? "").lowercased()
+            guard let fur = furWords[name] else { return "My fur comes in white, pink, peach, honey, mint, sky, lilac, cocoa and grey." }
+            ZuffiLook.shared.kind = .bunny; ZuffiLook.shared.fur = fur
+            return "New fur! 🐰"
+        case "voice":
+            let k = (args["kind"] as? String ?? "").lowercased()
+            let d = UserDefaults.standard
+            d.removeObject(forKey: "voiceName")
+            if ["male", "man", "boy", "men's", "mens"].contains(k) {
+                d.set("male", forKey: AssistantPrefs.voiceGender); d.set(false, forKey: "bunnyVoice"); d.set("Charon", forKey: "liveVoice")
+                WebHub.shared.run("window.Sparrow && window.Sparrow.setVoice && window.Sparrow.setVoice('male')")
+                VoiceEngine.shared.speak("Okay, this is my male voice.")
+                return "Switched to a male voice."
+            }
+            if ["bunny", "cute"].contains(k) {
+                d.set("female", forKey: AssistantPrefs.voiceGender); d.set(true, forKey: "bunnyVoice"); d.removeObject(forKey: "liveVoice")
+                WebHub.shared.run("window.Sparrow && window.Sparrow.setVoice && window.Sparrow.setVoice('female')")
+                VoiceEngine.shared.speak("Yay, my bunny voice is back!")
+                return "Bunny voice is back."
+            }
+            d.set("female", forKey: AssistantPrefs.voiceGender); d.set(false, forKey: "bunnyVoice"); d.set("Kore", forKey: "liveVoice")
+            WebHub.shared.run("window.Sparrow && window.Sparrow.setVoice && window.Sparrow.setVoice('female')")
+            VoiceEngine.shared.speak("Okay, this is my normal voice.")
+            return "Switched to a female voice."
+        case "mic": VoiceEngine.shared.setMic(bool("on")); return bool("on") ? "Mic is on." : "Mic is off."
+        case "pet": if bool("on") { PetController.shared.show() } else { PetController.shared.hide() }; return bool("on") ? "Here I am on your screen!" : "Okay, I'm hiding."
+        case "sound": AppState.shared.soundEnabled = bool("on"); return bool("on") ? "Sounds on." : "Sounds off."
+        case "record_screen":
+            Task { await Assistant.run(bool("on") ? "record my screen" : "stop recording", spoken: false) }
+            return bool("on") ? "Starting the screen recording." : "Stopping the recording."
+        case "music":
+            let c = args["cmd"] as? String ?? "playpause"
+            NowPlaying.shared.send(["playpause", "next track", "previous track"].contains(c) ? c : "playpause"); return "Done."
+        case "business_look": BizLook.shared.set(dark: bool("dark")); return "Done."
+        case "search_web":
+            let q = (args["query"] as? String ?? "")
+            guard !q.isEmpty, let u = URL(string: "https://www.google.com/search?q=\(q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q)") else { return nil }
+            NSWorkspace.shared.open(u); return "Searching for “\(q)”."
+        case "open_whatsapp_link": WhatsAppLink.shared.showWindow(); return "Opening WhatsApp."
+        default: return nil
+        }
+    }
+
+    static func health(kind raw: String, on: Bool, every: Int) async -> String {
+        let kind = raw.hasPrefix("med") || raw.hasPrefix("pill") ? "meds" : (raw == "tea" ? "coffee" : raw)
+        var h: [String: Any] = ["on": on]
+        if every > 0 { h["mode"] = "every"; h["every"] = every }
+        _ = await WebHub.shared.callJS("return window.Sparrow.setHealth(h)", ["h": [kind: h]])
+        let label = kind == "meds" ? "medicine" : kind
+        return on ? "\(label.capitalized) reminders are on\(every > 0 ? " — every \(every >= 60 && every % 60 == 0 ? "\(every / 60) hour\(every == 60 ? "" : "s")" : "\(every) minutes")" : "")." : "\(label.capitalized) reminders are off."
+    }
+
+    static func makeFolder(_ rawName: String, place: String) -> String {
+        let fm = FileManager.default
+        let dirKind: FileManager.SearchPathDirectory = place == "documents" ? .documentDirectory : place == "downloads" ? .downloadsDirectory : .desktopDirectory
+        guard let base = fm.urls(for: dirKind, in: .userDomainMask).first else { return "I couldn't find your \(place) folder." }
+        var name = rawName.replacingOccurrences(of: #"[/:]"#, with: "-", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        if name.isEmpty { name = "New Folder" }
+        name = name.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        var url = base.appendingPathComponent(name), n = 2
+        while fm.fileExists(atPath: url.path) { url = base.appendingPathComponent("\(name) \(n)"); n += 1 }
+        do {
+            try fm.createDirectory(at: url, withIntermediateDirectories: false)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return "Made the folder “\(url.lastPathComponent)” on your \(place.capitalized) 📁"
+        } catch {
+            return "I couldn't make the folder: \(error.localizedDescription). If macOS asks, allow Zuffi to use your \(place.capitalized) folder."
+        }
+    }
 }

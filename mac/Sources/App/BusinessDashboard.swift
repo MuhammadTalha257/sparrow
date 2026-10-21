@@ -759,9 +759,10 @@ struct BizLeadDetail: View {
                 }
                 // What they want
                 GlassBox {
-                    HStack(alignment: .top, spacing: 18) {
+                    // wraps onto more rows instead of squeezing words ("2026-10…")
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 14, alignment: .topLeading)], alignment: .leading, spacing: 12) {
                         fact(crm.labels.interest, lead.interest); fact(crm.labels.area, lead.area); fact(crm.labels.budget, lead.budget); fact(crm.labels.value, lead.value.isEmpty ? "" : crm.currency + " " + lead.value)
-                        fact("Added", lead.added); fact("Last contact", lead.lastContact)
+                        fact("Added", String(lead.added.prefix(10))); fact("Last contact", String(lead.lastContact.prefix(10)))
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Follow up").font(.system(size: 10, weight: .bold)).foregroundColor(Ink.faint)
                             DatePicker("", selection: $follow, displayedComponents: .date).labelsHidden().datePickerStyle(.compact)
@@ -791,7 +792,8 @@ struct BizLeadDetail: View {
                         }
                         TextEditor(text: $reply).font(.system(size: 12.5)).scrollContentBackground(.hidden)
                             .frame(minHeight: 70).padding(8)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.3)))
+                            .foregroundColor(Ink.text)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Ink.panelHi))
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Biz.stroke))
                         HStack {
                             BizMainButton(title: working ? "Sending…" : "Send on WhatsApp", icon: "paperplane.fill") {
@@ -1374,7 +1376,8 @@ struct BizBusinessView: View {
     private func editor(_ text: Binding<String>, minHeight: CGFloat) -> some View {
         TextEditor(text: text).font(.system(size: 12.5)).scrollContentBackground(.hidden)
             .frame(minHeight: minHeight).padding(8)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.3)))
+            .foregroundColor(Ink.text)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Ink.panelHi))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Biz.stroke))
     }
 

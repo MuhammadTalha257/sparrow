@@ -756,6 +756,21 @@ export async function handle(input) {
     if (vm) { D.media('vol:' + Math.min(100, +vm[1])); return { reply: `Volume ${Math.min(100, +vm[1])}` }; }
   }
 
+  // ----- Zuffi's own settings by voice -----
+  if ((m = t.match(/^(?:switch|change|use|set)(?: to)?(?: a| the)? (male|man|boy|female|woman|girl|lady) voice$/))) {
+    const male = /^(male|man|boy)$/.test(m[1]); store.settings.gender = male ? 'male' : 'female'; store.settings.voiceName = ''; store.save();
+    return { reply: male ? 'Okay, this is my male voice.' : 'Okay, back to my female voice.' };
+  }
+  if ((m = t.match(/^(?:change|set|make)(?: your| the| zuffi'?s?)? (?:colou?r|theme|accent)(?: colou?r)?(?: to| into)? ([a-z]+)$/))) {
+    const hex = window.Sparrow?.setAccent?.(m[1] === 'pink' ? 'rose' : m[1] === 'violet' ? 'purple' : m[1] === 'grey' || m[1] === 'gray' ? 'slate' : m[1]);
+    return { reply: hex ? `Done — I'm ${m[1]} now 🎨` : 'I have blue, indigo, purple, teal, green, orange, rose and slate — which one?' };
+  }
+  if ((m = t.match(/^(turn on|start|enable|switch on|turn off|stop|disable|switch off)(?: the| my)? (water|coffee|tea|medicine|meds)(?: reminders?)?$/))) {
+    const on = /on|start|enable/.test(m[1]), k = /med/.test(m[2]) ? 'meds' : m[2] === 'tea' ? 'coffee' : m[2];
+    const h = store.settings.health || (store.settings.health = {}); h[k] = { ...(h[k] || {}), on }; if (!on) delete h[k].last; store.save();
+    return { reply: `${k === 'meds' ? 'Medicine' : k[0].toUpperCase() + k.slice(1)} reminders are ${on ? 'on' : 'off'}.` };
+  }
+
   // ----- info -----
   // news, exchange rates, word meanings, public holidays (free services, no key)
   { const c = store.settings.profile?.country || 'GB', fa = await free.answer(o, { country: c === 'PK' ? 'GB' : c }).catch(() => null); if (fa) return fa; }
