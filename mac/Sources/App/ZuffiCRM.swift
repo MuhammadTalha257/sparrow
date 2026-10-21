@@ -613,6 +613,48 @@ final class ZuffiCRM: ObservableObject {
         }
     }
 
+    // MARK: Zuffi's memory of the business (added to what every AI answer knows)
+
+    /// Business details, today's offer, every WhatsApp contact with their number and last message, follow-ups,
+    /// appointments and what Zuffi sent — so "what's Begum's number?", "who messaged today?", "what did Alishba ask?" just work.
+    func memoryContext() -> String {
+        guard ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal else { return "" }
+        var out: [String] = []
+        let name = ZuffiBusiness.shared.businessName
+        if !businessInfo.isEmpty { out.append("BUSINESS DETAILS\(name.isEmpty ? "" : " (\(name))"): " + String(businessInfo.prefix(1500)).replacingOccurrences(of: "\n", with: " · ")) }
+        if !todaysUpdate.isEmpty { out.append("TODAY'S OFFER/UPDATE: \(todaysUpdate)") }
+        let recent = leads.sorted { ($0.lastMessageAt.isEmpty ? $0.added : $0.lastMessageAt) > ($1.lastMessageAt.isEmpty ? $1.added : $1.lastMessageAt) }.prefix(40)
+        if !recent.isEmpty {
+            // (numbers stay off the AI — "what's X's number?" is answered on this Mac)
+            out.append("CUSTOMERS / LEADS (name · stage · interest · last message · when): " + recent.map { l in
+                [l.name.isEmpty ? "a customer" : l.name, l.stage, l.interest, String(l.lastMessage.prefix(60)), String((l.lastMessageAt.isEmpty ? l.added : l.lastMessageAt).prefix(16))].filter { !$0.isEmpty }.joined(separator: " · ")
+            }.joined(separator: " | "))
+        }
+        let known = WhatsAppLink.shared.contacts.values.sorted { ($0["at"] ?? "") > ($1["at"] ?? "") }.prefix(40)
+        if !known.isEmpty { out.append("PEOPLE WHO MESSAGED ON WHATSAPP (Zuffi has their numbers saved): " + known.compactMap { $0["name"] }.joined(separator: ", ")) }
+        let due = leads.filter(\.dueToday).prefix(15)
+        if !due.isEmpty { out.append("FOLLOW UP TODAY: " + due.map(\.display).joined(separator: ", ")) }
+        let appts = ZuffiPA.load("Appointments", header: ZuffiPA.apptHeader)
+        let soon = appts.rows.filter { appts.get($0, ["date"]) >= ZuffiBusiness.iso(Date()) }.prefix(20)
+        if !soon.isEmpty { out.append("UPCOMING APPOINTMENTS: " + soon.map { [appts.get($0, ["date"]), appts.get($0, ["time"]), appts.get($0, ["client", "name"]), appts.get($0, ["service"])].filter { !$0.isEmpty }.joined(separator: " ") }.joined(separator: " | ")) }
+        if !autoSent.isEmpty { out.append("ZUFFI RECENTLY SENT ON WHATSAPP: " + autoSent.prefix(10).joined(separator: " | ")) }
+        guard !out.isEmpty else { return "" }
+        return "\nWHAT YOU KNOW ABOUT THE USER'S BUSINESS (from Zuffi's own records — use it to answer questions about customers, messages, bookings and follow-ups; never say you can't see them. For a phone number, tell them to ask “what's <name>'s number?”):\n" + out.joined(separator: "\n") + "\n"
+    }
+
+    /// "When is my appointment?" from a customer → their booking, straight from Appointments.
+    func customerBookingAnswer(for l: CRMLead, incoming: String) -> String? {
+        guard incoming.lowercased().range(of: #"\b(my|meri|mera|hamari|our)\b.*\b(appointment|booking|visit|slot)\b|\bwhen is my\b|\bwhat time (is|was) (my|the) (appointment|booking)\b"#, options: .regularExpression) != nil else { return nil }
+        let a = ZuffiPA.load("Appointments", header: ZuffiPA.apptHeader)
+        let mine = a.rows.filter { r in
+            let ph = a.get(r, ["phone"]), nm = a.get(r, ["client", "name"]).lowercased()
+            return a.get(r, ["date"]) >= ZuffiBusiness.iso(Date()) && ((!ph.isEmpty && !l.phone.isEmpty && ZuffiPA.samePhone(ph, l.phone)) || (!nm.isEmpty && nm == l.display.lowercased()))
+        }
+        guard let r = mine.first else { return nil }
+        let svc = a.get(r, ["service"])
+        return "Your \(svc.isEmpty ? "appointment" : svc) is booked for \(a.get(r, ["date"]))\(a.get(r, ["time"]).isEmpty ? "" : " at \(a.get(r, ["time"]))"). See you then! 🙏"
+    }
+
     // MARK: More automations
 
     /// Customers can only get real answers when Zuffi knows the business. Nudge the owner (at most twice a day).
@@ -785,6 +827,8 @@ final class ZuffiCRM: ObservableObject {
             if !upcoming.isEmpty { context = "TIMES ALREADY TAKEN:\n" + upcoming.map { $0.prefix(2).joined(separator: " ") }.joined(separator: "\n") }
         }
         let past = history(l.key).dropLast().suffix(8).map { ($0.dir == "in" ? "Client: " : "Business: ") + $0.text }.joined(separator: "\n")
+        // 0) "When is my appointment?" → their booking from Appointments
+        if let b = customerBookingAnswer(for: l, incoming: incoming) { return (b, nil, [:]) }
         // 1) Instant answer straight from the business details — no AI, works on any Mac, never invents anything.
         if let q = await WebHub.shared.callJS("return await window.Sparrow.quickAnswer(m, i, b, f, t)",
                                               ["m": incoming, "i": businessInfo, "b": biz, "f": first, "t": todaysUpdate]) as? String,

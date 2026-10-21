@@ -574,6 +574,14 @@ enum ZuffiSelf {
         if let c = m(t, #"^(turn|switch|make)( the)? (business|business page|business window)( to)? (dark|light)( mode)?$|^(dark|light) mode( for)?( the)? business$"#) {
             let dark = (c[5] + c[7]) == "dark"; BizLook.shared.set(dark: dark); return "Business is now \(dark ? "dark" : "light")."
         }
+        // "what's Begum's number?", "Begum number" → from Zuffi's own records, on this Mac (numbers never go to the AI)
+        if let c = m(t, #"^(what'?s|what is|give me|send me|tell me)? ?([a-z][a-z .'-]{1,30}?)('s|s)? (phone |whatsapp |mobile )?(number|no\.?)$"#), !["my", "your", "the", "a"].contains(c[2].trimmingCharacters(in: .whitespaces)) {
+            let who = c[2].trimmingCharacters(in: .whitespaces)
+            if let l = ZuffiCRM.shared.leads.first(where: { $0.name.lowercased() == who || $0.name.lowercased().hasPrefix(who) }), !l.phone.isEmpty { return "\(l.display): +\(l.phone.filter(\.isNumber))" }
+            if let c = await WhatsAppLink.shared.lookup(who), !c.phone.isEmpty { return "\(c.name): +\(c.phone)" }
+            if let n = await ContactsAgent.shared.number(for: who) { return "\(who.capitalized): \(n)" }
+            return "I don't have a number for \(who.capitalized) yet. Say “save \(who) number 0300…” and I'll remember it."
+        }
         if m(t, #"^(turn|switch) (the )?(mic|microphone) on$|^(mic|microphone) on$"#) != nil { VoiceEngine.shared.setMic(true); return "Mic is on." }
         if m(t, #"^(turn|switch) (the )?(mic|microphone) off$|^(mic|microphone) off$|^mute( yourself)?$"#) != nil { VoiceEngine.shared.setMic(false); return "Mic is off." }
         return nil

@@ -112,7 +112,7 @@ final class AIService {
     /// Who the user is: the welcome form and everything they asked Zuffi to remember (sent by the app's web part), else the Mac's own copy of the form.
     static var userFacts: String {
         let f = UserDefaults.standard.string(forKey: "zuffiFacts") ?? ""
-        return (f.isEmpty ? ZuffiPlan.shared.profileLine : f) + RoomListener.shared.contextLine
+        return (f.isEmpty ? ZuffiPlan.shared.profileLine : f) + ZuffiMemory.shared.itemsLine + ZuffiCRM.shared.memoryContext() + RoomListener.shared.contextLine
     }
     nonisolated static func asksAboutZuffi(_ q: String) -> Bool {
         q.lowercased().range(of: #"\b(zuffi|sparrow|you|your|yourself|app|plan|plans|pro|business|price|prices|cost|subscription|trial|feature|features|setting|settings|how (do|can|to)|can i|where is|what can|help|lisan)\b"#, options: .regularExpression) != nil
@@ -1053,6 +1053,26 @@ struct OllamaGetButton: View {
         .task {
             running = await AIService.ollamaRunning()
             have = (await AIService.ollamaModels()).contains { $0.hasPrefix(AIService.recommendedOllama) }
+        }
+    }
+}
+
+
+/// The user's reminders, tasks and meetings (from Zuffi's shared app), kept fresh for every answer — "what do I have tomorrow?".
+@MainActor
+final class ZuffiMemory {
+    static let shared = ZuffiMemory()
+    private(set) var itemsLine = ""
+    private var timer: Timer?
+    func start() {
+        guard timer == nil else { return }
+        refresh()
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in ZuffiMemory.shared.refresh() } }
+    }
+    func refresh() {
+        Task {
+            guard let s = await WebHub.shared.callJS("return window.Sparrow.listItems ? JSON.stringify(window.Sparrow.listItems()) : '[]'") as? String, s.count > 2 else { itemsLine = ""; return }
+            itemsLine = "\nTHEIR REMINDERS, TASKS AND MEETINGS (JSON): " + String(s.prefix(3000)) + "\n"
         }
     }
 }

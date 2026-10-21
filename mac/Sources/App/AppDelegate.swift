@@ -144,8 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         VoiceboxVoice.shared.startWatching()
         ZuffiData.shared.start()
         EdgeGlow.shared.start()
-        NowPlaying.shared.start()
-        WhatsAppLink.shared.startIfEnabled()   // linked WhatsApp (only if you linked it)          // music in the notch (only asks Spotify/Music when they're open)
+        NowPlaying.shared.start()             // music in the notch (only asks Spotify/Music when they're open)
+        WhatsAppLink.shared.startIfEnabled()  // linked WhatsApp (only if you linked it)
+        ZuffiMemory.shared.start()            // reminders & tasks in every answer
         // Old "Sparrow" permission entries → fresh "Zuffi" ones (once)
         if SetupWizard.done { Task { await ScreenAgent.migrateFromSparrowOnce() } }
         // The bunny pops out and says hey, then the island opens with its tabs
