@@ -2707,6 +2707,8 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  /** Instant WhatsApp answer from the business details (no AI). null = not sure → AI / holding message. */
+  quickAnswer: async (msg, info, biz, first, today) => { try { return (await import('./bizquick.js')).answer(msg, info, { biz, first, today }); } catch { return null; } },
   /** Voice commands from the Mac: "change your colour to green", "male voice". */
   setAccent: name => { const t = bizapp.THEMES.find(x => x[0] === name || x[3].toLowerCase() === name); if (!t) return false; bizsync.setCfg('accent', t[0]); try { localStorage.setItem('zuffiAccent', t[0]); } catch {} bizapp.applyAccent(); syncAccent(); return t[1]; },
   setVoice: g => { S().gender = g === 'male' ? 'male' : 'female'; S().voiceName = ''; store.save(); return true; },

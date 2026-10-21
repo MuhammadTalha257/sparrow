@@ -785,6 +785,12 @@ final class ZuffiCRM: ObservableObject {
             if !upcoming.isEmpty { context = "TIMES ALREADY TAKEN:\n" + upcoming.map { $0.prefix(2).joined(separator: " ") }.joined(separator: "\n") }
         }
         let past = history(l.key).dropLast().suffix(8).map { ($0.dir == "in" ? "Client: " : "Business: ") + $0.text }.joined(separator: "\n")
+        // 1) Instant answer straight from the business details — no AI, works on any Mac, never invents anything.
+        if let q = await WebHub.shared.callJS("return await window.Sparrow.quickAnswer(m, i, b, f, t)",
+                                              ["m": incoming, "i": businessInfo, "b": biz, "f": first, "t": todaysUpdate]) as? String,
+           !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return (q, nil, [:])
+        }
         let system = """
         You are the WhatsApp assistant of \(biz.isEmpty ? "a small business" : biz) (a \(businessWord)). You write as the business ("we").
         Never give yourself a personal name, never say you are an AI, never invent facts. Reply with one JSON object only.

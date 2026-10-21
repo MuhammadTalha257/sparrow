@@ -51,6 +51,9 @@ export function init(ui) {
     const pilot = S().waBiz?.pilot;
     if (!pilot || voice) return;
     try {
+      // 1) instant answer from the business details (no AI, any business); 2) AI; 3) polite holding reply
+      const quick = (await import('./bizquick.js')).answer(text, bizknow.brief(), { biz: bizknow.name(), first: isNew, today: bizknow.todayUpdate() });
+      if (quick) { const sent = await D().wa.send(m.chatId, quick); if (sent?.ok) { h.push({ out: quick }); history.set(m.chatId, h.slice(-8)); } return; }
       const r = await bizknow.reply(text, h.slice(0, -1));
       if (!r.reply) return;
       if (r.human) {

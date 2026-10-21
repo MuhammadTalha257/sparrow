@@ -2015,6 +2015,19 @@ struct BizDetailsForm: View {
                 BizMainButton(title: saved ? "Saved ✓" : "Save — Zuffi will use this", icon: "checkmark") { save() }
                 Spacer()
             }
+            // How replies work, in one line — and the one thing that makes them smarter on a slow Mac.
+            let cloud = ["groq-api-key", "gemini-api-key", "openai-api-key"].contains { !(KeychainStore.shared.get($0) ?? "").isEmpty }
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "bolt.fill").foregroundColor(Ink.accent)
+                Text(cloud ? "Questions about hours, address, prices, payment, booking and your own Q&As get an instant answer from these details. Anything else goes to your AI."
+                           : "Questions about hours, address, prices, payment, booking and your own Q&As get an instant answer from these details — no AI needed. For other questions, add a free Groq key: it runs online, so it's fast even on a slow Mac.")
+                    .font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                if !cloud {
+                    Spacer(minLength: 6)
+                    BizSoftButton(title: "Add Groq key", icon: "key.fill") { NotificationCenter.default.post(name: .openFullSettings, object: nil) }
+                }
+            }
+            .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Ink.accent.opacity(0.08)))
         }
     }
 
