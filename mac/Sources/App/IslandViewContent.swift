@@ -1,4 +1,7 @@
 import SwiftUI
+import AppKit
+import PDFKit
+import ImageIO
 
 // MARK: - Dispatch view content by IslandView
 
@@ -617,21 +620,39 @@ struct ChooseView: View {
 }
 
 extension ChooseView {
-    static func label(_ f: String) -> String { ["jpg": "JPG", "png": "PNG", "webp": "WebP", "pdf": "PDF", "docx": "Word", "txt": "Text", "xlsx": "Excel", "csv": "CSV"][f] ?? f.uppercased() }
+    static func label(_ f: String) -> String { ["jpg": "JPG", "png": "PNG", "webp": "WebP", "heic": "HEIC", "pdf": "PDF", "docx": "Word", "txt": "Text", "rtf": "RTF", "html": "Web page", "xlsx": "Excel", "csv": "CSV", "pages": "Pictures"][f] ?? f.uppercased() }
     /// The formats this file can become (the app's converter decides).
     func loadFormats() async {
         guard let f = state.droppedFile else { return }
-        let r = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.formatsFor ? window.Sparrow.formatsFor(n) : []", ["n": f.name]) as? [String] ?? []
-        if r.isEmpty { status = "I can’t convert this kind of file yet." } else { formats = Array(r.prefix(4)); status = "" }
+        var r = NativeConvert.formats(for: f.url)          // done on this Mac, instantly
+        if r.isEmpty {
+            r = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.formatsFor ? window.Sparrow.formatsFor(n) : []", ["n": f.name]) as? [String] ?? []
+        }
+        if r.isEmpty { status = "I can’t convert this kind of file yet."; formats = [] } else { formats = Array(r.prefix(5)); status = "" }
     }
     /// Converts on this Mac, saves the new file in Downloads and shows it in Finder.
     func convert(to fmt: String) async {
         guard let f = state.droppedFile, let data = try? Data(contentsOf: f.url) else { status = "I couldn’t read the file."; return }
         status = "Converting to \(Self.label(fmt))…"
-        let r = await WebHub.shared.callJS("return await window.Sparrow.convertB64(n, b, t)", ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any]
+        // On this Mac first (photos, PDFs, Word, text). PowerPoint / Excel / CSV go through Zuffi's converter, with a time limit.
+        if let native = NativeConvert.convert(f.url, to: fmt) {
+            switch native {
+            case .success(let made): save(made.data, name: made.name); return
+            case .failure(let e): status = e.localizedDescription; return
+            }
+        }
+        let r = await withTaskGroup(of: [String: Any]?.self) { g -> [String: Any]? in
+            g.addTask { await WebHub.shared.callJS("return await window.Sparrow.convertB64(n, b, t)", ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any] }
+            g.addTask { try? await Task.sleep(nanoseconds: 60_000_000_000); return ["error": "That took too long — try PDF or Text."] }
+            let first = await g.next() ?? nil; g.cancelAll(); return first
+        }
         guard let name = r?["name"] as? String, let b64 = r?["b64"] as? String, let out = Data(base64Encoded: b64) else {
             status = (r?["error"] as? String) ?? "That didn’t work — try another format."; return
         }
+        save(out, name: name)
+    }
+
+    private func save(_ out: Data, name: String) {
         let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         var dest = dir.appendingPathComponent(name), n = 2
         while FileManager.default.fileExists(atPath: dest.path) { dest = dir.appendingPathComponent("\((name as NSString).deletingPathExtension) \(n).\((name as NSString).pathExtension)"); n += 1 }
@@ -995,9 +1016,9 @@ struct MicCamToggles: View {
     @ObservedObject private var voice = VoiceEngine.shared
     var body: some View {
         HStack(spacing: 6) {
-            toggle(VoiceEngine.micOn ? "mic.fill" : "mic.slash.fill", on: VoiceEngine.micOn,
-                   help: VoiceEngine.micOn ? "Mic is on — click to turn it off" : "Mic is off — click to turn it on") {
-                VoiceEngine.shared.setMic(!VoiceEngine.micOn)
+            toggle(VoiceEngine.shared.micEnabled ? "mic.fill" : "mic.slash.fill", on: VoiceEngine.shared.micEnabled,
+                   help: VoiceEngine.shared.micEnabled ? "Mic is on — click to turn it off" : "Mic is off — click to turn it on") {
+                VoiceEngine.shared.setMic(!VoiceEngine.shared.micEnabled)
             }
             toggle(VoiceEngine.cameraOn ? "video.fill" : "video.slash.fill", on: VoiceEngine.cameraOn,
                    help: VoiceEngine.cameraOn ? "Camera is allowed — click to turn it off" : "Camera is off — click to allow it") {
@@ -2090,5 +2111,123 @@ extension Color {
             green: min(1, Double(components.greenComponent) + amount),
             blue: min(1, Double(components.blueComponent) + amount)
         )
+    }
+}
+
+
+// MARK: - Converting on this Mac (fast, offline): photos, PDFs, Word and text
+
+enum NativeConvert {
+    struct Made { let name: String; let data: Data }
+    struct Failed: LocalizedError { let msg: String; var errorDescription: String? { msg } }
+
+    static let imageExts: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "tiff", "tif", "bmp"]
+    static let textExts: Set<String> = ["docx", "doc", "rtf", "odt", "txt", "md", "html", "htm"]
+
+    /// What this file can become here. Empty → not handled on the Mac (PowerPoint, Excel, CSV use the app's converter).
+    static func formats(for url: URL) -> [String] {
+        let e = url.pathExtension.lowercased()
+        if imageExts.contains(e) { return ["jpg", "png", "heic", "pdf"].filter { $0 != e && !($0 == "jpg" && e == "jpeg") } }
+        if e == "pdf" { return ["docx", "txt", "png", "jpg"] }
+        if textExts.contains(e) { return ["pdf", "docx", "txt", "rtf", "html"].filter { $0 != e } }
+        return []
+    }
+
+    static func convert(_ url: URL, to fmt: String) -> Result<Made, Error>? {
+        let e = url.pathExtension.lowercased(), base = url.deletingPathExtension().lastPathComponent
+        if imageExts.contains(e) { return image(url, to: fmt, base: base) }
+        if e == "pdf" { return pdf(url, to: fmt, base: base) }
+        if textExts.contains(e) { return text(url, to: fmt, base: base) }
+        return nil
+    }
+
+    private static func image(_ url: URL, to fmt: String, base: String) -> Result<Made, Error> {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil), let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return .failure(Failed(msg: "I couldn’t open that picture.")) }
+        if fmt == "pdf" {
+            let doc = PDFDocument()
+            if let page = PDFPage(image: NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))) { doc.insert(page, at: 0) }
+            guard let d = doc.dataRepresentation() else { return .failure(Failed(msg: "I couldn’t make the PDF.")) }
+            return .success(Made(name: base + ".pdf", data: d))
+        }
+        let type: CFString = fmt == "png" ? "public.png" as CFString : fmt == "heic" ? "public.heic" as CFString : "public.jpeg" as CFString
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, type, 1, nil) else { return .failure(Failed(msg: "This Mac can’t write \(fmt.uppercased()).")) }
+        CGImageDestinationAddImage(dest, cg, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { return .failure(Failed(msg: "I couldn’t convert that picture.")) }
+        return .success(Made(name: base + "." + (fmt == "jpg" ? "jpg" : fmt), data: out as Data))
+    }
+
+    private static func pdf(_ url: URL, to fmt: String, base: String) -> Result<Made, Error> {
+        guard let doc = PDFDocument(url: url) else { return .failure(Failed(msg: "I couldn’t open that PDF.")) }
+        if fmt == "png" || fmt == "jpg" {
+            // the first page as a picture (sharp, 2×)
+            guard let page = doc.page(at: 0) else { return .failure(Failed(msg: "That PDF has no pages.")) }
+            let r = page.bounds(for: .mediaBox), scale: CGFloat = 2
+            let img = NSImage(size: NSSize(width: r.width * scale, height: r.height * scale))
+            img.lockFocus()
+            NSColor.white.setFill(); NSRect(origin: .zero, size: img.size).fill()
+            if let ctx = NSGraphicsContext.current?.cgContext { ctx.scaleBy(x: scale, y: scale); page.draw(with: .mediaBox, to: ctx) }
+            img.unlockFocus()
+            guard let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+                  let d = rep.representation(using: fmt == "png" ? .png : .jpeg, properties: [.compressionFactor: 0.9]) else { return .failure(Failed(msg: "I couldn’t draw that page.")) }
+            return .success(Made(name: base + (doc.pageCount > 1 ? " page 1" : "") + "." + fmt, data: d))
+        }
+        let raw = doc.string ?? ""
+        guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failure(Failed(msg: "There’s no text in this PDF (it may be a scan).")) }
+        return styled(NSAttributedString(string: raw, attributes: [.font: NSFont.systemFont(ofSize: 12)]), to: fmt, base: base)
+    }
+
+    private static func text(_ url: URL, to fmt: String, base: String) -> Result<Made, Error> {
+        let e = url.pathExtension.lowercased()
+        let a: NSAttributedString?
+        if e == "txt" || e == "md" { a = (try? String(contentsOf: url, encoding: .utf8)).map { NSAttributedString(string: $0, attributes: [.font: NSFont.systemFont(ofSize: 12)]) } }
+        else { a = try? NSAttributedString(url: url, options: [:], documentAttributes: nil) }
+        guard let a else { return .failure(Failed(msg: "I couldn’t read that document.")) }
+        return styled(a, to: fmt, base: base)
+    }
+
+    private static func styled(_ a: NSAttributedString, to fmt: String, base: String) -> Result<Made, Error> {
+        let range = NSRange(location: 0, length: a.length)
+        do {
+            switch fmt {
+            case "txt": return .success(Made(name: base + ".txt", data: Data(a.string.utf8)))
+            case "rtf": return .success(Made(name: base + ".rtf", data: try a.data(from: range, documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])))
+            case "html": return .success(Made(name: base + ".html", data: try a.data(from: range, documentAttributes: [.documentType: NSAttributedString.DocumentType.html])))
+            case "docx": return .success(Made(name: base + ".docx", data: try a.data(from: range, documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])))
+            case "pdf":
+                guard let d = paginatedPDF(a) else { return .failure(Failed(msg: "I couldn’t make the PDF.")) }
+                return .success(Made(name: base + ".pdf", data: d))
+            default: return .failure(Failed(msg: "That conversion isn’t available."))
+            }
+        } catch { return .failure(Failed(msg: "I couldn’t write that format.")) }
+    }
+
+    /// A4 pages with margins, laid out by the text system (no print dialog).
+    private static func paginatedPDF(_ a: NSAttributedString) -> Data? {
+        let page = NSSize(width: 595, height: 842), margin: CGFloat = 50
+        let storage = NSTextStorage(attributedString: a)
+        let layout = NSLayoutManager(); storage.addLayoutManager(layout)
+        let out = NSMutableData()
+        var box = CGRect(origin: .zero, size: page)
+        guard let consumer = CGDataConsumer(data: out as CFMutableData), let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return nil }
+        var pages = 0
+        while pages < 2000 {
+            let container = NSTextContainer(size: NSSize(width: page.width - margin * 2, height: page.height - margin * 2))
+            layout.addTextContainer(container)
+            let glyphs = layout.glyphRange(for: container)
+            if glyphs.length == 0 && pages > 0 { break }
+            ctx.beginPDFPage(nil)
+            ctx.translateBy(x: 0, y: page.height); ctx.scaleBy(x: 1, y: -1)        // flipped, like a text view
+            let ns = NSGraphicsContext(cgContext: ctx, flipped: true)
+            NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = ns
+            layout.drawBackground(forGlyphRange: glyphs, at: NSPoint(x: margin, y: margin))
+            layout.drawGlyphs(forGlyphRange: glyphs, at: NSPoint(x: margin, y: margin))
+            NSGraphicsContext.restoreGraphicsState()
+            ctx.endPDFPage()
+            pages += 1
+            if NSMaxRange(glyphs) >= layout.numberOfGlyphs { break }
+        }
+        ctx.closePDF()
+        return out as Data
     }
 }

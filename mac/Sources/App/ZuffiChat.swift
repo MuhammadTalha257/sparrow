@@ -176,9 +176,9 @@ struct ZuffiChatView: View {
                 }.buttonStyle(.plain).help("Stop")
             } else {
                 Button { VoiceEngine.shared.listenOnce() } label: {
-                    Image(systemName: VoiceEngine.micOn ? "mic.fill" : "mic.slash.fill").font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(VoiceEngine.micOn ? .white.opacity(0.85) : Color(hex: "#FF8A8F"))
-                }.buttonStyle(.plain).disabled(!VoiceEngine.micOn).help("Talk")
+                    Image(systemName: VoiceEngine.shared.micEnabled ? "mic.fill" : "mic.slash.fill").font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(VoiceEngine.shared.micEnabled ? .white.opacity(0.85) : Color(hex: "#FF8A8F"))
+                }.buttonStyle(.plain).help("Talk (turns the mic on if it was off)")
                 if !chat.draft.isEmpty {
                     Button(action: send) {
                         Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#1A1008"))

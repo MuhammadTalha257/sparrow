@@ -110,7 +110,7 @@ final class AIService {
     /// Who the user is: the welcome form and everything they asked Zuffi to remember (sent by the app's web part), else the Mac's own copy of the form.
     static var userFacts: String {
         let f = UserDefaults.standard.string(forKey: "zuffiFacts") ?? ""
-        return f.isEmpty ? ZuffiPlan.shared.profileLine : f
+        return (f.isEmpty ? ZuffiPlan.shared.profileLine : f) + RoomListener.shared.contextLine
     }
     nonisolated static func asksAboutZuffi(_ q: String) -> Bool {
         q.lowercased().range(of: #"\b(zuffi|sparrow|you|your|yourself|app|plan|plans|pro|business|price|prices|cost|subscription|trial|feature|features|setting|settings|how (do|can|to)|can i|where is|what can|help|lisan)\b"#, options: .regularExpression) != nil

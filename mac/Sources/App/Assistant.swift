@@ -405,6 +405,8 @@ final class VoiceEngine: NSObject, ObservableObject {
         if ZuffiPlan.shared.blocked(speak: true) { return }
         // The mic button always wins: stop talking and listen right now.
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
+        // Pressing a mic / Talk button means "listen" — so switch the mic back on if it was off.
+        if !Self.micOn { setMic(true) }
         if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(byButton: byButton); return }
         requestPermissions { ok in
             guard ok else { return }
@@ -465,9 +467,11 @@ final class VoiceEngine: NSObject, ObservableObject {
     static var micOn: Bool { UserDefaults.standard.object(forKey: "micOn") as? Bool ?? true }
     static var cameraOn: Bool { UserDefaults.standard.object(forKey: "cameraOn") as? Bool ?? true }
 
+    /// Mirrors the switch so every mic button redraws the moment it changes.
+    @Published var micEnabled: Bool = VoiceEngine.micOn
     func setMic(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: "micOn")
-        objectWillChange.send()
+        micEnabled = on
         if on {
             status = ""
             if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { MainActor.assumeIsolated { VoiceEngine.shared.startRecognition() } } }

@@ -183,48 +183,77 @@ final class ScreenRecorder: NSObject, SCRecordingOutputDelegate, @unchecked Send
     private var output: SCRecordingOutput?
     private var fileURL: URL?
     private var startedAt: Date?
-    var isRecording: Bool { lock.withLock { stream != nil } }
+    var isRecording: Bool { lock.withLock { stream != nil || cli != nil } }
+
+    /// The fallback recorder (macOS's own `screencapture -v`) when ScreenCaptureKit won't start.
+    private var cli: Process?
 
     func start() async -> String {
         if isRecording { return "I’m already recording your screen. Say “stop recording” when you’re done." }
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            let mainID = CGMainDisplayID()
-            guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first else { return "I couldn’t find a screen to record." }
-            let me = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
-            let filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])
-            let cfg = SCStreamConfiguration()
-            if let mode = CGDisplayCopyDisplayMode(display.displayID) { cfg.width = mode.pixelWidth; cfg.height = mode.pixelHeight }
-            else { cfg.width = display.width * 2; cfg.height = display.height * 2 }
-            cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-            cfg.showsCursor = true
-            cfg.capturesAudio = true
-            let dir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("Zuffi recordings", isDirectory: true)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-            let file = dir.appendingPathComponent("Screen recording \(f.string(from: Date())).mov")
-            let rc = SCRecordingOutputConfiguration()
-            rc.outputURL = file
-            rc.outputFileType = .mov
-            rc.videoCodecType = .hevc
-            let out = SCRecordingOutput(configuration: rc, delegate: self)
-            let s = SCStream(filter: filter, configuration: cfg, delegate: nil)
-            try s.addRecordingOutput(out)
-            try await s.startCapture()
-            lock.withLock { stream = s; output = out; fileURL = file; startedAt = Date() }
-            let name = file.lastPathComponent
-            Task { @MainActor in appendAppLog("screen.log", "recording to \(name)") }
-            return "Recording your screen. Say “Zuffi, stop recording” or press Stop when you’re done."
-        } catch {
-            let msg = error.localizedDescription
-            Task { @MainActor in appendAppLog("screen.log", "start failed: \(msg)") }
-            return "I couldn’t record the screen yet. Allow Zuffi in System Settings → Privacy & Security → Screen & System Audio Recording, then try again."
+        let dir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("Zuffi recordings", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let file = dir.appendingPathComponent("Screen recording \(f.string(from: Date())).mov")
+        // 1) with the Mac's sound in HEVC, 2) picture only in H.264 — some Macs refuse one or the other
+        var lastError = ""
+        for (audio, hevc) in [(true, true), (false, false)] {
+            do { try await begin(file: file, audio: audio, hevc: hevc); return audio ? "Recording your screen with sound. Say “Zuffi, stop recording” or press Stop when you’re done." : "Recording your screen (without the Mac’s sound). Say “Zuffi, stop recording” or press Stop when you’re done." }
+            catch { lastError = error.localizedDescription }
         }
+        let msg = lastError
+        Task { @MainActor in appendAppLog("screen.log", "ScreenCaptureKit failed: \(msg)") }
+        // Really no permission → say so (and open the right page). Otherwise use macOS's own recorder.
+        if !CGPreflightScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+            return "I need permission to record the screen. Turn Zuffi on in System Settings → Privacy & Security → Screen & System Audio Recording. If it’s already on, switch it off and on again, then quit and reopen Zuffi."
+        }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-v", "-C", "-k", file.path]       // video, with cursor and clicks
+        p.standardInput = Pipe(); p.standardOutput = Pipe(); p.standardError = Pipe()
+        do { try p.run() } catch { return "I couldn’t start recording: \(msg.isEmpty ? error.localizedDescription : msg)" }
+        lock.withLock { cli = p; fileURL = file; startedAt = Date() }
+        return "Recording your screen. Say “Zuffi, stop recording” or press Stop when you’re done."
+    }
+
+    private func begin(file: URL, audio: Bool, hevc: Bool) async throws {
+        try? FileManager.default.removeItem(at: file)
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let mainID = CGMainDisplayID()
+        guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first else {
+            throw NSError(domain: "Zuffi", code: 1, userInfo: [NSLocalizedDescriptionKey: "No screen found"])
+        }
+        let me = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
+        let filter = SCContentFilter(display: display, excludingApplications: me, exceptingWindows: [])
+        let cfg = SCStreamConfiguration()
+        if let mode = CGDisplayCopyDisplayMode(display.displayID) { cfg.width = mode.pixelWidth; cfg.height = mode.pixelHeight }
+        else { cfg.width = display.width * 2; cfg.height = display.height * 2 }
+        cfg.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        cfg.showsCursor = true
+        cfg.capturesAudio = audio
+        let rc = SCRecordingOutputConfiguration()
+        rc.outputURL = file
+        rc.outputFileType = .mov
+        rc.videoCodecType = hevc ? .hevc : .h264
+        let out = SCRecordingOutput(configuration: rc, delegate: self)
+        let s = SCStream(filter: filter, configuration: cfg, delegate: nil)
+        try s.addRecordingOutput(out)
+        try await s.startCapture()
+        lock.withLock { stream = s; output = out; fileURL = file; startedAt = Date() }
+        let name = file.lastPathComponent
+        Task { @MainActor in appendAppLog("screen.log", "recording to \(name)") }
     }
 
     func stop() async -> String {
-        let (s, o, u, t): (SCStream?, SCRecordingOutput?, URL?, Date?) = lock.withLock {
-            let r = (stream, output, fileURL, startedAt); stream = nil; output = nil; return r
+        let (s, o, u, t, c): (SCStream?, SCRecordingOutput?, URL?, Date?, Process?) = lock.withLock {
+            let r = (stream, output, fileURL, startedAt, cli); stream = nil; output = nil; cli = nil; return r
+        }
+        if let c {
+            // screencapture stops cleanly on Ctrl-C (it then writes the file)
+            c.interrupt()
+            for _ in 0..<40 where c.isRunning { try? await Task.sleep(nanoseconds: 100_000_000) }
+            if let u { await MainActor.run { NSWorkspace.shared.activateFileViewerSelecting([u]) } }
+            return "Saved your screen recording in Movies → Zuffi recordings."
         }
         guard let s else { return "I’m not recording the screen right now." }
         try? await s.stopCapture()
@@ -333,5 +362,156 @@ final class MeetingWatcher {
     func acceptNotes() -> String {
         startedByUs = true
         return MeetingNotes.shared.start()
+    }
+}
+
+// =====================================================================
+// MARK: - Room mode: Zuffi follows the conversation in the room (only while you turn it on)
+//   Listens on this Mac (Apple's on-device speech), keeps the last few minutes in memory only — nothing is saved —
+//   shows what people are talking about in the notch, and answers “Zuffi, what do you think?” with that in mind.
+// =====================================================================
+@MainActor
+final class RoomListener: ObservableObject {
+    static let shared = RoomListener()
+    @Published private(set) var on = false
+    @Published private(set) var topics: [String] = []
+    @Published private(set) var gist = ""
+    @Published private(set) var note = ""
+    private var engine: AVAudioEngine?
+    private var task: SFSpeechRecognitionTask?
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var lines: [(at: Date, text: String)] = []
+    private var current = ""
+    private var restart: Timer?
+    private var think: Timer?
+    private var summarisedLength = 0
+
+    /// The last ~6 minutes of what was said.
+    var transcript: String {
+        let cut = Date().addingTimeInterval(-360)
+        return (lines.filter { $0.at > cut }.map(\.text) + [current]).filter { !$0.isEmpty }.joined(separator: " ")
+    }
+    /// Added to Zuffi's instructions while Room mode is on.
+    var contextLine: String {
+        guard on else { return "" }
+        let t = transcript
+        guard !t.isEmpty else { return "" }
+        return "\nROOM MODE IS ON — what people in the room have been saying in the last few minutes (heard on this Mac, not saved). Use it when the user asks about the conversation, wants your opinion, a fact check or a summary: \"" + String(t.suffix(2500)) + "\"\n"
+    }
+
+    func toggle() { on ? stop() : start() }
+
+    func start() {
+        guard !on else { return }
+        SFSpeechRecognizer.requestAuthorization { st in
+            Task { @MainActor in
+                guard st == .authorized else { RoomListener.shared.note = "Allow Speech Recognition for Zuffi in System Settings → Privacy & Security."; return }
+                RoomListener.shared.begin()
+            }
+        }
+    }
+
+    private func begin() {
+        on = true; note = "Listening to the room — nothing is saved"
+        listen()
+        // Apple's recogniser works in ~1 minute pieces: start a fresh one every 50 s.
+        restart = Timer.scheduledTimer(withTimeInterval: 50, repeats: true) { _ in MainActor.assumeIsolated { RoomListener.shared.listen() } }
+        think = Timer.scheduledTimer(withTimeInterval: 45, repeats: true) { _ in MainActor.assumeIsolated { Task { await RoomListener.shared.summarise() } } }
+        EdgeGlow.shared.flash(.notify("Room mode on"), seconds: 2)
+    }
+
+    func stop() {
+        on = false
+        restart?.invalidate(); think?.invalidate(); restart = nil; think = nil
+        endListening()
+        lines = []; current = ""; topics = []; gist = ""; note = ""; summarisedLength = 0
+    }
+
+    private func endListening() {
+        if !current.isEmpty { lines.append((Date(), current)); current = "" }
+        task?.cancel(); task = nil
+        request?.endAudio(); request = nil
+        engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
+    }
+
+    private func listen() {
+        guard on else { return }
+        endListening()
+        guard let rec = SFSpeechRecognizer(locale: Locale(identifier: VoiceEngine.listenLocaleID)) ?? SFSpeechRecognizer(), rec.isAvailable else {
+            note = "Speech recognition isn’t ready — trying again"; return
+        }
+        let req = SFSpeechAudioBufferRecognitionRequest()
+        req.shouldReportPartialResults = true
+        if rec.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }   // stays on this Mac
+        let eng = AVAudioEngine()
+        Self.tap(eng.inputNode, req)
+        eng.prepare()
+        do { try eng.start() } catch { note = "I couldn’t use the microphone."; return }
+        engine = eng; request = req
+        task = Self.recognise(rec, req) { text, final in
+            Task { @MainActor in RoomListener.shared.heard(text, final: final) }
+        }
+    }
+
+    private func heard(_ text: String?, final: Bool) {
+        guard on else { return }
+        if let text { current = text }
+        if final, !current.isEmpty { lines.append((Date(), current)); current = "" }
+        if lines.count > 120 { lines.removeFirst(lines.count - 120) }
+    }
+
+    /// What's the conversation about? (a short line + up to 3 topics, shown in the notch)
+    private func summarise() async {
+        let t = transcript
+        guard on, t.count > 80, t.count != summarisedLength else { return }
+        summarisedLength = t.count
+        let prompt = "People in a room are talking. From this rough transcript (speech-to-text, may have mistakes), reply with JSON only: {\"gist\": \"one short sentence on what they're discussing\", \"topics\": [\"1-3 short topic words\"], \"tip\": \"one genuinely useful fact or idea for them, or empty\"}. Transcript: \"\(String(t.suffix(3000)))\""
+        guard let r = await AIService.shared.oneShot(prompt), let d = r.range(of: "{").map({ String(r[$0.lowerBound...]) }),
+              let data = d.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        guard on else { return }
+        gist = (j["gist"] as? String) ?? ""
+        topics = Array(((j["topics"] as? [String]) ?? []).prefix(3))
+        if let tip = j["tip"] as? String, !tip.isEmpty { note = "💡 " + tip } else { note = "Listening to the room — nothing is saved" }
+    }
+
+    nonisolated private static func tap(_ node: AVAudioInputNode, _ req: SFSpeechAudioBufferRecognitionRequest) {
+        let fmt = node.outputFormat(forBus: 0)
+        nonisolated(unsafe) let r = req
+        node.installTap(onBus: 0, bufferSize: 2048, format: fmt) { buffer, _ in r.append(buffer) }
+    }
+    nonisolated private static func recognise(_ rec: SFSpeechRecognizer, _ req: SFSpeechAudioBufferRecognitionRequest,
+                                               _ cb: @escaping @Sendable (String?, Bool) -> Void) -> SFSpeechRecognitionTask {
+        rec.recognitionTask(with: req) { result, error in
+            cb(result?.bestTranscription.formattedString, error != nil || (result?.isFinal ?? false))
+        }
+    }
+}
+
+/// Room mode in the notch: the gist, topic chips and a stop button.
+struct RoomModeCard: View {
+    @ObservedObject private var room = RoomListener.shared
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Circle().fill(Color(hex: "#F4505E")).frame(width: 7, height: 7)
+                Text("Room mode").font(.system(size: 11.5, weight: .bold, design: .rounded))
+                Spacer()
+                Button { room.stop() } label: { Text("Stop").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 9).frame(height: 22).background(Capsule().fill(Color.white.opacity(0.14))) }.buttonStyle(.plain)
+            }
+            Text(room.gist.isEmpty ? "Listening… topics appear after a minute of talk." : room.gist)
+                .font(.system(size: 11)).foregroundColor(.white.opacity(0.85)).multilineTextAlignment(.center).lineLimit(3)
+            if !room.topics.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(room.topics, id: \.self) { t in
+                        Text(t).font(.system(size: 9.5, weight: .semibold)).padding(.horizontal, 7).frame(height: 18).background(Capsule().fill(IslandConst.accent.opacity(0.35)))
+                    }
+                }
+            }
+            if !room.note.isEmpty { Text(room.note).font(.system(size: 9.5)).foregroundColor(.white.opacity(0.6)).lineLimit(2).multilineTextAlignment(.center) }
+            Button { HomeAction.ask("What do you think about what we're discussing? Add anything useful.") } label: {
+                Text("Ask Zuffi about it").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color.white.opacity(0.14)))
+            }.buttonStyle(.plain)
+        }
+        .foregroundColor(.white)
     }
 }

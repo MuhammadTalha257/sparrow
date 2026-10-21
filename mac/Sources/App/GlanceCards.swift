@@ -980,6 +980,8 @@ final class NowPlaying: ObservableObject {
     @Published private(set) var artURL: URL?
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
+    /// macOS said no to controlling Spotify / Music → show how to allow it.
+    @Published var needsPermission = false
     private var timer: Timer?
     private var busy = false
     var hasTrack: Bool { !title.isEmpty }
@@ -1002,10 +1004,8 @@ final class NowPlaying: ObservableObject {
         let script = spot
             ? "tell application \"Spotify\"\nif player state is stopped then return \"\"\nset t to current track\nreturn (name of t) & linefeed & (artist of t) & linefeed & (player state as string) & linefeed & (player position as string) & linefeed & ((duration of t) / 1000 as string) & linefeed & (artwork url of t)\nend tell"
             : "tell application \"Music\"\nif player state is stopped then return \"\"\nset t to current track\nreturn (name of t) & linefeed & (artist of t) & linefeed & (player state as string) & linefeed & (player position as string) & linefeed & (duration of t as string) & linefeed & \"\"\nend tell"
-        Task.detached(priority: .utility) {
-            let out = NowPlaying.osa(script)
-            await MainActor.run { NowPlaying.shared.apply(out, app: name) }
-        }
+        // In-process AppleScript (the same way Zuffi already talks to Spotify / Music) — a few milliseconds.
+        apply(Self.run(script), app: name)
     }
 
     private func apply(_ out: String?, app name: String) {
@@ -1026,11 +1026,22 @@ final class NowPlaying: ObservableObject {
     func send(_ cmd: String) {   // "playpause", "next track", "previous track"
         let target = app.isEmpty ? (Self.running("com.spotify.client") ? "Spotify" : "Music") : app
         if cmd == "playpause" { playing.toggle() }
-        Task.detached(priority: .userInitiated) {
-            _ = NowPlaying.osa("tell application \"\(target)\" to \(cmd)")
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            await MainActor.run { NowPlaying.shared.poll() }
+        _ = Self.run("tell application \"\(target)\" to \(cmd)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { MainActor.assumeIsolated { NowPlaying.shared.poll() } }
+    }
+
+    private static var warned = false
+    static func run(_ source: String) -> String? {
+        var err: NSDictionary?
+        let r = NSAppleScript(source: source)?.executeAndReturnError(&err)
+        if let err {
+            let n = err[NSAppleScript.errorNumber] as? Int ?? 0
+            if !warned { warned = true; appendAppLog("music.log", "AppleScript error \(n): \(err[NSAppleScript.errorMessage] ?? "")") }
+            if n == -1743 { NowPlaying.shared.needsPermission = true }       // not allowed to control the app
+            return nil
         }
+        NowPlaying.shared.needsPermission = false
+        return r?.stringValue
     }
 
     nonisolated static func osa(_ script: String) -> String? {
@@ -1080,10 +1091,13 @@ struct NowPlayingCard: View {
                 }
             } else {
                 Image(systemName: "music.note").font(.system(size: 26)).foregroundColor(Color(hex: "#F472B6"))
-                Text("Nothing playing").font(.system(size: 12, weight: .semibold, design: .rounded))
-                Text("Play something in Spotify or Music — it shows here with controls.").font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).multilineTextAlignment(.center)
-                Button { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Music.app")) } label: {
-                    Text("Open Music").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color.white.opacity(0.14)))
+                Text(np.needsPermission ? "Let Zuffi see your music" : "Nothing playing").font(.system(size: 12, weight: .semibold, design: .rounded))
+                Text(np.needsPermission ? "System Settings → Privacy & Security → Automation → Zuffi → turn on Music and Spotify." : "Play something in Spotify or Music — it shows here with controls.").font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).multilineTextAlignment(.center)
+                Button {
+                    if np.needsPermission, let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") { NSWorkspace.shared.open(u) }
+                    else { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Music.app")) }
+                } label: {
+                    Text(np.needsPermission ? "Open Settings" : "Open Music").font(.system(size: 10.5, weight: .bold)).padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color.white.opacity(0.14)))
                 }.buttonStyle(.plain)
             }
         }

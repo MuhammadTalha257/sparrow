@@ -101,6 +101,15 @@ final class AgentRouter {
         if lowered.range(of: #"^(hide|minimi[sz]e) (yourself|sparrow|the island)$|^go hide$"#, options: .regularExpression) != nil {
             SparrowBubble.shared.hideIsland(); return "I'll wait in my little bubble. Click it when you need me."
         }
+        // Room mode: "listen to the room", "room mode on/off", "stop listening to the room"
+        if lowered.range(of: #"^(start |turn on |switch on )?(room mode|listen(ing)? to (the |this )?(room|conversation|everyone))( on)?$"#, options: .regularExpression) != nil {
+            RoomListener.shared.start()
+            return "Room mode is on. I’ll follow the conversation and show the topics in the notch — nothing is saved. Say “stop room mode” to end it."
+        }
+        if lowered.range(of: #"^(stop|end|turn off|switch off) (room mode|listening to (the )?(room|conversation))$|^room mode off$"#, options: .regularExpression) != nil {
+            RoomListener.shared.stop()
+            return "Room mode is off. I’ve forgotten what I heard."
+        }
         // Screen recording: "record my screen", "start screen recording", "stop recording"
         if lowered.range(of: #"^(start |begin )?(record|recording|capture)( my| the)? (screen|display)( recording)?$|^(start|begin|make) (a )?screen ?(recording|record|video)$|^screen ?record(ing)?$"#, options: .regularExpression) != nil {
             let r = await ScreenRecorder.shared.start()

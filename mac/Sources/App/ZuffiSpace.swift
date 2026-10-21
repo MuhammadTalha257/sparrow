@@ -203,6 +203,7 @@ struct HomeAction: Identifiable {
         HomeAction(id: "record", icon: "record.circle", label: "Record my screen", tint: "#F87171"),
         HomeAction(id: "meeting", icon: "waveform.badge.mic", label: "Meeting notes", tint: "#F472B6"),
         HomeAction(id: "profile", icon: "person.crop.circle.fill", label: "Me (profile)", tint: "#C4B5FD"),
+        HomeAction(id: "room", icon: "person.3.sequence.fill", label: "Room mode (follow the conversation)", tint: "#F4505E"),
     ]
     static func find(_ id: String) -> HomeAction? { all.first { $0.id == id } }
     static let defaultLeft = ["chat", "settings", "more", "profile"]
@@ -247,7 +248,13 @@ struct HomeAction: Identifiable {
         p.message = "Choose a file for Zuffi"
         NSApp.activate(ignoringOtherApps: true)
         guard p.runModal() == .OK, let url = p.url else { return }
-        Task { await FileDropHandler.handle(urls: [url], state: AppState.shared) }
+        // Straight to the formats — no drop animation (the notch was closed while you picked, so it would play on a black notch).
+        let st = AppState.shared
+        st.droppedFile = DroppedFile(url: url, name: url.lastPathComponent)
+        st.promptContext = .file(name: url.lastPathComponent, fileURL: url)
+        st.chooseMode = "convert"
+        UploadSequenceEngine.shared.deactivate()
+        NotificationCenter.default.post(name: .hookExpand, object: IslandView.choose)
     }
 
     @MainActor static func run(_ id: String, home: ZuffiHomeModel) {
@@ -260,6 +267,7 @@ struct HomeAction: Identifiable {
         case "record": Task { await Assistant.run(ScreenRecorder.shared.isRecording ? "stop recording" : "record my screen", spoken: false) }
         case "meeting": Task { await Assistant.run(MeetingNotes.shared.active ? "stop meeting notes" : "take meeting notes", spoken: true) }
         case "profile": ZuffiNav.go(.profile)
+        case "room": RoomListener.shared.toggle(); ZuffiNav.go(.overview)
         case "pet": PetController.shared.toggle()
         case "screen": home.say("Let me look…"); Task { await Assistant.run("what's on my screen", spoken: true) }
         case "agents": ZuffiNav.go(.agents)
@@ -314,6 +322,7 @@ struct ZuffiHomePanel: View {
     @ObservedObject private var home = ZuffiHomeModel.shared
     @ObservedObject private var usage = AIUsage.shared
     @ObservedObject private var planBox = ZuffiPlan.shared
+    @ObservedObject private var room = RoomListener.shared
     @StateObject private var head = SparrowSpriteModel()
     @State private var hover: String?
 
@@ -336,7 +345,7 @@ struct ZuffiHomePanel: View {
             let c = zClean(last.content)
             if !c.isEmpty { return c }
         }
-        if !VoiceEngine.micOn { return "My mic is off — tap Mic to talk to me" }
+        if !voice.micEnabled { return "My mic is off — tap “Mic off” or my face to talk" }
         let name = AssistantPrefs.displayName
         return "Hi\(name.isEmpty ? "" : " \(name)")! Say “Hey Zuffi”"
     }
@@ -383,15 +392,19 @@ struct ZuffiHomePanel: View {
                 HStack(spacing: 0) {
                     VStack(spacing: 6) {
                         // the little bunny head that follows your cursor
-                        SparrowSpriteView(model: head, size: 92, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
-                            .frame(width: 96, height: 96)
-                        Text(words)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.94))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .frame(width: pw - 8)
-                            .animation(.easeInOut(duration: 0.2), value: words)
+                        SparrowSpriteView(model: head, size: room.on ? 56 : 92, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
+                            .frame(width: room.on ? 60 : 96, height: room.on ? 60 : 96)
+                        if room.on {
+                            RoomModeCard().frame(width: pw - 8)
+                        } else {
+                            Text(words)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.94))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(3)
+                                .frame(width: pw - 8)
+                                .animation(.easeInOut(duration: 0.2), value: words)
+                        }
                     }
                     .frame(width: pw, height: 158).id(0)
                     NotchTodayPage().padding(.horizontal, 8).frame(width: pw, height: 158).id(1)
@@ -400,7 +413,7 @@ struct ZuffiHomePanel: View {
                 }
                 .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
             .scrollPosition(id: $page)
             .frame(width: pw, height: 158)
             HStack(spacing: 6) {
@@ -476,12 +489,13 @@ struct ZuffiHomePanel: View {
 
     private var bottomRow: some View {
         HStack(spacing: 6) {
-            Button { VoiceEngine.shared.setMic(!VoiceEngine.micOn) } label: {
-                Label(VoiceEngine.micOn ? "Mic" : "Off", systemImage: VoiceEngine.micOn ? "mic.fill" : "mic.slash.fill")
+            Button { VoiceEngine.shared.setMic(!voice.micEnabled) } label: {
+                Label(voice.micEnabled ? "Mic on" : "Mic off", systemImage: voice.micEnabled ? "mic.fill" : "mic.slash.fill")
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                    .foregroundColor(VoiceEngine.micOn ? .white : Color(hex: "#FF8A8F"))
+                    .foregroundColor(voice.micEnabled ? .white : Color(hex: "#FF8A8F"))
                     .padding(.horizontal, 10).frame(height: 28)
-                    .liquidGlass(Capsule(), tint: VoiceEngine.micOn ? nil : Color(hex: "#E5484D"), interactive: true)
+                    .liquidGlass(Capsule(), tint: voice.micEnabled ? nil : Color(hex: "#E5484D"), interactive: true)
+                    .contentShape(Capsule())
             }.buttonStyle(.plain).help("Turn the microphone on or off")
             Button { ZuffiChat.shared.open() } label: {
                 Label("Chat", systemImage: "bubble.left.fill").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(.white)
@@ -585,6 +599,7 @@ struct ZuffiQuickSettings: View {
                 row("ear.fill", "Answer to “Hey Zuffi”", on: Binding(get: { wake }, set: { wake = $0; if $0 { VoiceEngine.shared.setMic(VoiceEngine.micOn) } }))
                 row("speaker.wave.2.fill", "Sounds", on: $state.soundEnabled)
                 row("bell.badge", "Notifications at the notch (email, battery, devices)", on: Binding(get: { MacStatus.shared.toastsOn }, set: { MacStatus.shared.toastsOn = $0 }))
+                row("person.3.sequence.fill", "Room mode — follow the conversation (nothing saved)", on: Binding(get: { RoomListener.shared.on }, set: { $0 ? RoomListener.shared.start() : RoomListener.shared.stop() }))
                 row("waveform.badge.mic", "Ask to take notes when a call starts", on: Binding(get: { MeetingWatcher.shared.enabled }, set: { MeetingWatcher.shared.enabled = $0 }))
                 row("bell.badge.fill", "Read notifications out loud", on: Binding(
                     get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
@@ -734,6 +749,7 @@ struct NotchFeaturesList: View {
         NotchFeature(id: "planday", cat: "everyday", icon: "calendar", tint: "#4F6BFF", name: "Plan my day", sub: "Fits tasks around your calendar"),
         NotchFeature(id: "today", cat: "everyday", icon: "sun.max.fill", tint: "#FBC56A", name: "Today", sub: "Prayer times, reminders, weather"),
         NotchFeature(id: "meeting", cat: "everyday", icon: "waveform.badge.mic", tint: "#E5577E", name: "Meeting notes", sub: "Record a call, get a clean summary"),
+        NotchFeature(id: "room", cat: "everyday", icon: "person.3.sequence.fill", tint: "#F4505E", name: "Room mode", sub: "Follows the talk in the room, shows topics — nothing saved"),
         NotchFeature(id: "memory", cat: "everyday", icon: "brain.head.profile", tint: "#8B7CF6", name: "Memory", sub: "Notes, chats and files Zuffi remembers"),
         NotchFeature(id: "history", cat: "everyday", icon: "clock.arrow.circlepath", tint: "#C4B5FD", name: "Past chats", sub: "Everything you asked"),
         NotchFeature(id: "focus", cat: "everyday", icon: "scope", tint: "#E0A23B", name: "Focus timer", sub: "25 minutes of deep work"),
@@ -806,6 +822,7 @@ struct NotchFeaturesList: View {
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
         let home = ZuffiHomeModel.shared
         switch id {
+        case "room": RoomListener.shared.toggle(); ZuffiNav.go(.overview)
         case "business", "convert", "record", "screen", "agents", "data", "history", "pet", "meeting", "today":
             HomeAction.run(id, home: home)
             if !["agents", "data", "history"].contains(id) { NotificationCenter.default.post(name: .islandCollapse, object: nil) }
