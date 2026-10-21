@@ -324,6 +324,7 @@ struct ZuffiHomePanel: View {
     @ObservedObject private var usage = AIUsage.shared
     @ObservedObject private var planBox = ZuffiPlan.shared
     @ObservedObject private var room = RoomListener.shared
+    @ObservedObject private var music = NowPlaying.shared
     @StateObject private var head = SparrowSpriteModel()
     @State private var hover: String?
 
@@ -397,6 +398,11 @@ struct ZuffiHomePanel: View {
                             .frame(width: room.on ? 60 : 96, height: room.on ? 60 : 96)
                         if room.on {
                             RoomModeCard().frame(width: pw - 8)
+                        } else if NowPlaying.shared.hasTrack {
+                            // music playing: one line of Zuffi's words + the music controls
+                            Text(words).font(.system(size: 11.5, weight: .semibold, design: .rounded)).foregroundColor(.white.opacity(0.94))
+                                .multilineTextAlignment(.center).lineLimit(1).frame(width: pw - 8)
+                            MiniMusicBar().frame(width: pw - 6)
                         } else {
                             Text(words)
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))

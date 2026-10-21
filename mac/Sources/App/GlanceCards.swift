@@ -1261,3 +1261,27 @@ struct NotchMePage: View {
         return days == 0 ? "🎂 Happy birthday!" : "🎂 Birthday in \(days) day\(days == 1 ? "" : "s")"
     }
 }
+
+
+/// When something is playing: a slim row on Zuffi's home page — song, back · play/pause · next (no need to swipe).
+struct MiniMusicBar: View {
+    @ObservedObject private var np = NowPlaying.shared
+    var body: some View {
+        if np.hasTrack {
+            HStack(spacing: 8) {
+                if np.playing { MusicBars().frame(width: 12, height: 11) } else { Image(systemName: "music.note").font(.system(size: 10, weight: .bold)).foregroundColor(Color(hex: "#F472B6")) }
+                Text(np.title).font(.system(size: 10.5, weight: .semibold, design: .rounded)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                ForEach([("backward.fill", "previous track"), (np.playing ? "pause.fill" : "play.fill", "playpause"), ("forward.fill", "next track")], id: \.1) { b in
+                    Button { np.send(b.1) } label: {
+                        Image(systemName: b.0).font(.system(size: b.1 == "playpause" ? 12 : 9.5, weight: .bold)).frame(width: 22, height: 22)
+                            .background(Circle().fill(Color.white.opacity(b.1 == "playpause" ? 0.18 : 0.08)))
+                    }.buttonStyle(.plain)
+                }
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 8).frame(height: 28)
+            .background(Capsule().fill(Color.white.opacity(0.07)))
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+}
