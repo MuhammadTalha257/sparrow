@@ -778,7 +778,7 @@ final class MacStatus: ObservableObject {
         n += 1
         refreshPower(); refreshSystem()
         if n % 4 == 0 { Task { await self.refreshDevices() } }
-        if n % 8 == 2 { Task { await self.checkMail() } }
+        if n % 3 == 2 { Task { await self.checkMail() } }   // about every 45 s
     }
 
     // ---- battery ----
@@ -880,9 +880,18 @@ final class MacStatus: ObservableObject {
         let r = await MailAgent.shared.inbox(limit: 5)
         guard let mails = r["mails"] as? [[String: Any]] else { return }
         let ids = Set(mails.compactMap { $0["id"] as? String })
-        if let known = knownMail, let m = mails.first(where: { !known.contains($0["id"] as? String ?? "") }) {
-            AppState.shared.noteRef = m["id"] as? String
-            toast("Mail · \(m["from"] as? String ?? "New email")", m["subject"] as? String ?? "", icon: "envelope", action: "mail")
+        // Every new email (Gmail, Outlook, iCloud… — every account added to Mail) shows at the notch.
+        if let known = knownMail {
+            let fresh = mails.filter { !known.contains($0["id"] as? String ?? "") }
+            if let m = fresh.first {
+                AppState.shared.noteRef = m["id"] as? String
+                if fresh.count == 1 {
+                    toast("Mail · \(m["from"] as? String ?? "New email")", m["subject"] as? String ?? "", icon: "envelope", action: "mail")
+                } else {
+                    let who = fresh.prefix(3).compactMap { $0["from"] as? String }.joined(separator: ", ")
+                    toast("Mail · \(fresh.count) new emails", "From \(who)\(fresh.count > 3 ? " and more" : "") — newest: \(m["subject"] as? String ?? "")", icon: "envelope", action: "mail")
+                }
+            }
         }
         knownMail = (knownMail ?? []).union(ids)
     }

@@ -1055,9 +1055,26 @@ struct BizTeamView: View {
 
 struct BizAutomationsView: View {
     @ObservedObject private var crm = ZuffiCRM.shared
+    @AppStorage("bizOpenHour") private var openHour = 9
+    @AppStorage("bizCloseHour") private var closeHour = 20
+    @AppStorage("bizClosedSunday") private var closedSunday = false
+    @AppStorage("bizReviewLink") private var reviewLink = ""
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                GlassBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        header("Opening hours & reviews", "clock.fill")
+                        HStack {
+                            Stepper("Open from \(openHour):00", value: $openHour, in: 0...23)
+                            Spacer()
+                            Stepper("until \(closeHour):00", value: $closeHour, in: 1...24)
+                            Spacer()
+                            Toggle("Closed on Sundays", isOn: $closedSunday)
+                        }.font(.system(size: 12))
+                        TextField("Your review link (Google, Facebook…) — used in thank-you messages", text: $reviewLink).textFieldStyle(.roundedBorder)
+                    }
+                }
                 GlassBox {
                     VStack(alignment: .leading, spacing: 8) {
                         header("You", "person.crop.circle.fill")
@@ -1121,6 +1138,7 @@ struct BizConnectView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                GlassBox { BizWALinkBox() }
                 GlassBox { BizSyncBox() }
                 GlassBox { BizPowerBox() }
                 GlassBox { BizSecurityBox() }
@@ -1895,5 +1913,36 @@ struct BizLookPicker: View {
             Text("The notch uses the same colour.").font(.system(size: 10)).foregroundColor(.secondary)
         }
         .padding(16)
+    }
+}
+
+
+/// Business → Connect: link WhatsApp to Zuffi (instant messages and replies, no typing on the screen).
+struct BizWALinkBox: View {
+    @ObservedObject private var wa = WhatsAppLink.shared
+    @ObservedObject private var crm = ZuffiCRM.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "message.fill").foregroundColor(.white).frame(width: 26, height: 26)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color(hex: "#1FAF5F")))
+                Text("Link WhatsApp to Zuffi").font(.system(size: 14, weight: .bold))
+                Spacer()
+                Pill(text: wa.ready ? "Linked" : wa.state == "qr" ? "Scan the code" : wa.enabled ? "Connecting…" : "Off", color: wa.ready ? Biz.green : Ink.accent)
+            }
+            Text("Like WhatsApp Web, inside Zuffi. New messages arrive the moment they’re sent, become leads, and with Autopilot Zuffi replies in a second or two — in the customer’s language — without using your screen.")
+                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                if wa.ready {
+                    BizSoftButton(title: "Show WhatsApp", icon: "macwindow") { wa.showWindow() }
+                    BizSoftButton(title: "Unlink", icon: "link.badge.plus") { Task { await wa.unlink() } }
+                } else {
+                    BizMainButton(title: wa.enabled ? "Show the code" : "Link WhatsApp", icon: "qrcode") { wa.showWindow() }
+                }
+                Toggle("Autopilot replies", isOn: Binding(get: { crm.isOn(.autopilot) }, set: { crm.set(.autopilot, $0) })).toggleStyle(.switch).controlSize(.small)
+            }
+            Text("Phone: WhatsApp → Settings → Linked devices → Link a device. This uses WhatsApp Web, which isn’t an official business API — WhatsApp can limit numbers that send a lot of automatic messages, so keep Autopilot for replies to people who wrote to you.")
+                .font(.system(size: 10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

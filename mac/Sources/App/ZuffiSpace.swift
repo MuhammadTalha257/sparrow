@@ -598,7 +598,12 @@ struct ZuffiQuickSettings: View {
                 row("video.fill", "Camera", on: Binding(get: { VoiceEngine.cameraOn }, set: { VoiceEngine.shared.setCamera($0) }))
                 row("ear.fill", "Answer to “Hey Zuffi”", on: Binding(get: { wake }, set: { wake = $0; if $0 { VoiceEngine.shared.setMic(VoiceEngine.micOn) } }))
                 row("speaker.wave.2.fill", "Sounds", on: $state.soundEnabled)
+                Button { if let u = URL(string: "x-apple.systempreferences:com.apple.Internet-Accounts-Settings.extension") { NSWorkspace.shared.open(u) } } label: {
+                    NotchListRowLabel(icon: "envelope.badge.fill", tint: "#2F80ED", title: "Add Gmail / Outlook to Mail", sub: "Then every new email shows here")
+                }.buttonStyle(.plain)
                 row("bell.badge", "Notifications at the notch (email, battery, devices)", on: Binding(get: { MacStatus.shared.toastsOn }, set: { MacStatus.shared.toastsOn = $0 }))
+                row("message.fill", "WhatsApp linked to Zuffi (new messages instantly)", on: Binding(get: { WhatsAppLink.shared.enabled }, set: { $0 ? WhatsAppLink.shared.showWindow() : (WhatsAppLink.shared.enabled = false) }))
+                row("speaker.wave.2.bubble.left.fill", "Read new WhatsApp messages out loud", on: Binding(get: { WhatsAppLink.shared.readAloud }, set: { WhatsAppLink.shared.readAloud = $0 }))
                 row("person.3.sequence.fill", "Room mode — follow the conversation (nothing saved)", on: Binding(get: { RoomListener.shared.on }, set: { $0 ? RoomListener.shared.start() : RoomListener.shared.stop() }))
                 row("waveform.badge.mic", "Ask to take notes when a call starts", on: Binding(get: { MeetingWatcher.shared.enabled }, set: { MeetingWatcher.shared.enabled = $0 }))
                 row("bell.badge.fill", "Read notifications out loud", on: Binding(
@@ -763,6 +768,7 @@ struct NotchFeaturesList: View {
         NotchFeature(id: "reels", cat: "create", icon: "film.fill", tint: "#EF5A5A", name: "Quick reels", sub: "Trim, caption, ready to post"),
         NotchFeature(id: "record", cat: "devices", icon: "record.circle", tint: "#F87171", name: "Record my screen", sub: "With sound — saved in Movies"),
         NotchFeature(id: "screen", cat: "devices", icon: "eye.fill", tint: "#7CC4FF", name: "What's on my screen?", sub: "Zuffi looks and explains"),
+        NotchFeature(id: "walink", cat: "devices", icon: "message.fill", tint: "#25D366", name: "Link WhatsApp", sub: "See, read out and answer messages instantly"),
         NotchFeature(id: "send", cat: "devices", icon: "paperplane.fill", tint: "#2F6FEB", name: "Send to my devices", sub: "Files and links to your phone"),
         NotchFeature(id: "sync", cat: "devices", icon: "arrow.triangle.2.circlepath.circle.fill", tint: "#14A37F", name: "Sync devices", sub: "Same Zuffi everywhere"),
         NotchFeature(id: "find", cat: "devices", icon: "magnifyingglass", tint: "#7A8496", name: "Find files", sub: "Search by what you remember"),
@@ -823,6 +829,7 @@ struct NotchFeaturesList: View {
         let home = ZuffiHomeModel.shared
         switch id {
         case "room": RoomListener.shared.toggle(); ZuffiNav.go(.overview)
+        case "walink": WhatsAppLink.shared.showWindow(); NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "business", "convert", "record", "screen", "agents", "data", "history", "pet", "meeting", "today":
             HomeAction.run(id, home: home)
             if !["agents", "data", "history"].contains(id) { NotificationCenter.default.post(name: .islandCollapse, object: nil) }

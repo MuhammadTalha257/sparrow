@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ApplicationServices
+import WebKit
 
 // =====================================================================
 // MARK: - WhatsApp agent
@@ -26,6 +27,7 @@ final class WhatsAppAgent {
 
     /// Scheduled messages you set up yourself ("every day at 9 send … to …"): sent without asking again.
     func sendScheduled(to who: String, text: String) async -> String {
+        if WhatsAppLink.shared.ready, await WhatsAppLink.shared.send(to: who, text: text) { return "Sent to \(who) on WhatsApp! ✅" }
         let p = await Self.phone(for: who)
         guard !p.isEmpty else { return "I couldn't find a WhatsApp number for \(who)." }
         return await send(Draft(name: who, phone: p, text: text, made: Date()))
@@ -72,6 +74,7 @@ final class WhatsAppAgent {
 
     func checkNew() async -> String {
         AgentRouter.lastChannel = .whatsapp
+        if WhatsAppLink.shared.ready { return await WhatsAppLink.shared.readUnread() }
         guard NSWorkspace.shared.runningApplications.contains(where: Self.isWhatsApp) else {
             return "WhatsApp isn't open. Say \"open WhatsApp\" and ask me again."
         }
@@ -129,6 +132,12 @@ final class WhatsAppAgent {
     }
 
     private func send(_ d: Draft) async -> String {
+        // Linked WhatsApp: sent in the background, instantly, without opening anything.
+        if WhatsAppLink.shared.ready, await WhatsAppLink.shared.send(to: d.phone.isEmpty ? d.name : d.phone, text: d.text) {
+            draft = nil
+            appendAppLog("agents.log", "whatsapp (linked): sent to \(d.name)")
+            return "Sent to \(d.name) on WhatsApp! ✅"
+        }
         let enc = d.text.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? d.text
         guard let url = URL(string: "whatsapp://send?phone=\(d.phone)&text=\(enc)") else { return "I couldn't open WhatsApp." }
         guard NSWorkspace.shared.urlForApplication(toOpen: url) != nil else {
@@ -272,4 +281,135 @@ final class WhatsAppAgent {
         guard let name = useful.first, name.count <= 60 else { return nil }
         return Row(name: name, preview: useful.dropFirst().first ?? "")
     }
+}
+
+
+// =====================================================================
+// MARK: - WhatsApp linked to Zuffi (like WhatsApp Web, in Zuffi's own hidden window)
+//   Link once with the QR code (WhatsApp on the phone → Linked devices). Then Zuffi sees each new message the moment it
+//   arrives, can read them out, turn them into leads and — with auto-reply on — answer in a second or two, without
+//   touching your screen. Uses whatsapp-web.js's helpers (Apache-2.0). Unofficial: WhatsApp may limit numbers that send a lot.
+// =====================================================================
+@MainActor
+final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate, NSWindowDelegate {
+    static let shared = WhatsAppLink()
+    struct Incoming: Identifiable { let id = UUID(); let chatId: String; let name: String; let phone: String; let body: String; let at: Date }
+
+    /// "off", "loading", "qr" (waiting for the phone to scan), "ready"
+    @Published private(set) var state = "off"
+    @Published private(set) var recent: [Incoming] = []
+    @Published var enabled: Bool = UserDefaults.standard.bool(forKey: "waLinkOn") {
+        didSet { UserDefaults.standard.set(enabled, forKey: "waLinkOn"); enabled ? start() : stop() }
+    }
+    /// Read each new message out loud (personal chats only).
+    @Published var readAloud: Bool = UserDefaults.standard.bool(forKey: "waReadAloud") {
+        didSet { UserDefaults.standard.set(readAloud, forKey: "waReadAloud") }
+    }
+    var ready: Bool { state == "ready" }
+    private var web: WKWebView?
+    private var window: NSWindow?
+
+    func startIfEnabled() { if enabled { start() } }
+
+    func start() {
+        guard web == nil else { window?.makeKeyAndOrderFront(nil); return }
+        let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = .default()                       // stays linked after restarts
+        cfg.userContentController.add(self, name: "zwa")
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("web/wabridge.js"), let js = try? String(contentsOf: url, encoding: .utf8) {
+            cfg.userContentController.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
+        if #available(macOS 14.0, *) { cfg.preferences.inactiveSchedulingPolicy = .none }   // keeps working while hidden
+        let wv = WKWebView(frame: NSRect(x: 0, y: 0, width: 960, height: 720), configuration: cfg)
+        wv.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+        wv.navigationDelegate = self
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        w.title = "Link WhatsApp to Zuffi — WhatsApp on your phone → Settings → Linked devices → Link a device"
+        w.contentView = wv; w.isReleasedWhenClosed = false; w.delegate = self; w.center()
+        web = wv; window = w
+        state = "loading"
+        wv.load(URLRequest(url: URL(string: "https://web.whatsapp.com")!))
+        // Shown only if the phone needs to scan the code (see "qr" below).
+        w.orderOut(nil)
+    }
+
+    func stop() {
+        web?.configuration.userContentController.removeScriptMessageHandler(forName: "zwa")
+        web?.stopLoading(); web = nil
+        window?.orderOut(nil); window = nil
+        state = "off"
+    }
+
+    /// Unlinks this Mac from WhatsApp (like logging out of WhatsApp Web).
+    func unlink() async {
+        _ = try? await web?.callAsyncJavaScript("await window.ZuffiWA && window.ZuffiWA.logout()", arguments: [:], in: nil, contentWorld: .page)
+        enabled = false
+    }
+
+    /// Show the WhatsApp window (to link, or to look at chats).
+    func showWindow() {
+        if web == nil { enabled = true }
+        window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }   // keep running in the background
+
+    func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let m = message.body as? [String: Any], let type = m["type"] as? String else { return }
+        if type == "state", let st = m["state"] as? String {
+            let was = state
+            state = st
+            if st == "qr" { window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+            if st == "ready" {
+                window?.orderOut(nil)
+                if was != "ready" { MacStatus.shared.toast("WhatsApp is linked", "Zuffi now sees new messages as they arrive.", icon: "message.fill") }
+            }
+            return
+        }
+        guard type == "msg", (m["fromMe"] as? Bool) != true, (m["isGroup"] as? Bool) != true else { return }
+        let body = (m["body"] as? String) ?? "", kind = (m["kind"] as? String) ?? "chat"
+        let chatId = (m["chatId"] as? String) ?? "", phone = (m["phone"] as? String) ?? ""
+        var name = (m["name"] as? String) ?? ""
+        if name.isEmpty { name = phone.isEmpty ? "Someone" : "+" + phone }
+        let text = body.isEmpty ? (kind == "ptt" || kind == "audio" ? "🎤 Voice note" : kind == "image" ? "📷 Photo" : "[\(kind)]") : body
+        recent.insert(Incoming(chatId: chatId, name: name, phone: phone, body: text, at: Date()), at: 0)
+        if recent.count > 40 { recent.removeLast() }
+        handle(chatId: chatId, name: name, phone: phone, text: text, voice: kind == "ptt" || kind == "audio")
+    }
+
+    private func handle(chatId: String, name: String, phone: String, text: String, voice: Bool) {
+        // the notch: a small card + light round the edge
+        MacStatus.shared.toast("WhatsApp · \(name)", String(text.prefix(140)), icon: "message.fill", action: "whatsapp")
+        if readAloud { VoiceEngine.shared.speak("WhatsApp from \(name): \(text.prefix(200))") }
+        // Business: every chat becomes a lead, and with auto-reply Zuffi answers here — no typing on your screen.
+        let crm = ZuffiCRM.shared
+        if ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal, crm.isOn(.watchWhatsApp) {
+            chatIds[(phone.isEmpty ? name : phone).lowercased()] = chatId
+            Task { await crm.handleIncoming(name: name, preview: voice ? "🎤" : text, source: "WhatsApp", phone: phone) }
+        }
+    }
+    /// phone or name → WhatsApp chat id (for replies to people whose number WhatsApp hides).
+    private var chatIds: [String: String] = [:]
+
+    /// Sends right away. to: phone number, name of someone who wrote recently, or a chat id.
+    func send(to: String, text: String) async -> Bool {
+        guard ready, let wv = web else { return false }
+        let key = to.lowercased()
+        let target = chatIds[key] ?? chatIds[to.filter(\.isNumber)] ?? recent.first { $0.name.lowercased() == key }?.chatId ?? to
+        let r = try? await wv.callAsyncJavaScript("return await window.ZuffiWA.send(t, x)", arguments: ["t": target, "x": text], in: nil, contentWorld: .page)
+        return ((r as? [String: Any])?["ok"] as? Bool) == true
+    }
+
+    /// "Read my WhatsApp messages" — the unread chats with their last few messages.
+    func readUnread() async -> String {
+        guard let wv = web, ready else { return "WhatsApp isn’t linked yet. Say “link WhatsApp” and scan the code with your phone." }
+        let r = (try? await wv.callAsyncJavaScript("return await window.ZuffiWA.unread()", arguments: [:], in: nil, contentWorld: .page)) as? [[String: Any]] ?? []
+        if r.isEmpty { return "No unread WhatsApp messages." }
+        let parts = r.prefix(5).map { c -> String in
+            let name = (c["name"] as? String) ?? "Someone", msgs = (c["last"] as? [String]) ?? []
+            return "\(name): " + msgs.suffix(3).joined(separator: " · ")
+        }
+        return "You have \(r.count) unread chat\(r.count == 1 ? "" : "s"). " + parts.joined(separator: ". ") + "."
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { state = "loading" }
 }

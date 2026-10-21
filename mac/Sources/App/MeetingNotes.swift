@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import AppKit
 import AVFoundation
 import Speech
@@ -416,7 +417,7 @@ final class RoomListener: ObservableObject {
         listen()
         // Apple's recogniser works in ~1 minute pieces: start a fresh one every 50 s.
         restart = Timer.scheduledTimer(withTimeInterval: 50, repeats: true) { _ in MainActor.assumeIsolated { RoomListener.shared.listen() } }
-        think = Timer.scheduledTimer(withTimeInterval: 45, repeats: true) { _ in MainActor.assumeIsolated { Task { await RoomListener.shared.summarise() } } }
+        think = Timer.scheduledTimer(withTimeInterval: 45, repeats: true) { _ in Task { @MainActor in await RoomListener.shared.summarise() } }
         EdgeGlow.shared.flash(.notify("Room mode on"), seconds: 2)
     }
 

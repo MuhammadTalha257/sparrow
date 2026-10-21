@@ -101,6 +101,20 @@ final class AgentRouter {
         if lowered.range(of: #"^(hide|minimi[sz]e) (yourself|sparrow|the island)$|^go hide$"#, options: .regularExpression) != nil {
             SparrowBubble.shared.hideIsland(); return "I'll wait in my little bubble. Click it when you need me."
         }
+        // Linked WhatsApp: "link whatsapp", "unlink whatsapp", "read my whatsapp messages out loud"
+        if lowered.range(of: #"^(link|connect|set up|setup) (my )?whats ?app( to zuffi)?$"#, options: .regularExpression) != nil {
+            WhatsAppLink.shared.showWindow()
+            return "Opening WhatsApp. On your phone: WhatsApp → Settings → Linked devices → Link a device, then scan the code."
+        }
+        if lowered.range(of: #"^(unlink|disconnect) (my )?whats ?app$"#, options: .regularExpression) != nil {
+            await WhatsAppLink.shared.unlink(); return "WhatsApp is unlinked from Zuffi."
+        }
+        if lowered.range(of: #"^(read|say) (my )?(new )?whats ?app (messages )?(out loud|aloud)( from now on)?$"#, options: .regularExpression) != nil {
+            WhatsAppLink.shared.readAloud = true; return "Okay — I’ll read new WhatsApp messages out loud. Say “stop reading WhatsApp” to turn it off."
+        }
+        if lowered.range(of: #"^stop reading (my )?whats ?app( messages)?$"#, options: .regularExpression) != nil {
+            WhatsAppLink.shared.readAloud = false; return "Okay, I’ll stop reading them out."
+        }
         // Room mode: "listen to the room", "room mode on/off", "stop listening to the room"
         if lowered.range(of: #"^(start |turn on |switch on )?(room mode|listen(ing)? to (the |this )?(room|conversation|everyone))( on)?$"#, options: .regularExpression) != nil {
             RoomListener.shared.start()

@@ -4,6 +4,7 @@ import { store } from './store.js';
 import { t as tr, normalizeCommand } from './i18n.js';
 import { prayerTimes, nextPrayer, refreshOnline, NAMES as PRAYERS } from './prayer.js';
 import * as mem from './memory.js';
+import * as free from './freeapis.js';
 import { parseDoc, makeDocPDF, deliver, startTimer, stopTimer, runningTimer, timeFor, fmtHours, parseExpense, monthExpenses } from './tools.js';
 
 export const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -311,7 +312,10 @@ export async function briefing() {
   let s = `${greetingWord()}${hi()}! It's ${fmtTime(new Date())}.`;
   const w = await weatherText(); if (w) s += ' ' + w;
   if (store.settings.prayer.on) { try { const p = await prayerToday(); if (p?.next) s += ` Next prayer: ${p.next.name} at ${fmtTime(p.next.at)}.`; } catch {} }
-  return s + ' ' + spokenPlan(new Date());
+  s += ' ' + spokenPlan(new Date());
+  // a little of what's happening in the world (switch off in Settings → My day)
+  if (store.settings.newsInBriefing !== false) { const n = await free.newsLine().catch(() => ''); if (n) s += ' ' + n; }
+  return s;
 }
 export function moveToTomorrow(id) {
   const it = store.items.find(i => i.id === id); if (!it) return false;
@@ -358,7 +362,7 @@ export async function handle(input) {
   if (!t) return { reply: 'Yes? 🐰' };
 
   if (/^(help|what can you do|commands)\b/.test(t)) return { reply:
-    'Try:\n• remind me every day at 8pm to take medicine\n• meeting with Ali Friday 3pm\n• add task buy milk\n• snooze 10 minutes\n• prayer times\n• add habit drink water 8 times a day\n• quote for Ali, 3 hours at £40\n• start timer for Ali · stop timer\n• spent £12 on lunch\n• which file did I send on 12 September?\n• play Tum Hi Ho on Spotify\n• open WhatsApp · weather · focus 25 minutes\nAnything else, just ask.' };
+    'Try:\n• remind me every day at 8pm to take medicine\n• meeting with a client Friday 3pm\n• add task buy milk\n• snooze 10 minutes\n• prayer times\n• add habit drink water 8 times a day\n• quote for a client, 3 hours at £40\n• start timer for a client · stop timer\n• spent £12 on lunch\n• which file did I send on 12 September?\n• play Tum Hi Ho on Spotify\n• open WhatsApp · weather · focus 25 minutes\nAnything else, just ask.' };
   if (/^(hi|hello|hey|salam|assalam|aoa|good (morning|afternoon|evening))\b/.test(t) && t.split(' ').length <= 4)
     return { reply: `${greetingWord()}${hi()}! How can I help? 🐰` };
 
@@ -753,6 +757,8 @@ export async function handle(input) {
   }
 
   // ----- info -----
+  // news, exchange rates, word meanings, public holidays (free services, no key)
+  { const c = store.settings.profile?.country || 'GB', fa = await free.answer(o, { country: c === 'PK' ? 'GB' : c }).catch(() => null); if (fa) return fa; }
   if (/\bweather\b|\btemperature\b|\brain(ing)? today\b/.test(t)) {
     const w = await weatherText();
     return { reply: w || "I couldn't get the weather — check your internet or set your city in Settings." };

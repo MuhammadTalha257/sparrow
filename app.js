@@ -1918,13 +1918,25 @@ async function openTool(name) {
       try {
         const sp = spec(); const pic = await images.make(`${prof.estate ? 'Professional real estate photo, ' : 'Bright, inviting photo for a ' + (prof.label || 'local business') + ', '}${sp.headline}. No text, no letters, no logos, photorealistic.`, { shape: shape === 'post' ? 'square' : 'portrait' });
         const im = await promo.imageFromBytes(pic.bytes); if (im) { photos = [im, ...photos]; $('#prNote').textContent = `AI background ready (${images.MAKERS[pic.maker]}).`; }
-      } catch (e) { $('#prNote').textContent = e.message === 'NO_MAKER' ? 'To make pictures, add an OpenAI, Gemini, Grok, Together, Stability or OpenRouter key in Settings → AI, or an Ollama picture model.' : 'Couldn’t make a picture: ' + e.message; }
+      } catch (e) { $('#prNote').textContent = 'Couldn’t make a picture: ' + e.message; }
       finally { b.disabled = false; }
     };
     $('#prGo').onclick = async () => {
       const sp = spec(), out = $('#prOut'), b = $('#prGo'); b.disabled = true;
       try {
         let blob, fname;
+        if (shape === 'reel' && photos.length < 3) {
+          // A real-looking reel needs a few different shots: Zuffi makes the missing ones (free maker works without a key).
+          const shots = prof.estate ? ['front of the property, golden hour', 'bright modern living room interior', 'close-up detail, kitchen or garden']
+            : ['the shop or place from outside, inviting', 'inside, people being served, warm light', 'close-up of the product or service'];
+          for (let i = photos.length; i < 3; i++) {
+            b.textContent = `Making scene ${i + 1} of 3…`;
+            try {
+              const pic = await images.make(`Photorealistic vertical photo for a ${prof.estate ? 'real estate' : (prof.label || 'local business')} reel: ${sp.headline}. ${shots[i]}. Natural light, shallow depth of field, no text, no letters, no logos.`, { shape: 'portrait' });
+              const im = await promo.imageFromBytes(pic.bytes); if (im) photos.push(im);
+            } catch { break; }
+          }
+        }
         if (shape === 'reel') { b.textContent = 'Recording reel… 0%'; blob = await promo.renderReel(sp, photos, p => { b.textContent = `Recording reel… ${Math.round(p * 100)}%`; }); fname = `zuffi-reel-${Date.now().toString(36)}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`; }
         else { b.textContent = 'Designing…'; blob = await promo.renderImage(sp, shape, photos); fname = `zuffi-${shape}-${Date.now().toString(36)}.png`; }
         const url = URL.createObjectURL(blob);
@@ -2653,6 +2665,7 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  newsLine: async () => { try { return await (await import('./freeapis.js')).newsLine(); } catch { return ''; } },
   /** Mac notch slider: today's prayer times, the next reminder and the user's name. Small and offline. */
   glance: () => {
     const s = S(), now = Date.now(), out = { prayers: [], reminder: null, name: s.profile?.name || s.name || '' };

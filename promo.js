@@ -49,7 +49,7 @@ export function draw(g, W, H, spec, photo, anim = null) {
   const accent = spec.accent || '#C9A24A', s = W / 1080, tall = H > W;
   // background: the photo, or a calm branded gradient
   g.fillStyle = '#0E1116'; g.fillRect(0, 0, W, H);
-  if (photo) { const z = anim ? 1.04 + anim.p * 0.08 : 1.02; cover(g, photo, W, H, z, anim ? (anim.dir * (anim.p - .5) * 0.03) : 0, 0); }
+  if (photo) { const e = anim ? anim.p * anim.p * (3 - 2 * anim.p) : 0, z = anim ? 1.03 + e * 0.13 : 1.02; cover(g, photo, W, H, z, anim ? (anim.dir * (e - .5) * 0.05) : 0, anim ? (e - .5) * -0.02 : 0); }   // eased push-in and drift, like a camera move
   else {
     const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, '#0F1A2B'); gr.addColorStop(1, '#141018'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
     g.globalAlpha = .18; g.fillStyle = accent; g.beginPath(); g.arc(W * .85, H * .2, W * .45, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
@@ -106,7 +106,7 @@ export async function renderImage(spec, shape, photos) {
 /** A reel: each photo ~2.6 s with a slow zoom, the text rising in, an end card with the WhatsApp number. → video blob */
 export async function renderReel(spec, photos, onProgress) {
   const W = 1080, H = 1920, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
-  const pics = photos.length ? photos : [null], per = 2.6, endCard = 2.2, total = pics.length * per + endCard;
+  const pics = photos.length ? photos : [null], per = 3.2, endCard = 2.4, total = pics.length * per + endCard;
   const stream = cv.captureStream(30), type = outputType(), chunks = [];
   const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 6_000_000 });
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
@@ -121,7 +121,7 @@ export async function renderReel(spec, photos, onProgress) {
       if (t < pics.length * per) {
         const i = Math.floor(t / per), p = (t - i * per) / per;
         draw(g, W, H, { ...spec, phone: '' }, pics[i], { p, dir: i % 2 ? -1 : 1 });
-        if (p < .12 && i > 0) { g.globalAlpha = 1 - p / .12; draw(g, W, H, { ...spec, phone: '' }, pics[i - 1], { p: 1, dir: (i - 1) % 2 ? -1 : 1 }); g.globalAlpha = 1; }
+        if (p < .18 && i > 0) { g.globalAlpha = 1 - p / .18; draw(g, W, H, { ...spec, phone: '' }, pics[i - 1], { p: 1, dir: (i - 1) % 2 ? -1 : 1 }); g.globalAlpha = 1; }
       } else {
         const p = (t - pics.length * per) / endCard;
         draw(g, W, H, { ...spec, details: [], headline: spec.cta || 'Message us on WhatsApp', price: '', tag: '' }, pics[pics.length - 1], { p, dir: 1 });

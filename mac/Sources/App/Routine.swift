@@ -300,6 +300,9 @@ final class Routine {
         var text = "Good \(Briefing.period() == "night" ? "morning" : Briefing.period())\(name.isEmpty ? "" : ", \(name)")! It's \(tf.string(from: Date()))."
         if UserDefaults.standard.bool(forKey: AssistantPrefs.greetWeather), let w = await Weather.now() { text += " " + w }
         text += " " + (await Self.dayText())
+        // two headlines from today's news (free Wikipedia feed), unless switched off
+        if UserDefaults.standard.object(forKey: "newsInBriefing") as? Bool ?? true,
+           let n = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.newsLine ? await window.Sparrow.newsLine() : ''") as? String, !n.isEmpty { text += " " + n }
         text += " Have a lovely day!"
         Briefing.shared.markGreeted()
         // Spoken only — no words on screen (the sparrow just looks happy while it talks).

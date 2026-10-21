@@ -641,11 +641,8 @@ extension ChooseView {
             case .failure(let e): status = e.localizedDescription; return
             }
         }
-        let r = await withTaskGroup(of: [String: Any]?.self) { g -> [String: Any]? in
-            g.addTask { await WebHub.shared.callJS("return await window.Sparrow.convertB64(n, b, t)", ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any] }
-            g.addTask { try? await Task.sleep(nanoseconds: 60_000_000_000); return ["error": "That took too long — try PDF or Text."] }
-            let first = await g.next() ?? nil; g.cancelAll(); return first
-        }
+        let r = await WebHub.shared.callJS("return await Promise.race([window.Sparrow.convertB64(n, b, t), new Promise(r => setTimeout(() => r({ error: 'That took too long — try PDF or Text.' }), 60000))])",
+                                           ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any]
         guard let name = r?["name"] as? String, let b64 = r?["b64"] as? String, let out = Data(base64Encoded: b64) else {
             status = (r?["error"] as? String) ?? "That didn’t work — try another format."; return
         }
@@ -1247,6 +1244,18 @@ struct NoteView: View {
                         noteButton("Open", icon: "envelope.open", primary: true) {
                             if let id = state.noteRef { Task { await MailAgent.shared.open(id: id) } }
                             state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil)
+                        }
+                        noteButton("Later", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
+                    }.padding(.top, 4)
+                } else if state.noteAction == "whatsapp" {
+                    HStack(spacing: 8) {
+                        noteButton("Read it", icon: "speaker.wave.2.fill", primary: true) {
+                            VoiceEngine.shared.speak(state.noteMessage.replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from "))
+                        }
+                        noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: false) {
+                            let who = state.noteMessage.components(separatedBy: "\n").first?.replacingOccurrences(of: "WhatsApp · ", with: "") ?? ""
+                            state.noteAction = nil
+                            ZuffiChat.shared.open(prefill: "Reply to \(who) on WhatsApp: ")
                         }
                         noteButton("Later", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
                     }.padding(.top, 4)

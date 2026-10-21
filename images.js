@@ -8,6 +8,7 @@ const OLLAMA_IMG = /z-image|flux|stable-diffusion|sdxl|image-gen|qwen-image/i;
 export const MAKERS = {
   ollama: 'Ollama on this computer (offline)', openai: 'OpenAI', gemini: 'Google Gemini', grok: 'xAI Grok',
   together: 'Together (FLUX)', stability: 'Stability AI', openrouter: 'OpenRouter',
+  free: 'Free picture maker (Pollinations, no key — your description is sent to pollinations.ai)',
 };
 
 async function ollamaImageModel() {
@@ -22,6 +23,7 @@ export async function available() {
   const k = { ...(window.zuffiMacKeys || {}), ...(store.settings.keys || {}) }, out = [];
   if (await ollamaImageModel()) out.push('ollama');
   for (const p of ['openai', 'gemini', 'grok', 'together', 'stability', 'openrouter']) if (k[p]) out.push(p);
+  if (store.settings.freeImages !== false) out.push('free');   // always works, no key needed
   const pref = store.settings.imageMaker; if (pref && out.includes(pref)) out.sort((a, b) => (b === pref) - (a === pref));
   return out;
 }
@@ -78,6 +80,17 @@ async function makeWith(p, prompt, shape) {
     const j = await json('https://openrouter.ai/api/v1/chat/completions', { model: store.settings.models?.openrouterImage || 'google/gemini-2.5-flash-image', modalities: ['image', 'text'], messages: [{ role: 'user', content: `${prompt} (${shape} picture)` }] },
       { Authorization: 'Bearer ' + k.openrouter, 'HTTP-Referer': 'https://lisansystems.com', 'X-Title': 'Zuffi' });
     const url = j.choices?.[0]?.message?.images?.[0]?.image_url?.url; if (!url) throw new Error('No picture'); return b64ToBytes(url);
+  }
+  if (p === 'free') {
+    // Pollinations (free, no key): FLUX, a random seed so each try is new; "enhance" makes the description richer.
+    const seed = Math.floor(Math.random() * 1e9);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ', high detail, realistic lighting')}?width=${w}&height=${h}&model=flux&nologo=true&enhance=true&seed=${seed}`;
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 90000);
+    try {
+      const r = await fetch(url, { signal: ctl.signal });
+      if (!r.ok) throw new Error(r.status === 429 ? 'The free picture maker is busy — try again in a few seconds' : 'Free picture maker ' + r.status);
+      return new Uint8Array(await r.arrayBuffer());
+    } finally { clearTimeout(tm); }
   }
   throw new Error('Unknown picture maker');
 }

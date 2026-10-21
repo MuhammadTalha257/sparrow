@@ -120,6 +120,7 @@ final class ZuffiCRM: ObservableObject {
 
     enum Auto: String, CaseIterable, Identifiable {
         case autopilot, includeContacts, watchWhatsApp, draftReplies, autoReply, morningAsk, voiceNotes, leadExports, roundRobin, quietFollowUp, ownerSummary, staffDigest
+        case afterHours, thankAndReview, paymentReminders, hotLeadAlert
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -135,6 +136,10 @@ final class ZuffiCRM: ObservableObject {
             case .quietFollowUp: return "Follow up leads that go quiet"
             case .ownerSummary: return "Owner's daily summary on WhatsApp"
             case .staffDigest: return "Each team member gets their list on WhatsApp"
+            case .afterHours: return "Out-of-hours reply"
+            case .thankAndReview: return "Thank won clients and ask for a review"
+            case .paymentReminders: return "Polite reminders for late payments"
+            case .hotLeadAlert: return "Tell me at once about hot leads"
             }
         }
         var detail: String {
@@ -151,9 +156,13 @@ final class ZuffiCRM: ObservableObject {
             case .quietFollowUp: return "When a lead hasn't heard from you for the set number of days, a follow-up is written and waits in Inbox."
             case .ownerSummary: return "At the set hour you get: new leads, hot leads, today's follow-ups, and who in the team isn't following up."
             case .staffDigest: return "At the same hour each team member gets their own follow-ups for the day."
+            case .afterHours: return "When someone writes outside your opening hours (set in My business), they get one friendly “thanks — we'll reply when we open at …” in their language, so nobody waits wondering."
+            case .thankAndReview: return "When a client becomes Won, Zuffi writes a thank-you with your review link (Google, Facebook…). It waits in Inbox — or goes by itself with Autopilot."
+            case .paymentReminders: return "Each morning, for payments that are overdue, Zuffi writes a polite reminder to the client. You check it in Inbox and press Send."
+            case .hotLeadAlert: return "A hot lead (ready to buy, big budget, wants a visit) lights up the notch and Zuffi tells you straight away."
             }
         }
-        var defaultOn: Bool { ![.autopilot, .includeContacts, .autoReply, .ownerSummary, .staffDigest].contains(self) }
+        var defaultOn: Bool { ![.autopilot, .includeContacts, .autoReply, .ownerSummary, .staffDigest, .afterHours, .paymentReminders].contains(self) }
     }
 
     func isOn(_ a: Auto) -> Bool { UserDefaults.standard.object(forKey: "auto_" + a.rawValue) as? Bool ?? a.defaultOn }
@@ -449,7 +458,13 @@ final class ZuffiCRM: ObservableObject {
         if isOn(.voiceNotes) { scanVoiceNotes() }
         if !serverURL.isEmpty, now.timeIntervalSince(lastSync) > 60 { lastSync = now; Task { await self.pullServer() } }
         if isOn(.quietFollowUp) { draftQuietFollowUps() }
+        if isOn(.thankAndReview) { draftThankYous() }
         let cal = Calendar.current
+        if isOn(.paymentReminders), cal.component(.hour, from: now) >= summaryHour,
+           UserDefaults.standard.string(forKey: "crmPayReminders") != ZuffiBusiness.iso(now) {
+            UserDefaults.standard.set(ZuffiBusiness.iso(now), forKey: "crmPayReminders")
+            draftPaymentReminders()
+        }
         let todayKey = ZuffiBusiness.iso(now)
         if isOn(.morningAsk), ZuffiBusiness.shared.pack != nil, cal.component(.hour, from: now) >= summaryHour, cal.component(.hour, from: now) < 13,
            UserDefaults.standard.string(forKey: "crmMorningAsk") != todayKey, todaysUpdate.isEmpty {
@@ -477,6 +492,7 @@ final class ZuffiCRM: ObservableObject {
     // MARK: WhatsApp on this Mac → leads
 
     func watchWhatsApp() async {
+        if WhatsAppLink.shared.ready { whatsAppStatus = "Linked — new messages arrive instantly"; return }
         guard NSWorkspace.shared.runningApplications.contains(where: WhatsAppAgent.isWhatsApp) else {
             whatsAppStatus = WhatsAppAgent.installed ? "WhatsApp is installed but not open — press Open WhatsApp" : "WhatsApp isn't installed on this Mac — press Get WhatsApp"
             return
@@ -538,6 +554,14 @@ final class ZuffiCRM: ObservableObject {
             SoundEngine.shared.play("chime")
             NotificationCenter.default.post(name: .petSay, object: "New WhatsApp lead: \(name.isEmpty ? phone : name)")
         }
+        // Out of hours: one friendly holding reply (per client per night).
+        if isOn(.afterHours), !isOpenNow, let l = leads.first(where: { $0.key == key }), afterHoursSent[key] != ZuffiBusiness.iso(Date()) {
+            afterHoursSent[key] = ZuffiBusiness.iso(Date())
+            let open = UserDefaults.standard.object(forKey: "bizOpenHour") as? Int ?? 9
+            let msg = Self.afterHoursText(for: text, biz: ZuffiBusiness.shared.businessName, open: open)
+            Task { _ = await self.send(l.key, msg, auto: true) }
+            if !pilot { return }
+        }
         guard !voice, wantsReply, let lead = leads.first(where: { $0.key == key }) else { return }
         let r = await smartReply(for: lead, incoming: text, first: existing == nil)
         // Details the AI picked up in the same call go into the lead.
@@ -548,6 +572,11 @@ final class ZuffiCRM: ObservableObject {
                     else if b.get(b.rows[i], [k]).isEmpty { b.set(i, [k], v) }
                 }
             }
+        }
+        if isOn(.hotLeadAlert), (r.details["priority"] ?? "") == "Hot" {
+            let msg = "🔥 Hot lead: \(lead.display) — \(String(text.prefix(80)))"
+            MacStatus.shared.toast("Hot lead · \(lead.display)", String(text.prefix(120)), icon: "flame.fill")
+            ZuffiHomeModel.shared.say(msg)
         }
         guard !r.reply.isEmpty else { return }
         drafts[key] = r.reply
@@ -564,6 +593,51 @@ final class ZuffiCRM: ObservableObject {
         if (pilot || (isOn(.autoReply) && existing == nil)), autoCount[countKey, default: 0] < 12 {
             autoCount[countKey, default: 0] += 1
             enqueueAuto(key, r.reply)
+        }
+    }
+
+    // MARK: More automations
+
+    private var afterHoursSent: [String: String] = [:]
+    /// Inside opening hours? (My business → opening hours; 9 to 8 if not set; Sundays count as open unless closed is set)
+    var isOpenNow: Bool {
+        let d = UserDefaults.standard, h = Calendar.current.component(.hour, from: Date())
+        let open = d.object(forKey: "bizOpenHour") as? Int ?? 9, close = d.object(forKey: "bizCloseHour") as? Int ?? 20
+        if d.bool(forKey: "bizClosedSunday"), Calendar.current.component(.weekday, from: Date()) == 1 { return false }
+        return h >= open && h < close
+    }
+    static func afterHoursText(for incoming: String, biz: String, open: Int) -> String {
+        let at = open == 12 ? "12 noon" : open < 12 ? "\(open) am" : "\(open - 12) pm"
+        let urdu = incoming.range(of: #"[\u0600-\u06FF]"#, options: .regularExpression) != nil
+        let roman = incoming.lowercased().range(of: #"\b(kya|hai|aap|kitna|chahiye|mujhe|bhai|plot|marla|rate)\b"#, options: .regularExpression) != nil
+        if urdu { return "آپ کے پیغام کا شکریہ! ہم ابھی بند ہیں، کل \(at) پر جواب دیں گے۔" }
+        if roman { return "Message ka shukriya! Hum abhi band hain — kal \(at) baje jawab dein ge. 🙏" }
+        return "Thanks for your message\(biz.isEmpty ? "" : " to \(biz)")! We're closed right now and will reply when we open at \(at). 🙏"
+    }
+
+    /// Won → thank-you with a review link (once per client).
+    private func draftThankYous() {
+        let done = Set(UserDefaults.standard.stringArray(forKey: "crmThanked") ?? [])
+        let link = UserDefaults.standard.string(forKey: "bizReviewLink") ?? ""
+        var newDone = done
+        for l in leads where l.stage == "Won" && !done.contains(l.key) && drafts[l.key] == nil {
+            newDone.insert(l.key)
+            let first = l.name.split(separator: " ").first.map(String.init) ?? ""
+            let msg = "Thank you\(first.isEmpty ? "" : ", \(first)") — it was a pleasure helping you! 🙏" + (link.isEmpty ? " If you were happy, a quick review would mean a lot to us." : " If you were happy, could you leave us a quick review? \(link)")
+            drafts[l.key] = msg
+            if isOn(.autopilot) { enqueueAuto(l.key, msg) }
+        }
+        if newDone.count != done.count { UserDefaults.standard.set(Array(newDone.suffix(500)), forKey: "crmThanked") }
+    }
+
+    /// Late payments → a polite reminder per client, waiting in Inbox.
+    private func draftPaymentReminders() {
+        let cur = currencyChoice.isEmpty ? (country == "PK" ? "Rs" : "£") : currencyChoice
+        for d in ZuffiMoney.shared.dues where d.overdue && !d.phone.isEmpty {
+            let first = d.client.split(separator: " ").first.map(String.init) ?? ""
+            let msg = "Hi\(first.isEmpty ? "" : " \(first)"), a friendly reminder that \(cur) \(ZuffiMoney.pretty(d.amount))\(d.what.isEmpty ? "" : " for \(d.what)") was due on \(d.due). Could you let us know when it'll be paid? Thank you! 🙏"
+            let key = addLead(["name": d.client, "phone": d.phone, "source": "Payments"], note: "")
+            if !key.isEmpty, drafts[key] == nil { drafts[key] = msg }
         }
     }
 
@@ -587,7 +661,8 @@ final class ZuffiCRM: ObservableObject {
             while !self.outbox.isEmpty {
                 let idle = [CGEventType.keyDown, .leftMouseDown, .mouseMoved, .scrollWheel]
                     .map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 99
-                if idle >= 4 || Date().timeIntervalSince(self.outbox[0].queued) > 30 {
+                // Linked WhatsApp sends in the background, so no need to wait until you stop typing.
+                if WhatsAppLink.shared.ready || idle >= 4 || Date().timeIntervalSince(self.outbox[0].queued) > 30 {
                     let item = self.outbox.removeFirst()
                     let front = NSWorkspace.shared.frontmostApplication
                     let res = await self.send(item.key, item.text, auto: true)
@@ -706,7 +781,8 @@ final class ZuffiCRM: ObservableObject {
         let to = l.phone.isEmpty ? l.name : l.phone
         guard !to.isEmpty else { return "No number for this lead." }
         var result = ""
-        if !serverURL.isEmpty, !l.phone.isEmpty, let r = await serverSend(phone: l.phone, text: text) { result = r }
+        if WhatsAppLink.shared.ready, await WhatsAppLink.shared.send(to: l.phone.isEmpty ? l.name : l.phone, text: text) { result = "Sent on WhatsApp." }
+        else if !serverURL.isEmpty, !l.phone.isEmpty, let r = await serverSend(phone: l.phone, text: text) { result = r }
         else {
             guard WhatsAppAgent.installed else { return "To send, install WhatsApp on this Mac (Business → Connect WhatsApp)." }
             result = await WhatsAppAgent.shared.sendScheduled(to: to, text: text)
@@ -726,7 +802,7 @@ final class ZuffiCRM: ObservableObject {
     // MARK: Notifications (WhatsApp on this Mac or on your iPhone through iPhone Mirroring)
 
     func fromNotification(_ texts: [String], descriptions: [String]) {
-        guard isOn(.watchWhatsApp) else { return }
+        guard isOn(.watchWhatsApp), !WhatsAppLink.shared.ready else { return }
         let all = (texts + descriptions).joined(separator: " ").lowercased()
         guard all.contains("whatsapp") else { return }
         let noise = #"(?i)^(whatsapp|whatsapp business|now|just now|\d+[mh] ago|yesterday|reply|mark as read|iphone)$"#
