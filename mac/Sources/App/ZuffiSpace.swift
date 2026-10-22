@@ -630,7 +630,11 @@ struct ZuffiQuickSettings: View {
                 row("rectangle.topthird.inset.filled", "Show Zuffi by the notch when closed", on: Binding(
                     get: { IslandStateMachine.alwaysShowZuffi },
                     set: { UserDefaults.standard.set($0, forKey: "alwaysShowZuffi"); AppState.shared.syncMode() }))
-                row("figure.walk", "Zuffi on screen (pet)", on: Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
+                if !ZuffiWalk.petNever {
+                    row("figure.walk", "Zuffi on screen (pet)", on: Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
+                    row("bell.and.waves.left.and.right", "The pet brings reminders (water, meetings…)", on: Binding(get: { ZuffiWalk.petBringsReminders }, set: { UserDefaults.standard.set($0, forKey: "petReminders") }))
+                }
+                row("eye.slash.fill", "Never show the pet on screen", on: Binding(get: { ZuffiWalk.petNever }, set: { UserDefaults.standard.set($0, forKey: "petNever"); if $0 { PetController.shared.hide() } }))
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Fur colour").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.6))
                     HStack(spacing: 6) {
@@ -759,6 +763,7 @@ struct NotchFeaturesList: View {
     static let cats: [(String, String)] = [("business", "Business"), ("files", "Files & PDF"), ("everyday", "Every day"), ("create", "Create"), ("devices", "This Mac & devices")]
     static let all: [NotchFeature] = [
         NotchFeature(id: "business", cat: "business", icon: "briefcase.fill", tint: "#F58FA8", name: "Business", sub: "Leads, WhatsApp agent, posts, money, team", business: true),
+        NotchFeature(id: "aiteam", cat: "business", icon: "person.3.sequence.fill", tint: "#5B6CFF", name: "AI Team", sub: "Hire specialists, give them jobs — led by a Team Manager", business: true),
         NotchFeature(id: "convert", cat: "files", icon: "arrow.triangle.2.circlepath", tint: "#38BDF8", name: "Convert a file", sub: "JPG, PNG, WebP, PDF, text"),
         NotchFeature(id: "sign", cat: "files", icon: "signature", tint: "#22A06B", name: "Sign a PDF", sub: "Draw your signature, done"),
         NotchFeature(id: "merge", cat: "files", icon: "square.stack.3d.up.fill", tint: "#E25A5A", name: "Merge PDFs", sub: "Join several into one"),
@@ -846,6 +851,7 @@ struct NotchFeaturesList: View {
         switch id {
         case "room": RoomListener.shared.toggle(); ZuffiNav.go(.overview)   // from the list → back to home, where the room card shows
         case "walink": WhatsAppLink.shared.showWindow(); NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        case "aiteam": BusinessDashboard.shared.show(.aiTeam); NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "business", "convert", "record", "screen", "agents", "data", "history", "pet", "meeting", "today":
             // Only fold the notch for things that open their own window; the rest show their answer in the notch.
             if id == "screen" || id == "record" || id == "meeting" { ZuffiNav.go(.overview) }

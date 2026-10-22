@@ -9,12 +9,13 @@ import FoundationModels
 // MARK: - Providers
 
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
-    case auto, claude, openai, gemini, groq, grok, deepseek, mistral, perplexity, openrouter, ollama, apple, claudeCode, codex, geminiCLI
+    case auto, zuffi, claude, openai, gemini, groq, grok, deepseek, mistral, perplexity, openrouter, ollama, apple, claudeCode, codex, geminiCLI
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .auto:   return "Auto"
+        case .zuffi:  return "Zuffi AI (included in your plan)"
         case .claude: return "Claude"
         case .openai: return "ChatGPT"
         case .gemini: return "Gemini"
@@ -35,6 +36,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     var icon: String {
         switch self {
         case .auto:   return "sparkles"
+        case .zuffi:  return "hare.fill"
         case .claude: return "asterisk"
         case .openai: return "circle.hexagongrid"
         case .gemini: return "diamond"
@@ -121,7 +123,9 @@ final class AIService {
     var fullSystemPrompt: String {
         if let o = oneShotSystem { return o }
         // Zuffi's long self-description only when the question is about Zuffi: a short prompt answers much faster.
-        let base = Self.systemPrompt + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : "") + ZuffiTeam.shared.persona
+        // A team agent is picked: it answers as that person, with the business details — not Zuffi's long self-description.
+        let base = ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) }
+            ?? (Self.systemPrompt + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : ""))
         guard let document else { return base }
         return base + """
 
@@ -135,6 +139,12 @@ final class AIService {
         \(document)
         </file>
         """
+    }
+
+    /// Keeps a turn answered outside the AI (team intros, the Team Manager) so follow-up questions have the context.
+    func remember(user: String, assistant: String) {
+        history.append((role: "user", text: user)); history.append((role: "assistant", text: assistant))
+        if history.count > 30 { history.removeFirst(history.count - 30) }
     }
 
     func clearConversation() {
@@ -151,10 +161,22 @@ final class AIService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         if ZuffiPlan.shared.isLocked { finish(ZuffiPlan.shared.lockedMessage, state: state, emote: .happy); ZuffiPlan.shared.openAccount(); return }
         var context = context
+        // 0) Zuffi's team: "use the finance agent", "who are you?", "who are you guys?", "assign … to research and product manager"
+        if let r = await ZuffiTeam.shared.handle(query) {
+            remember(user: query, assistant: r)
+            finish(r, state: state, emote: .happy); return
+        }
+        // Several team members picked: the Team Manager splits the question between them and brings back one answer.
+        if context == nil, ZuffiTeam.shared.isTeam, !ZuffiTeam.looksLikeCommand(query) {
+            state.stateOverride = .thinking
+            let r = await ZuffiTeam.shared.runTeam(query)
+            remember(user: query, assistant: r)
+            finish(r, state: state, emote: .happy); return
+        }
+        let agentOn = ZuffiTeam.shared.active != nil
         // 0) Questions about the user ("what's my date of birth?") — from the welcome form, no AI, works offline.
         if context == nil, let me = await ZuffiPlan.shared.aboutMe(query) { finish(me, state: state, emote: .happy); return }
         // 0b) Your data: daily messages, and spreadsheets you hand over.
-        if let r = ZuffiTeam.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiCRM.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiMoney.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = await ZuffiProperties.shared.handle(query) { finish(r, state: state, emote: .happy); return }
@@ -175,7 +197,7 @@ final class AIService {
             return
         }
         // 1b) Everything else Zuffi can do offline (habits, prayer times, memory, invoices, time, expenses…).
-        if context == nil, let reply = await WebHub.shared.ask(query) {
+        if context == nil, !agentOn, let reply = await WebHub.shared.ask(query) {
             finish(reply, state: state, emote: .happy)
             return
         }
@@ -193,7 +215,7 @@ final class AIService {
 
         // Claude keeps its own richer pipeline (web search, PDFs, images).
         if provider == .claude {
-            await ClaudeService.shared.chat(query: ZuffiData.shared.augment(query), context: context, state: state)
+            await ClaudeService.shared.chat(query: agentOn ? query : ZuffiData.shared.augment(query), context: context, state: state)
             return
         }
 
@@ -201,7 +223,8 @@ final class AIService {
         //    conversation, so follow-up questions still "see" it. A newly attached
         //    file starts a fresh conversation about that file.
         wantsAbout = Self.asksAboutZuffi(query)
-        var turn = ZuffiData.shared.augment(query)
+        // Saved spreadsheets only join in for plain Zuffi (an agent answering "who are you" mustn't start reading a sheet).
+        var turn = agentOn ? query : ZuffiData.shared.augment(query)
         if let context, context.key != lastContextKey {
             lastContextKey = context.key
             let limit = provider == .ollama || provider == .apple ? 12_000 : 80_000
@@ -250,6 +273,7 @@ final class AIService {
         case .gemini: return try await callGemini(state: state)
         case .groq:   return try await callGroq(state: state)
         case .ollama: return try await callOllama(state: state)
+        case .zuffi:  return try await callZuffi()
         case .apple:  return try await callApple()
         case .grok, .deepseek, .mistral, .perplexity, .openrouter: return try await callCompatible(p)
         case .claudeCode, .codex, .geminiCLI:
@@ -264,7 +288,8 @@ final class AIService {
     /// One prompt for a command-line AI: Zuffi's instructions, any document, and the recent conversation.
     private func cliPrompt() -> String {
         var t = oneShotSystem.map { $0 + " Do not use tools or edit files.\n" }
-            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + Self.userFacts + ZuffiAbout.text + "\n" + ZuffiTeam.shared.persona + "\n")
+            ?? ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) + "\nDo not use tools or edit files.\n" }
+            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + Self.userFacts + ZuffiAbout.text + "\n")
         if let d = document { t += "\nDocument the user shared:\n\(d.prefix(20_000))\n" }
         for m in history.suffix(12) { t += "\n\(m.role == "assistant" ? "Zuffi" : "User"): \(m.text)" }
         return t + "\nZuffi:"
@@ -282,6 +307,7 @@ final class AIService {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { out.append(p) }
         }
         // AIs that just ran out of tokens go to the back of the line.
+        if first != .zuffi, Self.builtinAvailable { out.append(.zuffi) }
         out = out.filter { !AIUsage.shared.resting($0.label) } + out.filter { AIUsage.shared.resting($0.label) }
         if first != .apple, Self.appleModelAvailable { out.append(.apple) }
         if first != .ollama, !(await Self.ollamaModels()).isEmpty { out.append(.ollama) }
@@ -308,6 +334,8 @@ final class AIService {
         for p in [AIProvider.claude, .groq, .openai, .gemini, .grok, .deepseek, .mistral, .perplexity, .openrouter] where !AIUsage.shared.resting(p.label) {
             if let k = p.keychainKey, let v = KeychainStore.shared.get(k), !v.isEmpty { return p }
         }
+        // The AI that comes with Pro / Business — fast, nothing to set up, the key stays on Zuffi's server.
+        if Self.builtinAvailable { return .zuffi }
         // The subscription you already pay for (Claude Code / Codex), if installed.
         if InstalledAI.claudeCode != nil { return .claudeCode }
         if InstalledAI.codex != nil { return .codex }
@@ -534,7 +562,101 @@ final class AIService {
                                        body: ["model": "gpt-4o-mini", "temperature": 0.3, "response_format": ["type": "json_object"], "messages": msgs],
                                        headers: ["Authorization": "Bearer \(k)"], timeout: 15),
            let r = parse(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return r }
+        if Self.builtinAvailable, let t = await Self.builtin([["role": "system", "content": system + " Reply with JSON only."], ["role": "user", "content": prompt]], max: 700),
+           let r = parse(t) { return r }
         return parse(await oneShot(prompt, system: system))
+    }
+
+    // MARK: Zuffi AI — included with Pro and Business (through Zuffi's server, the key never touches this Mac)
+
+    /// On a paid plan (or the trial) and signed in.
+    static var builtinAvailable: Bool { ZuffiPlan.shared.isPaid && NetStatus.shared.online && !AIUsage.shared.resting("Zuffi AI") }
+
+    static func builtin(_ messages: [[String: String]], max: Int = 900) async -> String? {
+        guard let r = await WebHub.shared.callJS("return await window.Sparrow.builtinAI(m, x)", ["m": messages, "x": max]) as? [String: Any] else { return nil }
+        if let t = r["text"] as? String, !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return t }
+        // out of answers this month → rest for an hour; not switched on / signed out → try again in 10 minutes
+        if let e = r["error"] as? String { AIUsage.shared.rest("Zuffi AI", minutes: e == "limit" ? 60 : 10) }
+        return nil
+    }
+
+    /// One answer with its own instructions, without touching the chat (team members, the Team Manager).
+    /// Zuffi AI (in the plan) → Groq → Gemini → OpenAI → whatever else is set up. `web`: look things up first (research).
+    func textAnswer(system: String, messages: [[String: String]], max: Int = 900, web: Bool = false) async -> String? {
+        func clean(_ s: String?) -> String? { let t = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines); return t.isEmpty ? nil : t }
+        let gem = KeychainStore.shared.get("gemini-api-key") ?? ""
+        let msgs: [[String: String]] = [["role": "system", "content": system]] + messages
+        // Research with Google Search through Gemini when there's a Gemini key.
+        if web, !gem.isEmpty, NetStatus.shared.online {
+            let model = UserDefaults.standard.string(forKey: "geminiResolved") ?? AppState.defaultGeminiModel
+            let contents = messages.map { ["role": $0["role"] == "assistant" ? "model" : "user", "parts": [["text": $0["content"] ?? ""]]] as [String: Any] }
+            if let j = try? await postJSON(URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!,
+                                           body: ["system_instruction": ["parts": [["text": system]]], "contents": contents, "tools": [["google_search": [String: Any]()]]],
+                                           headers: ["x-goog-api-key": gem], timeout: 40) {
+                let parts = (((j["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
+                if let t = clean(parts.compactMap { $0["text"] as? String }.joined()) { return t }
+            }
+        }
+        var system = system, msgs2 = msgs
+        if web, NetStatus.shared.online, let notes = await Self.webNotes(messages.last?["content"] ?? "") {
+            system += "\n\nWEB NOTES (looked up just now — use them, say where a fact comes from, and say when something isn't covered):\n" + notes
+            msgs2[0] = ["role": "system", "content": system]
+        }
+        if Self.builtinAvailable, let t = clean(await Self.builtin(msgs2, max: max)) { return t }
+        let oa: [[String: Any]] = msgs2.map { $0 as [String: Any] }
+        if let k = KeychainStore.shared.get("groq-api-key"), !k.isEmpty,
+           let j = try? await postJSON(URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
+                                       body: ["model": UserDefaults.standard.string(forKey: "groqResolved") ?? "llama-3.3-70b-versatile", "temperature": 0.5, "max_tokens": max, "messages": oa],
+                                       headers: ["Authorization": "Bearer \(k)"], timeout: 30),
+           let t = clean(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return t }
+        if !gem.isEmpty {
+            let model = UserDefaults.standard.string(forKey: "geminiResolved") ?? AppState.defaultGeminiModel
+            let contents = msgs2.dropFirst().map { ["role": $0["role"] == "assistant" ? "model" : "user", "parts": [["text": $0["content"] ?? ""]]] as [String: Any] }
+            if let j = try? await postJSON(URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!,
+                                           body: ["system_instruction": ["parts": [["text": system]]], "contents": Array(contents)], headers: ["x-goog-api-key": gem], timeout: 30) {
+                let parts = (((j["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
+                if let t = clean(parts.compactMap { $0["text"] as? String }.joined()) { return t }
+            }
+        }
+        if let k = KeychainStore.shared.get("openai-api-key"), !k.isEmpty,
+           let j = try? await postJSON(URL(string: "https://api.openai.com/v1/chat/completions")!,
+                                       body: ["model": "gpt-4o-mini", "temperature": 0.5, "max_tokens": max, "messages": oa], headers: ["Authorization": "Bearer \(k)"], timeout: 30),
+           let t = clean(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return t }
+        // Last: whatever else is set up (Claude, other keys, Ollama on this Mac…), one at a time.
+        let convo = msgs2.dropFirst().map { ($0["role"] == "assistant" ? "Earlier answer: " : "") + ($0["content"] ?? "") }.joined(separator: "\n\n")
+        return clean(await oneShot(convo, system: system))
+    }
+
+    /// Free web look-up for research (no key): Wikipedia search + DuckDuckGo instant answers.
+    static func webNotes(_ q: String) async -> String? {
+        let query = String(q.prefix(160))
+        guard let enc = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        var out: [String] = []
+        if let u = URL(string: "https://api.duckduckgo.com/?q=\(enc)&format=json&no_html=1&skip_disambig=1"),
+           let r = try? await URLSession.shared.data(for: URLRequest(url: u, timeoutInterval: 6)),
+           let j = try? JSONSerialization.jsonObject(with: r.0) as? [String: Any] {
+            if let a = j["AbstractText"] as? String, !a.isEmpty { out.append("• \(a) (\((j["AbstractSource"] as? String) ?? "DuckDuckGo"))") }
+            for t in ((j["RelatedTopics"] as? [[String: Any]]) ?? []).prefix(4) { if let x = t["Text"] as? String { out.append("• \(x) (DuckDuckGo)") } }
+        }
+        if let u = URL(string: "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=4&srsearch=\(enc)"),
+           let r = try? await URLSession.shared.data(for: URLRequest(url: u, timeoutInterval: 6)),
+           let j = try? JSONSerialization.jsonObject(with: r.0) as? [String: Any],
+           let hits = (j["query"] as? [String: Any])?["search"] as? [[String: Any]] {
+            for h in hits {
+                let snip = ((h["snippet"] as? String) ?? "").replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                out.append("• \((h["title"] as? String) ?? ""): \(snip) (Wikipedia)")
+            }
+        }
+        return out.isEmpty ? nil : out.joined(separator: "\n")
+    }
+
+    private func callZuffi() async throws -> String {
+        var msgs: [[String: String]] = [["role": "system", "content": fullSystemPrompt]]
+        for m in history.suffix(16) { msgs.append(["role": m.role == "assistant" ? "assistant" : "user", "content": m.text]) }
+        guard let t = await Self.builtin(msgs, max: 1200) else {
+            throw NSError(domain: "Zuffi", code: 0, userInfo: [NSLocalizedDescriptionKey: "Zuffi AI is busy or not switched on yet."])
+        }
+        return t
     }
 
     // MARK: Grok, DeepSeek, Mistral, Perplexity, OpenRouter (all OpenAI-style)
@@ -764,7 +886,7 @@ struct ProviderMenu: View {
     var body: some View {
         let current = AIProvider(rawValue: state.aiProvider) ?? .auto
         Menu {
-            ForEach(AIProvider.allCases) { p in
+            ForEach(AIProvider.allCases.filter { $0 != .zuffi || ZuffiPlan.shared.isPaid }) { p in
                 Button {
                     state.aiProvider = p.rawValue
                     AIService.shared.clearConversation()
@@ -824,7 +946,7 @@ struct AIModelsSettings: View {
                         }
                     }
                     Picker("Answer with", selection: $state.aiProvider) {
-                        ForEach(AIProvider.allCases) { p in Text(p.label).tag(p.rawValue) }
+                        ForEach(AIProvider.allCases.filter { $0 != .zuffi || ZuffiPlan.shared.isPaid }) { p in Text(p.label).tag(p.rawValue) }
                     }
                     Text("Auto uses the first one that’s ready and quietly tries the next if one fails. Opening apps, music, reminders and volume always work, even offline.")
                         .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -893,6 +1015,7 @@ struct AIModelsSettings: View {
             } label: { Label("Your own AI keys", systemImage: "key.fill") }
 
             // 3. Free AI on this Mac
+            DeviceAdvice()
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Zuffi’s offline brain: answers questions with no internet and nothing leaves this Mac. When the internet drops, Zuffi switches to it by herself.")
@@ -1074,5 +1197,84 @@ final class ZuffiMemory {
             guard let s = await WebHub.shared.callJS("return window.Sparrow.listItems ? JSON.stringify(window.Sparrow.listItems()) : '[]'") as? String, s.count > 2 else { itemsLine = ""; return }
             itemsLine = "\nTHEIR REMINDERS, TASKS AND MEETINGS (JSON): " + String(s.prefix(3000)) + "\n"
         }
+    }
+}
+
+
+// MARK: - Which free AI suits this Mac (chip, memory, disk)
+
+enum DeviceCheck {
+    static func sysctl(_ name: String) -> String {
+        var size = 0
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return "" }
+        var buf = [CChar](repeating: 0, count: size)
+        guard sysctlbyname(name, &buf, &size, nil, 0) == 0 else { return "" }
+        return String(cString: buf)
+    }
+    static var chip: String { let c = sysctl("machdep.cpu.brand_string"); return c.isEmpty ? (appleSilicon ? "Apple silicon" : "Intel") : c }
+    static var appleSilicon: Bool { var v: Int32 = 0; var s = MemoryLayout<Int32>.size; return sysctlbyname("hw.optional.arm64", &v, &s, nil, 0) == 0 && v == 1 }
+    static var ramGB: Int { Int((Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824).rounded()) }
+    static var freeDiskGB: Int {
+        let v = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return Int((v?.volumeAvailableCapacityForImportantUsage ?? 0) / 1_000_000_000)
+    }
+    static var cores: Int { ProcessInfo.processInfo.activeProcessorCount }
+
+    /// (best free choice, why, model to download or nil)
+    static var advice: (title: String, why: String, model: String?) {
+        let ram = ramGB, disk = freeDiskGB
+        if !appleSilicon {
+            return ("Groq (free, online)", "This Mac has an Intel chip — AI models run slowly on it. A free Groq key answers in about a second, online. Use “qwen2.5:1.5b” in Ollama only for when there's no internet.", "qwen2.5:1.5b")
+        }
+        if disk < 6 { return ("Groq (free, online)", "Only \(disk) GB of free space — a local model needs 2–5 GB. Free up space, or use a free Groq key.", nil) }
+        if ram >= 32 { return ("Ollama · qwen2.5:14b", "\(ram) GB memory on \(chip): a 14B model runs well and gives the best offline answers (≈9 GB download).", "qwen2.5:14b") }
+        if ram >= 16 { return ("Ollama · qwen2.5:7b", "\(ram) GB memory on \(chip): a 7B model is fast and smart (≈4.7 GB download).", "qwen2.5:7b") }
+        if ram >= 8 { return ("Ollama · qwen2.5:3b (+ Groq)", "\(ram) GB memory: a 3B model works offline (≈1.9 GB). For long or tricky questions add a free Groq key — it's faster than anything this Mac can run.", "qwen2.5:3b") }
+        return ("Groq (free, online)", "\(ram) GB memory is tight for local AI. A free Groq key is the fast choice; “qwen2.5:1.5b” works offline in a pinch.", "qwen2.5:1.5b")
+    }
+
+    static var summary: String {
+        let a = advice
+        return "This Mac: \(chip), \(ramGB) GB memory, \(cores) cores, \(freeDiskGB) GB free. Best free AI: \(a.title). \(a.why)"
+    }
+}
+
+struct DeviceAdvice: View {
+    @State private var pulling = false
+    @State private var progress = 0.0
+    @State private var status = ""
+    var body: some View {
+        let a = DeviceCheck.advice
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 14) {
+                    spec("cpu", DeviceCheck.chip)
+                    spec("memorychip", "\(DeviceCheck.ramGB) GB")
+                    spec("internaldrive", "\(DeviceCheck.freeDiskGB) GB free")
+                }
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Best for this Mac: \(a.title)").font(.system(size: 12.5, weight: .semibold))
+                        Text(a.why).font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let m = a.model {
+                    HStack {
+                        Button(pulling ? "Downloading… \(Int(progress * 100))%" : "Get \(m) in Ollama") {
+                            pulling = true
+                            Task { @MainActor in
+                                _ = await AIService.pullOllama(m) { p, s in progress = p; status = s }
+                                pulling = false
+                            }
+                        }.disabled(pulling)
+                        if !status.isEmpty { Text(status).font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1) }
+                    }.controlSize(.small)
+                }
+            }.padding(6)
+        } label: { Label("Which free AI is best for this Mac?", systemImage: "gauge.with.dots.needle.67percent") }
+    }
+    private func spec(_ icon: String, _ text: String) -> some View {
+        Label(text, systemImage: icon).font(.system(size: 11)).lineLimit(1)
     }
 }

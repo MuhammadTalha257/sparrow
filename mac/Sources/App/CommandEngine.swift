@@ -381,7 +381,7 @@ final class CommandEngine {
             return "I need permission: System Settings → Privacy & Security → Automation → Zuffi → System Events."
         }
         if ["show pet", "show sparrow", "come here", "fly out", "pet mode", "show yourself", "come out"].contains(t) {
-            PetController.shared.show(); return "Here I am! 🐰"
+            UserDefaults.standard.set(false, forKey: "petNever"); PetController.shared.show(); return "Here I am! 🐰"
         }
         if ["hide pet", "hide sparrow", "go away", "go back", "hide yourself", "fly away"].contains(t) {
             PetController.shared.hide(); return "See you soon!"

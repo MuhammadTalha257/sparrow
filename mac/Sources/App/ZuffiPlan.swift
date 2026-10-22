@@ -41,7 +41,12 @@ final class ZuffiPlan: ObservableObject {
     }
 
     func update(plan: String, email: String, freeLeads: Int) {
+        let before = self.plan
         self.plan = ["trial", "pro", "business"].contains(plan) ? plan : "free"
+        // Just bought Business: Zuffi asks for the business details first (the Business page opens with the form).
+        if before != "business", self.plan == "business", before != "free" || !email.isEmpty, !BizDetailsForm.isComplete, !isPersonal {
+            Task { @MainActor in try? await Task.sleep(nanoseconds: 1_200_000_000); BusinessDashboard.shared.show() }
+        }
         self.email = email
         self.freeLeads = freeLeads > 0 ? freeLeads : 30
         let d = UserDefaults.standard
@@ -103,7 +108,7 @@ final class ZuffiPlan: ObservableObject {
         d.set(p["business"] ?? "", forKey: "zuffiBusinessName")
         if let c = p["country"], c == "PK" || c == "GB" { ZuffiCRM.shared.country = c; ZuffiCRM.shared.currencyChoice = c == "PK" ? "Rs" : "£" }
         if p["type"] == "business" {
-            let map: [String: ZuffiBusiness.Pack] = ["realEstate": .realEstate, "salon": .salon, "clinic": .clinic, "shop": .shop, "restaurant": .restaurant, "services": .services, "freelancer": .freelancer]
+            let map: [String: ZuffiBusiness.Pack] = ["realEstate": .realEstate, "salon": .salon, "nails": .nails, "cleaning": .cleaning, "clinic": .clinic, "shop": .shop, "restaurant": .restaurant, "services": .services, "freelancer": .freelancer]
             if let pack = map[p["kind"] ?? ""], ZuffiBusiness.shared.pack != pack {
                 if pack == .realEstate, UserDefaults.standard.string(forKey: "bizCountry") == nil { ZuffiCRM.shared.country = "PK" }
                 Task { _ = await ZuffiBusiness.shared.install(pack) }

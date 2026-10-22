@@ -17,13 +17,13 @@ const LS = { get: (k, d = '') => { try { return localStorage.getItem(k) ?? d; } 
 const ROSE = 'var(--bz-hot)', AMBER = 'var(--bz-warn)', VIOLET = 'var(--accent)', GREEN = 'var(--bz-ok)', GREY = 'var(--bz-grey)';
 
 const PACKS = {
-  realEstate: { label: 'Estate agent', icon: '🏠' }, salon: { label: 'Salon / barber / beauty', icon: '💇' }, clinic: { label: 'Clinic / dentist', icon: '🩺' },
+  realEstate: { label: 'Estate agent', icon: '🏠' }, salon: { label: 'Salon / barber / beauty', icon: '💇' }, nails: { label: 'Nail salon', icon: '💅' }, cleaning: { label: 'Cleaning company', icon: '🧽' }, clinic: { label: 'Clinic / dentist', icon: '🩺' },
   shop: { label: 'Shop / online store', icon: '🛍️' }, restaurant: { label: 'Restaurant / takeaway', icon: '🍽️' }, services: { label: 'Trades & services', icon: '🛠️' },
   freelancer: { label: 'Freelancer', icon: '💻' },
 };
 const freelance = () => kind() === 'freelancer';
 // Business types follow the country: Pakistan → estate agents; UK → small businesses; elsewhere → all.
-export const kindsFor = c => c === 'PK' ? ['realEstate'] : c === 'GB' ? ['salon', 'restaurant', 'clinic', 'shop', 'services', 'freelancer'] : Object.keys(PACKS);
+export const kindsFor = c => c === 'PK' ? ['realEstate'] : c === 'GB' ? ['salon', 'nails', 'cleaning', 'restaurant', 'clinic', 'shop', 'services', 'freelancer'] : Object.keys(PACKS);
 const kind = () => { const ok = kindsFor(country()), k = bs.cfg('kind') || ok[0]; return ok.includes(k) ? k : ok[0]; };
 const estate = () => kind() === 'realEstate';
 const country = () => { const c = bs.cfg('country'); return c && c !== 'OTHER' ? c : (C.guess() || 'OTHER'); };
@@ -31,16 +31,18 @@ const feats = () => C.features(country());
 const cur = () => bs.cfg('currency') || (country() === 'OTHER' ? '$' : C.symbol(country()));
 const stages = () => ({
   realEstate: ['New', 'Contacted', 'Site visit', 'Negotiating', 'Won', 'Lost'], salon: ['New', 'Contacted', 'Booked', 'Visited', 'Regular', 'Lost'],
+  nails: ['New', 'Contacted', 'Booked', 'Visited', 'Regular', 'Lost'], cleaning: ['New', 'Quoted', 'Booked', 'Cleaned', 'Regular', 'Lost'],
   clinic: ['New', 'Contacted', 'Booked', 'Visited', 'Regular', 'Lost'], restaurant: ['New', 'Contacted', 'Booked', 'Visited', 'Regular', 'Lost'],
   shop: ['New', 'Contacted', 'Quoted', 'Ordered', 'Delivered', 'Lost'], services: ['New', 'Contacted', 'Quoted', 'Negotiating', 'Won', 'Lost'],
   freelancer: ['New', 'Proposal sent', 'Working', 'Invoiced', 'Paid', 'Lost'],
 }[kind()] || ['New', 'Contacted', 'Won', 'Lost']);
 const labels = () => ({
-  realEstate: ['Wants', 'Area', 'Budget', 'Deal value'], salon: ['Service', 'Preferred day / staff', 'Budget', 'Spent'], clinic: ['Service', 'Preferred day / staff', 'Budget', 'Spent'],
+  realEstate: ['Wants', 'Area', 'Budget', 'Deal value'], salon: ['Service', 'Preferred day / staff', 'Budget', 'Spent'], nails: ['Service', 'Preferred day / staff', 'Budget', 'Spent'],
+  cleaning: ['Clean needed', 'Address / postcode', 'Budget', 'Job value'], clinic: ['Service', 'Preferred day / staff', 'Budget', 'Spent'],
   restaurant: ['Booking for', 'Party size / time', 'Budget', 'Spent'], shop: ['Product', 'Delivery area', 'Budget', 'Order value'], services: ['Job', 'Location', 'Budget', 'Job value'],
   freelancer: ['Project', 'Deadline', 'Budget', 'Project value'],
 }[kind()]);
-const SALE = ['Won', 'Visited', 'Regular', 'Ordered', 'Delivered', 'Paid'];
+const SALE = ['Won', 'Visited', 'Regular', 'Ordered', 'Delivered', 'Paid', 'Cleaned'];
 const incomeCats = () => estate() ? ['Commission', 'Token / advance', 'Installment received', 'Rent collected', 'Other income'] : freelance() ? ['Project fees', 'Hourly work', 'Retainer', 'Other income'] : ['Sales', 'Services', 'Products', 'Deposits', 'Other income'];
 const expenseCats = () => estate() ? ['Salaries', 'Office rent', 'Marketing & ads', 'Portal fees', 'Dealer share', 'Fuel & travel', 'Utilities & bills', 'Advance to staff', 'Other']
   : freelance() ? ['Software & tools', 'Equipment', 'Travel', 'Marketing', 'Accountant', 'Tax set aside', 'Other']
@@ -129,7 +131,7 @@ function avgDeal() {
   const set = num(bs.cfg('avgDeal')); if (set) return set;
   const won = leads().filter(l => SALE.includes(l.status) && num(l.value)); if (won.length >= 3) return won.reduce((a, l) => a + num(l.value), 0) / won.length;
   const pk = ['Rs', '₹'].includes(cur());
-  return ({ realEstate: pk ? 50000 : 1500, salon: pk ? 2500 : 40, clinic: pk ? 4000 : 80, restaurant: pk ? 2000 : 30, shop: pk ? 3000 : 50, services: pk ? 8000 : 250 })[kind()];
+  return ({ realEstate: pk ? 50000 : 1500, salon: pk ? 2500 : 40, nails: 35, cleaning: 60, clinic: pk ? 4000 : 80, restaurant: pk ? 2000 : 30, shop: pk ? 3000 : 50, services: pk ? 8000 : 250 })[kind()];
 }
 const hourRate = () => num(bs.cfg('hourRate')) || (['Rs', '₹'].includes(cur()) ? 1000 : 25);
 
@@ -463,7 +465,7 @@ function groupMatchesCard() {
 }
 
 // ---------------- clients + rebooking (salons, garages, trades…) ----------------
-const rebookDays = () => num(bs.cfg('rebookDays')) || ({ salon: 35, clinic: 180, restaurant: 30, shop: 60, services: 365, realEstate: 365 })[kind()];
+const rebookDays = () => num(bs.cfg('rebookDays')) || ({ salon: 35, nails: 21, cleaning: 14, clinic: 180, restaurant: 30, shop: 60, services: 365, realEstate: 365 })[kind()];
 function rebookDue() {
   const today = iso();
   return bs.rows('Clients').map(({ k, r }) => {

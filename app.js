@@ -223,7 +223,7 @@ function maybeGuide() { let seen = false; try { seen = localStorage.getItem('zuf
 // and for a business its name, type, hours and anniversary.
 const HELP = [['remind', '⏰ Reminders & tasks'], ['prayer', '🕌 Prayer times'], ['health', '💧 Water & health'], ['meet', '📅 Meetings & calls'],
   ['study', '📚 Study'], ['family', '🎂 Birthdays & family'], ['money', '💷 Money & bills']];
-const BIZ_KINDS = [['realEstate', '🏠', 'Estate agent', 'Plots, files, installments'], ['salon', '💇', 'Salon / barber', 'Bookings & regulars'], ['restaurant', '🍽️', 'Restaurant / café', 'Tables, orders & takeaway'],
+const BIZ_KINDS = [['realEstate', '🏠', 'Estate agent', 'Plots, files, installments'], ['salon', '💇', 'Salon / barber', 'Bookings & regulars'], ['nails', '💅', 'Nail salon', 'Bookings, infill reminders'], ['cleaning', '🧽', 'Cleaning company', 'Regular cleans & reminders'], ['restaurant', '🍽️', 'Restaurant / café', 'Tables, orders & takeaway'],
   ['clinic', '🩺', 'Clinic / dentist', 'Appointments & recalls'], ['shop', '🛍️', 'Shop / online store', 'Orders, stock & delivery'], ['services', '🛠️', 'Trades & services', 'Jobs, quotes & invoices'],
   ['freelancer', '💻', 'Freelancer', 'Clients, projects & invoices']];
 const kindName = k => (BIZ_KINDS.find(x => x[0] === k) || [])[2] || '';
@@ -2707,6 +2707,9 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  /** Mac: the AI included with Pro / Business (key stays on Zuffi's server). → {text} or {error} */
+  builtinAI: async (messages, maxTokens = 900) => { try { return { text: await acct.ai(messages, maxTokens) }; } catch (e) { return { error: String(e.message || e) }; } },
+  builtinReady: () => { try { return acct.isPaid ? acct.isPaid() : !acct.locked(); } catch { return false; } },
   /** Instant WhatsApp answer from the business details (no AI). null = not sure → AI / holding message. */
   quickAnswer: async (msg, info, biz, first, today) => { try { return (await import('./bizquick.js')).answer(msg, info, { biz, first, today }); } catch { return null; } },
   /** Voice commands from the Mac: "change your colour to green", "male voice". */

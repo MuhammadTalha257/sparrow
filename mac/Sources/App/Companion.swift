@@ -105,6 +105,7 @@ final class PetController {
     }
 
     func show(greeting: Bool = true) {
+        if ZuffiWalk.petNever { return }            // "never show the pet on screen"
         let p = panel ?? makePanel()
         panel = p
         if greeting { UserDefaults.standard.set(true, forKey: "petVisible") }

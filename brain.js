@@ -168,7 +168,7 @@ export function icsFor(item) {
   const start = new Date(item.when);
   const end = new Date(start.getTime() + (item.type === 'meeting' ? (item.duration || 60) : 15) * 60000);
   const alarm = item.type === 'meeting' ? `-PT${Math.max(5, +store.settings.lead || 10)}M` : 'PT0M';
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sparrow//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Zuffi//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT', `UID:${item.id}@sparrow`, `DTSTAMP:${icsDate(new Date())}`, `DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`,
     `SUMMARY:${icsEsc(item.title)}`, rrule(item.repeat), 'DESCRIPTION:Added by Zuffi 🐰',
     'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(item.title)}`, `TRIGGER:${alarm}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR',
@@ -176,7 +176,7 @@ export function icsFor(item) {
 }
 /** A month of prayer times as calendar events, so an iPhone alerts even when Zuffi is closed. */
 export function prayerICS(lat, lon, days = 30) {
-  const p = store.settings.prayer, lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sparrow//EN'];
+  const p = store.settings.prayer, lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Zuffi//EN'];
   for (let i = 0; i < days; i++) {
     const d = new Date(); d.setDate(d.getDate() + i);
     const tms = prayerTimes(d, lat, lon, p.method, p.asr);

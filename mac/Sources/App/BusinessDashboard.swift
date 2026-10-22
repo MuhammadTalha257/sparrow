@@ -56,13 +56,14 @@ final class BusinessDashboard {
 }
 
 enum BizTab: String, CaseIterable, Identifiable {
-    case today = "Today", inbox = "Inbox", pipeline = "Pipeline", properties = "Properties", records = "Records", money = "Money", team = "Team & staff", business = "My business", automations = "Automations", connect = "Connect & devices", learn = "Learn & help"
+    case today = "Today", inbox = "Inbox", aiTeam = "AI Team", pipeline = "Pipeline", properties = "Properties", records = "Records", money = "Money", team = "Team & staff", business = "My business", automations = "Automations", connect = "Connect & devices", learn = "Learn & help"
     var id: String { rawValue }
     /// Each page's own colour — its tile in the list and its header.
     var tint: String {
         switch self {
         case .today: return "#F2A516"
         case .inbox: return "#1FAF5F"
+        case .aiTeam: return "#5B6CFF"
         case .pipeline: return "#7357E8"
         case .properties: return "#C77D1A"
         case .records: return "#2F80ED"
@@ -77,7 +78,7 @@ enum BizTab: String, CaseIterable, Identifiable {
     /// Groups in the list, like Settings: daily work · records · set-up.
     var group: Int {
         switch self {
-        case .today, .inbox, .pipeline: return 0
+        case .today, .inbox, .aiTeam, .pipeline: return 0
         case .properties, .records, .money, .team: return 1
         default: return 2
         }
@@ -86,6 +87,7 @@ enum BizTab: String, CaseIterable, Identifiable {
         switch self {
         case .today: return "sun.max.fill"
         case .inbox: return "tray.full.fill"
+        case .aiTeam: return "person.3.sequence.fill"
         case .pipeline: return "rectangle.split.3x1.fill"
         case .records: return "tablecells.fill"
         case .properties: return "house.lodge.fill"
@@ -102,6 +104,7 @@ enum BizTab: String, CaseIterable, Identifiable {
         switch self {
         case .today: return "What needs you today"
         case .inbox: return "WhatsApp messages & Zuffi's replies"
+        case .aiTeam: return "Your specialists, led by the Team Manager"
         case .pipeline: return "Where each client is up to"
         case .properties: return "Plots, houses & shops you're selling"
         case .records: return "Every client in one table"
@@ -118,12 +121,13 @@ enum BizTab: String, CaseIterable, Identifiable {
         switch self {
         case .today: return ["The numbers at the top are today's work at a glance.", "“Follow up today” lists the people you promised to call back.", "Tap any name to open it, change its stage or add a note."]
         case .inbox: return ["New WhatsApp chats arrive here and become clients automatically.", "Zuffi writes a reply for you — check it, then tap Send.", "Turn on Autopilot in My business to let Zuffi answer by itself."]
+        case .aiTeam: return ["Hire specialists: product manager, researcher, finance, sales, marketing…", "Tick who works on a job and press Assign — the Team Manager splits it and sums up.", "They only think and write: anything that sends, posts or pays waits for your OK."]
         case .pipeline: return ["Each column is a step: New → Contacted → … → Won.", "Drag a client to the next column when things move on.", "Clients stuck too long are shown so nobody is forgotten."]
         case .properties: return ["Add each plot, house, flat or shop you're selling or renting.", "Zuffi matches properties to buyers looking for that area and budget.", "Use Share to send the details on WhatsApp in one tap."]
         case .records: return ["Everyone who ever contacted you, like a spreadsheet.", "Click a column title to sort; search at the top.", "It's saved as a normal file in Documents → Zuffi, so it's always yours."]
         case .money: return ["Add money in (sales, commission) and money out (rent, salaries, fuel).", "Profit is worked out for you every month.", "Say it instead: “expense 2500 fuel”, “income 50000 commission”."]
         case .team: return ["Add your staff or agents with their pay (monthly, hourly or commission).", "Log hours and pay salaries — each payment is added to Money.", "Give leads to a staff member and see who's following up."]
-        case .business: return ["Write your prices, hours and location — Zuffi uses it when replying.", "Add today's offer each morning (discounts, new stock, new plots).", "Pick your country and currency here."]
+        case .business: return ["Write your prices, hours and location — Zuffi uses it when replying.", "Add today's offer each morning (discounts, new stock, new plots).", "Your country comes from your Zuffi details — Zuffi sets up the right business tools for it."]
         case .automations: return ["Switch on the jobs you want Zuffi to do: follow-ups, summaries, reminders.", "Each switch says exactly what it does.", "You can turn any of them off at any time."]
         case .connect: return ["Connect WhatsApp so new chats become clients.", "Link your phone or tablet with the QR code to see the same business there.", "Changes on one device appear on the others by themselves."]
         case .learn: return ["Short guides for every part of Zuffi Business.", "Includes setting up a free AI model on your own computer.", "The same guides are on your phone and Windows PC."]
@@ -138,6 +142,8 @@ final class BizNav: ObservableObject {
     @Published var selected: String?
     @Published var search = ""
     @Published var toast = ""
+    /// The business details form is filled in (name, address, phone, hours, services).
+    @Published var formDone = BizDetailsForm.isComplete
     func say(_ s: String) {
         toast = s
         Task { @MainActor in try? await Task.sleep(nanoseconds: 4_000_000_000); if self.toast == s { self.toast = "" } }
@@ -147,16 +153,17 @@ final class BizNav: ObservableObject {
 /// Business colours. Two looks — Porcelain (light, the default) and Night — and an accent the owner picks.
 /// Every page also has its own colour (its icon tile), so you always know where you are.
 enum Ink {
-    static var dark: Bool { UserDefaults.standard.bool(forKey: "bizDarkLook") }
-    static var accentHex: String { UserDefaults.standard.string(forKey: "bizAccentHex") ?? "#3B6EF5" }
+    /// Night (like the notch: dark glass, warm amber) is the default; Porcelain (light) is a choice.
+    static var dark: Bool { UserDefaults.standard.object(forKey: "bizDarkLook") as? Bool ?? true }
+    static var accentHex: String { UserDefaults.standard.string(forKey: "bizAccentHex") ?? "#F59E3B" }
     /// The colour text and hairlines are made from.
     static var ink: Color { dark ? .white : Color(hex: "#141A26") }
-    static var bg: Color { dark ? Color(hex: "#0E1118") : Color(hex: "#EEF1F7") }
-    static var bgTop: Color { dark ? Color(hex: "#141824") : Color(hex: "#F6F8FC") }
-    static var sidebar: Color { dark ? Color(hex: "#11141C") : Color(hex: "#FFFFFF") }
-    static var panel: Color { dark ? Color(hex: "#171B25") : Color(hex: "#FFFFFF") }
-    static var panelHi: Color { dark ? Color(hex: "#1D2230") : Color(hex: "#F4F7FD") }
-    static var line: Color { ink.opacity(dark ? 0.08 : 0.08) }
+    static var bg: Color { dark ? Color(hex: "#07080C") : Color(hex: "#EEF1F7") }
+    static var bgTop: Color { dark ? Color(hex: "#12131B") : Color(hex: "#F6F8FC") }
+    static var sidebar: Color { dark ? Color(hex: "#0B0C11") : Color(hex: "#FFFFFF") }
+    static var panel: Color { dark ? Color(hex: "#13151C") : Color(hex: "#FFFFFF") }
+    static var panelHi: Color { dark ? Color(hex: "#1A1D26") : Color(hex: "#F4F7FD") }
+    static var line: Color { ink.opacity(dark ? 0.10 : 0.08) }
     static var text: Color { dark ? Color(hex: "#ECEEF3") : Color(hex: "#141A26") }
     static var muted: Color { dark ? Color(hex: "#9AA1B1") : Color(hex: "#596173") }
     static var faint: Color { dark ? Color(hex: "#6C7385") : Color(hex: "#8A92A4") }
@@ -164,7 +171,7 @@ enum Ink {
     static let onAccent = Color.white
     static var shadow: Color { .black.opacity(dark ? 0.28 : 0.06) }
     /// Accents to choose from (named so they're easy to talk about).
-    static let accents: [(String, String)] = [("Ocean", "#3B6EF5"), ("Mint", "#0F9F76"), ("Berry", "#D2457A"), ("Marigold", "#DE8E12"), ("Violet", "#7357E8"), ("Coral", "#EA5A3D"), ("Teal", "#0E8FA3"), ("Graphite", "#3D4555")]
+    static let accents: [(String, String)] = [("Zuffi amber", "#F59E3B"), ("Ocean", "#3B6EF5"), ("Mint", "#0F9F76"), ("Berry", "#D2457A"), ("Marigold", "#DE8E12"), ("Violet", "#7357E8"), ("Coral", "#EA5A3D"), ("Teal", "#0E8FA3"), ("Graphite", "#3D4555")]
 }
 
 /// Re-draws the Business window when the look changes.
@@ -282,12 +289,20 @@ struct BusinessDashboardView: View {
     @State private var dropping = false
     @State private var adding = false
     @State private var showTips = false
-    @State private var askCountry = false
     @State private var showLook = false
     @ObservedObject private var lock = BizLock.shared
     @ObservedObject private var look = BizLook.shared
 
     var body: some View {
+        if !nav.formDone {
+            BizSetupGate()                    // the Business page opens once the business details are filled in
+                .foregroundColor(Ink.text)
+                .background(LinearGradient(colors: [Ink.bgTop, Ink.bg], startPoint: .top, endPoint: .center).ignoresSafeArea())
+                .id(look.version)
+        } else { dashboard }
+    }
+
+    private var dashboard: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 244)
                 .background(Ink.sidebar.ignoresSafeArea())
@@ -298,6 +313,7 @@ struct BusinessDashboardView: View {
                     switch nav.tab {
                     case .today: BizTodayView()
                     case .inbox: BizInboxView()
+                    case .aiTeam: BizAITeamView()
                     case .pipeline: BizPipelineView()
                     case .records: BizRecordsView()
                     case .properties: BizPropertiesView()
@@ -340,9 +356,7 @@ struct BusinessDashboardView: View {
             return true
         }
         .sheet(isPresented: $adding) { BizLeadEditor(lead: nil) }
-        .sheet(isPresented: $askCountry) { BizCountrySheet() }
         .overlay { if lock.locked { BizLockScreen().transition(.opacity) } }
-        .onAppear { if !UserDefaults.standard.bool(forKey: "bizCountryConfirmed") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { askCountry = true } } }
         .animation(.easeInOut(duration: 0.2), value: nav.toast)
         .id(look.version)          // a new look re-draws every page
     }
@@ -410,6 +424,7 @@ struct BusinessDashboardView: View {
                 Spacer()
                 if t == .inbox, crm.drafts.count > 0 { Pill(text: "\(crm.drafts.count)", color: Biz.pink, filled: true) }
                 if t == .today { let d = crm.leads.filter(\.dueToday).count; if d > 0 { Pill(text: "\(d)", color: Color(hex: t.tint)) } }
+                if t == .aiTeam { let n = ZuffiTeam.shared.tasks.filter { $0.status == "Needs you" }.count; if n > 0 { Pill(text: "\(n)", color: Color(hex: t.tint), filled: true) } }
                 if t == .business { Pill(text: crm.isOn(.autopilot) ? "Auto" : "Off", color: crm.isOn(.autopilot) ? Biz.green : Ink.faint) }
             }
             .padding(.horizontal, 8).frame(height: 36)
@@ -433,6 +448,18 @@ struct BusinessDashboardView: View {
                     .popover(isPresented: $showTips, arrowEdge: .bottom) { BizTipsView(tab: nav.tab) }
                 }
                 Text(nav.tab.subtitle).font(.system(size: 12)).foregroundColor(Ink.muted)
+                // Tabs for the pages next to this one (like a web dashboard header)
+                HStack(spacing: 18) {
+                    ForEach(tabs.filter { $0.group == nav.tab.group }) { t in
+                        Button { nav.tab = t } label: {
+                            VStack(spacing: 5) {
+                                Text(t.rawValue).font(.system(size: 12, weight: nav.tab == t ? .semibold : .regular))
+                                    .foregroundColor(nav.tab == t ? Ink.text : Ink.muted).fixedSize()
+                                Rectangle().fill(nav.tab == t ? Ink.accent : .clear).frame(height: 2)
+                            }
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(.top, 8)
             }
             Spacer()
             HStack(spacing: 6) {
@@ -591,7 +618,7 @@ struct BizLeadRow: View {
                 Spacer()
                 if showDue && lead.overdue { Pill(text: "overdue", color: Biz.red) }
                 if !lead.assigned.isEmpty { Text(lead.assigned).font(.system(size: 10)).foregroundColor(Ink.faint) }
-                Pill(text: lead.stage, color: Biz.stageColor(lead.stage))
+                StatusDot(text: lead.stage, color: Biz.stageColor(lead.stage))
             }
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -1261,7 +1288,7 @@ struct BizTypeMenu: View {
                 Button { Task { BizNav.shared.say(await biz.install(p)); ZuffiCRM.shared.reload() } } label: { Label(p.label + (biz.pack == p ? "  ✓" : ""), systemImage: p.icon) }
             }
             let others = ZuffiBusiness.Pack.allCases.filter { !ZuffiCRM.shared.packsForCountry.contains($0) }
-            if !others.isEmpty {
+            if !others.isEmpty, !["PK", "GB"].contains(ZuffiCRM.shared.country) {
                 Menu("Other types") {
                     ForEach(others) { p in Button { Task { BizNav.shared.say(await biz.install(p)); ZuffiCRM.shared.reload() } } label: { Label(p.label, systemImage: p.icon) } }
                 }
@@ -1348,11 +1375,11 @@ struct BizBusinessView: View {
                         HStack {
                             TextField("Business name (used in messages)", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
                                 .textFieldStyle(.roundedBorder)
-                            BizCountryRow().frame(width: 280)
-                            Picker("Currency", selection: $crm.currencyChoice) {
-                                Text("Auto (\(crm.country == "PK" ? "Rs" : crm.country == "GB" ? "£" : "local"))").tag("")
-                                ForEach(ZuffiCRM.currencies, id: \.self) { Text($0).tag($0) }
-                            }.frame(width: 170)
+                            // The country comes from your Zuffi details (set when you joined) — not chosen here.
+                            let c = ZuffiCRM.allCountries.first { $0.code == crm.country }
+                            Label("\(c?.flag ?? "🌍") \(c?.name ?? "Your country") · \(crm.currency)", systemImage: "mappin.and.ellipse")
+                                .font(.system(size: 12, weight: .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
+                                .help("From your details. To change it: Zuffi → Settings → You → Edit my details.")
                         }
                         Text(crm.country == "PK" ? "Pakistan: set up for estate agencies — properties, agents on commission, installments, Zameen / Facebook leads, Urdu replies."
                              : crm.country == "GB" ? "United Kingdom: set up for small businesses — bookings, staff hours and wages, deposits, expenses and VAT categories."
@@ -1362,7 +1389,6 @@ struct BizBusinessView: View {
                             .font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                         editor($crm.businessInfo, minHeight: 220)
                         HStack {
-                            if crm.businessInfo.isEmpty { BizSoftButton(title: "Start from an example", icon: "text.badge.plus") { crm.businessInfo = example(for: "info") } }
                             BizSoftButton(title: "Open as a file", icon: "doc.text") { NSWorkspace.shared.open(ZuffiCRM.infoURL) }
                             Spacer()
                             Text("Saved automatically").font(.system(size: 10)).foregroundColor(Ink.ink.opacity(0.4))
@@ -1435,9 +1461,9 @@ struct BizRecordsView: View {
             }
             .padding(.horizontal, 22)
             Table(rows, selection: $selection, sortOrder: $sort) {
-                TableColumn("Name", value: \.display) { l in Text((l.priority == "Hot" ? "🔥 " : "") + l.display).fontWeight(.semibold) }
+                TableColumn("Name", value: \.display) { l in HStack(spacing: 8) { Avatar(lead: l, size: 22); Text(l.display).fontWeight(.semibold).lineLimit(1) } }
                 TableColumn("Phone", value: \.phone)
-                TableColumn("Stage", value: \.status) { l in Text(l.stage).foregroundColor(Biz.stageColor(l.stage)) }
+                TableColumn("Stage", value: \.status) { l in StatusDot(text: l.stage, color: Biz.stageColor(l.stage)) }
                 TableColumn(crm.labels.interest, value: \.interest)
                 TableColumn(crm.labels.area, value: \.area)
                 TableColumn(crm.labels.budget, value: \.budget)
@@ -1778,19 +1804,32 @@ private struct BizTile: View {
     let title: String, value: String, icon: String, color: Color
     @ObservedObject private var lock = BizLock.shared
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 6, height: 6)
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
-                Spacer(minLength: 4)
-                Image(systemName: icon).font(.system(size: 11, weight: .medium)).foregroundColor(Ink.faint)
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.4).foregroundColor(Ink.faint)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.55).foregroundColor(Ink.text)
+                    .blur(radius: lock.hideAmounts && value.contains(ZuffiCRM.shared.currency) ? 8 : 0)
             }
-            Text(value).font(.system(size: 26, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.55).foregroundColor(Ink.text)
-                .blur(radius: lock.hideAmounts && value.contains(ZuffiCRM.shared.currency) ? 8 : 0)
+            Spacer(minLength: 4)
+            Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                .frame(width: 40, height: 40).background(Circle().fill(color.gradient))
+                .shadow(color: color.opacity(0.35), radius: 6, y: 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(13)
+        .padding(14)
         .inkPanel(RoundedRectangle(cornerRadius: 14, style: .continuous), interactive: true)
+    }
+}
+
+/// A status with a coloured dot (tables and lists).
+struct StatusDot: View {
+    let text: String; let color: Color
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(text).font(.system(size: 11, weight: .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
+        }
     }
 }
 
@@ -1978,6 +2017,19 @@ struct BizDetailsForm: View {
         ("faq", "Questions customers often ask (with answers)", "Do you do walk-ins? Yes, if a chair is free.", true),
     ]
 
+    /// Must be filled before the Business page opens.
+    static let required: Set<String> = ["address", "phone", "hours", "services"]
+    static var isComplete: Bool {
+        let f = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+        let name = (UserDefaults.standard.string(forKey: "zuffiBusinessName") ?? "").trimmingCharacters(in: .whitespaces)
+        return !name.isEmpty && required.allSatisfy { !(f[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+    var missing: [String] {
+        var m = biz.businessName.trimmingCharacters(in: .whitespaces).isEmpty ? ["Business name"] : []
+        m += Self.fields.filter { Self.required.contains($0.key) && (f[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.map(\.label)
+        return m
+    }
+
     private var filled: Int { Self.fields.filter { !(f[$0.key] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }.count }
 
     var body: some View {
@@ -1989,19 +2041,19 @@ struct BizDetailsForm: View {
             }
             Text("Zuffi answers WhatsApp customers only from these details. The more you fill in, the better she answers.")
                 .font(.system(size: 11.5)).foregroundColor(Ink.muted)
-            TextField("Business name", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
+            TextField("Business name *", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
                 .textFieldStyle(.roundedBorder)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], alignment: .leading, spacing: 10) {
                 ForEach(Self.fields.filter { !$0.tall }, id: \.key) { fd in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(fd.label).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+                        Text(fd.label + (Self.required.contains(fd.key) ? " *" : "")).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
                         TextField(fd.hint, text: binding(fd.key)).textFieldStyle(.roundedBorder)
                     }
                 }
             }
             ForEach(Self.fields.filter(\.tall), id: \.key) { fd in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(fd.label).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+                    Text(fd.label + (Self.required.contains(fd.key) ? " *" : "")).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
                     TextEditor(text: binding(fd.key)).font(.system(size: 12.5)).scrollContentBackground(.hidden)
                         .frame(minHeight: 70).padding(6).foregroundColor(Ink.text)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Ink.panelHi))
@@ -2050,6 +2102,40 @@ struct BizDetailsForm: View {
         rest = rest.trimmingCharacters(in: .whitespacesAndNewlines)
         crm.businessInfo = lines.joined(separator: "\n") + (rest.isEmpty ? "" : marker + rest)
         saved = true
-        BizNav.shared.say("Saved — Zuffi will answer customers from these details.")
+        BizNav.shared.formDone = Self.isComplete
+        BizNav.shared.say(missing.isEmpty ? "Saved — Zuffi and your AI team will use these details." : "Saved. Still needed: " + missing.joined(separator: ", "))
+    }
+}
+
+
+/// Business plan, first time: Zuffi takes the business details before the Business page opens.
+struct BizSetupGate: View {
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var biz = ZuffiBusiness.shared
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 14) {
+                    ZuffiMini(state: AppState.shared, height: 46).frame(width: 52, height: 52).background(Circle().fill(Ink.accent.opacity(0.12)))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Welcome to Zuffi Business").font(.system(size: 24, weight: .bold, design: .rounded))
+                        Text("Tell Zuffi about your business once. Zuffi, your WhatsApp replies and your AI team all use these details — and ask you when something is missing. Fields with * are needed.")
+                            .font(.system(size: 12.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                HStack(spacing: 10) {
+                    let c = ZuffiCRM.allCountries.first { $0.code == crm.country }
+                    Label("\(c?.flag ?? "🌍") \(c?.name ?? "Your country")", systemImage: "mappin.and.ellipse")
+                    Text("·").foregroundColor(Ink.faint)
+                    Text(crm.country == "PK" ? "Set up for estate agents" : crm.country == "GB" ? "Set up for UK small businesses" : "Pick your type of business")
+                    Spacer()
+                    BizTypeMenu()
+                }
+                .font(.system(size: 12, weight: .medium)).padding(12).zGlass(14)
+                BizDetailsForm().padding(16).zGlass(18)
+            }
+            .padding(28).frame(maxWidth: 860)
+            .frame(maxWidth: .infinity)
+        }
     }
 }

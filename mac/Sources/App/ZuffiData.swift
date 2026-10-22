@@ -122,8 +122,10 @@ final class ZuffiData: ObservableObject {
         let l = q.lowercased()
         let named = sheets.filter { l.contains($0.name.lowercased()) || $0.name.lowercased().split(separator: " ").contains { $0.count > 3 && l.contains($0) } }
         if !named.isEmpty { return named }
-        let words = Set(l.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count > 2 })
-        let byColumn = sheets.filter { s in s.columns.contains { c in words.contains(c.lowercased()) || words.contains(where: { c.lowercased().contains($0) && $0.count > 3 }) } }
+        // Ordinary words never pull in a sheet ("who are you and what you do FOR me" matched a column called "For").
+        let stop: Set<String> = ["for", "the", "and", "you", "your", "who", "what", "are", "how", "can", "with", "from", "this", "that", "about", "tell", "give", "show", "make", "please", "they", "them", "our", "out", "now", "new", "all", "any", "due", "date", "name", "type", "status", "notes", "note", "time", "day"]
+        let words = Set(l.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count > 3 && !stop.contains($0) })
+        let byColumn = sheets.filter { s in s.columns.contains { c in let cl = c.lowercased(); return cl.count > 3 && !stop.contains(cl) && (words.contains(cl) || words.contains(where: { cl.contains($0) && $0.count > 4 })) } }
         if !byColumn.isEmpty { return Array(byColumn.prefix(2)) }
         let dataWords = ["sheet", "excel", "data", "spreadsheet", "table", "analy", "predict", "forecast", "trend", "total", "average", "number of", "phone", "customer", "sales", "list", "row", "column", "crore", "lakh", "marla", "kanal", "plot", "bed", "buyer", "listing", "property", "house", "flat", "apartment", "appointment", "client", "booking", "takings", "revenue", "income", "profit", "earn", "owe", "stock", "inventory"]
         return dataWords.contains(where: { l.contains($0) }) ? Array(sheets.prefix(2)) : []

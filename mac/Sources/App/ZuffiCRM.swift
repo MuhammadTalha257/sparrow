@@ -30,7 +30,7 @@ struct CRMLead: Identifiable, Hashable {
     var stage: String { ZuffiCRM.stage(for: status) }
     var isOpen: Bool { !["Won", "Lost", "Delivered"].contains(stage) }
     /// A sale happened (counts for revenue).
-    var isSale: Bool { ["Won", "Visited", "Regular", "Ordered", "Delivered"].contains(stage) }
+    var isSale: Bool { ["Won", "Visited", "Regular", "Ordered", "Delivered", "Cleaned"].contains(stage) }
     var valueNumber: Double { Double(value.filter { $0.isNumber || $0 == "." }) ?? 0 }
     var followDate: Date? { ZuffiBusiness.date(nextFollowUp) }
     var overdue: Bool { isOpen && (followDate.map { $0 < Calendar.current.startOfDay(for: Date()) } ?? false) }
@@ -177,7 +177,8 @@ final class ZuffiCRM: ObservableObject {
     var stages: [String] {
         switch kind {
         case .realEstate: return ["New", "Contacted", "Site visit", "Negotiating", "Won", "Lost"]
-        case .salon, .clinic, .restaurant: return ["New", "Contacted", "Booked", "Visited", "Regular", "Lost"]
+        case .salon, .nails, .clinic, .restaurant: return ["New", "Contacted", "Booked", "Visited", "Regular", "Lost"]
+        case .cleaning: return ["New", "Quoted", "Booked", "Cleaned", "Regular", "Lost"]
         case .shop: return ["New", "Contacted", "Quoted", "Ordered", "Delivered", "Lost"]
         case .services: return ["New", "Contacted", "Quoted", "Negotiating", "Won", "Lost"]
         case .freelancer: return ["New", "Proposal sent", "Working", "Invoiced", "Paid", "Lost"]
@@ -187,7 +188,8 @@ final class ZuffiCRM: ObservableObject {
     var labels: (interest: String, area: String, budget: String, value: String) {
         switch kind {
         case .realEstate: return ("Wants", "Area", "Budget", "Deal value")
-        case .salon, .clinic: return ("Service", "Preferred day / staff", "Budget", "Spent")
+        case .salon, .nails, .clinic: return ("Service", "Preferred day / staff", "Budget", "Spent")
+        case .cleaning: return ("Clean needed", "Address / postcode", "Budget", "Job value")
         case .restaurant: return ("Booking for", "Party size / time", "Budget", "Spent")
         case .shop: return ("Product", "Delivery area", "Budget", "Order value")
         case .services: return ("Job", "Location", "Budget", "Job value")
@@ -226,7 +228,7 @@ final class ZuffiCRM: ObservableObject {
     var packsForCountry: [ZuffiBusiness.Pack] {
         switch country {
         case "PK": return [.realEstate]
-        case "GB": return [.salon, .clinic, .shop, .restaurant, .services, .freelancer]   // UK: small businesses only
+        case "GB": return [.salon, .nails, .cleaning, .clinic, .shop, .restaurant, .services, .freelancer]   // UK: small businesses only
         default: return ZuffiBusiness.Pack.allCases
         }
     }
@@ -235,6 +237,8 @@ final class ZuffiCRM: ObservableObject {
         switch kind {
         case .realEstate: return "\(country.isEmpty ? "" : country + " ")property agent"
         case .salon: return "\(country.isEmpty ? "" : country + " ")salon / beauty business"
+        case .nails: return "\(country.isEmpty ? "" : country + " ")nail salon"
+        case .cleaning: return "\(country.isEmpty ? "" : country + " ")cleaning company"
         case .clinic: return "\(country.isEmpty ? "" : country + " ")clinic"
         case .shop: return "\(country.isEmpty ? "" : country + " ")shop"
         case .restaurant: return "\(country.isEmpty ? "" : country + " ")restaurant"
@@ -245,7 +249,7 @@ final class ZuffiCRM: ObservableObject {
 
     nonisolated static func stage(for raw: String) -> String {
         let s = raw.lowercased().trimmingCharacters(in: .whitespaces)
-        let known = ["New", "Contacted", "Site visit", "Negotiating", "Won", "Lost", "Booked", "Visited", "Regular", "Quoted", "Ordered", "Delivered", "Proposal sent", "Working", "Invoiced", "Paid"]
+        let known = ["New", "Contacted", "Site visit", "Negotiating", "Won", "Lost", "Booked", "Visited", "Regular", "Quoted", "Ordered", "Delivered", "Proposal sent", "Working", "Invoiced", "Paid", "Cleaned"]
         if let k = known.first(where: { $0.lowercased() == s }) { return k }
         if s.isEmpty || s == "new" || ["hot", "warm", "cold"].contains(s) { return "New" }
         if s.contains("visit") { return "Site visit" }
@@ -857,7 +861,7 @@ final class ZuffiCRM: ObservableObject {
         // 1) the full answer as JSON (fast cloud AI); 2) if that fails — e.g. a small model on this Mac that can't do JSON —
         //    a plain-text answer from the same facts; 3) only then a polite holding message. Never the same greeting twice.
         // No fast cloud AI (only a model on this Mac)? Go straight to the plain reply — one quick call instead of two.
-        let cloud = ["groq-api-key", "gemini-api-key", "openai-api-key"].contains { !(KeychainStore.shared.get($0) ?? "").isEmpty }
+        let cloud = AIService.builtinAvailable || ["groq-api-key", "gemini-api-key", "openai-api-key"].contains { !(KeychainStore.shared.get($0) ?? "").isEmpty }
         if !cloud { return await plainReply(incoming: incoming, first: first, past: past, context: context, fallback: fallback) }
         guard let j = await AIService.shared.fastJSON(prompt, system: system) else {
             return await plainReply(incoming: incoming, first: first, past: past, context: context, fallback: fallback)

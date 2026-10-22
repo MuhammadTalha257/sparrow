@@ -24,6 +24,7 @@ final class AgentRouter {
     /// Handles a request if any agent can. nil = nobody could (the caller asks the AI instead).
     func handle(_ raw: String) async -> String? {
         if let r = await screen(raw) { return r }
+        if let r = await ZuffiTeam.shared.handle(raw) { return r }     // "switch to the finance agent and tell me…", "who are you guys?"
         if let r = await ZuffiSelf.handle(raw) { return r }          // Zuffi's own controls, instantly
         if let r = await askChatApp(raw) { return r }
         // Email first: a reply like "tell him yes and thanks" must not be split into steps.
@@ -110,6 +111,7 @@ final class AgentRouter {
         }
         // Linked WhatsApp: "link whatsapp", "unlink whatsapp", "read my whatsapp messages out loud"
         if lowered.range(of: #"^(link|connect|set up|setup) (my )?whats ?app( to zuffi)?$"#, options: .regularExpression) != nil {
+            guard ZuffiPlan.shared.isBusiness else { WhatsAppLink.shared.showWindow(); return "Linking WhatsApp is part of Zuffi Business — on Pro, WhatsApp stays closed." }
             WhatsAppLink.shared.showWindow()
             return "Opening WhatsApp. On your phone: WhatsApp → Settings → Linked devices → Link a device, then scan the code."
         }
@@ -540,6 +542,19 @@ enum ZuffiSelf {
             return perform("open_business", [:])
         }
         if m(t, #"^(open|show)( up)? (your |my |the )?whats ?app$"#) != nil { return perform("open_whatsapp", [:]) }
+        if m(t, #"(which|what|best) (free )?(ai|model|ai model|llm)s?\b.*\b(best|for|on|suits?|run)\b.*\b(my |this )?(mac|computer|laptop|device|pc)|^(check|analy[sz]e) (my |this )?(mac|device|computer)( for ai)?$"#) != nil {
+            return DeviceCheck.summary
+        }
+        // The pet: "stop the pet bringing reminders", "never show the pet", "show the pet again"
+        if m(t, #"^(stop|don'?t let|no more)( the)? (pet|bunny)( bringing| bring)?( my)? reminders$|^(turn off|disable) pet reminders$"#) != nil {
+            UserDefaults.standard.set(false, forKey: "petReminders"); return "Okay — reminders will show at the notch instead of the pet walking in."
+        }
+        if m(t, #"^(let )?(the )?(pet|bunny) (bring|brings) (my )?reminders$|^(turn on|enable) pet reminders$"#) != nil {
+            UserDefaults.standard.set(true, forKey: "petReminders"); UserDefaults.standard.set(false, forKey: "petNever"); return "Okay — I'll walk in with your reminders."
+        }
+        if m(t, #"^(never|don'?t|do not) (show|bring)( the| your)? (pet|bunny)( on (the )?screen)?( again)?$|^no pet$"#) != nil {
+            UserDefaults.standard.set(true, forKey: "petNever"); PetController.shared.hide(); return "Okay — the pet won't come on screen. Reminders show at the notch."
+        }
         if m(t, #"^(open|show)( up)? (your |the )?(features|all features)$"#) != nil { return perform("open", ["what": "features"]) }
         if m(t, #"^(open|show)( up)? (your |the |my )?(settings)$"#) != nil { return perform("open", ["what": "settings"]) }
         if m(t, #"^(open|show)( up)? (the )?chat$"#) != nil { return perform("open", ["what": "chat"]) }
@@ -676,7 +691,7 @@ enum ZuffiSelf {
             VoiceEngine.shared.speak("Okay, this is my normal voice.")
             return "Switched to a female voice."
         case "mic": VoiceEngine.shared.setMic(bool("on")); return bool("on") ? "Mic is on." : "Mic is off."
-        case "pet": if bool("on") { PetController.shared.show() } else { PetController.shared.hide() }; return bool("on") ? "Here I am on your screen!" : "Okay, I'm hiding."
+        case "pet": if bool("on") { UserDefaults.standard.set(false, forKey: "petNever"); PetController.shared.show() } else { PetController.shared.hide() }; return bool("on") ? "Here I am on your screen!" : "Okay, I'm hiding."
         case "sound": AppState.shared.soundEnabled = bool("on"); return bool("on") ? "Sounds on." : "Sounds off."
         case "record_screen":
             Task { await Assistant.run(bool("on") ? "record my screen" : "stop recording", spoken: false) }

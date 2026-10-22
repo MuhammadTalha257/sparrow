@@ -47,7 +47,19 @@ final class ZuffiWalk {
     private var laterWork: [String: DispatchWorkItem] = [:]
     private func isHealth(_ v: Visit) -> Bool { v.itemId == nil && Self.health.contains(v.kind) }
 
+    /// "Never show the pet on screen" / "the pet brings reminders" — some people don't want a bunny walking across their work.
+    static var petNever: Bool { UserDefaults.standard.bool(forKey: "petNever") }
+    static var petBringsReminders: Bool { !petNever && (UserDefaults.standard.object(forKey: "petReminders") as? Bool ?? true) }
+
     func arrive(kind: String, title: String, sub: String = "", itemId: String? = nil) {
+        // Pet switched off for reminders → a quiet card at the notch instead.
+        guard Self.petBringsReminders else {
+            let emoji = ["water": "💧", "coffee": "☕️", "meds": "💊", "meeting": "📅", "prayer": "🌙", "task": "✅"][kind] ?? "⏰"
+            AppState.shared.noteMessage = "\(emoji) \(title)\(sub.isEmpty ? "" : " · \(sub)")"
+            NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+            SoundEngine.shared.play("chime")
+            return
+        }
         let v = Visit(kind: kind, title: title, sub: sub, itemId: itemId)
         if isHealth(v) {
             if let c = current, isHealth(c), c.kind == kind { return }          // already here with it

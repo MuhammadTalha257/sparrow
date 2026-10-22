@@ -207,7 +207,7 @@ final class ClaudeService {
         var body: [String: Any] = [
             "model": model,
             "max_tokens": fresh ? 2048 : 1200,
-            "system": systemPrompt + AIService.userFacts + "\n" + ZuffiTeam.shared.persona,
+            "system": ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) } ?? (systemPrompt + AIService.userFacts),
             "messages": conversationMessages,
         ]
         if fresh { body["tools"] = webSearchTools }

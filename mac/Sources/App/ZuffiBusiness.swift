@@ -18,12 +18,14 @@ import SwiftUI
 final class ZuffiBusiness: ObservableObject {
     static let shared = ZuffiBusiness()
     enum Pack: String, CaseIterable, Identifiable {
-        case realEstate, salon, clinic, shop, restaurant, services, freelancer
+        case realEstate, salon, nails, cleaning, clinic, shop, restaurant, services, freelancer
         var id: String { rawValue }
         var label: String {
             switch self {
             case .realEstate: return "Estate agent"
-            case .salon: return "Salon / beauty"
+            case .salon: return "Salon / barber / beauty"
+            case .nails: return "Nail salon"
+            case .cleaning: return "Cleaning company"
             case .clinic: return "Clinic / dentist"
             case .shop: return "Shop / online store"
             case .restaurant: return "Restaurant / café"
@@ -35,6 +37,8 @@ final class ZuffiBusiness: ObservableObject {
             switch self {
             case .realEstate: return "house.fill"
             case .salon: return "scissors"
+            case .nails: return "hand.raised.fill"
+            case .cleaning: return "sparkles"
             case .clinic: return "cross.case.fill"
             case .shop: return "bag.fill"
             case .restaurant: return "fork.knife"
@@ -43,7 +47,9 @@ final class ZuffiBusiness: ObservableObject {
             }
         }
         /// Businesses that work with bookings (appointments sheet).
-        var usesAppointments: Bool { [.salon, .clinic, .restaurant].contains(self) }
+        var usesAppointments: Bool { [.salon, .nails, .cleaning, .clinic, .restaurant].contains(self) }
+        /// How long until a regular client usually comes back (rebook reminders).
+        var rebookDays: Int { self == .nails ? 21 : self == .cleaning ? 14 : self == .clinic ? 180 : 42 }
     }
 
     /// One Leads.csv line from named fields (in the current column order).
@@ -69,44 +75,31 @@ final class ZuffiBusiness: ObservableObject {
         UserDefaults.standard.set(p.rawValue, forKey: "zuffiPack")
         var files: [(String, String)] = []
         let today = Self.iso(Date()), tomorrow = Self.iso(Date().addingTimeInterval(86400)), ago4 = Self.iso(Date().addingTimeInterval(-4 * 86400))
+        // Empty sheets with the right columns — no example people, so nothing made-up ever mixes with real clients.
+        _ = (today, tomorrow, ago4)
+        let leads = ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n")
         switch p {
         case .realEstate:
-            files = [
-                ("Listings", "Property ID,Area,Type,Beds,Size,Price (PKR),Status,Owner,Owner phone,Notes\nP-101,DHA Phase 6,House,3,10 Marla,19500000,Available,Owner,03001234567,Corner\nP-102,Bahria Town,Apartment,2,1100 sqft,9500000,Available,Sana,03211234567,Park facing\n"),
-                ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
-                    + Self.leadRow(["name": "Sample Client 1", "phone": "03331234567", "source": "Facebook ad – DHA plots", "interest": "10 marla house", "area": "DHA Phase 6", "budget": "2 crore", "status": "New", "priority": "Hot", "added": today, "last contact": today, "next follow-up": today, "notes": "Wants to visit on Sunday"]) + "\n"
-                    + Self.leadRow(["name": "Sample Client 2", "phone": "03451234567", "source": "Zameen.com", "interest": "2 bed apartment", "area": "Bahria Town", "budget": "1 crore", "status": "Contacted", "added": ago4, "last contact": ago4, "next follow-up": tomorrow]) + "\n"),
-                ("Buyers", "Name,Phone,Budget (PKR),Wants,Area,Last contact,Next follow-up,Notes\nSample Client 1,03331234567,20000000,3 bed house,DHA,\(ago4),\(today),Wants to visit on Sunday\nSample Client 2,03451234567,10000000,2 bed apartment,Bahria Town,\(today),\(tomorrow),\n"),
-            ]
-            HomeAction.right = HomeAction.defaultRight
-        case .salon:
-            files = [
-                ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n\(today),10:00,Sample Client 2,07700900123,Cut & blow dry,Stylist,45,Booked\n\(tomorrow),14:30,Sample Client 3,07700900456,Colour,Stylist,85,Booked\n"),
-                ("Clients", "Name,Phone,Last visit,Usual service,Notes\nSample Client 2,07700900123,\(today),Cut & blow dry,\nSample Client 3,07700900789,\(Self.iso(Date().addingTimeInterval(-50 * 86400))),Highlights,Prefers Saturdays\n"),
-            ]
-            HomeAction.right = HomeAction.defaultRight
+            files = [leads,
+                     ("Listings", "Property ID,Area,Type,Beds,Size,Price (PKR),Status,Owner,Owner phone,Notes\n"),
+                     ("Buyers", "Name,Phone,Budget (PKR),Wants,Area,Last contact,Next follow-up,Notes\n")]
+        case .salon, .nails:
+            files = [("Appointments", "Date,Time,Client,Phone,Service,Staff,Price (£),Status\n"),
+                     ("Clients", "Name,Phone,Last visit,Usual service,Notes\n")]
+        case .cleaning:
+            files = [("Appointments", "Date,Time,Client,Phone,Address,Service,Staff,Price (£),Repeat,Status\n"),
+                     ("Clients", "Name,Phone,Address,Last visit,Usual service,Repeat,Key / access notes,Notes\n")]
         case .clinic, .restaurant:
-            files = [
-                ("Appointments", "Date,Time,Client,Phone,Service,Staff,Price,Status\n\(tomorrow),11:00,Sample Client,07700900123,\(p == .clinic ? "Check-up" : "Table for 4"),,,Booked\n"),
-                ("Clients", "Name,Phone,Last visit,Usual service,Notes\nSample Client,07700900123,\(today),\(p == .clinic ? "Check-up" : "Dinner"),\n"),
-            ]
-            HomeAction.right = HomeAction.defaultRight
+            files = [("Appointments", "Date,Time,Client,Phone,Service,Staff,Price,Status\n"),
+                     ("Clients", "Name,Phone,Last visit,Usual service,Notes\n")]
         case .freelancer:
-            files = [
-                ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
-                    + Self.leadRow(["name": "Sample Client 1", "phone": "07700900123", "source": "LinkedIn", "interest": "Website redesign", "area": "Due end of month", "budget": "£1,500", "status": "Proposal sent", "added": ago4, "last contact": ago4, "next follow-up": today]) + "\n"),
-                ("Projects", "Project,Client,Deadline,Fee,Status,Hours,Notes\nWebsite redesign,Sample Client 1,\(tomorrow),1500,Working,6,First draft sent\n"),
-                ("Invoices", "Invoice,Client,Date,Amount,Due,Status\nINV-001,Sample Client 1,\(ago4),750,\(today),Sent\n"),
-            ]
-            HomeAction.right = HomeAction.defaultRight
+            files = [leads,
+                     ("Projects", "Project,Client,Deadline,Fee,Status,Hours,Notes\n"),
+                     ("Invoices", "Invoice,Client,Date,Amount,Due,Status\n")]
         case .shop, .services:
-            files = [
-                ("Leads", ZuffiPA.leadHeader.joined(separator: ",") + "\n"
-                    + Self.leadRow(["name": "Sample Customer", "phone": "07700900123", "source": "WhatsApp", "interest": p == .shop ? "Asked about delivery" : "Kitchen fitting quote", "status": "New", "added": today, "next follow-up": today]) + "\n"),
-                ("Clients", "Name,Phone,Last visit,Usual service,Notes\n"),
-            ]
-            HomeAction.right = HomeAction.defaultRight
+            files = [leads, ("Clients", "Name,Phone,Last visit,Usual service,Notes\n")]
         }
+        HomeAction.right = HomeAction.defaultRight
         ZuffiHomeModel.shared.reloadButtons()
         var made: [String] = []
         for (name, csv) in files {
@@ -118,12 +111,12 @@ final class ZuffiBusiness: ObservableObject {
         }
         NSWorkspace.shared.open(Self.docs)
         ZuffiCRM.shared.reload()
-        if ![.realEstate, .salon].contains(p) {
+        if ![.realEstate, .salon, .nails, .cleaning].contains(p) {
             return "Done! Zuffi is set up for your \(p.label.lowercased()). Open Business → My business and tell Zuffi about your services, prices and hours — then it can answer clients on WhatsApp for you."
         }
         return p == .realEstate
-            ? "Done! I made your Leads, Listings and Buyers sheets in Documents → Zuffi (with examples). Tell me leads as they come (their name, number, where they found you and what they want), download your Facebook / Zameen leads into Downloads and I'll add them by myself, and ask “my leads”, “follow-ups today” or “message new leads”."
-            : "Done! I made your Appointments and Clients sheets in Documents → Zuffi (with examples). Just tell me: “book Emma tomorrow at 3pm for a cut”, “move Emma to Friday 2pm”, “cancel Emma's appointment”, “this week's bookings”, “send tomorrow's reminders”."
+            ? "Done! I made your Leads, Listings and Buyers sheets in Documents → Zuffi. Tell me leads as they come (their name, number, where they found you and what they want), download your Facebook / Zameen leads into Downloads and I'll add them by myself, and ask “my leads”, “follow-ups today” or “message new leads”."
+            : "Done! I made your Appointments and Clients sheets in Documents → Zuffi. Just tell me: “book Emma tomorrow at 3pm for a cut”, “move Emma to Friday 2pm”, “cancel Emma's appointment”, “this week's bookings”, “send tomorrow's reminders”."
     }
 
     /// Every half minute: re-read sheets you've edited; at 10:00 tell you who has gone quiet / who to call.
@@ -142,7 +135,12 @@ final class ZuffiBusiness: ObservableObject {
         let key = "zuffiMorningNudge"
         guard pack != nil, cal.component(.hour, from: now) == 10, UserDefaults.standard.string(forKey: key) != Self.iso(now) else { return }
         UserDefaults.standard.set(Self.iso(now), forKey: key)
-        let msg = pack == .realEstate ? quietBuyers(short: true) : pack?.usesAppointments == true ? todays(offset: 0, short: true) : ""
+        var msg = pack == .realEstate ? quietBuyers(short: true) : pack?.usesAppointments == true ? todays(offset: 0, short: true) : ""
+        // UK small businesses: who is due back (nails every ~3 weeks, cleans weekly/fortnightly, cuts every ~6 weeks).
+        if pack == .realEstate, !PKTools.dueSoon.isEmpty {
+            msg += (msg.isEmpty ? "" : "\n") + "Full payment due soon: " + PKTools.dueSoon.prefix(4).map { "\($0.0) (\($0.1.buyer), \($0.1.dueDate))" }.joined(separator: " · ")
+        }
+        if pack?.usesAppointments == true, pack != .restaurant { let r = rebook(); if r.hasPrefix("Due") { msg += (msg.isEmpty ? "" : "\n") + r.components(separatedBy: "\n")[0] } }
         if !msg.isEmpty {
             NotificationCenter.default.post(name: .petSay, object: msg)
             ZuffiHomeModel.shared.say(msg)
@@ -244,13 +242,22 @@ final class ZuffiBusiness: ObservableObject {
 
     func rebook() -> String {
         guard let (h, rows) = table("Clients") else { return "Say “set me up as a salon” first (or add a Clients sheet)." }
-        let name = Self.col(h, ["name", "client"]), last = Self.col(h, ["last visit", "last"]), phone = Self.col(h, ["phone", "mobile"])
-        let today = Date()
-        let due = rows.compactMap { r -> String? in
-            guard let d = Self.date(Self.cell(r, last)), today.timeIntervalSince(d) >= 42 * 86400 else { return nil }
-            return "\(Self.cell(r, name)) (\(Int(today.timeIntervalSince(d) / 86400 / 7)) weeks) \(Self.cell(r, phone))"
+        let name = Self.col(h, ["name", "client"]), last = Self.col(h, ["last visit", "last"]), phone = Self.col(h, ["phone", "mobile"]), rep = Self.col(h, ["repeat"])
+        let today = Date(), normal = (pack ?? .salon).rebookDays
+        // Each client's own rhythm: "weekly", "fortnightly", "monthly", "every 3 weeks" — else the usual for this business.
+        func days(_ r: [String]) -> Int {
+            let t = Self.cell(r, rep).lowercased()
+            if t.contains("fortnight") || t.contains("2 week") { return 14 }
+            if t.contains("week") { if let n = Int(t.filter(\.isNumber)), n > 0 { return n * 7 }; return 7 }
+            if t.contains("month") { return 30 }
+            return normal
         }
-        return due.isEmpty ? "Everyone has been in within the last 6 weeks. 💇" : "Due to rebook (\(due.count)): " + due.prefix(10).joined(separator: " · ")
+        let due = rows.compactMap { r -> String? in
+            guard let d = Self.date(Self.cell(r, last)), today.timeIntervalSince(d) >= Double(days(r)) * 86400 else { return nil }
+            return "\(Self.cell(r, name)) (\(Int(today.timeIntervalSince(d) / 86400)) days) \(Self.cell(r, phone))"
+        }
+        let word = pack == .cleaning ? "next clean" : pack == .nails ? "infills / new set" : "rebook"
+        return due.isEmpty ? "Nobody is due for a \(word) right now. ✨" : "Due for a \(word) (\(due.count)): " + due.prefix(10).joined(separator: " · ") + "\nSay “send tomorrow's reminders” or message them from Inbox."
     }
 
     // MARK: helpers

@@ -171,6 +171,7 @@ final class ZuffiProperties: ObservableObject {
 
     func handle(_ raw: String) async -> String? {
         guard ZuffiCRM.shared.isEstate else { return nil }
+        if let r = PKTools.handle(raw) { return r }
         let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let l = t.lowercased()
         if l.range(of: #"^(?:add|new|save) (?:a )?(?:property|listing|plot|house|flat|file)\b"#, options: .regularExpression) != nil {
@@ -470,6 +471,7 @@ struct PropertyDetail: View {
                         }.controlSize(.small)
                     }
                 }
+                if crm.country == "PK" { PKDealDesk(property: p) }
                 // Visits for this property
                 let vs = props.visits.filter { $0.property == p.id }.sorted { $0.date + $0.time > $1.date + $1.time }
                 if !vs.isEmpty {
@@ -602,5 +604,219 @@ struct PropertyCompare: View {
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
         }.padding(20)
+    }
+}
+
+// MARK: - Pakistan deal desk: sizes, price per marla, installments, token money, commission, transfer papers
+//
+//   "10 marla in sq ft" · "price per marla P-101" · "installments 1.2 crore 25% down 36 months"
+//   "token 5 lakh from Ali for P-101 due in 30 days" · "deals" · "papers for P-101"
+
+struct PKDeal: Codable, Hashable {
+    var buyer = "", buyerPhone = "", price = "", token = "", tokenDate = "", dueDate = "", agreementDate = ""
+    var stage = "Token received"            // Token received · Agreement signed · Full payment · Transfer done
+    var commissionPct = "1", dealerShare = "", docs: [String] = [], notes = ""
+    static let stages = ["Token received", "Agreement signed", "Full payment", "Transfer done"]
+}
+
+@MainActor
+enum PKTools {
+    /// Square feet in one marla — societies differ (DHA / LDA 225, some 250, old revenue measure 272.25).
+    static var marlaSqft: Double {
+        get { let v = UserDefaults.standard.double(forKey: "pkMarlaSqft"); return v > 0 ? v : 225 }
+        set { UserDefaults.standard.set(newValue, forKey: "pkMarlaSqft") }
+    }
+
+    /// "10 marla" / "1 kanal" / "2250 sq ft" / "500 sq yd" → square feet.
+    static func sqft(_ s: String) -> Double? {
+        let t = s.lowercased().replacingOccurrences(of: ",", with: "")
+        guard let r = t.range(of: #"\d+(\.\d+)?"#, options: .regularExpression), let v = Double(t[r]) else { return nil }
+        if t.contains("kanal") { return v * 20 * marlaSqft }
+        if t.contains("marla") { return v * marlaSqft }
+        if t.range(of: #"(sq\.? ?y|yard|gaz)"#, options: .regularExpression) != nil { return v * 9 }
+        if t.range(of: #"(sq\.? ?f|square f|ft)"#, options: .regularExpression) != nil { return v }
+        if t.contains("acre") { return v * 43_560 }
+        return nil
+    }
+
+    static func sizes(_ s: String) -> String? {
+        guard let f = sqft(s) else { return nil }
+        let m = f / marlaSqft
+        func n(_ x: Double) -> String { x >= 100 ? Int(x.rounded()).formatted() : String(format: "%.2f", x).replacingOccurrences(of: ".00", with: "") }
+        return "\(n(m)) marla · \(n(m / 20)) kanal · \(n(f)) sq ft · \(n(f / 9)) sq yd (1 marla = \(Int(marlaSqft)) sq ft)"
+    }
+
+    static func rs(_ v: Double) -> String {
+        if v >= 10_000_000 { return String(format: "%.2f crore", v / 10_000_000).replacingOccurrences(of: ".00", with: "") }
+        if v >= 100_000 { return String(format: "%.2f lakh", v / 100_000).replacingOccurrences(of: ".00", with: "") }
+        return "Rs " + Int(v.rounded()).formatted()
+    }
+
+    static func perMarla(_ p: Property) -> String? {
+        let price = p.priceNumber
+        guard price > 0, let f = sqft(p.size), f > 0 else { return nil }
+        return "\(rs(price / (f / marlaSqft))) per marla · Rs \(Int((price / f).rounded()).formatted()) per sq ft"
+    }
+
+    /// Down payment, then equal instalments every `every` months.
+    static func installments(price: Double, downPct: Double, months: Int, every: Int = 1, possessionPct: Double = 0) -> String {
+        guard price > 0, months > 0 else { return "Tell me the price and how many months, e.g. “installments 1.2 crore 25% down 36 months”." }
+        let down = price * downPct / 100, possession = price * possessionPct / 100
+        let count = max(1, months / max(1, every))
+        let each = (price - down - possession) / Double(count)
+        var out = "Total \(rs(price)): down payment \(rs(down)) (\(Int(downPct))%), then \(count) \(every == 1 ? "monthly" : every == 3 ? "quarterly" : "every-\(every)-months") instalments of \(rs(each))"
+        if possession > 0 { out += ", and \(rs(possession)) on possession" }
+        return out + "."
+    }
+
+    /// Papers for a sale/transfer (society file or plot vs. revenue land / registry).
+    static func papers(_ p: Property) -> [String] {
+        let society = (p.area + " " + p.block).lowercased().range(of: #"dha|bahria|society|town|phase|block|capital smart|gulberg|lda|cda"#, options: .regularExpression) != nil
+        var list = ["Seller's CNIC copy", "Buyer's CNIC copy", "Token receipt (bayana) signed by both", "Agreement to sell (iqrarnama) with 2 witnesses",
+                    "Original title papers checked", "Utility bills / dues paid"]
+        if society || p.type == "File" {
+            list += ["Allotment letter / file", "NOC from the society", "Non-demand / dues clearance certificate", "Site plan / map", "Transfer letter & biometric at the society office", "Possession letter"]
+        } else {
+            list += ["Fard (from the land record centre)", "Registry / sale deed", "Intiqal (mutation) done", "Map approval (if built)"]
+        }
+        list += ["Taxes paid (seller & buyer advance tax, stamp duty — check current FBR rates)", "Commission received"]
+        return list
+    }
+
+    static var deals: [String: PKDeal] {
+        get { (try? JSONDecoder().decode([String: PKDeal].self, from: UserDefaults.standard.data(forKey: "pkDeals") ?? Data())) ?? [:] }
+        set { if let d = try? JSONEncoder().encode(newValue) { UserDefaults.standard.set(d, forKey: "pkDeals") } }
+    }
+
+    static func commission(_ d: PKDeal) -> Double { ZuffiMoney.number(d.price) * (Double(d.commissionPct) ?? 0) / 100 }
+
+    /// Deals whose full payment is due within 3 days (morning nudge).
+    static var dueSoon: [(String, PKDeal)] {
+        let soon = ZuffiBusiness.iso(Date().addingTimeInterval(3 * 86400))
+        return deals.filter { !$0.value.dueDate.isEmpty && $0.value.dueDate <= soon && $0.value.stage != "Transfer done" && $0.value.stage != "Full payment" }.sorted { $0.value.dueDate < $1.value.dueDate }
+    }
+
+    static func handle(_ raw: String) -> String? {
+        let l = raw.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " ?.!"))
+        let props = ZuffiProperties.shared
+        if l.range(of: #"^(?:convert )?\d+(\.\d+)? ?(marla|kanal|sq ?ft|sqft|square feet|sq ?yd|yards?|gaz|acres?)( (in|to|into) .+)?$"#, options: .regularExpression) != nil {
+            return sizes(l)
+        }
+        if l.hasPrefix("1 marla is") || l.range(of: #"^(?:set )?marla (?:is |= ?)?(\d+)( sq ?ft)?$"#, options: .regularExpression) != nil,
+           let v = Double(l.filter(\.isNumber)), v >= 200, v <= 300 {
+            marlaSqft = v; return "Okay — 1 marla = \(Int(v)) sq ft from now on."
+        }
+        if l.range(of: #"^price per marla"#, options: .regularExpression) != nil {
+            let w = l.replacingOccurrences(of: "price per marla", with: "").trimmingCharacters(in: .whitespaces)
+            guard let p = props.find(w) else { return "Which property? Say “price per marla P-101”." }
+            return perMarla(p).map { "\(p.id): \($0)" } ?? "\(p.id) needs a price and a size first."
+        }
+        if l.range(of: #"^(?:installments?|instalments?|qist|payment plan)\b"#, options: .regularExpression) != nil {
+            let price = ZuffiMoney.number(l.replacingOccurrences(of: #"\d+(\.\d+)?\s*%.*$"#, with: "", options: .regularExpression))
+            let pct = l.range(of: #"(\d+(\.\d+)?)\s*%"#, options: .regularExpression).flatMap { Double(l[$0].filter { $0.isNumber || $0 == "." }) } ?? 25
+            let months = l.range(of: #"(\d+)\s*(months?|mahine)"#, options: .regularExpression).flatMap { Int(l[$0].filter(\.isNumber)) }
+                ?? l.range(of: #"(\d+)\s*(years?|saal)"#, options: .regularExpression).flatMap { Int(l[$0].filter(\.isNumber)).map { $0 * 12 } } ?? 36
+            return installments(price: price, downPct: pct, months: months, every: l.contains("quarter") ? 3 : 1)
+        }
+        // "token 5 lakh from Ali for P-101 due in 30 days"
+        if l.range(of: #"^(?:token|bayana|biyana)\b"#, options: .regularExpression) != nil {
+            guard let pid = l.range(of: #"\bp-?\d+\b"#, options: .regularExpression).map({ String(l[$0]).uppercased().replacingOccurrences(of: "P", with: "P-").replacingOccurrences(of: "P--", with: "P-") }),
+                  var p = props.find(pid) else { return "Say which property, e.g. “token 5 lakh from Ali for P-101 due in 30 days”." }
+            var d = deals[p.id] ?? PKDeal()
+            if let r = l.range(of: #"(?:token|bayana|biyana)\s+([\d.,]+\s*(?:lakh|lac|crore|k)?)"#, options: .regularExpression) { d.token = String(l[r]).replacingOccurrences(of: #"^(token|bayana|biyana)\s+"#, with: "", options: .regularExpression) }
+            if let r = l.range(of: #"from ([a-z]+( [a-z]+)?)"#, options: .regularExpression) {
+                let n = String(l[r]).replacingOccurrences(of: "from ", with: "").components(separatedBy: " ").prefix { !["for", "due", "on"].contains($0) }.joined(separator: " ")
+                d.buyer = n.capitalized
+                d.buyerPhone = ZuffiCRM.shared.leads.first { $0.name.lowercased().hasPrefix(n) }?.phone ?? d.buyerPhone
+            }
+            let days = l.range(of: #"(\d+)\s*days?"#, options: .regularExpression).flatMap { Int(l[$0].filter(\.isNumber)) } ?? 30
+            d.tokenDate = ZuffiBusiness.iso(Date()); d.dueDate = ZuffiBusiness.iso(Date().addingTimeInterval(Double(days) * 86400))
+            if d.price.isEmpty { d.price = p.price }
+            d.stage = "Token received"
+            var all = deals; all[p.id] = d; deals = all
+            p.status = "Token received"; props.save(p)
+            return "Saved: token \(d.token) from \(d.buyer.isEmpty ? "the buyer" : d.buyer) for \(p.id). Full payment due \(d.dueDate) — I'll remind you 3 days before. Commission at \(d.commissionPct)%: \(rs(commission(d)))."
+        }
+        if l.range(of: #"^(?:my |open |active )?deals$|^token money$"#, options: .regularExpression) != nil {
+            let d = deals.filter { $0.value.stage != "Transfer done" }
+            if d.isEmpty { return "No open deals. Say “token 5 lakh from Ali for P-101 due in 30 days” when a token comes in." }
+            return "Open deals (\(d.count)): " + d.sorted { $0.value.dueDate < $1.value.dueDate }.map { "\($0.key) · \($0.value.buyer) · \($0.value.stage) · due \($0.value.dueDate.isEmpty ? "—" : $0.value.dueDate)" }.joined(separator: "\n")
+        }
+        if l.range(of: #"^(?:papers|documents|docs|transfer papers) (?:for |of )?"#, options: .regularExpression) != nil {
+            let w = l.replacingOccurrences(of: #"^(?:papers|documents|docs|transfer papers) (?:for |of )?"#, with: "", options: .regularExpression)
+            guard let p = props.find(w) else { return nil }
+            let done = Set(deals[p.id]?.docs ?? [])
+            return "Papers for \(p.id):\n" + papers(p).map { (done.contains($0) ? "✅ " : "▫️ ") + $0 }.joined(separator: "\n")
+        }
+        return nil
+    }
+}
+
+/// Property → Deal desk (Pakistan): size in every unit, price per marla, instalments, token & commission, papers checklist.
+struct PKDealDesk: View {
+    let property: Property
+    @State private var deal = PKDeal()
+    @State private var down = 25.0
+    @State private var months = 36
+    @State private var quarterly = false
+    @State private var sqft = PKTools.marlaSqft
+    @ObservedObject private var nav = BizNav.shared
+
+    var body: some View {
+        let p = property
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Deal desk", systemImage: "doc.text.magnifyingglass").font(.system(size: 13, weight: .heavy, design: .rounded))
+                Spacer()
+                Picker("1 marla =", selection: $sqft) { Text("225 sq ft").tag(225.0); Text("250 sq ft").tag(250.0); Text("272.25 sq ft").tag(272.25) }
+                    .frame(width: 190).controlSize(.small).onChange(of: sqft) { _, v in PKTools.marlaSqft = v }
+            }
+            Group {
+                if let s = PKTools.sizes(p.size) { Text("📐 " + s) }
+                if let pm = PKTools.perMarla(p) { Text("💰 " + pm) }
+            }.font(.system(size: 11.5)).foregroundColor(Ink.muted).textSelection(.enabled)
+            // Instalments
+            HStack(spacing: 10) {
+                Text("Instalments").font(.system(size: 11.5, weight: .semibold))
+                Stepper("Down \(Int(down))%", value: $down, in: 0...90, step: 5).fixedSize()
+                Stepper("\(months) months", value: $months, in: 3...120, step: 3).fixedSize()
+                Toggle("Quarterly", isOn: $quarterly).toggleStyle(.checkbox)
+            }.font(.system(size: 11.5)).controlSize(.small)
+            Text(PKTools.installments(price: p.priceNumber, downPct: down, months: months, every: quarterly ? 3 : 1))
+                .font(.system(size: 11.5)).foregroundColor(Ink.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            // Token & commission
+            HStack(spacing: 8) {
+                TextField("Buyer", text: $deal.buyer); TextField("Deal price", text: $deal.price); TextField("Token (bayana)", text: $deal.token)
+            }.textFieldStyle(.roundedBorder).font(.system(size: 11.5))
+            HStack(spacing: 8) {
+                TextField("Token date (yyyy-mm-dd)", text: $deal.tokenDate); TextField("Full payment due (yyyy-mm-dd)", text: $deal.dueDate)
+                TextField("Commission %", text: $deal.commissionPct).frame(width: 100); TextField("Dealer share", text: $deal.dealerShare)
+            }.textFieldStyle(.roundedBorder).font(.system(size: 11.5))
+            HStack {
+                Picker("Stage", selection: $deal.stage) { ForEach(PKDeal.stages, id: \.self) { Text($0).tag($0) } }.frame(width: 240).controlSize(.small)
+                Text("Commission: \(PKTools.rs(PKTools.commission(deal)))").font(.system(size: 11.5, weight: .semibold))
+                Spacer()
+                Button("Save deal") {
+                    var all = PKTools.deals; all[p.id] = deal; PKTools.deals = all
+                    var x = p; x.status = deal.stage == "Transfer done" ? (p.purpose == "Rent" ? "Rented" : "Sold") : "Token received"; ZuffiProperties.shared.save(x)
+                    nav.say("Deal saved for \(p.id)")
+                }.controlSize(.small)
+            }
+            Divider()
+            // Papers checklist
+            Text("Transfer papers").font(.system(size: 11.5, weight: .semibold))
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 4) {
+                ForEach(PKTools.papers(p), id: \.self) { d in
+                    Toggle(d, isOn: Binding(get: { deal.docs.contains(d) }, set: { on in
+                        if on { deal.docs.append(d) } else { deal.docs.removeAll { $0 == d } }
+                        var all = PKTools.deals; all[p.id] = deal; PKTools.deals = all
+                    })).toggleStyle(.checkbox).font(.system(size: 11))
+                }
+            }
+        }
+        .padding(14).background(RoundedRectangle(cornerRadius: 14).fill(Ink.panelHi))
+        .onAppear { deal = PKTools.deals[p.id] ?? PKDeal(price: p.price) }
+        .onChange(of: property.id) { _, id in deal = PKTools.deals[id] ?? PKDeal(price: property.price) }
     }
 }

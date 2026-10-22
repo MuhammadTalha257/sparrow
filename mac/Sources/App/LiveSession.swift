@@ -259,16 +259,25 @@ final class LiveSession: NSObject {
         ]
     }
 
+    /// Who from the AI team is picked: voice questions then go to them (ask_team) and are spoken as them.
+    private static func teamLine() async -> String {
+        let p = ZuffiTeam.shared.activeAgents
+        guard !p.isEmpty else { return "" }
+        let names = p.map(\.name).joined(separator: ", ")
+        return "\nTEAM: the user is talking to \(names) from their AI team\(p.count > 1 ? " (with the Team Manager)" : ""). For EVERY question or job, call ask_team and speak its answer in the first person as \(p.count == 1 ? p[0].name : "the team") (\"I'm your \(p[0].name)…\"). Mac commands still use run_command. \"back to normal\" → run_command \"back to normal\"."
+    }
+
     private func systemPrompt() async -> String {
         let name = AssistantPrefs.displayName
         let f = DateFormatter(); f.dateFormat = "EEEE d MMMM yyyy, HH:mm"
         let tz = TimeZone.current.identifier
         let items = await WebHub.shared.callJS("return window.Sparrow.listItems ? JSON.stringify(window.Sparrow.listItems()) : '[]'") as? String ?? "[]"
         let front = AppState.shared.lastExternalApp?.localizedName ?? "unknown"
+        let teamLine = await Self.teamLine()
         return """
         You are Zuffi, \(name.isEmpty ? "the user's" : name + "'s") personal assistant living on their Mac — like JARVIS: calm, quick, warm, a little witty, always useful. You have a team of agents (tools) that do real things on this Mac.\(AIService.userFacts)
         \(ZuffiAbout.text)
-        Now: \(f.string(from: Date())) (\(tz)). Front app: \(front).
+        Now: \(f.string(from: Date())) (\(tz)). Front app: \(front).\(teamLine)
         Their reminders, meetings and tasks (JSON, id = what tools need): \(items.prefix(4000))
 
         HOW YOU TALK
@@ -595,6 +604,8 @@ enum LiveTools {
            ["title": str("Short title."), "text": str("The full note text. Use new lines for lists.")], required: ["title", "text"]),
         fn("type_text", "Type text into the app the user is working in (the box or document they last clicked). Use for 'type …', 'write … here', 'likho'.",
            ["text": str("Exactly what to type.")], required: ["text"]),
+        fn("ask_team", "Ask Zuffi's AI team. Use when the user names a team member or agent (\"switch to the finance agent and tell me…\", \"ask the product manager…\", \"ask research and sales…\") or whenever a team member is picked (see your instructions) — for every question. Returns the answer to speak, in the first person as that person.",
+           ["question": str("The user's question or job, in full."), "who": str("Optional: which agent(s), e.g. 'finance', 'product manager and research'. Empty = whoever is picked.")], required: ["question"]),
         fn("end_conversation", "Call when the user says goodbye/thanks/that's all, after your short goodbye."),
     ]
 
@@ -603,6 +614,12 @@ enum LiveTools {
         func ok(_ r: String?) -> [String: Any] { r.map { ["ok": true, "result": $0] } ?? ["ok": false, "result": "Zuffi couldn't do that."] }
         defer { VoiceEngine.shared.listenAfterSpeech = false }    // agents may ask the offline voice to listen — not now
         switch name {
+        case "ask_team":
+            let q = s("question"), who = s("who")
+            guard !q.isEmpty else { return ok(nil) }
+            let team = ZuffiTeam.shared
+            if !who.isEmpty { let people = team.findMany(who); if !people.isEmpty { team.activeIDs = people.map(\.id).filter { $0 != ZuffiTeam.manager.id } } }
+            return ok(await team.ask(q))
         case "run_command":
             let cmd = s("command")
             guard !cmd.isEmpty else { return ok(nil) }
