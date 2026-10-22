@@ -374,16 +374,14 @@ final class ZuffiTeam: ObservableObject {
         var results: [String: String] = [:]
         working = "👥 " + jobs.map { $0.0.name }.joined(separator: ", ") + " working…"
         if parallel {
-            await withTaskGroup(of: (String, String?).self) { g in
-                for (a, part) in jobs {
-                    let sys = systemPrompt(for: a, part: part, others: others.filter { $0 != a })
-                    let web = Self.isResearcher(a)
-                    g.addTask { @MainActor in
-                        (a.id, await AIService.shared.textAnswer(system: sys, messages: history + [["role": "user", "content": job + "\n\nYour part: " + part]], max: 700, web: web))
-                    }
-                }
-                for await (id, text) in g { results[id] = text }
+            // Start everyone at once (each a main-actor task), then collect the answers.
+            var running: [(String, Task<String?, Never>)] = []
+            for (a, part) in jobs {
+                let sys = systemPrompt(for: a, part: part, others: others.filter { $0 != a })
+                let web = Self.isResearcher(a), msgs = history + [["role": "user", "content": job + "\n\nYour part: " + part]]
+                running.append((a.id, Task { @MainActor in await AIService.shared.textAnswer(system: sys, messages: msgs, max: 700, web: web) }))
             }
+            for (id, t) in running { results[id] = await t.value }
         } else {
             for (a, part) in jobs {
                 working = "\(a.emoji) \(a.name) is working…"
