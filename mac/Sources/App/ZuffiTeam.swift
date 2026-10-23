@@ -608,9 +608,9 @@ final class ZuffiTeam: ObservableObject {
         if let hit = Self.aliases.first(where: { $0.0 == w }), let a = agent(hit.1) { return a }
         // The business's own team first ("finance" → the finance person you hired).
         if let mine = hiredAgents.first(where: { AgentField.of($0).label.lowercased() == w }) { return mine }
-        func words(_ s: String) -> Set<String> { Set(s.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)) }
+        func wordSet(_ s: String) -> Set<String> { Set(s.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)) }
         let scored = (hiredAgents + everyone).enumerated().map { (i, a) -> (TeamAgent, Int) in
-            let n = words(a.name), f = AgentField.of(a).label.lowercased()
+            let n = wordSet(a.name), f = AgentField.of(a).label.lowercased()
             var score = 0
             for t in tokens {
                 if n.contains(t) { score += 10 }                                              // a whole word of its name
