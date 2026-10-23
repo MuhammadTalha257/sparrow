@@ -145,7 +145,7 @@ enum AgentField: String, CaseIterable {
     }
 
     static func of(_ a: TeamAgent) -> AgentField {
-        if a.id == ZuffiTeam.manager.id { return .manager }
+        if a.id == "zuffi-team-manager" { return .manager }
         let n = a.name.lowercased(), d = a.division.lowercased()
         func has(_ w: String...) -> Bool { w.contains { n.contains($0) } }
         if has("booking") { return .bookings }
@@ -765,7 +765,7 @@ final class ZuffiTeam: ObservableObject {
         if readDashboard, field.tools.contains(.dashboard) {
             let tab = field == .finance ? "Sales / Finance / Reports" : field == .bookings ? "Calendar / Bookings" : nil
             step(id, "Reading your business dashboard on screen\(tab.map { " (\($0))" } ?? "")…", source: sources.first?.name ?? "Business dashboard")
-            let (r, err) = await readDashboard(for: a, tab: tab)
+            let (r, err) = await self.readDashboard(for: a, tab: tab)
             if let r { step(id, "Read \(r.figures.count) figure\(r.figures.count == 1 ? "" : "s") from \(r.source) · \(r.page)") }
             else { step(id, "Couldn't read the dashboard: \(err)") }
         }
