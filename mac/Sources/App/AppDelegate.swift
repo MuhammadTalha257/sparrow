@@ -133,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Voice, greeting, weather and notification reading
         Assistant.start()
         PhoneLink.shared.startIfEnabled()
+        AgentStage.shared.start()                      // team agents pop up at the bottom of the screen while they work
         BizSync.shared.startIfLinked()
         SetupWizard.shared.showIfFirstRun()
         WebHub.shared.start()

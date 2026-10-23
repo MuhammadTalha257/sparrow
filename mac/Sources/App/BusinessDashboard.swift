@@ -1413,6 +1413,7 @@ struct BizBusinessView: View {
                 }
                 // About the business
                 GlassBox { BizDetailsForm() }
+                GlassBox { BizFAQEditor() }
                 GlassBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -2104,7 +2105,7 @@ struct BizDetailsForm: View {
                     }
                 }
             }
-            ForEach(Self.fields.filter(\.tall), id: \.key) { fd in
+            ForEach(Self.fields.filter { $0.tall && $0.key != "faq" }, id: \.key) { fd in
                 VStack(alignment: .leading, spacing: 3) {
                     Text(fd.label + (Self.required.contains(fd.key) ? " *" : "")).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
                     TextEditor(text: binding(fd.key)).font(.system(size: 12.5)).scrollContentBackground(.hidden)
@@ -2141,7 +2142,19 @@ struct BizDetailsForm: View {
     }
 
     private func save() {
+        // The FAQ is edited in its own box (questions & answers) — keep what's saved there.
+        f["faq"] = ((UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:])["faq"] ?? f["faq"]
         UserDefaults.standard.set(f, forKey: "bizForm")
+        Self.rebuildInfo()
+        saved = true
+        BizNav.shared.formDone = Self.isComplete
+        BizNav.shared.say(missing.isEmpty ? "Saved — Zuffi and your AI team will use these details." : "Saved. Still needed: " + missing.joined(separator: ", "))
+    }
+
+    /// Writes the form (and FAQ) into the business details every reply uses, keeping notes written by hand below.
+    static func rebuildInfo() {
+        let f = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+        let crm = ZuffiCRM.shared, biz = ZuffiBusiness.shared
         var lines: [String] = []
         if !biz.businessName.isEmpty { lines.append("Business: \(biz.businessName)") }
         for fd in Self.fields {
@@ -2154,9 +2167,6 @@ struct BizDetailsForm: View {
         if rest.contains("[address]") || lines.isEmpty == false && rest.hasPrefix("Business:") { rest = "" }
         rest = rest.trimmingCharacters(in: .whitespacesAndNewlines)
         crm.businessInfo = lines.joined(separator: "\n") + (rest.isEmpty ? "" : marker + rest)
-        saved = true
-        BizNav.shared.formDone = Self.isComplete
-        BizNav.shared.say(missing.isEmpty ? "Saved — Zuffi and your AI team will use these details." : "Saved. Still needed: " + missing.joined(separator: ", "))
     }
 }
 
@@ -2189,6 +2199,84 @@ struct BizSetupGate: View {
             }
             .padding(28).frame(maxWidth: 860)
             .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+
+/// The questions customers ask, with your answers — WhatsApp replies use exactly these.
+struct BizFAQEditor: View {
+    struct QA: Identifiable, Hashable { var id = UUID(); var q: String; var a: String }
+    @State private var items: [QA] = BizFAQEditor.load()
+    @State private var newQ = ""
+    @State private var newA = ""
+    @State private var editing: UUID?
+
+    static func load() -> [QA] {
+        let text = ((UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:])["faq"] ?? ""
+        var out: [QA] = []
+        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        var i = 0
+        while i < lines.count {
+            let l = lines[i]
+            if let q = l.firstIndex(of: "?"), l.index(after: q) < l.endIndex {
+                out.append(QA(q: String(l[...q]).trimmingCharacters(in: .whitespaces), a: String(l[l.index(after: q)...]).trimmingCharacters(in: CharacterSet(charactersIn: " -–:"))))
+            } else if l.hasSuffix("?"), i + 1 < lines.count, !lines[i + 1].contains("?") {
+                out.append(QA(q: l, a: lines[i + 1])); i += 1
+            } else if !l.isEmpty { out.append(QA(q: l, a: "")) }
+            i += 1
+        }
+        return out
+    }
+    private func persist() {
+        var f = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+        f["faq"] = items.filter { !$0.q.isEmpty && !$0.a.isEmpty }.map { ($0.q.hasSuffix("?") ? $0.q : $0.q + "?") + " " + $0.a }.joined(separator: "\n")
+        UserDefaults.standard.set(f, forKey: "bizForm")
+        BizDetailsForm.rebuildInfo()
+        ZuffiTeam.shared.log("You", "Updated the WhatsApp FAQ", "\(items.count) questions")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("WhatsApp FAQ — your questions & answers", systemImage: "questionmark.bubble.fill").font(.system(size: 13, weight: .heavy))
+                Spacer()
+                Text("\(items.count) answer\(items.count == 1 ? "" : "s")").font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+            }
+            Text("Customers who ask one of these get your answer straight away, in their language style. Questions you haven't answered here are passed to you.")
+                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+            ForEach($items) { $it in
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if editing == it.id {
+                            TextField("Question", text: $it.q).textFieldStyle(.roundedBorder)
+                            TextField("Your answer", text: $it.a, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(1...4)
+                        } else {
+                            Text(it.q).font(.system(size: 12.5, weight: .semibold))
+                            Text(it.a.isEmpty ? "No answer yet — add one" : it.a).font(.system(size: 12)).foregroundColor(it.a.isEmpty ? Color(hex: "#EF6B6B") : Ink.muted).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer()
+                    Button(editing == it.id ? "Done" : "Edit") { if editing == it.id { editing = nil; persist() } else { editing = it.id } }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.accent)
+                    Button { items.removeAll { $0.id == it.id }; persist() } label: { Image(systemName: "trash").font(.system(size: 11)) }
+                        .buttonStyle(.plain).foregroundColor(Ink.faint).help("Delete")
+                }
+                .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Ink.panelHi))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("New question, e.g. Do you take walk-ins?", text: $newQ).textFieldStyle(.roundedBorder)
+                HStack {
+                    TextField("Your answer, e.g. Yes, if a chair is free — message us first.", text: $newA).textFieldStyle(.roundedBorder)
+                    Button("Add") {
+                        let q = newQ.trimmingCharacters(in: .whitespaces), a = newA.trimmingCharacters(in: .whitespaces)
+                        guard !q.isEmpty, !a.isEmpty else { BizNav.shared.say("Write the question and your answer."); return }
+                        items.append(QA(q: q.hasSuffix("?") ? q : q + "?", a: a)); newQ = ""; newA = ""; persist()
+                        BizNav.shared.say("Added to your FAQ")
+                    }.buttonStyle(.borderedProminent).tint(Ink.accent)
+                }
+            }
+            .padding(.top, 4)
         }
     }
 }

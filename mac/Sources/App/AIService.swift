@@ -199,6 +199,12 @@ final class AIService {
             }
         }
         if let r = await ZuffiPA.shared.handle(query) { finish(r, state: state, emote: .happy); return }
+        // Business: research, finance, bookings, marketing, travel… Zuffi gives each job to the right agent (they pop up on screen and work).
+        if context == nil, ZuffiPlan.shared.isBusiness {
+            state.stateOverride = .thinking
+            if let r = await ZuffiTeam.shared.dispatch(query) { remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return }
+            state.stateOverride = nil
+        }
         // 1) Built-in commands run instantly, offline, with no API key.
         if let reply = await AgentRouter.shared.handle(query) {
             finish(reply, state: state, emote: .happy)
@@ -596,6 +602,11 @@ final class AIService {
     /// One answer with its own instructions, without touching the chat (team members, the Team Manager).
     /// Zuffi AI (in the plan) → Groq → Gemini → OpenAI → whatever else is set up. `web`: look things up first (research).
     func textAnswer(system: String, messages: [[String: String]], max: Int = 900, web: Bool = false) async -> String? {
+        await textAnswerFull(system: system, messages: messages, max: max, web: web).text
+    }
+
+    /// The same, plus the web pages it used (research shows them as links).
+    func textAnswerFull(system: String, messages: [[String: String]], max: Int = 900, web: Bool = false, notes known: String? = nil) async -> (text: String?, links: [WebLink]) {
         func clean(_ s: String?) -> String? { let t = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines); return t.isEmpty ? nil : t }
         let gem = KeychainStore.shared.get("gemini-api-key") ?? ""
         let msgs: [[String: String]] = [["role": "system", "content": system]] + messages
@@ -606,62 +617,97 @@ final class AIService {
             if let j = try? await postJSON(URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!,
                                            body: ["system_instruction": ["parts": [["text": system]]], "contents": contents, "tools": [["google_search": [String: Any]()]]],
                                            headers: ["x-goog-api-key": gem], timeout: 40) {
-                let parts = (((j["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
-                if let t = clean(parts.compactMap { $0["text"] as? String }.joined()) { return t }
+                let cand = (j["candidates"] as? [[String: Any]])?.first
+                let parts = ((cand?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
+                let chunks = ((cand?["groundingMetadata"] as? [String: Any])?["groundingChunks"] as? [[String: Any]]) ?? []
+                let links = chunks.compactMap { c -> WebLink? in
+                    guard let w = c["web"] as? [String: Any], let u = w["uri"] as? String else { return nil }
+                    return WebLink(title: (w["title"] as? String) ?? u, url: u)
+                }
+                if let t = clean(parts.compactMap { $0["text"] as? String }.joined()) { return (t, links) }
             }
         }
         var system = system, msgs2 = msgs
-        if web, NetStatus.shared.online, let notes = await Self.webNotes(messages.last?["content"] ?? "") {
-            system += "\n\nWEB NOTES (looked up just now — use them, say where a fact comes from, and say when something isn't covered):\n" + notes
-            msgs2[0] = ["role": "system", "content": system]
+        var found: [WebLink] = []
+        if web, NetStatus.shared.online {
+            var notes = known
+            if notes == nil { let r = await Self.webSearch(messages.last?["content"] ?? ""); notes = r.notes.isEmpty ? nil : r.notes; found = r.links }
+            if let notes {
+                system += "\n\nWEB NOTES (looked up just now — use them, name the source of each fact, and say when something isn't covered):\n" + notes
+                msgs2[0] = ["role": "system", "content": system]
+            }
         }
-        if Self.builtinAvailable, let t = clean(await Self.builtin(msgs2, max: max)) { return t }
+        if Self.builtinAvailable, let t = clean(await Self.builtin(msgs2, max: max)) { return (t, found) }
         let oa: [[String: Any]] = msgs2.map { $0 as [String: Any] }
         if let k = KeychainStore.shared.get("groq-api-key"), !k.isEmpty,
            let j = try? await postJSON(URL(string: "https://api.groq.com/openai/v1/chat/completions")!,
                                        body: ["model": UserDefaults.standard.string(forKey: "groqResolved") ?? "llama-3.3-70b-versatile", "temperature": 0.5, "max_tokens": max, "messages": oa],
                                        headers: ["Authorization": "Bearer \(k)"], timeout: 30),
-           let t = clean(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return t }
+           let t = clean(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return (t, found) }
         if !gem.isEmpty {
             let model = UserDefaults.standard.string(forKey: "geminiResolved") ?? AppState.defaultGeminiModel
             let contents = msgs2.dropFirst().map { ["role": $0["role"] == "assistant" ? "model" : "user", "parts": [["text": $0["content"] ?? ""]]] as [String: Any] }
             if let j = try? await postJSON(URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!,
                                            body: ["system_instruction": ["parts": [["text": system]]], "contents": Array(contents)], headers: ["x-goog-api-key": gem], timeout: 30) {
                 let parts = (((j["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]) ?? []
-                if let t = clean(parts.compactMap { $0["text"] as? String }.joined()) { return t }
+                if let t = clean(parts.compactMap { $0["text"] as? String }.joined()) { return (t, found) }
             }
         }
         if let k = KeychainStore.shared.get("openai-api-key"), !k.isEmpty,
            let j = try? await postJSON(URL(string: "https://api.openai.com/v1/chat/completions")!,
                                        body: ["model": "gpt-4o-mini", "temperature": 0.5, "max_tokens": max, "messages": oa], headers: ["Authorization": "Bearer \(k)"], timeout: 30),
-           let t = clean(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return t }
+           let t = clean(((j["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) { return (t, found) }
         // Last: whatever else is set up (Claude, other keys, Ollama on this Mac…), one at a time.
         let convo = msgs2.dropFirst().map { ($0["role"] == "assistant" ? "Earlier answer: " : "") + ($0["content"] ?? "") }.joined(separator: "\n\n")
-        return clean(await oneShot(convo, system: system))
+        return (clean(await oneShot(convo, system: system)), found)
     }
 
-    /// Free web look-up for research (no key): Wikipedia search + DuckDuckGo instant answers.
-    static func webNotes(_ q: String) async -> String? {
-        let query = String(q.prefix(160))
-        guard let enc = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
-        var out: [String] = []
+    /// Free web look-up for research (no key): Google News (latest), DuckDuckGo and Wikipedia — notes for the AI plus the pages, as links.
+    static func webSearch(_ q: String) async -> (notes: String, links: [WebLink]) {
+        let query = String(q.replacingOccurrences(of: #"(?i)^(please |zuffi,? )?(research|search|look up|find out|find)( for me)?( about| on| the)?( topic( is)?)?[: ]*"#, with: "", options: .regularExpression).prefix(160))
+        guard let enc = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return ("", []) }
+        var out: [String] = [], links: [WebLink] = []
+        // Latest news first (free RSS, no key)
+        if let u = URL(string: "https://news.google.com/rss/search?q=\(enc)&hl=en-GB&gl=GB&ceid=GB:en"),
+           let r = try? await URLSession.shared.data(for: URLRequest(url: u, timeoutInterval: 7)),
+           let xml = String(data: r.0, encoding: .utf8) {
+            let items = xml.components(separatedBy: "<item>").dropFirst().prefix(6)
+            for it in items {
+                func tag(_ n: String) -> String {
+                    guard let a = it.range(of: "<\(n)>"), let b = it.range(of: "</\(n)>", range: a.upperBound..<it.endIndex) else { return "" }
+                    return String(it[a.upperBound..<b.lowerBound]).replacingOccurrences(of: "<![CDATA[", with: "").replacingOccurrences(of: "]]>", with: "")
+                        .replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&quot;", with: "\"")
+                }
+                let title = tag("title"), link = tag("link"), date = tag("pubDate")
+                guard !title.isEmpty, !link.isEmpty else { continue }
+                out.append("• \(title) — \(date.prefix(16)) (Google News)")
+                links.append(WebLink(title: title, url: link))
+            }
+        }
         if let u = URL(string: "https://api.duckduckgo.com/?q=\(enc)&format=json&no_html=1&skip_disambig=1"),
            let r = try? await URLSession.shared.data(for: URLRequest(url: u, timeoutInterval: 6)),
            let j = try? JSONSerialization.jsonObject(with: r.0) as? [String: Any] {
-            if let a = j["AbstractText"] as? String, !a.isEmpty { out.append("• \(a) (\((j["AbstractSource"] as? String) ?? "DuckDuckGo"))") }
-            for t in ((j["RelatedTopics"] as? [[String: Any]]) ?? []).prefix(4) { if let x = t["Text"] as? String { out.append("• \(x) (DuckDuckGo)") } }
+            if let a = j["AbstractText"] as? String, !a.isEmpty {
+                out.append("• \(a) (\((j["AbstractSource"] as? String) ?? "DuckDuckGo"))")
+                if let url = j["AbstractURL"] as? String, !url.isEmpty { links.append(WebLink(title: (j["Heading"] as? String) ?? url, url: url)) }
+            }
+            for t in ((j["RelatedTopics"] as? [[String: Any]]) ?? []).prefix(3) { if let x = t["Text"] as? String { out.append("• \(x) (DuckDuckGo)") } }
         }
-        if let u = URL(string: "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=4&srsearch=\(enc)"),
+        if let u = URL(string: "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=3&srsearch=\(enc)"),
            let r = try? await URLSession.shared.data(for: URLRequest(url: u, timeoutInterval: 6)),
            let j = try? JSONSerialization.jsonObject(with: r.0) as? [String: Any],
            let hits = (j["query"] as? [String: Any])?["search"] as? [[String: Any]] {
             for h in hits {
+                let title = (h["title"] as? String) ?? ""
                 let snip = ((h["snippet"] as? String) ?? "").replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-                out.append("• \((h["title"] as? String) ?? ""): \(snip) (Wikipedia)")
+                out.append("• \(title): \(snip) (Wikipedia)")
+                if let t = title.replacingOccurrences(of: " ", with: "_").addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) { links.append(WebLink(title: "Wikipedia: \(title)", url: "https://en.wikipedia.org/wiki/\(t)")) }
             }
         }
-        return out.isEmpty ? nil : out.joined(separator: "\n")
+        return (out.joined(separator: "\n"), links)
     }
+
+    static func webNotes(_ q: String) async -> String? { let r = await webSearch(q); return r.notes.isEmpty ? nil : r.notes }
 
     private func callZuffi() async throws -> String {
         var msgs: [[String: String]] = [["role": "system", "content": fullSystemPrompt]]

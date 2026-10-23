@@ -590,7 +590,9 @@ enum ZuffiSelf {
             let dark = (c[5] + c[7]) == "dark"; BizLook.shared.set(dark: dark); return "Business is now \(dark ? "dark" : "light")."
         }
         // "what's Begum's number?", "Begum number" → from Zuffi's own records, on this Mac (numbers never go to the AI)
-        if let c = m(t, #"^(what'?s|what is|give me|send me|tell me)? ?([a-z][a-z .'-]{1,30}?)('s|s)? (phone |whatsapp |mobile )?(number|no\.?)$"#), !["my", "your", "the", "a"].contains(c[2].trimmingCharacters(in: .whitespaces)) {
+        if let c = m(t, #"^(what'?s|what is|give me|send me|tell me)? ?([a-z][a-z .'-]{1,30}?)('s|s)? (phone |whatsapp |mobile )?(number|no\.?)$"#), !["my", "your", "the", "a"].contains(c[2].trimmingCharacters(in: .whitespaces)),
+           // a person's name — not "gave me old messages", "inbox", "leads"…
+           c[2].range(of: #"\b(me|my|old|new|messages?|inbox|leads?|records?|clients?|customers?|contacts?|total|all|of|how|many|gave|give|show)\b"#, options: .regularExpression) == nil {
             let who = c[2].trimmingCharacters(in: .whitespaces)
             if let l = ZuffiCRM.shared.leads.first(where: { $0.name.lowercased() == who || $0.name.lowercased().hasPrefix(who) }), !l.phone.isEmpty { return "\(l.display): +\(l.phone.filter(\.isNumber))" }
             if let c = await WhatsAppLink.shared.lookup(who), !c.phone.isEmpty { return "\(c.name): +\(c.phone)" }

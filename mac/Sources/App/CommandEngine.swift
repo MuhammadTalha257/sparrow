@@ -45,7 +45,10 @@ final class CommandEngine {
         }
         // Open apps / sites / folders / settings
         for p in ["open ", "launch ", "start ", "run ", "go to ", "show me ", "show "] where text.hasPrefix(p) {
-            return open(String(text.dropFirst(p.count)))
+            // "show me numbers of inbox records" isn't an app: nil lets Zuffi answer it properly.
+            if let r = open(String(text.dropFirst(p.count))) { return r }
+            if p.hasPrefix("show") { return nil }
+            return "I couldn't find \"\(String(text.dropFirst(p.count)))\" on your Mac. Check the name, or say \"search \(String(text.dropFirst(p.count)))\"."
         }
         // System
         if let r = system(text) { return r }
@@ -123,7 +126,7 @@ final class CommandEngine {
         "wallpaper": "com.apple.Wallpaper-Settings.extension", "login items": "com.apple.LoginItems-Settings.extension",
     ]
 
-    private func open(_ rawTarget: String) -> String {
+    private func open(_ rawTarget: String) -> String? {
         var target = rawTarget.trimmingCharacters(in: .whitespaces)
         for a in ["the ", "my ", "app ", "application "] where target.hasPrefix(a) { target = String(target.dropFirst(a.count)) }
         for s in [" app", " application", " please"] where target.hasSuffix(s) { target = String(target.dropLast(s.count)) }
@@ -185,7 +188,7 @@ final class CommandEngine {
             }
         }
 
-        return "I couldn't find \"\(rawTarget)\" on your Mac. Check the name, or say \"search \(rawTarget)\"."
+        return nil
     }
 
     private struct FoundApp { let name: String; let url: URL }

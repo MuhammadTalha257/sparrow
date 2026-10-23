@@ -537,6 +537,7 @@ extension AppState {
         chatHistory.removeAll()
         droppedFile = nil
         noteMessage = nil
+        ZuffiTeam.shared.newConversation()          // no agent left picked, no old topic carried over
         AIService.shared.clearConversation()
         WebHub.shared.run("window.Sparrow && window.Sparrow.newChat && window.Sparrow.newChat(true)")
     }

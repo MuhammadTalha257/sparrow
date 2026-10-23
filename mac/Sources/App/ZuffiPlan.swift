@@ -381,7 +381,9 @@ Help: Settings → How to use Zuffi (the guide), Business → Learn & help, or l
 
 /// Speech engines sometimes send markers like "<no speech>" or "{pause}": never show or say them.
 func zClean(_ s: String) -> String {
-    s.replacingOccurrences(of: #"<[^<>]{1,30}>|\{[^{}]{1,30}\}|\[(noise|music|silence|inaudible|pause)\]"#, with: " ", options: [.regularExpression, .caseInsensitive])
+    s.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
+        .replacingOccurrences(of: #"(?m)^#{1,6}\s*"#, with: "", options: .regularExpression)
+        .replacingOccurrences(of: #"<[^<>]{1,30}>|\{[^{}]{1,30}\}|\[(noise|music|silence|inaudible|pause)\]"#, with: " ", options: [.regularExpression, .caseInsensitive])
         .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }

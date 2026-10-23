@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import AppKit
+import Combine
 
 // =====================================================================
 // MARK: - Zuffi's team (agency-agents, MIT licence — see THIRD_PARTY_NOTICES.md)
@@ -51,7 +53,7 @@ enum AgentTool: String, Codable, CaseIterable {
 
 /// An agent's field: its colours, symbol and tools — so every kind of agent looks and works differently.
 enum AgentField: String, CaseIterable {
-    case manager, finance, bookings, customers, sales, marketing, research, product, project, support, design, engineering, security, legal, health, data, strategy, education, games, other
+    case manager, finance, bookings, customers, sales, marketing, research, travel, product, project, support, design, engineering, security, legal, health, data, strategy, education, games, other
 
     var label: String {
         switch self {
@@ -62,6 +64,7 @@ enum AgentField: String, CaseIterable {
         case .sales: return "Sales"
         case .marketing: return "Marketing"
         case .research: return "Research"
+        case .travel: return "Travel"
         case .product: return "Product"
         case .project: return "Projects"
         case .support: return "Support"
@@ -86,6 +89,7 @@ enum AgentField: String, CaseIterable {
         case .sales: return "handshake.fill"
         case .marketing: return "megaphone.fill"
         case .research: return "magnifyingglass"
+        case .travel: return "airplane"
         case .product: return "shippingbox.fill"
         case .project: return "checklist"
         case .support: return "bubble.left.and.text.bubble.right.fill"
@@ -111,6 +115,7 @@ enum AgentField: String, CaseIterable {
         case .sales: return ["#F97316", "#C2410C"]
         case .marketing: return ["#A855F7", "#7E22CE"]
         case .research: return ["#06B6D4", "#0E7490"]
+        case .travel: return ["#38BDF8", "#1E40AF"]
         case .product: return ["#6366F1", "#4338CA"]
         case .project: return ["#14B8A6", "#0F766E"]
         case .support: return ["#38BDF8", "#0284C7"]
@@ -136,7 +141,7 @@ enum AgentField: String, CaseIterable {
         case .customers: return [.customers, .contacts, .bookings]
         case .sales: return [.customers, .contacts]
         case .marketing: return [.customers, .web]
-        case .research, .strategy: return [.web]
+        case .research, .strategy, .travel: return [.web]
         case .product: return [.customers, .web]
         case .data: return [.money, .bookings, .customers, .dashboard]
         case .support: return [.customers, .contacts]
@@ -148,6 +153,7 @@ enum AgentField: String, CaseIterable {
         if a.id == "zuffi-team-manager" { return .manager }
         let n = a.name.lowercased(), d = a.division.lowercased()
         func has(_ w: String...) -> Bool { w.contains { n.contains($0) } }
+        if has("travel", "flight") { return .travel }
         if has("booking") { return .bookings }
         if has("customer relationship", "feedback") { return .customers }
         if d == "finance" || has("finance", "financial", "tax", "bookkeep", "accountant", "fp&a") { return .finance }
@@ -180,6 +186,7 @@ enum AgentField: String, CaseIterable {
 // MARK: - Work records (what the owner sees on My Team)
 
 struct AgentStep: Codable, Hashable { var at = Date(); var text: String }
+struct WebLink: Codable, Hashable { var title: String; var url: String }
 
 struct AgentRun: Codable, Identifiable, Hashable {
     var id = UUID().uuidString
@@ -192,6 +199,7 @@ struct AgentRun: Codable, Identifiable, Hashable {
     var started = Date()
     var finished: Date?
     var job: String?                  // the daily job it ran for
+    var links: [WebLink]?             // pages it read (research)
 }
 
 struct JobRun: Codable, Hashable { var at = Date(); var status: String; var summary: String }
@@ -285,6 +293,14 @@ final class ZuffiTeam: ObservableObject {
                   You look after customer relationships for a small business. From the customer and contact data you're given, say who is new, returning, \
                   overdue for a visit or follow-up, and suggest short, friendly messages the owner can approve. Never send anything yourself.
                   """),
+        TeamAgent(id: "zuffi-travel", division: "business", name: "Travel Agent",
+                  description: "Finds flights, hotels and trains: compares prices and times, gives you the links, and can open them in your browser. Never books or pays without your yes.",
+                  emoji: "✈️", prompt: """
+                  You find travel options for the owner: flights, hotels, trains, car hire. Use the web notes you're given and name each source. \
+                  Ask for what's missing (from, to, dates, how many people, one-way or return) — briefly — but still give useful links straight away. \
+                  Give options with times and prices only when the notes show them; otherwise say prices must be checked on the link. \
+                  You can't book or pay; say “I can open the cheapest option in your browser” and wait for a yes.
+                  """),
         TeamAgent(id: "zuffi-competitors", division: "business", name: "Competitor Research Agent",
                   description: "Researches competitors near you — prices, offers, reviews, what they do better — and suggests what to change.",
                   emoji: "🔎", prompt: """
@@ -318,6 +334,11 @@ final class ZuffiTeam: ObservableObject {
     /// Let agents click between the dashboard's tabs (navigation only — never changes anything).
     @Published var clickTabs: Bool = UserDefaults.standard.object(forKey: "teamClickTabs") as? Bool ?? true { didSet { UserDefaults.standard.set(clickTabs, forKey: "teamClickTabs") } }
     @Published var working = ""          // shown while something runs
+    /// "Hire Bookings Agent?" waiting for a yes.
+    var pendingHire: [TeamAgent] = []
+
+    /// A new chat: plain Zuffi again, and the team forgets the old topic.
+    func newConversation() { activeIDs = []; recent = []; pendingHire = [] }
 
     private var saveTasks: [String: Task<Void, Never>] = [:]
     private func saveSoon(_ name: String) {
@@ -530,6 +551,12 @@ final class ZuffiTeam: ObservableObject {
         jobs.removeAll { $0.agent == a.id }
         log("You", "Removed \(a.name) from the team")
     }
+    /// Everyone off the team (their work history stays).
+    func startFresh() {
+        let n = hired.count
+        hired = []; activeIDs = []; jobs = []; suggestions = []; pendingHire = []
+        log("You", "Started a fresh team", "Removed \(n) agents")
+    }
     func setPaused(_ a: TeamAgent, _ on: Bool) {
         if on { paused.insert(a.id) } else { paused.remove(a.id) }
         log("You", on ? "Paused \(a.name)" : "Resumed \(a.name)")
@@ -555,7 +582,8 @@ final class ZuffiTeam: ObservableObject {
         ("finance", "finance-financial-analyst"), ("financial", "finance-financial-analyst"), ("accountant", "finance-bookkeeper-controller"),
         ("accounts", "finance-bookkeeper-controller"), ("bookkeeper", "finance-bookkeeper-controller"), ("cfo", "finance-financial-analyst"),
         ("money", "finance-financial-analyst"), ("tax", "finance-tax-strategist"),
-        ("booking", "zuffi-bookings"), ("bookings", "zuffi-bookings"), ("appointments", "zuffi-bookings"),
+        ("travel", "zuffi-travel"), ("flight", "zuffi-travel"), ("flights", "zuffi-travel"), ("travel agent", "zuffi-travel"),
+        ("booking agent", "zuffi-bookings"), ("booking", "zuffi-bookings"), ("bookings", "zuffi-bookings"), ("appointments", "zuffi-bookings"),
         ("customer", "zuffi-crm"), ("customers", "zuffi-crm"), ("crm", "zuffi-crm"), ("customer relationship", "zuffi-crm"),
         ("competitor", "zuffi-competitors"), ("competitors", "zuffi-competitors"), ("competitor research", "zuffi-competitors"),
         ("research", "research-synthesist"), ("researcher", "research-synthesist"),
@@ -567,24 +595,32 @@ final class ZuffiTeam: ObservableObject {
         ("lawyer", "support-legal-compliance-checker"), ("growth", "marketing-growth-hacker"), ("ads", "paid-media-paid-social-strategist"),
     ]
 
-    /// Finds an agent by words the user said ("sales coach", "seo", "finance").
+    /// Little words that never identify an agent ("for me", "please"…).
+    static let filler: Set<String> = ["the", "a", "an", "my", "our", "me", "us", "for", "to", "please", "now", "agent", "agents", "specialist", "expert",
+                                      "team", "member", "person", "guy", "one", "new", "some", "someone", "and", "of", "in", "on", "with", "can", "you", "hire", "add"]
+
+    /// Finds an agent by words the user said ("sales coach", "seo", "finance"). nil when unsure — never a random match.
     func find(_ words: String) -> TeamAgent? {
-        let w = words.lowercased().replacingOccurrences(of: #"\b(the|a|an|my|our|agent|agents|specialist|expert|team|member|person|guy)\b"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
-        guard !w.isEmpty else { return nil }
+        let tokens = words.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "&" }).map(String.init).filter { $0.count >= 2 && !Self.filler.contains($0) }
+        guard !tokens.isEmpty else { return nil }
+        let w = tokens.joined(separator: " ")
         if let exact = everyone.first(where: { $0.name.lowercased() == w }) { return exact }
-        // The business's own team first ("finance" → the finance person you hired).
-        if let mine = hiredAgents.first(where: { AgentField.of($0).label.lowercased() == w || $0.name.lowercased().contains(w) }) { return mine }
         if let hit = Self.aliases.first(where: { $0.0 == w }), let a = agent(hit.1) { return a }
-        let tokens = w.split(separator: " ").map(String.init).filter { $0.count > 1 }
-        let pool = hiredAgents + everyone
-        let scored = pool.enumerated().map { (i, a) -> (TeamAgent, Int) in
-            let n = a.name.lowercased(), d = a.description.lowercased(), div = a.division.lowercased()
-            let s = tokens.reduce(0) { $0 + (n.contains($1) ? 4 : 0) + (div.contains($1) ? 2 : 0) + (d.contains($1) ? 1 : 0) }
-            return (a, s * 10 + (i < hiredAgents.count && s > 0 ? 5 : 0))
-        }.filter { $0.1 > 0 }
+        // The business's own team first ("finance" → the finance person you hired).
+        if let mine = hiredAgents.first(where: { AgentField.of($0).label.lowercased() == w }) { return mine }
+        func words(_ s: String) -> Set<String> { Set(s.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)) }
+        let scored = (hiredAgents + everyone).enumerated().map { (i, a) -> (TeamAgent, Int) in
+            let n = words(a.name), f = AgentField.of(a).label.lowercased()
+            var score = 0
+            for t in tokens {
+                if n.contains(t) { score += 10 }                                              // a whole word of its name
+                else if t.count >= 4, n.contains(where: { $0.hasPrefix(t) || t.hasPrefix($0) && $0.count >= 4 }) { score += 6 }
+                if f == t || f.hasPrefix(t) && t.count >= 4 { score += 4 }
+            }
+            return (a, score > 0 && i < hiredAgents.count ? score + 1 : score)
+        }.filter { $0.1 >= 6 }
         if let best = scored.max(by: { $0.1 < $1.1 }) { return best.0 }
-        if let hit = Self.aliases.first(where: { w.contains($0.0) }) { return agent(hit.1) }
+        if let hit = Self.aliases.first(where: { a in tokens.contains(a.0) || w.contains(a.0) && a.0.contains(" ") }) { return agent(hit.1) }
         return nil
     }
 
@@ -642,13 +678,29 @@ final class ZuffiTeam: ObservableObject {
             let p = activeAgents
             return p.isEmpty ? "No agent — I'm plain Zuffi." : "Right now: " + p.map { "\($0.emoji) \($0.name)" }.joined(separator: ", ") + "."
         }
-        // "hire the SEO specialist" / "add tax strategist to my team"
-        if let m = Self.match(t, #"^(?:hire|add) (?:the |a |an )?(.+?)(?: agents?| specialists?)?(?: to (?:my |the )?team)?$"#), t.hasPrefix("hire") || t.contains("to my team") || t.contains("to the team") {
+        // "yes" after "Hire Bookings Agent?"
+        if !pendingHire.isEmpty, t.range(of: #"^(yes|yeah|yep|ok|okay|sure|haan|han|ji|do it|hire (him|her|them|it))( please)?$"#, options: .regularExpression) != nil {
+            let list = pendingHire; pendingHire = []
+            list.forEach { hire($0, why: "You asked") }
+            return list.map(intro).joined(separator: "\n\n") + "\n\nThey're on Business → My Team now (\(hired.count) on your team)."
+        }
+        if !pendingHire.isEmpty, t.range(of: #"^(no|nope|cancel|not now|nahi)"#, options: .regularExpression) != nil { pendingHire = []; return "Okay, nobody hired." }
+        // "hire the SEO specialist" / "hire booking agent for me" / "add tax strategist to my team" → asks first
+        if let m = Self.match(t, #"^(?:please )?(?:hire|add) (.+?)(?: to (?:my |the |our )?team)?$"#),
+           t.hasPrefix("hire") || t.hasPrefix("please hire") || (t.contains("team") && t.range(of: #"\b(agent|specialist|expert|analyst|strategist|manager)\b"#, options: .regularExpression) != nil) {
             guard teamsAllowed else { return "Hiring your own AI team is part of Zuffi Business." }
             let found = findMany(m[0]).filter { $0.id != Self.manager.id }
-            guard !found.isEmpty else { return "I couldn't find that person. Open Business → My Team to browse everyone." }
-            found.forEach { hire($0) }
-            return found.map(intro).joined(separator: "\n\n") + "\n\nThey're on Business → My Team now (\(hired.count) on your team)."
+            guard !found.isEmpty else { return "I'm not sure who you mean. Try a field like “hire a bookings agent”, “hire a travel agent”, or open Business → My Team to browse everyone." }
+            let new = found.filter { !hired.contains($0.id) }
+            guard !new.isEmpty else { return found.map { "\($0.emoji) \($0.name)" }.joined(separator: ", ") + " is already on your team." }
+            pendingHire = new
+            return "Hire " + new.map { "\($0.emoji) \($0.name) (\(AgentField.of($0).label))" }.joined(separator: " and ") + "?\n" + new.map { "• \($0.description.prefix(120))" }.joined(separator: "\n") + "\n\nSay “yes” to hire."
+        }
+        // "check my business inbox", "how many messages", "old messages", "who messaged" → from the real inbox and contacts
+        if teamsAllowed, t.range(of: #"\b(inbox|unread|messages?|who (messaged|wrote|texted)|leads? (today|waiting)|need(s)? (a )?reply)\b"#, options: .regularExpression) != nil,
+           t.range(of: #"^(send|reply|write|draft|message|tell|text|read|open|delete|remind) "#, options: .regularExpression) == nil,
+           t.range(of: #"\b(email|mail|gmail|outlook)\b"#, options: .regularExpression) == nil {
+            return TeamData.inboxAnswer(t)
         }
         // "assign <job> to research and product manager"
         if let m = Self.match(t, #"^(?:assign|give) (.+?) to (?:the |my )?(.+?)(?: agents?| team)?$"#), teamsAllowed {
@@ -673,7 +725,7 @@ final class ZuffiTeam: ObservableObject {
     /// An answer from whoever is picked (or the named people) — routed, grounded and logged.
     func ask(_ question: String, who: [TeamAgent]? = nil) async -> String {
         let people = who ?? activeAgents
-        guard !people.isEmpty else { return "Pick someone from the team first — say “switch to the finance agent”." }
+        guard !people.isEmpty else { return await dispatch(question) ?? "Tell me what you need and I'll give it to the right person on the team." }
         return await answer(question, people: people, routeOnly: true)
     }
 
@@ -683,13 +735,14 @@ final class ZuffiTeam: ObservableObject {
     static func intent(_ q: String) -> AgentField? {
         let t = q.lowercased()
         func m(_ p: String) -> Bool { t.range(of: p, options: .regularExpression) != nil }
+        if m(#"\b(flights?|fly|airline|airport|hotels?|train tickets?|holiday|trip to|travel(ling)? to)\b"#) { return .travel }
         if m(#"\b(profit|revenue|income|turnover|takings|expenses?|costs?|spent|spend|tax|vat|cash ?flow|margin|earn(ed|ings)?|kamai|munafa|kharcha|money (in|out|made)|how much (did|have) we (make|made|sell|sold|earn))\b"#) { return .finance }
         if m(#"\b(bookings?|appointments?|booked|no.?shows?|cancell?ations?|slots?|site visits?|visits (today|tomorrow))\b"#) { return .bookings }
         if m(#"\b(competitors?|competition|rivals?|other salons|other shops|other agencies)\b"#) { return .research }
         if m(#"\b(instagram|facebook|tiktok|post|reel|caption|social media|marketing|ads?|campaign|seo|reviews? on google)\b"#) { return .marketing }
         if m(#"\b(customers?|clients?|returning|regulars?|loyal|follow.?ups?|complain(t|ts)?|win back|lapsed)\b|\b(come|came) back\b|haven'?t (been|visited|booked)"#) { return .customers }
         if m(#"\b(sell more|sales pitch|close (the )?deal|leads?|negotiat)\b"#) { return .sales }
-        if m(#"\b(research|trend|market size|find out)\b"#) { return .research }
+        if m(#"^(please )?(research|look up|find out|search( the web)? for|what'?s new in|latest news)\b|\b(research|trends?|market size|find out|latest (news|updates?) (on|about|in))\b"#) { return .research }
         if m(#"\b(product|service menu|price list|pricing|new service|package|launch|roadmap|feature)\b"#) { return .product }
         return nil
     }
@@ -702,7 +755,7 @@ final class ZuffiTeam: ObservableObject {
 
     private static let defaultFor: [AgentField: String] = [
         .finance: "finance-financial-analyst", .bookings: "zuffi-bookings", .customers: "zuffi-crm", .marketing: "marketing-social-media-strategist",
-        .sales: "sales-coach", .product: "product-manager", .research: "research-synthesist",
+        .sales: "sales-coach", .product: "product-manager", .research: "research-synthesist", .travel: "zuffi-travel",
     ]
 
     /// The people who should answer: the field's person from the picked team, else from the hired team, else Zuffi's default.
@@ -798,28 +851,124 @@ final class ZuffiTeam: ObservableObject {
         // Everything else: the AI, with only the real data this agent's tools allow.
         let data = TeamData.block(for: field.tools, question: task)
         for s in data.sources { step(id, "Looked at \(s)", source: s) }
-        if field.tools.contains(.web) { step(id, "Searching the web…", source: "Web search") }
-        let system = systemPrompt(for: a, data: data.text)
+        // Research like a person: search, open the pages, read them — each step shows on the agent's card.
+        var webNotes = "", links: [WebLink] = []
+        if field.tools.contains(.web), NetStatus.shared.online {
+            step(id, "Searching the web for “\(task.prefix(80))”…", source: "Web search")
+            let r = await AIService.webSearch(task)
+            webNotes = r.notes; links = r.links
+            for l in links.prefix(5) { step(id, "Reading: \(l.title.prefix(90))") }
+            if links.isEmpty { step(id, "The free search found nothing — asking the AI with Google Search if it's available") }
+        }
+        if field == .travel { links = Self.travelLinks(task) + links }
+        if !links.isEmpty, let i = runs.firstIndex(where: { $0.id == id }) { runs[i].links = Array(links.prefix(10)) }
+        var system = systemPrompt(for: a, data: data.text)
+        if field == .travel { system += "\n\nLINKS ZUFFI WILL SHOW UNDER YOUR ANSWER (you can refer to them):\n" + Self.travelLinks(task).map { "\($0.title): \($0.url)" }.joined(separator: "\n") }
+        step(id, "Writing the answer")
         var reply: String? = nil
         var problem = ""
         for attempt in 0..<2 {
-            let extra = attempt == 0 ? "" : "\n\nIMPORTANT: your last answer broke the rules (\(problem)). Answer again as \(a.name), only about the question, using only verified numbers."
-            guard let r = await AIService.shared.textAnswer(system: system + extra, messages: recent + [["role": "user", "content": task]], max: 900, web: field.tools.contains(.web)) else {
-                problem = "no AI answered"; break
+            let extra = attempt == 0 ? "" : "\n\nIMPORTANT: your last answer broke the rules (\(problem)). Answer again as \(a.name), only about this question, using only verified numbers, and don't claim you can book, buy, send or access anything."
+            let r = await AIService.shared.textAnswerFull(system: system + extra, messages: recent + [["role": "user", "content": task]], max: 900,
+                                                          web: field.tools.contains(.web), notes: webNotes.isEmpty ? nil : webNotes)
+            guard let text = r.text else { problem = "no AI answered"; break }
+            if !r.links.isEmpty, let i = runs.firstIndex(where: { $0.id == id }) {
+                var all = runs[i].links ?? []
+                for l in r.links where !all.contains(where: { $0.url == l.url }) { all.append(l) }
+                runs[i].links = Array(all.prefix(12))
+                for l in r.links.prefix(3) { step(id, "Checked: \(l.title.prefix(90))", source: "Google Search") }
             }
-            let clean = Self.plain(r)
-            if let bad = Self.badAnswer(clean, agent: a, data: data.text) { problem = bad; step(id, "Answer rejected (\(bad)) — trying again"); continue }
+            let clean = Self.plain(text)
+            if let bad = Self.badAnswer(clean, agent: a, data: data.text + webNotes, question: task) { problem = bad; step(id, "Answer rejected (\(bad)) — trying again"); continue }
             reply = clean; break
         }
         guard let reply else {
             let why = problem == "no AI answered"
                 ? "I couldn't reach an AI just now, so I haven't answered — nothing was made up. \(AIService.builtinAvailable ? "Try again in a minute." : "Zuffi AI isn't available on this Mac yet; add a key in Settings → AI, or try again later.")"
                 : "I couldn't produce a reliable answer (\(problem)), so I'm not giving one. Try asking again."
-            finish(id, why, "Failed")
+            finish(id, why + ((runs.first { $0.id == id }?.links ?? []).isEmpty ? "" : "\nThe pages I found are linked below."), "Failed")
             return runs.first { $0.id == id }!
         }
-        finish(id, reply, reply.contains("?") && reply.count < 400 && reply.lowercased().range(of: #"could you|can you (tell|share|give)|please (tell|share|send)|what (is|are) your"#, options: .regularExpression) != nil ? "Needs input" : "Done")
+        let shownLinks = runs.first { $0.id == id }?.links ?? []
+        let withLinks = shownLinks.isEmpty ? reply : reply + "\n\nLinks:\n" + shownLinks.prefix(6).map { "• \($0.title.prefix(70)) — \($0.url)" }.joined(separator: "\n")
+        finish(id, withLinks, reply.contains("?") && reply.count < 400 && reply.lowercased().range(of: #"could you|can you (tell|share|give)|please (tell|share|send)|what (is|are) your"#, options: .regularExpression) != nil ? "Needs input" : "Done")
         return runs.first { $0.id == id }!
+    }
+
+    /// Flight / hotel searches as links (Google Flights, Skyscanner, Booking.com) from "london to lahore".
+    static func travelLinks(_ q: String) -> [WebLink] {
+        let t = q.lowercased()
+        var from = "", to = ""
+        if let re = try? NSRegularExpression(pattern: #"from ([a-z ]+?) to ([a-z ]+?)(?: on| for| in| next| this| tomorrow| and|,|\.|$)"#),
+           let m = re.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)), let a = Range(m.range(at: 1), in: t), let b = Range(m.range(at: 2), in: t) {
+            from = String(t[a]).trimmingCharacters(in: .whitespaces); to = String(t[b]).trimmingCharacters(in: .whitespaces)
+        } else if let re = try? NSRegularExpression(pattern: #"([a-z]+) to ([a-z]+)"#), let m = re.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)),
+                  let a = Range(m.range(at: 1), in: t), let b = Range(m.range(at: 2), in: t) {
+            from = String(t[a]); to = String(t[b])
+        }
+        func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+        var out: [WebLink] = []
+        if t.range(of: #"hotel|stay|room"#, options: .regularExpression) != nil {
+            let place = to.isEmpty ? from : to
+            if !place.isEmpty { out.append(WebLink(title: "Booking.com — hotels in \(place.capitalized)", url: "https://www.booking.com/searchresults.html?ss=\(enc(place))")) }
+        }
+        if !from.isEmpty, !to.isEmpty, from != "how", from != "go" {
+            let q = "Flights from \(from) to \(to)" + (t.contains("cheap") ? " cheapest" : "")
+            out.append(WebLink(title: "Google Flights — \(from.capitalized) to \(to.capitalized)", url: "https://www.google.com/travel/flights?q=\(enc(q))"))
+            out.append(WebLink(title: "Compare prices (Skyscanner, Kayak…) — \(from.capitalized) to \(to.capitalized)", url: "https://www.google.com/search?q=\(enc("cheap flights " + from + " to " + to))"))
+        }
+        return out
+    }
+
+    // MARK: Zuffi gives the work out (nobody has to pick an agent)
+
+    /// Splits "research AI news, check today's bookings and write an Instagram post" into separate jobs.
+    static func splitTasks(_ q: String) -> [String] {
+        let lines = q.components(separatedBy: CharacterSet.newlines).map { $0.replacingOccurrences(of: #"^\s*(\d+[.)]|[-•*])\s*"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        if lines.count > 1 { return lines }
+        // "…, and also …", "…; …", ", then …", " and " — only where both halves are real jobs.
+        let parts = q.components(separatedBy: CharacterSet(charactersIn: ";")).flatMap { $0.components(separatedBy: ", then ") }
+            .flatMap { $0.components(separatedBy: " and also ") }.flatMap { p -> [String] in
+                let bits = p.components(separatedBy: ", ")
+                return bits.allSatisfy({ intent($0) != nil }) ? bits : [p]
+            }.flatMap { p -> [String] in
+                let bits = p.components(separatedBy: " and ")
+                return bits.count > 1 && bits.allSatisfy({ intent($0) != nil && $0.split(separator: " ").count >= 3 }) ? bits : [p]
+            }
+        return parts.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// Zuffi as the manager: each job goes to the right field's agent (on the team, or Zuffi's own if nobody is hired for it),
+    /// they work at the same time and show on screen. nil = not team work (Zuffi answers herself).
+    func dispatch(_ query: String) async -> String? {
+        guard teamsAllowed, !Self.looksLikeCommand(query) else { return nil }
+        if query.lowercased().range(of: #"^(remind|set|add|save|delete|remove|open|play|call|note)\b"#, options: .regularExpression) != nil { return nil }
+        let jobs = Self.splitTasks(query).compactMap { t -> (String, AgentField)? in Self.intent(t).map { (t, $0) } }
+        guard !jobs.isEmpty else { return nil }
+        var plan: [(TeamAgent, String)] = []
+        for (task, _) in jobs {
+            if let a = await route(task, among: hiredAgents).first, !plan.contains(where: { $0.0 == a && $0.1 == task }) { plan.append((a, task)) }
+        }
+        guard !plan.isEmpty else { return nil }
+        if plan.count > 1 { log("Zuffi", "Gave out \(plan.count) jobs", plan.map { "\($0.0.name): \($0.1.prefix(40))" }.joined(separator: " · ")) }
+        // All at the same time (each is a main-actor task; their characters pop up on screen).
+        var running: [(TeamAgent, Task<AgentRun, Never>)] = []
+        for (a, task) in plan where !paused.contains(a.id) {
+            running.append((a, Task { @MainActor in await self.work(a, task) }))
+        }
+        var out: [String] = []
+        for (a, t) in running { let r = await t.value; out.append("\(a.emoji) \(a.name):\n\(r.result)") }
+        // Not on the team yet? Offer to hire (never hires by itself from a chat question).
+        let guests = plan.map { $0.0 }.filter { !hired.contains($0.id) }
+        var unique: [TeamAgent] = []
+        for g in guests where !unique.contains(g) { unique.append(g) }
+        if !unique.isEmpty {
+            pendingHire = unique
+            out.append("Want " + unique.map(\.name).joined(separator: " and ") + " on your team for next time? Say “yes”.")
+        }
+        let text = out.joined(separator: "\n\n")
+        note(query, text)
+        return text
     }
 
     /// The manager's summary: only what the team said, no new numbers.
@@ -834,10 +983,17 @@ final class ZuffiTeam: ObservableObject {
     }
 
     /// Why an answer can't be shown (nil = fine): wrong identity, junk, or money figures that aren't in the data.
-    static func badAnswer(_ t: String, agent a: TeamAgent, data: String) -> String? {
+    static func badAnswer(_ t: String, agent a: TeamAgent, data: String, question: String = "") -> String? {
         let l = t.lowercased()
         if l.hasPrefix("assistant") || l.hasPrefix("user:") || l.contains("<|") { return "garbled reply" }
         if a.id != manager.id, l.range(of: #"\b(i'?m|i am) zuffi\b|bunny ai|as an ai (language )?model"#, options: .regularExpression) != nil { return "answered as someone else" }
+        // Claims an agent can't make: it can't book, buy, send or access systems by itself.
+        if l.range(of: #"\bi('ll| will| can|'ve| have)( now)? (book|booked|purchase|buy|pay|paid|send|sent|access|log ?in)\b|\bi have access to\b|\baccess the booking system\b|\bi('ve| have) (booked|sent|paid)\b"#, options: .regularExpression) != nil,
+           l.range(of: #"(can'?t|cannot|won'?t|not able to|without your (ok|yes))"#, options: .regularExpression) == nil { return "claimed it can do something it can't" }
+        // Drifting back to an old topic (e.g. profit) when the question is about something else.
+        if !question.isEmpty, intent(question) != .finance, AgentField.of(a) != .finance,
+           l.range(of: #"\b(profit|financial statement|income or expenses)\b"#, options: .regularExpression) != nil,
+           question.lowercased().range(of: #"profit|money|income|expense"#, options: .regularExpression) == nil { return "talked about an earlier topic" }
         // Money figures are checked for agents that work with money (and the manager's summary): every amount must be in the data.
         let f = AgentField.of(a)
         guard f.tools.contains(.money) || f.tools.contains(.dashboard) || a.id == manager.id else { return nil }
@@ -1135,6 +1291,27 @@ enum TeamData {
         return (lines.joined(separator: "\n"), true, used)
     }
 
+    /// "Check my business inbox" / "how many messages" / "old messages" — straight from the inbox and WhatsApp contacts.
+    static func inboxAnswer(_ q: String) -> String {
+        let crm = ZuffiCRM.shared, book = WAContactBook.shared.list
+        let today = ZuffiBusiness.iso(Date())
+        let withMsg = crm.leads.filter { !$0.lastMessage.isEmpty }.sorted { $0.lastMessageAt > $1.lastMessageAt }
+        let waiting = withMsg.filter { !$0.lastMessage.hasPrefix("You:") && $0.isOpen }
+        let newToday = crm.leads.filter { $0.added == today }
+        let old = q.contains("old") || q.contains("earlier") || q.contains("previous")
+        let shown = old ? withMsg.filter { !$0.lastMessageAt.hasPrefix(today) } : withMsg
+        var lines: [String] = []
+        lines.append("Business inbox: \(withMsg.count) conversation\(withMsg.count == 1 ? "" : "s"), \(waiting.count) waiting for your reply, \(newToday.count) new today\(crm.drafts.isEmpty ? "" : ", \(crm.drafts.count) suggested repl\(crm.drafts.count == 1 ? "y" : "ies") ready to send").")
+        if !book.isEmpty { lines.append("WhatsApp contacts saved: \(book.count) (\(book.filter { Calendar.current.isDateInToday($0.first) }.count) new today).") }
+        if shown.isEmpty { lines.append(old ? "No older messages." : "No messages yet.") }
+        for l in shown.prefix(6) {
+            let when = l.lastMessageAt.count >= 16 ? String(l.lastMessageAt.prefix(16)).replacingOccurrences(of: "T", with: " ") : l.lastMessageAt
+            lines.append("• \(l.display) — “\(l.lastMessage.prefix(70))” (\(when))\(waiting.contains(l) ? " · needs a reply" : "")")
+        }
+        if !waiting.isEmpty { lines.append("Open Business → Inbox to answer, or say “reply to \(waiting[0].display.split(separator: " ").first ?? "") …”.") }
+        return lines.joined(separator: "\n")
+    }
+
     /// The real data an agent's tools allow, as text for the AI, with the sources used.
     static func block(for tools: [AgentTool], question: String) -> (text: String, sources: [String]) {
         var parts: [String] = [], used: [String] = []
@@ -1337,6 +1514,7 @@ struct TeamSettings: View {
 struct BizAITeamView: View {
     enum TeamTab: String, CaseIterable { case team = "Team", jobs = "Daily jobs", activity = "Activity", hire = "Hire" }
     @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var stage = AgentStage.shared
     @State private var section: TeamTab = .team
     @State private var openAgent: TeamAgent?
     @State private var assignTo: TeamAgent?
@@ -1358,6 +1536,7 @@ struct BizAITeamView: View {
                     }
                     Spacer()
                     if !team.working.isEmpty { HStack(spacing: 6) { ProgressView().controlSize(.small); Text(team.working).font(.system(size: 11)).foregroundColor(Ink.muted).lineLimit(1) } }
+                    Toggle("Show agents on screen", isOn: $stage.enabled).toggleStyle(.switch).controlSize(.small).font(.system(size: 11))
                 }
                 if !team.suggestions.isEmpty { suggestionsBox }
                 switch section {
@@ -1425,7 +1604,23 @@ struct BizAITeamView: View {
         .padding(16).zGlass(16)
     }
 
+    @AppStorage("teamReviewed") private var reviewed = false
+    @State private var confirmClear = false
+
     @ViewBuilder private var teamSection: some View {
+        if !team.hiredAgents.isEmpty && !reviewed {
+            HStack(spacing: 12) {
+                Image(systemName: "person.3.sequence.fill").font(.system(size: 18)).foregroundColor(Ink.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("You have \(team.hiredAgents.count) agents from before").font(.system(size: 13, weight: .bold))
+                    Text(team.hiredAgents.map(\.name).joined(separator: ", ")).font(.system(size: 11)).foregroundColor(Ink.muted).lineLimit(2)
+                }
+                Spacer()
+                Button("Keep them") { reviewed = true }.controlSize(.small)
+                Button("Start fresh") { team.startFresh(); reviewed = true }.buttonStyle(.borderedProminent).tint(Ink.accent).controlSize(.small)
+            }
+            .padding(14).zGlass(14)
+        }
         // Ask the team
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -1466,6 +1661,14 @@ struct BizAITeamView: View {
             }
             .padding(18).frame(maxWidth: .infinity, alignment: .leading).zGlass(18)
         } else {
+            HStack {
+                Text("Your team (\(team.hiredAgents.count))").font(.system(size: 15, weight: .bold, design: .rounded))
+                Spacer()
+                Button("Remove all") { confirmClear = true }.buttonStyle(.plain).font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#EF6B6B"))
+            }
+            .confirmationDialog("Remove all \(team.hiredAgents.count) agents and their daily jobs?", isPresented: $confirmClear) {
+                Button("Remove all", role: .destructive) { team.startFresh() }
+            } message: { Text("Their past work stays in Activity. You can hire again any time.") }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 14)], spacing: 14) {
                 AgentCard(agent: ZuffiTeam.manager, lead: true, open: { openAgent = ZuffiTeam.manager }, assign: { section = .team })
                 ForEach(team.hiredAgents) { a in AgentCard(agent: a, open: { openAgent = a }, assign: { assignTo = a }) }
@@ -1924,6 +2127,308 @@ struct BizReportsView: View {
                 .padding(16).zGlass(16)
             }
             .padding(22)
+        }
+    }
+}
+
+// MARK: - Agents on screen: small robots at the bottom of the screen while they work
+//
+// Each field has its own look (colour, hat, what it holds). They pop up when a job starts, show what they're doing
+// step by step, then show the result with its links. Original drawings — no outside characters.
+
+@MainActor
+final class AgentStage: ObservableObject {
+    static let shared = AgentStage()
+    @Published var showing: [String] = []          // run ids on screen
+    @Published var enabled: Bool = UserDefaults.standard.object(forKey: "agentsOnScreen") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(enabled, forKey: "agentsOnScreen"); if !enabled { showing = []; layout() } }
+    }
+    private var panel: NSPanel?
+    private var watch: AnyCancellable?
+    private var hideAt: [String: Date] = [:]
+    private var timer: Timer?
+
+    private init() {
+        watch = ZuffiTeam.shared.$runs.receive(on: RunLoop.main).sink { runs in
+            MainActor.assumeIsolated { AgentStage.shared.update(runs) }
+        }
+    }
+    /// Call once at start-up.
+    func start() { _ = watch }
+
+    private func update(_ runs: [AgentRun]) {
+        guard enabled else { return }
+        let now = Date()
+        for r in runs.prefix(40) where r.agent != ZuffiTeam.manager.id {
+            if r.status == "Working", !showing.contains(r.id), now.timeIntervalSince(r.started) < 600 { showing.append(r.id) }
+            if r.status != "Working", showing.contains(r.id), hideAt[r.id] == nil { hideAt[r.id] = now.addingTimeInterval(40) }   // result stays 40 s
+        }
+        showing = Array(showing.suffix(5))
+        layout()
+        if timer == nil, !showing.isEmpty {
+            timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in MainActor.assumeIsolated { AgentStage.shared.sweep() } }
+        }
+    }
+    private func sweep() {
+        let now = Date()
+        let gone = hideAt.filter { $0.value < now }.map(\.key)
+        if !gone.isEmpty { showing.removeAll { gone.contains($0) }; gone.forEach { hideAt[$0] = nil }; layout() }
+        if showing.isEmpty { timer?.invalidate(); timer = nil }
+    }
+    func dismiss(_ id: String) { showing.removeAll { $0 == id }; hideAt[id] = nil; layout() }
+    func keep(_ id: String) { hideAt[id] = Date().addingTimeInterval(600) }
+
+    private func layout() {
+        guard !showing.isEmpty else { panel?.orderOut(nil); return }
+        let size = NSSize(width: CGFloat(showing.count) * 196 + 24, height: 300)
+        let p = panel ?? make()
+        panel = p
+        let vf = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+        // bottom of the screen, left of where the pet sits
+        p.setFrame(NSRect(x: vf.minX + 24, y: vf.minY + 6, width: size.width, height: size.height), display: true)
+        if !p.isVisible { p.alphaValue = 0; p.orderFrontRegardless(); NSAnimationContext.runAnimationGroup { $0.duration = 0.25; p.animator().alphaValue = 1 } }
+    }
+
+    private func make() -> NSPanel {
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
+        p.level = .floating
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        p.hidesOnDeactivate = false
+        p.contentView = FirstMouseHostingView(rootView: AgentStageView())
+        return p
+    }
+
+    /// Opens one agent's page (steps, sources, results) in a small window.
+    private var detail: NSWindow?
+    func open(_ agent: TeamAgent) {
+        let w = detail ?? NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 600), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        w.title = agent.name; w.titlebarAppearsTransparent = true; w.isReleasedWhenClosed = false
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentView = NSHostingView(rootView: AgentDetailView(agent: agent))
+        if detail == nil { w.center() }
+        detail = w
+        w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+struct AgentStageView: View {
+    @ObservedObject private var stage = AgentStage.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            ForEach(stage.showing, id: \.self) { id in
+                if let r = team.runs.first(where: { $0.id == id }), let a = team.agent(r.agent) {
+                    AgentBuddyCard(run: r, agent: a).transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+        }
+        .padding(.horizontal, 12).padding(.bottom, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .animation(.spring(response: 0.45, dampingFraction: 0.75), value: stage.showing)
+    }
+}
+
+/// One agent at work: speech bubble with what it's doing, the robot, its name.
+struct AgentBuddyCard: View {
+    let run: AgentRun
+    let agent: TeamAgent
+    @State private var hover = false
+    var body: some View {
+        let f = AgentField.of(agent), working = run.status == "Working"
+        let color: Color = run.status == "Done" ? Color(hex: "#3FC48C") : working ? f.color : run.status == "Needs input" ? Color(hex: "#6EA8F7") : Color(hex: "#EF6B6B")
+        VStack(spacing: 4) {
+            // bubble
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    if working { ProgressView().controlSize(.mini).tint(.white) } else { Image(systemName: run.status == "Done" ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundColor(color) }
+                    Text(working ? "Working…" : run.status == "Done" ? "Done" : run.status).font(.system(size: 10, weight: .bold)).foregroundColor(color)
+                    Spacer(minLength: 0)
+                    Button { AgentStage.shared.dismiss(run.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundColor(.white.opacity(0.6)) }.buttonStyle(.plain)
+                }
+                Text(working ? (run.steps.last?.text ?? "Starting…") : run.result)
+                    .font(.system(size: 10.5)).foregroundColor(.white.opacity(0.92)).lineLimit(working ? 3 : 4).fixedSize(horizontal: false, vertical: true)
+                if working { Text("Step \(run.steps.count) · \(run.task.prefix(40))").font(.system(size: 9)).foregroundColor(.white.opacity(0.5)).lineLimit(1) }
+                HStack(spacing: 8) {
+                    Button("See steps") { AgentStage.shared.keep(run.id); AgentStage.shared.open(agent) }
+                    if let links = run.links, !links.isEmpty {
+                        Menu("Links (\(links.count))") {
+                            ForEach(links.prefix(10), id: \.url) { l in Button(String(l.title.prefix(60))) { if let u = URL(string: l.url) { NSWorkspace.shared.open(u) } } }
+                        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    }
+                    if f.tools.contains(.web), let q = run.task.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                        Button("Open in browser") {
+                            let url = f == .travel ? (ZuffiTeam.travelLinks(run.task).first?.url ?? "https://www.google.com/search?q=\(q)") : "https://www.google.com/search?q=\(q)"
+                            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+                        }
+                    }
+                }
+                .buttonStyle(.plain).font(.system(size: 9.5, weight: .semibold)).foregroundColor(f.color)
+            }
+            .padding(9)
+            .frame(width: 184, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: "#12141B").opacity(0.94)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(f.color.opacity(0.55), lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+            AgentRobot(field: f, working: working, done: run.status == "Done").frame(width: 92, height: 104)
+                .onTapGesture { AgentStage.shared.keep(run.id); AgentStage.shared.open(agent) }
+                .scaleEffect(hover ? 1.06 : 1).onHover { hover = $0 }.animation(.spring(), value: hover)
+            Text(agent.name).font(.system(size: 10, weight: .bold)).foregroundColor(.white)
+                .padding(.horizontal, 8).frame(height: 18).background(Capsule().fill(f.gradient)).lineLimit(1)
+        }
+        .frame(width: 184)
+        .help("\(agent.name): \(run.task)")
+    }
+}
+
+/// A small, cute robot drawn in code. Colour, hat and what it holds come from its field.
+struct AgentRobot: View {
+    let field: AgentField
+    var working = false
+    var done = false
+
+    private var hand: String {
+        switch field {
+        case .research: return "magnifyingglass"
+        case .finance: return "chart.line.uptrend.xyaxis"
+        case .bookings: return "calendar"
+        case .customers: return "heart.fill"
+        case .sales: return "briefcase.fill"
+        case .marketing: return "megaphone.fill"
+        case .travel: return "airplane"
+        case .product: return "shippingbox.fill"
+        case .project: return "checklist"
+        case .support: return "bubble.left.fill"
+        case .design: return "paintbrush.pointed.fill"
+        case .engineering: return "wrench.and.screwdriver.fill"
+        case .security: return "lock.shield.fill"
+        case .legal: return "building.columns.fill"
+        case .health: return "cross.fill"
+        case .data: return "chart.bar.fill"
+        case .strategy: return "map.fill"
+        case .education: return "book.fill"
+        case .games: return "gamecontroller.fill"
+        case .manager: return "point.3.connected.trianglepath.dotted"
+        case .other: return "sparkles"
+        }
+    }
+    private enum Hat { case none, cap, beret, headset, pilot, grad, hardhat, crown }
+    private var hat: Hat {
+        switch field {
+        case .marketing, .sales: return .cap
+        case .design: return .beret
+        case .support, .bookings, .customers: return .headset
+        case .travel: return .pilot
+        case .research, .education, .data: return .grad
+        case .engineering, .project: return .hardhat
+        case .manager: return .crown
+        default: return .none
+        }
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let bob = working ? sin(t * 6) * 3 : done ? abs(sin(t * 3)) * -6 : sin(t * 1.6) * 1.5
+            let arm = working ? sin(t * 8) * 22 : done ? -40 : sin(t * 1.6) * 6
+            let blink = (t.truncatingRemainder(dividingBy: 3.4)) < 0.12
+            let c = field.color, c2 = Color(hex: field.colors[1])
+            ZStack {
+                // shadow
+                Ellipse().fill(Color.black.opacity(0.25)).frame(width: 52, height: 8).offset(y: 50)
+                Group {
+                    // legs
+                    HStack(spacing: 12) {
+                        Capsule().fill(Color(hex: "#DDE3EC")).frame(width: 11, height: 16)
+                        Capsule().fill(Color(hex: "#DDE3EC")).frame(width: 11, height: 16)
+                    }.offset(y: 40)
+                    // arms
+                    Capsule().fill(Color(hex: "#E8EDF4")).frame(width: 10, height: 26)
+                        .rotationEffect(.degrees(20 - arm * 0.3), anchor: .top).offset(x: -26, y: 14)
+                    ZStack {
+                        Capsule().fill(Color(hex: "#E8EDF4")).frame(width: 10, height: 26)
+                        Image(systemName: hand).font(.system(size: 13, weight: .bold)).foregroundColor(c)
+                            .padding(3).background(Circle().fill(.white)).offset(y: 16)
+                    }
+                    .rotationEffect(.degrees(-20 + arm), anchor: .top).offset(x: 26, y: 14)
+                    // body with the field's outfit
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(LinearGradient(colors: [.white, Color(hex: "#DCE3EE")], startPoint: .top, endPoint: .bottom))
+                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(LinearGradient(colors: [c, c2], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 30, height: 22).offset(y: 3)
+                        Image(systemName: field.symbol).font(.system(size: 10, weight: .bold)).foregroundColor(.white).offset(y: 3)
+                        if field == .finance || field == .sales || field == .legal {         // a little tie
+                            Path { p in p.move(to: CGPoint(x: 21, y: 0)); p.addLine(to: CGPoint(x: 27, y: 0)); p.addLine(to: CGPoint(x: 24, y: 9)); p.closeSubpath() }
+                                .fill(c2).frame(width: 48, height: 10).offset(y: -15)
+                        }
+                    }
+                    .frame(width: 48, height: 42).offset(y: 16)
+                    // head
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous).fill(LinearGradient(colors: [.white, Color(hex: "#E4E9F1")], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 60, height: 46)
+                        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(hex: "#151A26")).frame(width: 46, height: 26).offset(y: 2)
+                        // eyes
+                        HStack(spacing: 10) {
+                            Capsule().fill(c).frame(width: 9, height: blink ? 2 : (done ? 5 : 10)).shadow(color: c, radius: 4)
+                            Capsule().fill(c).frame(width: 9, height: blink ? 2 : (done ? 5 : 10)).shadow(color: c, radius: 4)
+                        }.offset(y: 2)
+                        if done { Path { p in p.addArc(center: CGPoint(x: 12, y: 0), radius: 6, startAngle: .degrees(20), endAngle: .degrees(160), clockwise: false) }
+                            .stroke(c, lineWidth: 2).frame(width: 24, height: 8).offset(y: 11) }
+                        // cheeks
+                        HStack(spacing: 40) { Circle().fill(c.opacity(0.35)).frame(width: 6); Circle().fill(c.opacity(0.35)).frame(width: 6) }.offset(y: 12)
+                        // antenna (under a hat it hides)
+                        if hat == .none || hat == .headset {
+                            VStack(spacing: 0) {
+                                Circle().fill(c).frame(width: 8, height: 8).shadow(color: c, radius: working ? 6 : 2)
+                                Rectangle().fill(Color(hex: "#C9D1DC")).frame(width: 2, height: 7)
+                            }.offset(y: -28)
+                        }
+                        hatView(c: c, c2: c2)
+                    }
+                    .offset(y: -18)
+                }
+                .offset(y: bob)
+            }
+            .frame(width: 92, height: 104)
+        }
+    }
+
+    @ViewBuilder private func hatView(c: Color, c2: Color) -> some View {
+        switch hat {
+        case .none: EmptyView()
+        case .cap:
+            ZStack {
+                Capsule().fill(c).frame(width: 46, height: 14).offset(y: -22)
+                Capsule().fill(c2).frame(width: 26, height: 5).offset(x: 20, y: -16)
+            }
+        case .beret: Ellipse().fill(c).frame(width: 50, height: 14).rotationEffect(.degrees(-10)).offset(x: -4, y: -24)
+        case .headset:
+            ZStack {
+                Circle().trim(from: 0.55, to: 0.95).stroke(c2, lineWidth: 3).frame(width: 64, height: 56).offset(y: -2)
+                Circle().fill(c).frame(width: 12, height: 12).offset(x: -31, y: 2)
+                Circle().fill(c).frame(width: 12, height: 12).offset(x: 31, y: 2)
+                Capsule().fill(c2).frame(width: 14, height: 3).rotationEffect(.degrees(25)).offset(x: 24, y: 14)
+            }
+        case .pilot:
+            ZStack {
+                RoundedRectangle(cornerRadius: 6).fill(c2).frame(width: 50, height: 14).offset(y: -22)
+                Capsule().fill(Color(hex: "#1B2236")).frame(width: 56, height: 5).offset(y: -15)
+                Image(systemName: "airplane").font(.system(size: 7, weight: .bold)).foregroundColor(.yellow).offset(y: -22)
+            }
+        case .grad:
+            ZStack {
+                Rectangle().fill(Color(hex: "#1B2236")).frame(width: 46, height: 6).rotation3DEffect(.degrees(55), axis: (x: 1, y: 0, z: 0)).offset(y: -27)
+                RoundedRectangle(cornerRadius: 3).fill(Color(hex: "#1B2236")).frame(width: 30, height: 8).offset(y: -22)
+                Capsule().fill(c).frame(width: 2, height: 10).offset(x: 18, y: -22)
+            }
+        case .hardhat:
+            ZStack {
+                Ellipse().fill(Color(hex: "#F5B833")).frame(width: 52, height: 22).offset(y: -20)
+                Capsule().fill(Color(hex: "#E09E12")).frame(width: 60, height: 5).offset(y: -12)
+            }
+        case .crown:
+            Image(systemName: "crown.fill").font(.system(size: 18)).foregroundStyle(LinearGradient(colors: [Color(hex: "#FFD66B"), Color(hex: "#F59E3B")], startPoint: .top, endPoint: .bottom)).offset(y: -30)
         }
     }
 }
