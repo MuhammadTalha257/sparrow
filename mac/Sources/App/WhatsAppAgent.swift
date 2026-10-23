@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import ApplicationServices
 import WebKit
+import SwiftUI
 
 // =====================================================================
 // MARK: - WhatsApp agent

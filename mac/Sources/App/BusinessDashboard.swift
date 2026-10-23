@@ -319,6 +319,27 @@ struct BusinessDashboardView: View {
         } else { dashboard }
     }
 
+    /// One page of the dashboard (kept apart so the compiler checks it quickly).
+    @ViewBuilder private func page(_ tab: BizTab) -> some View {
+        switch tab {
+        case .today: BizTodayView()
+        case .inbox: BizInboxView()
+        case .aiTeam: BizAITeamView()
+        case .reports: BizReportsView()
+        case .contacts: BizContactsView()
+        case .sources: BizDataSourcesView()
+        case .pipeline: BizPipelineView()
+        case .records: BizRecordsView()
+        case .properties: BizPropertiesView()
+        case .money: BizMoneyView()
+        case .business: BizBusinessView()
+        case .team: BizTeamView()
+        case .automations: BizAutomationsView()
+        case .connect: BizConnectView()
+        case .learn: BizLearnView()
+        }
+    }
+
     private var dashboard: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 244)
@@ -326,25 +347,7 @@ struct BusinessDashboardView: View {
                 .overlay(alignment: .trailing) { Rectangle().fill(Ink.line).frame(width: 1) }
             VStack(spacing: 0) {
                 topBar
-                Group {
-                    switch nav.tab {
-                    case .today: BizTodayView()
-                    case .inbox: BizInboxView()
-                    case .aiTeam: BizAITeamView()
-                    case .reports: BizReportsView()
-                    case .contacts: BizContactsView()
-                    case .sources: BizDataSourcesView()
-                    case .pipeline: BizPipelineView()
-                    case .records: BizRecordsView()
-                    case .properties: BizPropertiesView()
-                    case .money: BizMoneyView()
-                    case .business: BizBusinessView()
-                    case .team: BizTeamView()
-                    case .automations: BizAutomationsView()
-                    case .connect: BizConnectView()
-                    case .learn: BizLearnView()
-                    }
-                }
+                page(nav.tab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
