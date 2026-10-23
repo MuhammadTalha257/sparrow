@@ -56,7 +56,10 @@ final class BusinessDashboard {
 }
 
 enum BizTab: String, CaseIterable, Identifiable {
-    case today = "Today", inbox = "Inbox", aiTeam = "AI Team", pipeline = "Pipeline", properties = "Properties", records = "Records", money = "Money", team = "Team & staff", business = "My business", automations = "Automations", connect = "Connect & devices", learn = "Learn & help"
+    // Daily work · the business · set-up
+    case today = "Overview", inbox = "Inbox", aiTeam = "My Team", reports = "Reports",
+         money = "Money", pipeline = "Pipeline", properties = "Properties", records = "Customers", contacts = "WhatsApp contacts", team = "Staff",
+         sources = "Data sources", automations = "Automations", business = "My business", connect = "Connect & devices", learn = "Learn & help"
     var id: String { rawValue }
     /// Each page's own colour — its tile in the list and its header.
     var tint: String {
@@ -64,36 +67,42 @@ enum BizTab: String, CaseIterable, Identifiable {
         case .today: return "#F2A516"
         case .inbox: return "#1FAF5F"
         case .aiTeam: return "#5B6CFF"
+        case .reports: return "#EAB308"
         case .pipeline: return "#7357E8"
         case .properties: return "#C77D1A"
         case .records: return "#2F80ED"
+        case .contacts: return "#25D366"
         case .money: return "#0F9F76"
         case .team: return "#0EA5C6"
+        case .sources: return "#4C5BD4"
         case .business: return "#E0527E"
         case .automations: return "#F06B3C"
-        case .connect: return "#4C5BD4"
+        case .connect: return "#6366F1"
         case .learn: return "#7A8496"
         }
     }
-    /// Groups in the list, like Settings: daily work · records · set-up.
+    /// Groups in the list: daily work · the business · set-up.
     var group: Int {
         switch self {
-        case .today, .inbox, .aiTeam, .pipeline: return 0
-        case .properties, .records, .money, .team: return 1
+        case .today, .inbox, .aiTeam, .reports: return 0
+        case .money, .pipeline, .properties, .records, .contacts, .team: return 1
         default: return 2
         }
     }
     var icon: String {
         switch self {
-        case .today: return "sun.max.fill"
+        case .today: return "square.grid.2x2.fill"
         case .inbox: return "tray.full.fill"
         case .aiTeam: return "person.3.sequence.fill"
+        case .reports: return "doc.text.magnifyingglass"
         case .pipeline: return "rectangle.split.3x1.fill"
-        case .records: return "tablecells.fill"
+        case .records: return "person.crop.rectangle.stack.fill"
+        case .contacts: return "message.fill"
         case .properties: return "house.lodge.fill"
         case .money: return "banknote.fill"
         case .business: return "building.2.fill"
-        case .team: return "person.3.fill"
+        case .team: return "person.2.badge.gearshape.fill"
+        case .sources: return "rectangle.on.rectangle.angled"
         case .automations: return "bolt.fill"
         case .connect: return "link"
         case .learn: return "graduationcap.fill"
@@ -102,15 +111,18 @@ enum BizTab: String, CaseIterable, Identifiable {
     /// One line in plain words: what this page is for.
     var subtitle: String {
         switch self {
-        case .today: return "What needs you today"
-        case .inbox: return "WhatsApp messages & Zuffi's replies"
-        case .aiTeam: return "Your specialists, led by the Team Manager"
+        case .today: return "Your business at a glance"
+        case .inbox: return "WhatsApp messages & replies"
+        case .aiTeam: return "Your AI agents, what they're doing and their results"
+        case .reports: return "Daily reports from your team"
         case .pipeline: return "Where each client is up to"
         case .properties: return "Plots, houses & shops you're selling"
         case .records: return "Every client in one table"
+        case .contacts: return "Everyone who messaged you, with name and number"
         case .money: return "Money in, money out, profit"
-        case .team: return "Staff, salaries & hours"
-        case .business: return "Your details Zuffi uses to reply"
+        case .team: return "People who work for you, pay & hours"
+        case .sources: return "Business dashboards Zuffi reads from your screen"
+        case .business: return "Your details, FAQ and replies"
         case .automations: return "Jobs Zuffi does for you"
         case .connect: return "WhatsApp, your phone & other devices"
         case .learn: return "How Zuffi works, step by step"
@@ -119,17 +131,20 @@ enum BizTab: String, CaseIterable, Identifiable {
     /// "What is this page?" — three short tips.
     var tips: [String] {
         switch self {
-        case .today: return ["The numbers at the top are today's work at a glance.", "“Follow up today” lists the people you promised to call back.", "Tap any name to open it, change its stage or add a note."]
-        case .inbox: return ["New WhatsApp chats arrive here and become clients automatically.", "Zuffi writes a reply for you — check it, then tap Send.", "Turn on Autopilot in My business to let Zuffi answer by itself."]
-        case .aiTeam: return ["Hire specialists: product manager, researcher, finance, sales, marketing…", "Tick who works on a job and press Assign — the Team Manager splits it and sums up.", "They only think and write: anything that sends, posts or pays waits for your OK."]
+        case .today: return ["The numbers at the top are today's work at a glance.", "“Needs you today” lists the people you promised to call back.", "Tap any name to open it, change its stage or add a note."]
+        case .inbox: return ["New WhatsApp chats arrive here and become clients automatically.", "Zuffi writes a reply from your FAQ — check it, then tap Send.", "Turn on Autopilot in My business to let Zuffi answer by itself."]
+        case .aiTeam: return ["Hire agents — or show Zuffi your business dashboard and it suggests the right ones.", "Each card shows what the agent is doing, the data it used and its last result. Open it to see every step.", "Agents never guess numbers, and anything that sends, posts or pays waits for your OK."]
+        case .reports: return ["Each hired agent runs its daily job and its report lands here.", "Reports also go to your phone when it's linked (Connect & devices).", "A job that couldn't run says so — it never pretends."]
         case .pipeline: return ["Each column is a step: New → Contacted → … → Won.", "Drag a client to the next column when things move on.", "Clients stuck too long are shown so nobody is forgotten."]
-        case .properties: return ["Add each plot, house, flat or shop you're selling or renting.", "Zuffi matches properties to buyers looking for that area and budget.", "Use Share to send the details on WhatsApp in one tap."]
+        case .properties: return ["Add each plot, house, flat or shop you're selling or renting.", "Zuffi matches properties to buyers looking for that area and budget.", "Deal desk: sizes, price per marla, instalments, token money and papers."]
         case .records: return ["Everyone who ever contacted you, like a spreadsheet.", "Click a column title to sort; search at the top.", "It's saved as a normal file in Documents → Zuffi, so it's always yours."]
-        case .money: return ["Add money in (sales, commission) and money out (rent, salaries, fuel).", "Profit is worked out for you every month.", "Say it instead: “expense 2500 fuel”, “income 50000 commission”."]
-        case .team: return ["Add your staff or agents with their pay (monthly, hourly or commission).", "Log hours and pay salaries — each payment is added to Money.", "Give leads to a staff member and see who's following up."]
-        case .business: return ["Write your prices, hours and location — Zuffi uses it when replying.", "Add today's offer each morning (discounts, new stock, new plots).", "Your country comes from your Zuffi details — Zuffi sets up the right business tools for it."]
+        case .contacts: return ["Everyone who messages your linked WhatsApp is saved once, with their number in international format.", "If WhatsApp doesn't share a name it says “Unknown name” — type it in.", "Add tags and notes; open the list in Excel or Numbers any time."]
+        case .money: return ["Add money in (sales) and money out (rent, wages, supplies).", "Profit is worked out from what's recorded — your Financial Analyst uses exactly these numbers.", "Say it instead: “expense 60 supplies”, “income 450 haircuts”."]
+        case .team: return ["Add the people who work for you with their pay (monthly, hourly or commission).", "Log hours and pay salaries — each payment is added to Money.", "Give leads to a staff member and see who's following up."]
+        case .sources: return ["Open your booking or payments dashboard, logged in, and press “This is my business dashboard”.", "Zuffi reads it from the screen — no API, no password.", "Your agents read it again when their daily job runs; keep it open and the Mac awake."]
+        case .business: return ["Write your prices, hours, location and the questions customers ask.", "WhatsApp replies come only from these answers unless you switch that off.", "Your country comes from your Zuffi details."]
         case .automations: return ["Switch on the jobs you want Zuffi to do: follow-ups, summaries, reminders.", "Each switch says exactly what it does.", "You can turn any of them off at any time."]
-        case .connect: return ["Connect WhatsApp so new chats become clients.", "Link your phone or tablet with the QR code to see the same business there.", "Changes on one device appear on the others by themselves."]
+        case .connect: return ["Connect WhatsApp so new chats become clients and contacts.", "Link your phone or tablet with the QR code: agent reports arrive there too.", "Changes on one device appear on the others by themselves."]
         case .learn: return ["Short guides for every part of Zuffi Business.", "Includes setting up a free AI model on your own computer.", "The same guides are on your phone and Windows PC."]
         }
     }
@@ -240,7 +255,9 @@ private struct GlassBox<C: View>: View {
     var padding: CGFloat = 14
     @ViewBuilder var content: () -> C
     var body: some View {
-        content().padding(padding).zGlass(18)
+        content().padding(padding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)   // cards side by side line up
+            .zGlass(18)
     }
 }
 
@@ -314,6 +331,9 @@ struct BusinessDashboardView: View {
                     case .today: BizTodayView()
                     case .inbox: BizInboxView()
                     case .aiTeam: BizAITeamView()
+                    case .reports: BizReportsView()
+                    case .contacts: BizContactsView()
+                    case .sources: BizDataSourcesView()
                     case .pipeline: BizPipelineView()
                     case .records: BizRecordsView()
                     case .properties: BizPropertiesView()
@@ -424,8 +444,9 @@ struct BusinessDashboardView: View {
                 Spacer()
                 if t == .inbox, crm.drafts.count > 0 { Pill(text: "\(crm.drafts.count)", color: Biz.pink, filled: true) }
                 if t == .today { let d = crm.leads.filter(\.dueToday).count; if d > 0 { Pill(text: "\(d)", color: Color(hex: t.tint)) } }
-                if t == .aiTeam { let n = ZuffiTeam.shared.tasks.filter { $0.status == "Needs you" }.count; if n > 0 { Pill(text: "\(n)", color: Color(hex: t.tint), filled: true) } }
-                if t == .business { Pill(text: crm.isOn(.autopilot) ? "Auto" : "Off", color: crm.isOn(.autopilot) ? Biz.green : Ink.faint) }
+                if t == .aiTeam { let n = ZuffiTeam.shared.hiredAgents.filter { [.waiting, .attention].contains(ZuffiTeam.shared.status($0)) }.count; if n > 0 { Pill(text: "\(n)", color: Biz.red, filled: true) } else if !ZuffiTeam.shared.hired.isEmpty { Pill(text: "\(ZuffiTeam.shared.hired.count)", color: Color(hex: t.tint)) } }
+                if t == .contacts, !WAContactBook.shared.list.isEmpty { Pill(text: "\(WAContactBook.shared.list.count)", color: Color(hex: t.tint)) }
+                if t == .business, crm.isOn(.autopilot) { Pill(text: "Autopilot", color: Biz.green) }
             }
             .padding(.horizontal, 8).frame(height: 36)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(on ? Ink.accent.opacity(Ink.dark ? 0.22 : 0.12) : .clear))
@@ -435,42 +456,54 @@ struct BusinessDashboardView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 10) {
-                    Image(systemName: nav.tab.icon).font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
-                        .frame(width: 34, height: 34)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: nav.tab.tint).gradient))
-                    Text(nav.tab.rawValue).font(.system(size: 24, weight: .bold, design: .rounded))
-                    Button { showTips.toggle() } label: {
-                        Image(systemName: "questionmark").font(.system(size: 10, weight: .bold)).foregroundColor(Ink.muted).frame(width: 20, height: 20).inkPanel(Circle(), interactive: true)
-                    }.buttonStyle(.plain).help("What is this page?")
-                    .popover(isPresented: $showTips, arrowEdge: .bottom) { BizTipsView(tab: nav.tab) }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: nav.tab.icon).font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: nav.tab.tint).gradient))
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 8) {
+                        Text(nav.tab.rawValue).font(.system(size: 22, weight: .bold, design: .rounded)).lineLimit(1)
+                        Button { showTips.toggle() } label: {
+                            Image(systemName: "questionmark").font(.system(size: 10, weight: .bold)).foregroundColor(Ink.muted).frame(width: 20, height: 20).inkPanel(Circle(), interactive: true)
+                        }.buttonStyle(.plain).help("What is this page?")
+                        .popover(isPresented: $showTips, arrowEdge: .bottom) { BizTipsView(tab: nav.tab) }
+                    }
+                    Text(nav.tab.subtitle).font(.system(size: 12)).foregroundColor(Ink.muted).lineLimit(1)
                 }
-                Text(nav.tab.subtitle).font(.system(size: 12)).foregroundColor(Ink.muted)
-                // Tabs for the pages next to this one (like a web dashboard header)
-                HStack(spacing: 18) {
+                .layoutPriority(1)
+                Spacer(minLength: 12)
+                // Actions: they shrink before anything overflows (the window never gets pushed sideways).
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundColor(Ink.faint)
+                    TextField("Search name, number, area…", text: $nav.search).textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 12).frame(minWidth: 120, idealWidth: 220, maxWidth: 240).frame(height: 32).inkPanel(Capsule())
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        BizSoftButton(title: "Voice note", icon: "waveform.badge.mic") { BusinessFiles.pickVoiceNote(for: nil) }
+                        BizMainButton(title: "Add lead", icon: "plus") { adding = true }
+                    }
+                    BizMainButton(title: "Add", icon: "plus") { adding = true }
+                }
+            }
+            // Tabs for the pages next to this one (like a web dashboard header)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 20) {
                     ForEach(tabs.filter { $0.group == nav.tab.group }) { t in
                         Button { nav.tab = t } label: {
-                            VStack(spacing: 5) {
-                                Text(t.rawValue).font(.system(size: 12, weight: nav.tab == t ? .semibold : .regular))
+                            VStack(spacing: 6) {
+                                Text(t.rawValue).font(.system(size: 12.5, weight: nav.tab == t ? .semibold : .regular))
                                     .foregroundColor(nav.tab == t ? Ink.text : Ink.muted).fixedSize()
                                 Rectangle().fill(nav.tab == t ? Ink.accent : .clear).frame(height: 2)
                             }
                         }.buttonStyle(.plain)
                     }
-                }.padding(.top, 8)
+                }
             }
-            Spacer()
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundColor(Ink.faint)
-                TextField("Search name, number, area…", text: $nav.search).textFieldStyle(.plain).frame(width: 200)
-            }
-            .padding(.horizontal, 12).frame(height: 32).inkPanel(Capsule())
-            BizSoftButton(title: "Voice note", icon: "waveform.badge.mic") { BusinessFiles.pickVoiceNote(for: nil) }
-            BizMainButton(title: "Add lead", icon: "plus") { adding = true }
+            .overlay(alignment: .bottom) { Rectangle().fill(Ink.line).frame(height: 1) }
         }
-        .padding(.horizontal, 22).padding(.top, 30).padding(.bottom, 12)
+        .padding(.horizontal, 22).padding(.top, 30).padding(.bottom, 8)
     }
 }
 
@@ -1335,6 +1368,18 @@ struct BizBusinessView: View {
                             .toggleStyle(.switch).labelsHidden().controlSize(.large)
                     }
                 }
+                GlassBox {
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: "checklist.checked").font(.system(size: 20)).foregroundColor(Biz.green)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Reply only with my answers (recommended)").font(.system(size: 13.5, weight: .bold))
+                            Text("Zuffi answers customers only from your details and the questions & answers you write below. Anything else gets “thanks, we'll reply shortly” and you're told what they asked — so you can answer and add it to your FAQ. Turn off to let the AI write replies from your details.")
+                                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $crm.faqOnly).toggleStyle(.switch).labelsHidden()
+                    }
+                }
                 HStack(alignment: .top, spacing: 14) {
                     // Today's update
                     GlassBox {
@@ -1663,6 +1708,8 @@ struct BizMoneyView: View {
     @State private var dueAmount = ""
     @State private var dueDate = Date().addingTimeInterval(7 * 86400)
 
+    private var dueKinds: [String] { crm.isEstate ? ["Installment", "Token", "Advance", "Balance", "Rent"] : ["Invoice", "Deposit", "Balance"] }
+
     private var months: [String] {
         let all = Set(money.entries.map { String($0.date.prefix(7)) } + [money.month])
         return all.sorted(by: >)
@@ -1690,7 +1737,7 @@ struct BizMoneyView: View {
                             header("Add income or expense", "plus.circle.fill")
                             Picker("", selection: $type) { Text("Expense").tag("Expense"); Text("Income").tag("Income") }.pickerStyle(.segmented).labelsHidden()
                             HStack {
-                                TextField("Amount (\(crm.currency)) — “2 lakh”, “45”", text: $amount).textFieldStyle(.roundedBorder)
+                                TextField(crm.isEstate || crm.country == "PK" ? "Amount (\(crm.currency)) — e.g. 2 lakh" : "Amount (\(crm.currency)) — e.g. 45", text: $amount).textFieldStyle(.roundedBorder)
                                 Picker("", selection: $category) {
                                     Text("Category").tag("")
                                     ForEach(type == "Income" ? money.incomeCategories : money.expenseCategories, id: \.self) { Text($0).tag($0) }
@@ -1708,7 +1755,7 @@ struct BizMoneyView: View {
                                     nav.say(money.add(type: type, category: category.isEmpty ? (type == "Income" ? money.incomeCategories[0] : "Other") : category, amount: a, party: party, method: method, note: note))
                                     amount = ""; party = ""; note = ""
                                 }
-                                Text("Or just tell Zuffi: “expense 5000 petrol”, “income 2 lakh commission from Ali”.").font(.system(size: 10.5)).foregroundColor(Ink.faint)
+                                Text(crm.country == "PK" ? "Or just tell Zuffi: “expense 5000 petrol”, “income 2 lakh commission”." : "Or just tell Zuffi: “expense 60 supplies”, “income 450 haircuts”.").font(.system(size: 10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     }
@@ -1718,6 +1765,7 @@ struct BizMoneyView: View {
                             header("Where the money went", "chart.pie.fill")
                             let cats = money.byCategory(month, type: "Expense")
                             if cats.isEmpty { empty("No expenses this month.") }
+                            Spacer(minLength: 0)
                             let top = cats.first?.1 ?? 1
                             ForEach(cats.prefix(8), id: \.0) { c in
                                 VStack(alignment: .leading, spacing: 2) {
@@ -1726,15 +1774,17 @@ struct BizMoneyView: View {
                                 }
                             }
                         }
-                    }.frame(width: 300)
+                    }.frame(width: 300).frame(maxHeight: .infinity)
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 // Payments due (installments, tokens, invoices)
                 GlassBox {
                     VStack(alignment: .leading, spacing: 8) {
                         header(crm.isEstate ? "Installments & payments to collect" : "Payments to collect", "calendar.badge.clock")
                         HStack {
                             TextField("Client", text: $dueClient).textFieldStyle(.roundedBorder)
-                            Picker("", selection: $dueWhat) { ForEach(crm.isEstate ? ["Installment", "Token", "Advance", "Balance", "Rent"] : ["Invoice", "Deposit", "Balance"], id: \.self) { Text($0) } }.labelsHidden().frame(width: 120)
+                            Picker("", selection: $dueWhat) { ForEach(dueKinds, id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(width: 120)
+                                .onAppear { if !dueKinds.contains(dueWhat) { dueWhat = dueKinds[0] } }
                             TextField("Amount", text: $dueAmount).textFieldStyle(.roundedBorder).frame(width: 120)
                             DatePicker("", selection: $dueDate, displayedComponents: .date).labelsHidden()
                             BizSoftButton(title: "Add", icon: "plus") {

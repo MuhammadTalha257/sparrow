@@ -166,10 +166,18 @@ final class AIService {
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
-        // Several team members picked: the Team Manager splits the question between them and brings back one answer.
-        if context == nil, ZuffiTeam.shared.isTeam, !ZuffiTeam.looksLikeCommand(query) {
+        // Team members picked: the Team Manager routes the question, they answer from real data, and every step is logged.
+        if context == nil, !ZuffiTeam.shared.activeAgents.isEmpty, !ZuffiTeam.looksLikeCommand(query) {
             state.stateOverride = .thinking
-            let r = await ZuffiTeam.shared.runTeam(query)
+            let r = await ZuffiTeam.shared.ask(query)
+            remember(user: query, assistant: r)
+            finish(r, state: state, emote: .happy); return
+        }
+        // "What's our profit today?" / "how many bookings today?" — straight from the Money page, bookings and the dashboard, never guessed.
+        if context == nil, ZuffiPlan.shared.isBusiness, ZuffiTeam.isFiguresQuestion(query),
+           query.lowercased().range(of: #"\b(our|my|we|us|today|yesterday|this (week|month)|last (week|month))\b"#, options: .regularExpression) != nil,
+           let f = ZuffiTeam.intent(query), f == .finance || f == .bookings {
+            let r = f == .finance ? TeamData.financeAnswer(query).0 : TeamData.bookingsAnswer(query).0
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
@@ -497,7 +505,12 @@ final class AIService {
     // MARK: One quiet question (used by the PA to turn your words into rows)
 
     /// Asks whichever AI is set up, without touching the chat. Returns nil when no AI is available.
+    private var oneShotBusy = false
     func oneShot(_ prompt: String, system: String = "You turn the user's words into exactly the JSON asked for. Reply with JSON only.") async -> String? {
+        // One at a time: it borrows the chat's state, so two at once (team members working together) would mix up their instructions.
+        while oneShotBusy { try? await Task.sleep(nanoseconds: 60_000_000) }
+        oneShotBusy = true
+        defer { oneShotBusy = false }
         let savedHistory = history, savedDoc = document, savedImage = pendingImage
         history = [(role: "user", text: prompt)]; document = nil; pendingImage = nil; oneShotSystem = system
         defer { history = savedHistory; document = savedDoc; pendingImage = savedImage; oneShotSystem = nil }

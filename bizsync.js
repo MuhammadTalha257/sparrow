@@ -224,6 +224,9 @@ async function pushAll() {
 
 // ---------------- listening ----------------
 let es = null, seen = [];
+/** Reports and alerts from the computer (newest first, this session). */
+export let lastNote = null;
+export const notes = [];
 export const status = { connected: false, last: 0 };
 function setStatus(p) { Object.assign(status, p); emit('status'); }
 
@@ -240,6 +243,11 @@ async function handle(raw) {
     if (apply(o.sheet, o.ops)) { save(); emit(o.sheet); setStatus({ last: now() }); }
   } else if (o.t === 'cfg') {
     if (applyCfg(o.cfg)) { save(); emit('cfg'); setStatus({ last: now() }); }
+  } else if (o.t === 'note' && o.title) {
+    // a report or alert from Zuffi's team on the computer
+    lastNote = { title: String(o.title).slice(0, 120), body: String(o.body || '').slice(0, 600), at: o.at || now(), dev: o.dev || '' };
+    notes.unshift(lastNote); notes.length = Math.min(notes.length, 30);
+    emit('note');
   }
   save(); emit('peers');
 }

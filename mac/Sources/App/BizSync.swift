@@ -478,6 +478,12 @@ final class BizSync: ObservableObject {
         return (try? AES.GCM.seal(plain, using: key))?.combined?.b64url
     }
 
+    /// A short notice for the phone / other devices linked to this business (agent reports, alerts).
+    func notify(title: String, body: String) {
+        guard linked else { return }
+        Task { await post(["t": "note", "title": String(title.prefix(120)), "body": String(body.prefix(600))]) }
+    }
+
     @discardableResult
     private func post(_ obj: [String: Any]) async -> Bool {
         guard let t = topic, let body = packed(obj), let url = URL(string: "\(Self.relay)/\(t)-biz") else { return false }

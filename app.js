@@ -2709,6 +2709,7 @@ jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
   /** Mac: the AI included with Pro / Business (key stays on Zuffi's server). → {text} or {error} */
   builtinAI: async (messages, maxTokens = 900) => { try { return { text: await acct.ai(messages, maxTokens) }; } catch (e) { return { error: String(e.message || e) }; } },
+  builtinVision: async (prompt, jpegB64) => { try { return { text: await acct.ai([{ role: 'user', content: prompt }], 900, jpegB64) }; } catch (e) { return { error: String(e.message || e) }; } },
   builtinReady: () => { try { return acct.isPaid ? acct.isPaid() : !acct.locked(); } catch { return false; } },
   /** Instant WhatsApp answer from the business details (no AI). null = not sure → AI / holding message. */
   quickAnswer: async (msg, info, biz, first, today) => { try { return (await import('./bizquick.js')).answer(msg, info, { biz, first, today }); } catch { return null; } },
@@ -2904,7 +2905,11 @@ if (!N && !D && !M && !DASH) Promise.all([import('./petweb.js'), import('./zblob
   const f = bizapp.followUpsToday();
   return nx ? `Next: ${nx.title} · ${new Date(nx.when).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : f.length ? `📞 Call today: ${f.slice(0, 3).join(', ')}` : '';
 }, { blob: (bizsync.cfg('zstyle') || 'blob') === 'blob' ? () => Z.svg('idle') : null })).catch(() => {});
-bizapp.applyAccent(); bizsync.onChange(w => { if (w === 'cfg' || w === 'all') bizapp.applyAccent(); });
+bizapp.applyAccent(); bizsync.onChange(w => {
+  if (w === 'cfg' || w === 'all') bizapp.applyAccent();
+  // Zuffi's team on the computer finished a job (e.g. today's money) → a notification on this phone / PC.
+  if (w === 'note' && bizsync.lastNote) { const n = bizsync.lastNote; notify(`${n.title}: ${n.body}`.slice(0, 240), 'team' + n.at); try { toast(`${n.title} — ${n.body}`.slice(0, 160), 6000); } catch {} }
+});
 if (!M && maclink.takeLink(location.hash)) {
   history.replaceState(null, '', location.pathname + location.search);   // the key never stays in the address bar
   setTimeout(afterLink, 800);

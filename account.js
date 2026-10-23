@@ -146,9 +146,9 @@ export async function manageUrl() {
 }
 
 /** Built-in AI for Pro and Business: {text} or throws Error('upgrade' | 'limit' | message). */
-export async function ai(messages, maxTokens = 700) {
+export async function ai(messages, maxTokens = 700, image = '') {
   if (!isPaid()) throw new Error('upgrade');
-  const j = await call('/ai', { messages, max_tokens: maxTokens });
+  const j = await call('/ai', image ? { messages, max_tokens: maxTokens, image } : { messages, max_tokens: maxTokens });
   if (j.ok) { if (st.account) { st.account.ai = { used: j.used, limit: j.limit }; save(); emit(); } return j.text; }
   throw new Error(j.status === 402 ? 'upgrade' : j.error === 'limit' ? 'limit' : j.error || 'AI unavailable');
 }

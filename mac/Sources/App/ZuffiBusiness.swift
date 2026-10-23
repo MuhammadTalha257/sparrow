@@ -121,6 +121,7 @@ final class ZuffiBusiness: ObservableObject {
 
     /// Every half minute: re-read sheets you've edited; at 10:00 tell you who has gone quiet / who to call.
     func tick() {
+        ZuffiTeam.shared.tickJobs()                 // the AI team's daily jobs
         ZuffiPA.shared.scanDownloads()
         ZuffiCRM.shared.tick()
         for name in ["Leads", "Listings", "Buyers", "Appointments", "Clients"] {

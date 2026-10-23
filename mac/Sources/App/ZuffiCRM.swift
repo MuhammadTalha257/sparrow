@@ -165,6 +165,11 @@ final class ZuffiCRM: ObservableObject {
         var defaultOn: Bool { ![.autopilot, .includeContacts, .autoReply, .ownerSummary, .staffDigest, .afterHours, .paymentReminders].contains(self) }
     }
 
+    /// WhatsApp replies come only from the owner's FAQ and details (no AI-written answers).
+    @Published var faqOnly: Bool = UserDefaults.standard.object(forKey: "waFaqOnly") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(faqOnly, forKey: "waFaqOnly") }
+    }
+
     func isOn(_ a: Auto) -> Bool { UserDefaults.standard.object(forKey: "auto_" + a.rawValue) as? Bool ?? a.defaultOn }
     func set(_ a: Auto, _ on: Bool) { objectWillChange.send(); UserDefaults.standard.set(on, forKey: "auto_" + a.rawValue); syncSoon() }
 
@@ -839,6 +844,10 @@ final class ZuffiCRM: ObservableObject {
            !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return (q, nil, [:])
         }
+        // Replies only from the owner's own FAQ and business form (the default): anything else waits for the owner — nothing is invented.
+        if faqOnly {
+            return (Self.holdingText(for: incoming), "Not in your FAQ: “\(incoming.prefix(70))” — answer it, and add it to your FAQ so Zuffi can reply next time", [:])
+        }
         let system = """
         You are the WhatsApp assistant of \(biz.isEmpty ? "a small business" : biz) (a \(businessWord)). You write as the business ("we").
         Never give yourself a personal name, never say you are an AI, never invent facts. Reply with one JSON object only.
@@ -944,6 +953,7 @@ final class ZuffiCRM: ObservableObject {
             if b.get(b.rows[i], ["next follow"]) <= ZuffiBusiness.iso(Date()) { b.set(i, ["next follow"], ZuffiBusiness.iso(Date().addingTimeInterval(Double(self.quietDays) * 86400))) }
         }
         log(lead: l.display, staff: auto ? "Zuffi (autopilot)" : l.assigned, kind: "Message", detail: String(text.prefix(80)))
+        ZuffiTeam.shared.log(auto ? "WhatsApp auto-reply" : "You", "Sent to \(l.display)", String(text.prefix(120)))
         return result
     }
 
