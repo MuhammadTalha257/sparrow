@@ -28,11 +28,15 @@ jobs:
         run: |
           set -e
           fail() { echo "::error::$1"; exit 1; }
-          TAG=$(gh release view --repo k2-fsa/sherpa-onnx --json tagName -q .tagName)
-          echo "::notice::sherpa-onnx $TAG"
           mkdir -p dl
-          gh release download "$TAG" --repo k2-fsa/sherpa-onnx -p "sherpa-onnx-$TAG-osx-universal2-shared.tar.bz2" -D dl \
-            || { gh release view "$TAG" --repo k2-fsa/sherpa-onnx --json assets -q '.assets[].name' | grep osx | head -9 | while read -r a; do echo "::warning::$a"; done; fail "no osx-universal2-shared asset"; }
+          # The newest release sometimes has no Mac file yet (still uploading) — use the newest one that has it.
+          TAG=""
+          for T in $(gh release list --repo k2-fsa/sherpa-onnx --limit 8 --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName'); do
+            if gh release download "$T" --repo k2-fsa/sherpa-onnx -p "sherpa-onnx-$T-osx-universal2-shared.tar.bz2" -D dl 2>/dev/null; then TAG="$T"; break; fi
+            echo "::warning::sherpa-onnx $T has no Mac file yet — trying the one before"
+          done
+          [ -n "$TAG" ] || fail "no osx-universal2-shared asset in the last 8 sherpa-onnx releases"
+          echo "::notice::sherpa-onnx $TAG"
           tar -xjf dl/*.tar.bz2 -C dl
           SH=$(find dl -maxdepth 1 -type d -name 'sherpa-onnx-*' | head -1)
           ls "$SH" "$SH/lib"
