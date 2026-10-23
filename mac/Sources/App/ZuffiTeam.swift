@@ -687,7 +687,7 @@ final class ZuffiTeam: ObservableObject {
         if m(#"\b(bookings?|appointments?|booked|no.?shows?|cancell?ations?|slots?|site visits?|visits (today|tomorrow))\b"#) { return .bookings }
         if m(#"\b(competitors?|competition|rivals?|other salons|other shops|other agencies)\b"#) { return .research }
         if m(#"\b(instagram|facebook|tiktok|post|reel|caption|social media|marketing|ads?|campaign|seo|reviews? on google)\b"#) { return .marketing }
-        if m(#"\b(customers?|clients?|returning|regulars?|loyal|follow.?ups?|complain(t|ts)?)\b"#) { return .customers }
+        if m(#"\b(customers?|clients?|returning|regulars?|loyal|follow.?ups?|complain(t|ts)?|win back|lapsed)\b|\b(come|came) back\b|haven'?t (been|visited|booked)"#) { return .customers }
         if m(#"\b(sell more|sales pitch|close (the )?deal|leads?|negotiat)\b"#) { return .sales }
         if m(#"\b(research|trend|market size|find out)\b"#) { return .research }
         if m(#"\b(product|service menu|price list|pricing|new service|package|launch|roadmap|feature)\b"#) { return .product }
@@ -708,6 +708,15 @@ final class ZuffiTeam: ObservableObject {
     /// The people who should answer: the field's person from the picked team, else from the hired team, else Zuffi's default.
     func route(_ question: String, among people: [TeamAgent]) async -> [TeamAgent] {
         let team = people.filter { $0.id != Self.manager.id }
+        // "Today's business report" → money and bookings (and customers if they're on the team) — nobody else.
+        if question.lowercased().range(of: #"\b(business|daily|today'?s|weekly|monthly) (report|summary|update)\b|\breport (for|on) (today|this week|this month)\b"#, options: .regularExpression) != nil {
+            let pool = team + hiredAgents
+            var out: [TeamAgent] = []
+            for f in [AgentField.finance, .bookings, .customers] {
+                if let a = pool.first(where: { AgentField.of($0) == f }) ?? (f == .customers ? nil : Self.defaultFor[f].flatMap(agent)), !out.contains(a) { out.append(a) }
+            }
+            if !out.isEmpty { return out }
+        }
         if let f = Self.intent(question) {
             let pickFrom = team + hiredAgents
             if f == .research, question.lowercased().range(of: #"competitor|competition|rival"#, options: .regularExpression) != nil,
