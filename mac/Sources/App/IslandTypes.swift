@@ -92,7 +92,11 @@ enum IslandConst {
     static let cardWidths: [IslandView: CGFloat] = [
         .note: 480, .result: 500, .searching: 460, .finished: 460, .error: 480, .confused: 440,
     ]
-    static func width(for v: IslandView) -> CGFloat { viewWidths[v] ?? cardWidths[v] ?? expandedWidth }
+    static func width(for v: IslandView) -> CGFloat {
+        if v == .overview && NotchDesign.on { return 640 }
+        return viewWidths[v] ?? cardWidths[v] ?? expandedWidth
+    }
+    static func isWideHome(_ v: IslandView) -> Bool { v == .overview && NotchDesign.on }
     /// The accent the person picked in Zuffi (Settings → You → Colour); blue until the app tells us.
     static var accent: Color { Color(hex: UserDefaults.standard.string(forKey: "zuffiAccentHex") ?? "#4F6BFF") }
     static func isPortrait(_ v: IslandView) -> Bool { viewWidths[v] != nil }

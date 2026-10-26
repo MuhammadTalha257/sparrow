@@ -992,3 +992,258 @@ struct ZuffiProfilePanel: View {
         ["realEstate": "Estate agent", "salon": "Salon / barber", "clinic": "Clinic", "shop": "Shop", "restaurant": "Restaurant / café", "services": "Trades & services", "freelancer": "Freelancer"][k] ?? k
     }
 }
+
+// =====================================================================
+// MARK: - The notch, new design: one wide glass panel
+//
+// Row 1 — Aurora's face in a colour ring · "Ask Zuffi" box + what's playing · your agents' faces + "Give a task".
+// Row 2 — the notification bar (newest message, how many more).
+// Row 3 — each agent and what it's doing right now.
+// =====================================================================
+
+/// The last few notifications that came to the notch (so the bar can show the newest and how many more).
+@MainActor
+final class NotchInbox: ObservableObject {
+    static let shared = NotchInbox()
+    struct Note: Identifiable { let id = UUID(); let head: String; let body: String; let icon: String; let action: String?; let at: Date }
+    @Published private(set) var notes: [Note] = []
+    func add(_ head: String, _ body: String, icon: String, action: String?) {
+        notes.insert(Note(head: head, body: body, icon: icon, action: action, at: Date()), at: 0)
+        if notes.count > 12 { notes.removeLast(notes.count - 12) }
+    }
+    func clear() { notes.removeAll() }
+}
+
+enum NotchDesign {
+    /// The wide glass notch (on by default). Off = the older tall home panel.
+    static var on: Bool { UserDefaults.standard.object(forKey: "notchWide") as? Bool ?? true }
+}
+
+struct NotchHomeView: View {
+    @ObservedObject var state: AppState
+    @ObservedObject private var voice = VoiceEngine.shared
+    @ObservedObject private var music = NowPlaying.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var inbox = NotchInbox.shared
+    @ObservedObject private var hang = NotchHang.shared
+    @State private var ask = ""
+    @FocusState private var askFocus: Bool
+
+    private let W = IslandConst.width(for: .overview)
+    private let H = IslandConst.viewLayouts[.overview]!.height
+    private var agents: [TeamAgent] { team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents }
+    private let pillFill = Color.white.opacity(0.12), pillLine = Color.white.opacity(0.16)
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.clear.frame(width: W, height: H).contentShape(Rectangle()).movesIsland()
+            VStack(spacing: 12) {
+                topRow
+                noteBar
+                agentTiles
+                footer
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 44)
+            .frame(width: W, height: H, alignment: .top)
+        }
+        .frame(width: W, height: H)
+        .onAppear { NowPlaying.shared.start() }
+    }
+
+    // MARK: row 1
+    private var topRow: some View {
+        HStack(spacing: 16) {
+            // Aurora in a colour ring, with the mic badge
+            ZStack(alignment: .bottomTrailing) {
+                Circle().fill(AngularGradient(colors: [Color(hex: "#F5B963"), Color(hex: "#F58FA8"), Color(hex: "#B79CFF"), Color(hex: "#F5B963")], center: .center))
+                    .frame(width: 66, height: 66)
+                Circle().fill(RadialGradient(colors: [Color(hex: "#FFF6F7"), Color(hex: "#F3DDE2")], center: .center, startRadius: 2, endRadius: 34))
+                    .frame(width: 60, height: 60).offset(x: -3, y: -3)
+                LiveBunnyFace(size: 54).offset(x: -6, y: -6)
+                Button { VoiceEngine.shared.listenOnce() } label: {
+                    Image(systemName: voice.isListening ? "waveform" : "mic.fill").font(.system(size: 9.5, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color(red: 0.12, green: 0.12, blue: 0.14).opacity(0.9)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.18)))
+                }.buttonStyle(.plain).help("Talk to Zuffi")
+            }
+            .frame(width: 66, height: 66)
+
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "text.bubble").font(.system(size: 12)).foregroundColor(.white.opacity(0.75))
+                    TextField("Ask Zuffi or give a job…", text: $ask)
+                        .textFieldStyle(.plain).font(.system(size: 13)).foregroundColor(.white)
+                        .focused($askFocus)
+                        .onSubmit { send() }
+                }
+                .padding(.horizontal, 12).frame(height: 38)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(pillFill))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pillLine))
+                Button { if music.hasTrack { music.send("playpause") } } label: {
+                    HStack(spacing: 8) {
+                        if music.playing || hang.audio { NotchBars(count: 7, width: 2, height: 12) } else { Image(systemName: "music.note").font(.system(size: 11)).foregroundColor(.white.opacity(0.6)) }
+                        Text(music.hasTrack ? "\(music.title)\(music.artist.isEmpty ? "" : " · \(music.artist)")" : (hang.audio ? "Sound is playing" : "Nothing playing"))
+                            .font(.system(size: 13)).foregroundColor(.white.opacity(music.hasTrack || hang.audio ? 1 : 0.6)).lineLimit(1)
+                        Spacer(minLength: 4)
+                        if music.hasTrack { Image(systemName: music.playing ? "pause.fill" : "play.fill").font(.system(size: 10)).foregroundColor(.white.opacity(0.8)) }
+                    }
+                    .padding(.horizontal, 12).frame(height: 38)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(pillFill))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pillLine))
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+
+            VStack(spacing: 10) {
+                HStack(spacing: -7) {
+                    ForEach(Array(agents.prefix(4))) { a in
+                        AgentAvatar(agent: a, size: 28).clipShape(Circle())
+                            .overlay(Circle().stroke(Color(hex: "#121318"), lineWidth: 2))
+                            .help(a.name)
+                    }
+                    if agents.count > 4 {
+                        Text("+\(agents.count - 4)").font(.system(size: 11, weight: .semibold)).foregroundColor(Color(hex: "#2A2140"))
+                            .frame(width: 28, height: 28).background(Circle().fill(Color(hex: "#D9CCF5")))
+                            .overlay(Circle().stroke(Color(hex: "#121318"), lineWidth: 2))
+                    }
+                }
+                Button { askFocus = true; if !ask.isEmpty { send() } } label: {
+                    Text("Give a task").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#111111"))
+                        .frame(maxWidth: .infinity).frame(height: 34)
+                        .background(Capsule().fill(Color.white))
+                }.buttonStyle(.plain)
+            }
+            .frame(width: 150)
+        }
+    }
+
+    private func send() {
+        let q = ask.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        ask = ""
+        ZuffiChat.shared.ask(q)
+    }
+
+    // MARK: row 2 — notifications
+    private var noteBar: some View {
+        let n = inbox.notes.first
+        let tint: Color = n?.action == "whatsapp" ? Color(hex: "#25D366") : n?.action == "mail" ? Color(hex: "#5B8CFF") : Color(hex: "#F5B963")
+        return Button {
+            if let n {
+                state.noteAction = n.action; state.noteIsAlert = false
+                state.noteMessage = "\(n.head)\n\(n.body)"
+                NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(n == nil ? Color.white.opacity(0.14) : tint).frame(width: 22, height: 22)
+                    .overlay(Image(systemName: n?.icon ?? "bell").font(.system(size: 11, weight: .semibold)).foregroundColor(.white))
+                if let n {
+                    Text(n.head).font(.system(size: 12, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                    Text(n.body).font(.system(size: 12)).foregroundColor(.white.opacity(0.74)).lineLimit(1)
+                } else {
+                    Text("No new notifications").font(.system(size: 12)).foregroundColor(.white.opacity(0.6))
+                }
+                Spacer(minLength: 4)
+                if inbox.notes.count > 1 {
+                    Text("+\(inbox.notes.count - 1)").font(.system(size: 11, weight: .semibold)).foregroundColor(Color(hex: "#1A1206"))
+                        .padding(.horizontal, 8).frame(height: 18).background(Capsule().fill(Color(hex: "#F5B963")))
+                }
+                if n != nil { Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.7)) }
+            }
+            .padding(.leading, 10).padding(.trailing, 12).frame(height: 40)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pillLine))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
+    // MARK: row 3 — what each agent is doing
+    private var agentTiles: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(agents.prefix(4))) { a in
+                let st = team.status(a)
+                let run = team.runs.first { $0.agent == a.id }
+                Button {
+                    if st == .working { MissionControl.shared.show() } else { team.use(a); ZuffiChat.shared.open() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(st == .working ? Color(hex: "#F5B963") : ZuffiTeam.color(st)).frame(width: 8, height: 8)
+                            .opacity(st == .working ? 0.6 + 0.4 * abs(sin(Date().timeIntervalSinceReferenceDate * 3)) : 1)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(a.name).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                            Text(st == .working ? (run?.steps.last?.text ?? "Working…") : st == .active ? "Ready" : st.rawValue)
+                                .font(.system(size: 10.5)).foregroundColor(.white.opacity(0.74)).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(8).frame(maxWidth: .infinity)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.14)))
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain).help(a.description)
+            }
+        }
+    }
+
+    // MARK: small shortcuts
+    private var footer: some View {
+        HStack(spacing: 18) {
+            shortcut("bubble.left.fill", "Chat") { ZuffiChat.shared.open() }
+            shortcut("square.grid.2x2.fill", "Dashboard") { ZuffiHub.shared.show(.home) }
+            shortcut("sparkles", "Features") { ZuffiNav.go(.features) }
+            shortcut("hare.fill", PetController.shared.isShown ? "Hide pet" : "Show pet") { PetController.shared.toggle() }
+            shortcut(voice.micEnabled ? "mic.fill" : "mic.slash.fill", voice.micEnabled ? "Mic on" : "Mic off") { VoiceEngine.shared.setMic(!voice.micEnabled) }
+            shortcut("gearshape.fill", "Settings") { ZuffiHub.shared.show(.settings) }
+        }
+    }
+    private func shortcut(_ icon: String, _ label: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10.5, weight: .semibold))
+                Text(label).font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(.white.opacity(0.78))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+}
+
+/// Closed notch: two glass wings beside the camera — Aurora's face on the left; music bars, working agents or a quiet dot on the right.
+struct CompactWings: View {
+    @ObservedObject var state: AppState
+    @ObservedObject private var hang = NotchHang.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var music = NowPlaying.shared
+    let width: CGFloat
+    let height: CGFloat
+    let notch: CGFloat
+    var body: some View {
+        let working = team.runs.filter { $0.status == "Working" && Date().timeIntervalSince($0.started) < 900 }
+        HStack(spacing: 0) {
+            HStack { LiveBunnyFace(size: 24) }
+                .frame(width: (width - notch) / 2, height: height)
+                .contentShape(Rectangle())
+            Color.clear.frame(width: notch)
+            HStack(spacing: 6) {
+                if hang.audio || music.playing {
+                    NotchBars(count: 7, width: 2.5, height: 14)
+                } else if !working.isEmpty {
+                    HStack(spacing: -5) {
+                        ForEach(working.prefix(3)) { r in
+                            if let a = team.agent(r.agent) { AgentAvatar(agent: a, size: 16).clipShape(Circle()).overlay(Circle().stroke(Color.black, lineWidth: 1.5)) }
+                        }
+                    }
+                    Text("\(working.count)").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.85))
+                } else {
+                    Circle().fill(Color(hex: "#3FC48C")).frame(width: 7, height: 7)
+                }
+            }
+            .frame(width: (width - notch) / 2, height: height)
+        }
+        .frame(width: width, height: height)
+        .allowsHitTesting(false)
+    }
+}

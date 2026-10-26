@@ -20,7 +20,7 @@ struct IslandViewContent: View {
 
     @ViewBuilder private var content: some View {
         switch view {
-        case .overview:  ZuffiHomePanel(state: state)
+        case .overview:  if NotchDesign.on { NotchHomeView(state: state) } else { ZuffiHomePanel(state: state) }
         case .empty:     ZuffiHomePanel(state: state)
         case .approval:  ApprovalView(state: state)
         case .question:  QuestionView(state: state)

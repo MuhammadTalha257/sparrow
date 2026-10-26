@@ -948,8 +948,10 @@ func islandSize(mode: IslandMode, view: IslandView,
     case .hidden:   return (nw, nh)
     case .compact:
         if IslandDock.docked { return (IslandConst.dockedCompact.width, IslandConst.dockedCompact.height) }
+        if NotchDesign.on && SparrowPosition.current == .notch { return (nw + 2 * 64, nh) }   // two glass wings beside the camera
         return (nw + 24, nh + IslandConst.compactDrop)   // Zuffi's face hangs just under the notch
     case .expanded:
+        if IslandConst.isWideHome(view) { return (640, 300) }
         let layout = IslandConst.viewLayouts[view]!
         return (IslandConst.width(for: view), layout.height)
     }

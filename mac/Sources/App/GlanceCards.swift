@@ -906,6 +906,7 @@ final class MacStatus: ObservableObject {
         st.noteMessage = "\(String(head.prefix(58)))\n\(body)"
         NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
         BunnyFaceCenter.shared.show(.surprised, for: 2.5)
+        NotchInbox.shared.add(String(head.prefix(58)), body, icon: icon, action: action)
         if !head.lowercased().contains("charg") && !head.lowercased().contains("battery") { EdgeGlow.shared.flash(.notify(head), seconds: 2.6) }
     }
 }
