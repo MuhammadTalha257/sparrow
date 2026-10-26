@@ -222,6 +222,7 @@ struct TeamJob: Codable, Identifiable, Hashable {
     var minute: Int
     var enabled = true
     var readsDashboard = false
+    var weekday: Int?                 // 1 = Sunday … 7 = Saturday; nil = every day
     var lastRun: Date?
     var lastStatus = ""
     var history: [JobRun] = []
@@ -1234,6 +1235,7 @@ final class ZuffiTeam: ObservableObject {
         guard teamsAllowed else { return }
         let now = Date(), cal = Calendar.current
         for job in jobs where job.enabled && !jobRunning.contains(job.id) {
+            if let wd = job.weekday, cal.component(.weekday, from: now) != wd { continue }
             guard let due = cal.date(bySettingHour: job.hour, minute: job.minute, second: 0, of: now), now >= due else { continue }
             if let last = job.lastRun, last >= due { continue }
             if now.timeIntervalSince(due) > 3 * 3600 {
@@ -1256,7 +1258,16 @@ final class ZuffiTeam: ObservableObject {
         guard let job = jobs.first(where: { $0.id == id }), let a = agent(job.agent), !jobRunning.contains(id) else { return }
         if paused.contains(a.id) { mark(id, JobRun(status: "Skipped", summary: "\(a.name) is paused.")); return }
         jobRunning.insert(id); defer { jobRunning.remove(id) }
-        let run = await work(a, job.task, job: job.title, readDashboard: job.readsDashboard)
+        let run: AgentRun
+        if job.task == "plan posts" || job.task == "check reviews" {
+            // the workspace jobs: posts go to Approvals; review replies are drafted for approval
+            let id = begin(a, job.title, job: job.title)
+            let text = job.task == "plan posts" ? await ZuffiWorkspace.shared.planPosts(runID: id) : await ZuffiWorkspace.shared.checkReviews(runID: id)
+            finish(id, text, text.hasPrefix("I couldn't") ? "Needs input" : "Done")
+            run = runs.first { $0.id == id }!
+        } else {
+            run = await work(a, job.task, job: job.title, readDashboard: job.readsDashboard)
+        }
         let status = run.status == "Done" ? "Done" : run.status == "Needs input" ? "Needs input" : "Failed"
         mark(id, JobRun(status: status, summary: String(run.result.prefix(300))))
         log(a.name, "Ran “\(job.title)”", status)
@@ -1594,7 +1605,7 @@ struct TeamSettings: View {
 // MARK: - Business → My Team
 
 struct BizAITeamView: View {
-    enum TeamTab: String, CaseIterable { case team = "Team", jobs = "Daily jobs", activity = "Activity", hire = "Hire" }
+    enum TeamTab: String, CaseIterable { case team = "Team", approvals = "Approvals", jobs = "Routines", activity = "Activity", hire = "Hire" }
     @ObservedObject private var team = ZuffiTeam.shared
     @ObservedObject private var stage = AgentStage.shared
     @State private var section: TeamTab = .team
@@ -1611,7 +1622,7 @@ struct BizAITeamView: View {
                 HStack(spacing: 6) {
                     ForEach(TeamTab.allCases, id: \.self) { s in
                         Button { section = s } label: {
-                            Text(s.rawValue + (s == .team ? " (\(team.hiredAgents.count))" : s == .jobs ? " (\(team.jobs.count))" : ""))
+                            Text(s.rawValue + (s == .team ? " (\(team.hiredAgents.count))" : s == .jobs ? " (\(team.jobs.count))" : s == .approvals ? " (\(ZuffiWorkspace.shared.waiting.count))" : ""))
                                 .font(.system(size: 12, weight: section == s ? .semibold : .regular)).foregroundColor(section == s ? .white : Ink.text)
                                 .padding(.horizontal, 12).frame(height: 28).background(Capsule().fill(section == s ? Ink.accent : Ink.panelHi))
                         }.buttonStyle(.plain)
@@ -1624,6 +1635,7 @@ struct BizAITeamView: View {
                 if !team.suggestions.isEmpty { suggestionsBox }
                 switch section {
                 case .team: teamSection
+                case .approvals: TeamApprovalsView()
                 case .jobs: TeamJobsView()
                 case .activity: TeamActivityView()
                 case .hire: TeamHireView()
@@ -1690,7 +1702,10 @@ struct BizAITeamView: View {
     @AppStorage("teamReviewed") private var reviewed = false
     @State private var confirmClear = false
 
+    @ObservedObject private var ws = ZuffiWorkspace.shared
+
     @ViewBuilder private var teamSection: some View {
+        if ws.brief.isEmpty && !ZuffiPlan.shared.isPersonal { OnboardingChat() }
         if !team.hiredAgents.isEmpty && !reviewed {
             HStack(spacing: 12) {
                 Image(systemName: "person.3.sequence.fill").font(.system(size: 18)).foregroundColor(Ink.accent)
@@ -1957,7 +1972,7 @@ struct JobRow: View {
                 if let a { AgentAvatar(agent: a, size: 30) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(job.title).font(.system(size: 12.5, weight: .semibold))
-                    Text("\(a?.name ?? job.agent) · every day\(job.readsDashboard ? " · reads \(team.sources.first?.name ?? "your dashboard")" : "")").font(.system(size: 10.5)).foregroundColor(Ink.faint)
+                    Text("\(a?.name ?? job.agent) · \(job.weekday.map { "every " + Calendar.current.weekdaySymbols[($0 - 1) % 7] } ?? "every day")\(job.readsDashboard ? " · reads \(team.sources.first?.name ?? "your dashboard")" : "")").font(.system(size: 10.5)).foregroundColor(Ink.faint)
                 }
                 Spacer()
                 DatePicker("", selection: Binding(get: {
@@ -2382,6 +2397,7 @@ struct AgentRobot: View {
         case .sales: return "briefcase.fill"
         case .marketing: return "megaphone.fill"
         case .travel: return "airplane"
+        case .web: return "safari.fill"
         case .product: return "shippingbox.fill"
         case .project: return "checklist"
         case .support: return "bubble.left.fill"
@@ -2893,5 +2909,336 @@ struct AgentBrowserView: View {
                 .padding(12).padding(.top, 22).frame(width: 260)
             }
         }
+    }
+}
+
+// MARK: - Workspace: brand brief from a chat, the Manager's plan, approvals, the first jobs and routines
+
+struct BrandBrief: Codable, Equatable {
+    var business = "", kind = "", town = "", audience = "", tone = "", colours = "", offers = "", goals = "", accounts = "", postsPerWeek = 4, extra = ""
+    var isEmpty: Bool { business.isEmpty && offers.isEmpty }
+    var text: String {
+        [("Business", business), ("Type", kind), ("Town / area", town), ("Customers", audience), ("Tone", tone), ("Brand colours", colours),
+         ("Services, prices & offers", offers), ("Goals", goals), ("Accounts", accounts), ("Posts per week", "\(postsPerWeek)"), ("Notes", extra)]
+            .filter { !$0.1.isEmpty }.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+    }
+}
+
+/// Something an agent wants to do that waits for the owner: a post, a review reply, a message.
+struct ApprovalItem: Codable, Identifiable, Hashable {
+    var id = UUID().uuidString
+    var agent: String
+    var kind: String                 // post · review reply · message
+    var title: String
+    var body: String                 // caption / reply text
+    var extra = ""                   // hashtags, who it's for, the review being answered…
+    var when = ""                    // planned day
+    var image: String?               // file path of the picture
+    var status = "Waiting"           // Waiting · Approved · Done · Skipped
+    var created = Date()
+}
+
+@MainActor
+final class ZuffiWorkspace: ObservableObject {
+    static let shared = ZuffiWorkspace()
+    @Published var brief: BrandBrief = TeamStore.load("brand", BrandBrief()) { didSet { TeamStore.save("brand", brief); syncInfo() } }
+    @Published var approvals: [ApprovalItem] = TeamStore.load("approvals", [ApprovalItem]()) { didSet { TeamStore.save("approvals", Array(approvals.prefix(200))) } }
+    @Published var busy = ""
+    var waiting: [ApprovalItem] { approvals.filter { $0.status == "Waiting" } }
+
+    /// The brief also goes into the business details every agent and reply uses.
+    private func syncInfo() {
+        guard !brief.isEmpty else { return }
+        if brief.business.count > 1, ZuffiBusiness.shared.businessName.isEmpty {
+            ZuffiBusiness.shared.businessName = brief.business; UserDefaults.standard.set(brief.business, forKey: "zuffiBusinessName")
+        }
+        let marker = "\n— Brand brief —\n"
+        let base = ZuffiCRM.shared.businessInfo.components(separatedBy: marker).first ?? ""
+        ZuffiCRM.shared.businessInfo = base.trimmingCharacters(in: .whitespacesAndNewlines) + marker + brief.text
+    }
+
+    // MARK: the chat that sets everything up
+
+    static let questions: [(key: String, ask: String, hint: String)] = [
+        ("business", "Hi! I'm your Team Manager. What's your business called, and what do you do?", "e.g. Glow Studio — a nail and beauty salon"),
+        ("town", "Where are you based, and who are your customers?", "e.g. Woking — mostly women 25–45, office workers, mums"),
+        ("offers", "What do you sell or offer, with prices and any current offers?", "e.g. Gel nails £30, BIAB £38, 10% off Tuesdays"),
+        ("tone", "How should your posts sound, and what are your brand colours?", "e.g. friendly and fun, pink and gold"),
+        ("goals", "What do you want more of in the next 3 months?", "e.g. 10 more bookings a week, more Google reviews"),
+        ("accounts", "Which accounts do you use? (Instagram, Facebook, Google Business Profile, TikTok, LinkedIn, Fresha…)", "e.g. Instagram @glowstudio, Facebook page, Google Business"),
+        ("postsPerWeek", "How many posts a week should we make? (3, 5 or 7)", "e.g. 5"),
+    ]
+
+    func apply(_ key: String, _ v: String) {
+        let t = v.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch key {
+        case "business":
+            brief.business = t.components(separatedBy: CharacterSet(charactersIn: "—-,")).first?.trimmingCharacters(in: .whitespaces) ?? t
+            brief.kind = t
+        case "town": brief.town = t; brief.audience = t
+        case "offers": brief.offers = t
+        case "tone": brief.tone = t; brief.colours = t
+        case "goals": brief.goals = t
+        case "accounts": brief.accounts = t
+        case "postsPerWeek": brief.postsPerWeek = max(2, min(7, Int(t.filter(\.isNumber)) ?? 4))
+        default: brief.extra = t
+        }
+    }
+
+    /// After the chat: the AI tidies the answers, then the Manager proposes the team and sets the routines.
+    func finishSetup() async -> String {
+        busy = "Setting up your workspace…"; defer { busy = "" }
+        if let j = await AIService.shared.fastJSON("Answers:\n\(brief.text)", system: """
+        Tidy a small business's setup answers into JSON: {"business":"just the name","kind":"what it is, short","town":"","audience":"","tone":"","colours":"","offers":"","goals":""}. \
+        Keep the owner's facts and prices exactly; "" when not given.
+        """) {
+            func s(_ k: String) -> String { (j[k] as? String ?? "").trimmingCharacters(in: .whitespaces) }
+            var b = brief
+            if !s("business").isEmpty { b.business = s("business") }
+            for (k, path) in [("kind", \BrandBrief.kind), ("town", \BrandBrief.town), ("audience", \BrandBrief.audience), ("tone", \BrandBrief.tone),
+                              ("colours", \BrandBrief.colours), ("offers", \BrandBrief.offers), ("goals", \BrandBrief.goals)] where !s(k).isEmpty { b[keyPath: path] = s(k) }
+            brief = b
+        }
+        let team = ZuffiTeam.shared
+        let ids: [String] = {
+            switch ZuffiPlan.shared.mode {
+            case .freelancer?: return ["zuffi-social", "zuffi-writer", "zuffi-competitors", "zuffi-reports"]
+            case .creator?: return ["zuffi-social", "research-synthesist", "zuffi-writer", "zuffi-reports"]
+            case .personal?: return ZuffiTeam.personalTeam
+            default: return ZuffiTeam.businessTeam
+            }
+        }()
+        for id in ids { if let a = team.agent(id) { team.hire(a, why: "Team Manager's plan") } }
+        setRoutines()
+        team.log("Team Manager", "Set up the workspace", brief.business)
+        let names = ids.compactMap { team.agent($0) }.map { "\($0.emoji) \($0.name)" }.joined(separator: ", ")
+        return "Your workspace for \(brief.business.isEmpty ? "your business" : brief.business) is ready.\nTeam: \(names).\nEvery Monday the Social Media Agent plans \(brief.postsPerWeek) posts for you to approve; reviews are checked every morning; competitors on Wednesday; your report on Friday. Want this week's posts now? Press “Plan this week's posts”."
+    }
+
+    /// The routines every business gets (changeable on My Team → Daily jobs).
+    func setRoutines() {
+        let team = ZuffiTeam.shared
+        func job(_ agent: String, _ title: String, _ task: String, _ h: Int, _ m: Int, _ weekday: Int?) {
+            guard team.agent(agent) != nil, !team.jobs.contains(where: { $0.agent == agent && $0.title == title }) else { return }
+            var j = TeamJob(agent: agent, title: title, task: task, hour: h, minute: m)
+            j.weekday = weekday
+            team.jobs.removeAll { $0.agent == agent && $0.weekday == nil && agent != "zuffi-reviews" }
+            team.jobs.append(j)
+        }
+        job("zuffi-social", "Plan this week's posts", "plan posts", 9, 0, 2)          // Monday
+        job("zuffi-reviews", "Check new reviews", "check reviews", 10, 0, nil)         // every day
+        job("zuffi-competitors", "Competitor check", "Research my local competitors this week: prices, offers, reviews — what do they do better, and what should we change?", 11, 0, 4)   // Wednesday
+        job("zuffi-reports", "Weekly report", "Write this week's report: what the team did, what worked, and next week's plan.", 16, 0, 6)   // Friday
+    }
+
+    // MARK: job 1 — posts
+
+    func planPosts(count: Int? = nil, runID: String? = nil) async -> String {
+        let n = count ?? brief.postsPerWeek
+        let team = ZuffiTeam.shared
+        busy = "📣 Planning \(n) posts…"; defer { busy = "" }
+        let cal = Calendar.current
+        let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: Date()) }.map { $0.formatted(.dateTime.weekday(.wide).day().month(.abbreviated)) }
+        let prompt = """
+        BRAND BRIEF:
+        \(brief.isEmpty ? ZuffiCRM.shared.businessInfo.prefix(2000) : Substring(brief.text))
+        Today's offer/news: \(ZuffiCRM.shared.todaysUpdate.isEmpty ? "none" : ZuffiCRM.shared.todaysUpdate)
+        The next 7 days: \(days.joined(separator: ", ")). Country: \(ZuffiCRM.shared.country == "PK" ? "Pakistan" : "UK").
+        Plan \(n) social media posts for these days. Use UK dates and seasons that fall in this week where relevant. Never invent prices or offers that aren't in the brief.
+        JSON: {"posts":[{"day":"one of the days above","idea":"short title","caption":"the full caption, warm, in the brand's tone, with a call to action","hashtags":"#… #…","picture":"what the picture should show, no text in it"}]}
+        """
+        if let r = runID { team.step(r, "Planning \(n) posts from your brand brief", source: "Brand brief") }
+        guard let j = await AIService.shared.fastJSON(prompt, system: "You are a social media manager for a small business. Reply with JSON only."),
+              let posts = j["posts"] as? [[String: Any]], !posts.isEmpty else {
+            return "I couldn't plan the posts — no AI answered. Nothing was made up; try again in a minute."
+        }
+        var made = 0
+        for p in posts.prefix(n) {
+            func s(_ k: String) -> String { (p[k] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+            var item = ApprovalItem(agent: "zuffi-social", kind: "post", title: s("idea"), body: s("caption"), extra: s("hashtags"), when: s("day"))
+            if let r = runID { team.step(r, "Making the picture for “\(s("idea").prefix(50))”") }
+            if let img = await WebHub.shared.callJS("return await window.Sparrow.makeBizPost(a, 'post', c)", ["a": s("idea") + ". " + s("picture"), "c": "Book now — link in bio"]) as? [String: Any],
+               let b64 = img["b64"] as? String, let data = Data(base64Encoded: b64) {
+                let dir = ZuffiBusiness.docs.appendingPathComponent("Posts", isDirectory: true)
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let url = dir.appendingPathComponent((img["name"] as? String) ?? "post-\(UUID().uuidString.prefix(6)).png")
+                if (try? data.write(to: url)) != nil { item.image = url.path }
+            }
+            approvals.insert(item, at: 0); made += 1
+        }
+        team.log("Social Media Agent", "Planned \(made) posts", "Waiting for your approval")
+        MacStatus.shared.toast("📣 \(made) posts ready", "Open My Team → Approvals to approve them.", icon: "megaphone.fill")
+        return "I've planned \(made) posts for this week, each with a picture and caption. They're waiting in My Team → Approvals."
+    }
+
+    /// Approving a post: save it, copy the caption, and the Social Media Agent opens Meta Business Suite in its tab to fill it in.
+    /// (Direct posting through Meta's official connection comes once Zuffi's Meta approval is done.)
+    func publish(_ item: ApprovalItem) async {
+        guard let i = approvals.firstIndex(where: { $0.id == item.id }) else { return }
+        approvals[i].status = "Approved"
+        let caption = item.body + (item.extra.isEmpty ? "" : "\n\n" + item.extra)
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(caption, forType: .string)
+        ZuffiTeam.shared.log("You", "Approved a post", item.title)
+        guard let agent = ZuffiTeam.shared.agent("zuffi-social") else { return }
+        let task = """
+        Go to https://business.facebook.com/latest/composer and create a new post for the user's Facebook page and Instagram. Type this caption into the post text box: \(caption.prefix(1500))
+        Then use "ask" so the user adds the photo (it's saved at \(item.image ?? "Documents/Zuffi/Posts")) and checks it. Do NOT press Publish or Schedule yourself — ask first.
+        """
+        let id = ZuffiTeam.shared.begin(agent, "Post: \(item.title)")
+        ZuffiTeam.shared.step(id, "Caption copied; opening Meta Business Suite in its tab")
+        let ans = await AgentBrowser.shared.run(task, agent: agent, runID: id)
+        ZuffiTeam.shared.finish(id, ans, "Done")
+        if let k = approvals.firstIndex(where: { $0.id == item.id }) { approvals[k].status = "Done" }
+        AgentBrowser.shared.show()
+    }
+
+    // MARK: job 2 — reviews
+
+    func checkReviews(runID: String? = nil) async -> String {
+        guard let agent = ZuffiTeam.shared.agent("zuffi-reviews") else { return "No Reviews Agent." }
+        let task = """
+        Open https://business.google.com/reviews (if a sign-in is needed, use "ask"). Read the newest reviews.
+        Finish with "done" and in "answer" give ONLY JSON: {"reviews":[{"name":"","stars":5,"text":"","replied":false}]} (up to 10, newest first).
+        """
+        if let r = runID { ZuffiTeam.shared.step(r, "Opening Google reviews in its own tab", source: "Google Business Profile") }
+        let ans = await AgentBrowser.shared.run(task, agent: agent, runID: runID)
+        guard let j = AIService.jsonIn(ans) as? [String: Any], let reviews = j["reviews"] as? [[String: Any]] else {
+            return "I couldn't read your reviews yet: \(ans.prefix(200))\nOpen the agent browser and sign in to Google once — next time it works by itself."
+        }
+        let fresh = reviews.filter { !(($0["replied"] as? Bool) ?? false) }
+        var drafted = 0
+        for r in fresh.prefix(6) {
+            let name = r["name"] as? String ?? "a customer", text = r["text"] as? String ?? "", stars = r["stars"] as? Int ?? 0
+            if approvals.contains(where: { $0.kind == "review reply" && $0.extra.contains(text.prefix(60)) }) { continue }
+            let reply = await AIService.shared.textAnswer(system: ZuffiTeam.shared.systemPrompt(for: agent), messages: [["role": "user", "content": "Draft a reply to this \(stars)-star review from \(name): “\(text)”. Reply text only, 1-3 sentences."]], max: 200) ?? ""
+            guard !reply.isEmpty else { continue }
+            approvals.insert(ApprovalItem(agent: agent.id, kind: "review reply", title: "Reply to \(name) (\(stars)★)", body: ZuffiTeam.plain(reply), extra: "“\(text.prefix(300))”"), at: 0)
+            drafted += 1
+        }
+        ZuffiTeam.shared.log(agent.name, "Checked reviews", "\(reviews.count) read, \(drafted) replies drafted")
+        return "Read \(reviews.count) review\(reviews.count == 1 ? "" : "s"); \(fresh.count) without a reply. I drafted \(drafted) repl\(drafted == 1 ? "y" : "ies") — they're in Approvals."
+    }
+
+    func sendReviewReply(_ item: ApprovalItem) async {
+        guard let i = approvals.firstIndex(where: { $0.id == item.id }), let agent = ZuffiTeam.shared.agent("zuffi-reviews") else { return }
+        approvals[i].status = "Approved"
+        ZuffiTeam.shared.log("You", "Approved a review reply", item.title)
+        let task = "Open https://business.google.com/reviews, find the review \(item.extra.prefix(120)) and type this reply: \(item.body). Use \"ask\" before pressing the final Reply / Post button."
+        let id = ZuffiTeam.shared.begin(agent, item.title)
+        let ans = await AgentBrowser.shared.run(task, agent: agent, runID: id)
+        ZuffiTeam.shared.finish(id, ans, "Done")
+        if let k = approvals.firstIndex(where: { $0.id == item.id }) { approvals[k].status = "Done" }
+    }
+}
+
+/// My Team → Approvals: everything waiting for your yes.
+struct TeamApprovalsView: View {
+    @ObservedObject private var ws = ZuffiWorkspace.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @State private var editing: String?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Approvals").font(.system(size: 15, weight: .bold, design: .rounded))
+                Text("\(ws.waiting.count) waiting").font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+                Spacer()
+                if !ws.busy.isEmpty { ProgressView().controlSize(.small); Text(ws.busy).font(.system(size: 11)).foregroundColor(Ink.muted) }
+                Button("Plan this week's posts") { Task { @MainActor in _ = await ws.planPosts() } }.disabled(!ws.busy.isEmpty)
+                Button("Check reviews") { Task { @MainActor in _ = await ws.checkReviews() } }.disabled(!ws.busy.isEmpty)
+            }
+            .controlSize(.small)
+            Text("Posts and replies your agents made. Nothing goes out until you approve. Approving a post copies the caption and the Social Media Agent fills it in on Meta Business Suite in its own tab — you add the photo and press Publish. (Posting straight from Zuffi comes after Meta's approval.)")
+                .font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+            if ws.approvals.isEmpty { Text("Nothing yet. Press “Plan this week's posts”.").font(.system(size: 12)).foregroundColor(Ink.faint) }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
+                ForEach($ws.approvals) { $it in card($it) }
+            }
+        }
+        .padding(16).zGlass(16)
+    }
+
+    @ViewBuilder private func card(_ it: Binding<ApprovalItem>) -> some View {
+        let item = it.wrappedValue
+        let a = team.agent(item.agent)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if let a { AgentAvatar(agent: a, size: 26) }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(2)
+                    Text([item.kind.capitalized, item.when].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 10.5)).foregroundColor(Ink.faint)
+                }
+                Spacer()
+                StatusDot(text: item.status, color: item.status == "Waiting" ? Color(hex: "#F2A516") : item.status == "Skipped" ? Color(hex: "#8A92A4") : Color(hex: "#3FC48C"))
+            }
+            if let p = item.image, let img = NSImage(contentsOfFile: p) {
+                Image(nsImage: img).resizable().scaledToFill().frame(height: 170).frame(maxWidth: .infinity).clipped().clipShape(RoundedRectangle(cornerRadius: 10))
+                    .onTapGesture { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
+            }
+            if editing == item.id {
+                TextField("Text", text: it.body, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(3...10)
+                if item.kind == "post" { TextField("Hashtags", text: it.extra).textFieldStyle(.roundedBorder) }
+            } else {
+                Text(item.body).font(.system(size: 11.5)).foregroundColor(Ink.text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).lineLimit(8)
+                if !item.extra.isEmpty { Text(item.extra).font(.system(size: 10.5)).foregroundColor(Ink.muted).lineLimit(3) }
+            }
+            if item.status == "Waiting" {
+                HStack {
+                    Button(item.kind == "post" ? "Approve & post" : "Approve & send") {
+                        Task { @MainActor in if item.kind == "post" { await ws.publish(item) } else { await ws.sendReviewReply(item) } }
+                    }.buttonStyle(.borderedProminent).tint(Ink.accent)
+                    Button(editing == item.id ? "Done" : "Edit") { editing = editing == item.id ? nil : item.id }
+                    Spacer()
+                    Button("Skip") { it.wrappedValue.status = "Skipped"; team.log("You", "Skipped", item.title) }
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Ink.panelHi.opacity(0.7)))
+    }
+}
+
+/// The Team Manager's setup chat (first time on My Team).
+struct OnboardingChat: View {
+    @ObservedObject private var ws = ZuffiWorkspace.shared
+    @State private var step = 0
+    @State private var answer = ""
+    @State private var log: [(Bool, String)] = []       // (from Zuffi, text)
+    @State private var finished = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Buddy3DView(kind: .robot(.manager), mood: ws.busy.isEmpty ? .speaking : .working).frame(width: 80, height: 90)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Let's set up your workspace").font(.system(size: 16, weight: .bold, design: .rounded))
+                    Text("Seven quick questions. Your team uses the answers in every post, reply and report.").font(.system(size: 11.5)).foregroundColor(Ink.muted)
+                }
+            }
+            ForEach(Array(log.enumerated()), id: \.offset) { _, m in
+                HStack { if !m.0 { Spacer(minLength: 60) }
+                    Text(m.1).font(.system(size: 12)).padding(10).background(RoundedRectangle(cornerRadius: 12).fill(m.0 ? Ink.panelHi : Ink.accent.opacity(0.22))).textSelection(.enabled)
+                    if m.0 { Spacer(minLength: 60) } }
+            }
+            if step < ZuffiWorkspace.questions.count {
+                let q = ZuffiWorkspace.questions[step]
+                HStack { Text(q.ask).font(.system(size: 12.5, weight: .semibold)).padding(10).background(RoundedRectangle(cornerRadius: 12).fill(Ink.panelHi)); Spacer(minLength: 60) }
+                HStack {
+                    TextField(q.hint, text: $answer).textFieldStyle(.roundedBorder).onSubmit(send)
+                    Button("Send", action: send).buttonStyle(.borderedProminent).tint(Ink.accent).disabled(answer.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            } else if finished.isEmpty {
+                HStack { ProgressView().controlSize(.small); Text(ws.busy.isEmpty ? "Finishing…" : ws.busy).font(.system(size: 12)).foregroundColor(Ink.muted) }
+            } else {
+                Text(finished).font(.system(size: 12.5)).padding(10).background(RoundedRectangle(cornerRadius: 12).fill(Ink.panelHi))
+                Button("Plan this week's posts") { Task { @MainActor in _ = await ws.planPosts() } }.buttonStyle(.borderedProminent).tint(Ink.accent)
+            }
+        }
+        .padding(18).zGlass(18)
+    }
+    private func send() {
+        let a = answer.trimmingCharacters(in: .whitespacesAndNewlines); guard !a.isEmpty, step < ZuffiWorkspace.questions.count else { return }
+        let q = ZuffiWorkspace.questions[step]
+        log.append((true, q.ask)); log.append((false, a))
+        ws.apply(q.key, a); answer = ""; step += 1
+        if step == ZuffiWorkspace.questions.count { Task { @MainActor in finished = await ws.finishSetup() } }
     }
 }

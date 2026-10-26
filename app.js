@@ -2717,13 +2717,13 @@ window.Sparrow = {
   setAccent: name => { const t = bizapp.THEMES.find(x => x[0] === name || x[3].toLowerCase() === name); if (!t) return false; bizsync.setCfg('accent', t[0]); try { localStorage.setItem('zuffiAccent', t[0]); } catch {} bizapp.applyAccent(); syncAccent(); return t[1]; },
   setVoice: g => { S().gender = g === 'male' ? 'male' : 'female'; S().voiceName = ''; store.save(); return true; },
   /** Mac: "make a post / reel for our business (about …)" → { b64, mime, name, caption } — a designed post with an AI photo. */
-  makeBizPost: async (about = '', kind = 'post') => {
+  makeBizPost: async (about = '', kind = 'post', ctaText = '') => {
     try {
       const prof = bizapp.profile(), biz = bizknow.name() || prof.name || S().business?.name || '';
       const headline = String(about || bizknow.todayUpdate() || 'Message us on WhatsApp').slice(0, 90);
       const spec = { kind: prof.estate ? 'listing' : 'offer', headline, price: '', phone: S().business?.phone || '', details: [], biz,
         accent: prof.estate ? '#D4AF37' : getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4C8DFF',
-        cta: prof.estate ? 'Call or WhatsApp to book a visit' : 'Message us on WhatsApp to book' };
+        cta: ctaText || (prof.estate ? 'Call or WhatsApp to book a visit' : 'Message us on WhatsApp to book') };
       const photos = [];
       const scenes = kind === 'reel' ? 3 : 1;
       for (let i = 0; i < scenes; i++) {
