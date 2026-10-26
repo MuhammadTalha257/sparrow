@@ -3,6 +3,7 @@ import SwiftUI
 import AppKit
 import Combine
 import WebKit
+import CoreAudio
 
 // =====================================================================
 // MARK: - Zuffi's team (agency-agents, MIT licence — see THIRD_PARTY_NOTICES.md)
@@ -1027,6 +1028,7 @@ final class ZuffiTeam: ObservableObject {
         }
         guard !plan.isEmpty else { return nil }
         if plan.count > 1 { log("Zuffi", "Gave out \(plan.count) jobs", plan.map { "\($0.0.name): \($0.1.prefix(40))" }.joined(separator: " · ")) }
+        MissionControl.shared.begin(query, agents: plan.map { $0.0.id })
         // All at the same time (each is a main-actor task; their characters pop up on screen).
         var running: [(TeamAgent, Task<AgentRun, Never>)] = []
         for (a, task) in plan where !paused.contains(a.id) {
@@ -2279,7 +2281,7 @@ final class AgentStage: ObservableObject {
 
     private func layout() {
         guard !showing.isEmpty else { panel?.orderOut(nil); return }
-        let size = NSSize(width: CGFloat(showing.count) * 196 + 24, height: 300)
+        let size = NSSize(width: CGFloat(showing.count) * 160 + 24, height: 230)
         let p = panel ?? make()
         panel = p
         let vf = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
@@ -2364,20 +2366,21 @@ struct AgentBuddyCard: View {
                 }
                 .buttonStyle(.plain).font(.system(size: 9.5, weight: .semibold)).foregroundColor(f.color)
             }
-            .padding(9)
-            .frame(width: 184, alignment: .leading)
+            .padding(8)
+            .frame(width: 150, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: "#12141B").opacity(0.94)))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(f.color.opacity(0.55), lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
             Buddy3DView(kind: .robot(f), mood: working ? .working : run.status == "Done" ? .happy : .idle, lookAtMouse: true)
-                .frame(width: 120, height: 130)
+                .frame(width: 64, height: 72)
                 .overlay(Color.white.opacity(0.001))
                 .onTapGesture { AgentStage.shared.keep(run.id); AgentStage.shared.open(agent) }
                 .scaleEffect(hover ? 1.06 : 1).onHover { hover = $0 }.animation(.spring(), value: hover)
             Text(agent.name).font(.system(size: 10, weight: .bold)).foregroundColor(.white)
                 .padding(.horizontal, 8).frame(height: 18).background(Capsule().fill(f.gradient)).lineLimit(1)
         }
-        .frame(width: 184)
+        .frame(width: 150)
+        .opacity(hover ? 1 : 0.92)
         .help("\(agent.name): \(run.task)")
     }
 }
@@ -3240,5 +3243,217 @@ struct OnboardingChat: View {
         log.append((true, q.ask)); log.append((false, a))
         ws.apply(q.key, a); answer = ""; step += 1
         if step == ZuffiWorkspace.questions.count { Task { @MainActor in finished = await ws.finishSetup() } }
+    }
+}
+
+// MARK: - Under the notch: music bars and your working agents (never in the way)
+//
+// A thin strip that hangs just under the notch. When any app plays sound (music, YouTube, a call…) small bars dance;
+// when agents are working, their little faces show next to it. It lets clicks pass through unless you click a face.
+
+@MainActor
+final class NotchHang: ObservableObject {
+    static let shared = NotchHang()
+    @Published var audio = false
+    @Published var working: [AgentRun] = []
+    private var panel: NSPanel?
+    private var timer: Timer?
+    private var watch: AnyCancellable?
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in MainActor.assumeIsolated { NotchHang.shared.tick() } }
+        watch = ZuffiTeam.shared.$runs.receive(on: RunLoop.main).sink { runs in
+            MainActor.assumeIsolated { NotchHang.shared.working = runs.filter { $0.status == "Working" && $0.agent != ZuffiTeam.manager.id && Date().timeIntervalSince($0.started) < 900 } }
+        }
+    }
+
+    /// Is any app playing sound right now? (the default output device is running)
+    nonisolated static func soundPlaying() -> Bool {
+        var dev = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &dev) == noErr else { return false }
+        var running: UInt32 = 0
+        size = UInt32(MemoryLayout<UInt32>.size)
+        addr.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
+        guard AudioObjectGetPropertyData(dev, &addr, 0, nil, &size, &running) == noErr else { return false }
+        return running != 0
+    }
+
+    private func tick() {
+        let on = UserDefaults.standard.object(forKey: "notchHang") as? Bool ?? true
+        audio = on && Self.soundPlaying()
+        layout(show: on && (audio || !working.isEmpty) && AppState.shared.mode != .expanded)
+    }
+
+    private func layout(show: Bool) {
+        guard show, let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main else { panel?.orderOut(nil); return }
+        let top = screen.safeAreaInsets.top > 0 ? screen.safeAreaInsets.top : (screen.frame.maxY - screen.visibleFrame.maxY)
+        var notchW: CGFloat = 200
+        if let l = screen.auxiliaryTopLeftArea, let r = screen.auxiliaryTopRightArea { notchW = max(120, screen.frame.width - l.width - r.width) }
+        let w = max(notchW, CGFloat(working.count) * 26 + (audio ? 70 : 0) + 24), h: CGFloat = 26
+        let p = panel ?? make()
+        panel = p
+        p.setFrame(NSRect(x: screen.frame.midX - w / 2, y: screen.frame.maxY - top - h, width: w, height: h), display: true)
+        p.ignoresMouseEvents = working.isEmpty            // click-through unless there are faces to click
+        if !p.isVisible { p.orderFrontRegardless() }
+    }
+
+    private func make() -> NSPanel {
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 26), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
+        p.level = .statusBar
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        p.hidesOnDeactivate = false
+        p.contentView = NSHostingView(rootView: NotchHangView())
+        return p
+    }
+}
+
+struct NotchHangView: View {
+    @ObservedObject private var hang = NotchHang.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    var body: some View {
+        HStack(spacing: 8) {
+            if hang.audio {
+                TimelineView(.animation(minimumInterval: 1 / 24)) { tl in
+                    let t = tl.date.timeIntervalSinceReferenceDate
+                    HStack(alignment: .top, spacing: 2) {
+                        ForEach(0..<14, id: \.self) { i in
+                            let v = 0.35 + 0.65 * abs(sin(t * (3.1 + Double(i % 5) * 0.9) + Double(i) * 1.3))
+                            Capsule().fill(LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#B98CFF")], startPoint: .top, endPoint: .bottom))
+                                .frame(width: 2.5, height: 4 + 14 * v)
+                        }
+                    }
+                }
+                .frame(height: 20, alignment: .top)
+            }
+            ForEach(hang.working.prefix(6)) { r in
+                if let a = team.agent(r.agent) {
+                    AgentAvatar(agent: a, size: 20).overlay(Circle().stroke(AgentField.of(a).color, lineWidth: 1.5).scaleEffect(1.25).opacity(0.7))
+                        .onTapGesture { MissionControl.shared.show() }
+                        .help("\(a.name): \(r.steps.last?.text ?? r.task)")
+                }
+            }
+        }
+        .padding(.horizontal, 10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 1)
+    }
+}
+
+// MARK: - Mission window: watch the Manager give out the work and each agent do it
+
+@MainActor
+final class MissionControl: ObservableObject {
+    static let shared = MissionControl()
+    @Published var question = ""
+    @Published var agents: [String] = []
+    @Published var started = Date.distantPast
+    private var window: NSWindow?
+    var enabled: Bool { UserDefaults.standard.object(forKey: "missionWindow") as? Bool ?? true }
+
+    func begin(_ q: String, agents ids: [String]) {
+        question = q; agents = ids; started = Date().addingTimeInterval(-1)
+        if enabled { show() }
+    }
+
+    func show() {
+        if let w = window { w.orderFrontRegardless(); return }
+        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 430), styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
+        w.title = "Zuffi Manager"; w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isReleasedWhenClosed = false
+        w.isMovableByWindowBackground = true; w.level = .floating; w.hidesOnDeactivate = false
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.isOpaque = false; w.backgroundColor = .clear
+        w.contentView = NSHostingView(rootView: MissionView())
+        if let s = NSScreen.main?.visibleFrame { w.setFrameOrigin(NSPoint(x: s.midX - 380, y: s.maxY - 470)) }
+        window = w
+        w.orderFrontRegardless()
+    }
+}
+
+struct MissionView: View {
+    @ObservedObject private var mc = MissionControl.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    private var runs: [AgentRun] { team.runs.filter { $0.started >= mc.started && mc.agents.contains($0.agent) } }
+    var body: some View {
+        let rs = runs
+        let done = !rs.isEmpty && rs.allSatisfy { $0.status != "Working" }
+        ZStack {
+            VisualEffectBlur().overlay(LinearGradient(colors: [Color(hex: "#0B1020").opacity(0.75), Color(hex: "#151A2E").opacity(0.6)], startPoint: .top, endPoint: .bottom))
+            VStack(spacing: 10) {
+                // the manager
+                HStack(spacing: 12) {
+                    Buddy3DView(kind: .robot(.manager), mood: done ? .happy : .speaking).frame(width: 74, height: 84)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Zuffi Manager").font(.system(size: 15, weight: .bold, design: .rounded))
+                        Text("“\(mc.question.prefix(140))”").font(.system(size: 12)).foregroundColor(.white.opacity(0.8)).lineLimit(2)
+                        Text(done ? "All done — the answers are in your chat." : "I gave this to " + mc.agents.compactMap { team.agent($0)?.name }.joined(separator: ", ") + ".")
+                            .font(.system(size: 11.5, weight: .semibold)).foregroundColor(done ? Color(hex: "#3FC48C") : Color(hex: "#F5B963"))
+                    }
+                    Spacer()
+                }
+                // beams from the manager to each agent
+                TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+                    Canvas { ctx, size in
+                        let n = max(1, mc.agents.count)
+                        let from = CGPoint(x: size.width / 2, y: 0)
+                        for i in 0..<n {
+                            let to = CGPoint(x: size.width * (CGFloat(i) + 0.5) / CGFloat(n), y: size.height)
+                            var p = Path(); p.move(to: from); p.addCurve(to: to, control1: CGPoint(x: from.x, y: size.height * 0.6), control2: CGPoint(x: to.x, y: size.height * 0.4))
+                            let c = team.agent(mc.agents[min(i, mc.agents.count - 1)]).map { AgentField.of($0).color } ?? .white
+                            ctx.stroke(p, with: .color(c.opacity(0.25)), lineWidth: 2)
+                            ctx.stroke(p, with: .color(c.opacity(done ? 0.5 : 0.9)), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 10], dashPhase: done ? 0 : -tl.date.timeIntervalSinceReferenceDate * 40))
+                        }
+                    }
+                }
+                .frame(height: 36)
+                // the agents
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(mc.agents, id: \.self) { id in
+                        if let a = team.agent(id) {
+                            let r = rs.first { $0.agent == id }
+                            VStack(spacing: 6) {
+                                Buddy3DView(kind: .robot(AgentField.of(a)), mood: r?.status == "Working" || r == nil ? .working : r?.status == "Done" ? .happy : .idle)
+                                    .frame(width: 70, height: 80)
+                                Text(a.name).font(.system(size: 11.5, weight: .bold)).lineLimit(1)
+                                FieldChip(field: AgentField.of(a))
+                                Text(r == nil ? "Starting…" : r!.status == "Working" ? (r!.steps.last?.text ?? "Working…") : r!.status)
+                                    .font(.system(size: 10.5)).foregroundColor(.white.opacity(0.75)).lineLimit(3).multilineTextAlignment(.center).frame(height: 40, alignment: .top)
+                                if let r, !(r.links ?? []).isEmpty {
+                                    Button("Links (\(r.links!.count))") { if let u = URL(string: r.links![0].url) { NSWorkspace.shared.open(u) } }.buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundColor(AgentField.of(a).color)
+                                }
+                                if AgentField.of(a) == .web { Button("Watch") { AgentBrowser.shared.show() }.buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundColor(AgentField.of(a).color) }
+                            }
+                            .padding(10).frame(width: 150)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(AgentField.of(a).color.opacity(0.45)))
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18).padding(.top, 26).padding(.bottom, 14)
+        }
+        .foregroundColor(.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .frame(minWidth: 520, minHeight: 380)
+    }
+}
+
+/// Zuffi's helpers on the notch: who's on your team and who's working.
+struct NotchAgentsRow: View {
+    @ObservedObject private var team = ZuffiTeam.shared
+    var body: some View {
+        let people = Array((team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents).prefix(5))
+        VStack(spacing: 4) {
+            ForEach(people) { a in
+                let st = team.status(a)
+                AgentAvatar(agent: a, size: 18, status: st == .active ? nil : st)
+                    .opacity(st == .working ? 1 : 0.75)
+                    .help("\(a.name) — \(st.rawValue)")
+                    .onTapGesture { if st == .working { MissionControl.shared.show() } else { team.use(a); ZuffiChat.shared.open() } }
+            }
+        }
     }
 }

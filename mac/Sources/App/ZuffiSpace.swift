@@ -398,6 +398,8 @@ struct ZuffiHomePanel: View {
                         // the little bunny head that follows your cursor
                         SparrowSpriteView(model: head, size: room.on ? 56 : 92, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
                             .frame(width: room.on ? 60 : 96, height: room.on ? 60 : 96)
+                            .frame(width: pw - 8)
+                            .overlay(alignment: .topTrailing) { NotchAgentsRow().padding(.trailing, 6) }
                         if room.on {
                             RoomModeCard().frame(width: pw - 8)
                         } else if NowPlaying.shared.hasTrack {
@@ -637,7 +639,9 @@ struct ZuffiQuickSettings: View {
                 Button { ZuffiModeWindow.shared.show() } label: {
                     NotchListRowLabel(icon: "person.2.fill", tint: "#F59E3B", title: "Zuffi is for: \(ZuffiPlan.shared.mode?.title ?? "not chosen")", sub: "Personal assistant, business, freelancer, company or creator — change")
                 }.buttonStyle(.plain)
-                row("cube.fill", "3D pet (smooth, looks at your mouse)", on: Binding(get: { Buddy3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "pet3D"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
+                row("hare.fill", "New soft bunny pet (turn off for the classic one)", on: Binding(get: { Buddy3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "petAurora"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
+                row("waveform", "Music bars & working agents under the notch", on: Binding(get: { UserDefaults.standard.object(forKey: "notchHang") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "notchHang") }))
+                row("rectangle.connected.to.line.below", "Show the Manager window when tasks are given out", on: Binding(get: { MissionControl.shared.enabled }, set: { UserDefaults.standard.set($0, forKey: "missionWindow") }))
                 row("person.3.sequence.fill", "Show AI agents on screen while they work", on: Binding(get: { AgentStage.shared.enabled }, set: { AgentStage.shared.enabled = $0 }))
                 row("eye.slash.fill", "Never show the pet on screen", on: Binding(get: { ZuffiWalk.petNever }, set: { UserDefaults.standard.set($0, forKey: "petNever"); if $0 { PetController.shared.hide() } }))
                 VStack(alignment: .leading, spacing: 6) {

@@ -147,7 +147,18 @@ struct SparrowSpriteView: View {
     @ObservedObject private var look = ZuffiLook.shared
     @State private var anchor = SpriteAnchor()
     @State private var t = 0.0
-    private let tick = Timer.publish(every: 1.0 / 20.0, on: .main, in: .common).autoconnect()
+    @State private var lean = 0.0           // smooth tilt toward the mouse (degrees)
+    private let tick = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
+    /// Which frame is showing (changes cross-fade).
+    private var frameKey: String {
+        if let r = model.reaction { return "r\(r)" }
+        switch mood {
+        case .thinking: return "t\(Int(t * 1.6) % 2)"
+        case .speaking: return Int(t * 7) % 3 == 0 ? "s1" : "s0"
+        case .walking: return model.walkLeft ? "wl" : "wr"
+        default: return "d\(model.direction)"
+        }
+    }
 
     /// The frame to show: reactions win; then the mood's own frames; else where the mouse is.
     private func frame(_ sprites: SparrowSprites) -> CGImage {
@@ -184,7 +195,12 @@ struct SparrowSpriteView: View {
                 }
             }
             if sprites.available || ZuffiLook.shared.kind != .bunny {
+                // Frames cross-fade (no hard jumps) and the head leans a little toward the mouse in between.
                 ZuffiFace(frame: sprites.available ? frame(sprites) : nil, size: size, mood: mood)
+                    .id(frameKey)
+                    .transition(.opacity)
+                    .rotationEffect(.degrees(lean), anchor: .bottom)
+                    .offset(x: CGFloat(lean) * size * 0.006)
             }
             if let prop = model.prop {
                 Image(systemName: prop)
@@ -203,9 +219,14 @@ struct SparrowSpriteView: View {
         .contentShape(Rectangle())
         .onTapGesture { model.boop(); onTap?() }
         .onReceive(tick) { _ in
-            t += 0.05
-            if mood == .idle, let c = anchor.screenCenter { model.aim(center: c, mouse: NSEvent.mouseLocation, deadZone: deadZone) }
+            t += 1.0 / 30.0
+            if mood == .idle, let c = anchor.screenCenter {
+                model.aim(center: c, mouse: NSEvent.mouseLocation, deadZone: deadZone)
+                let target = max(-6, min(6, Double(NSEvent.mouseLocation.x - c.x) / 60))
+                lean += (target - lean) * 0.15
+            } else { lean += (0 - lean) * 0.15 }
         }
+        .animation(.easeInOut(duration: 0.16), value: frameKey)
         .onReceive(NotificationCenter.default.publisher(for: .triggerEmote)) { n in
             if let e = n.object as? BotEmote { model.show(e) }
         }
@@ -234,7 +255,10 @@ extension Notification.Name {
 
 enum Buddy3DKind: Equatable { case bunny; case robot(AgentField) }
 /// "3D pet" switch (Settings): on by default; the drawn bunny is the fallback.
-enum Buddy3DPrefs { static var on: Bool { UserDefaults.standard.object(forKey: "pet3D") as? Bool ?? true } }
+enum Buddy3DPrefs {
+    /// The pet: your Aurora bunny (default) or the classic drawn one.
+    static var on: Bool { (UserDefaults.standard.object(forKey: "petAurora") as? Bool ?? true) && AuroraArt.shared.available }
+}
 enum Buddy3DMood: Equatable { case idle, working, speaking, listening, walking, happy }
 
 struct Buddy3DView: NSViewRepresentable {
@@ -648,5 +672,110 @@ final class Buddy3DCoordinator: NSObject, SCNSceneRendererDelegate, @unchecked S
             .draw(fromCenter: NSPoint(x: 128, y: 48), radius: 0, toCenter: NSPoint(x: 128, y: 48), radius: 120, options: [])
         img.unlockFocus()
         return img
+    }
+}
+
+// MARK: - The Aurora bunny (the pet): your reference bunny — front, side and back — moving smoothly
+//
+// Three cut-out views of the same soft, realistic bunny. Movement is continuous (60 fps): the body turns toward the mouse with
+// easing, breathes, hops while walking (side view, flipped when going left), wiggles when happy. A soft dark halo keeps it
+// visible on white pages.
+
+@MainActor
+final class AuroraArt {
+    static let shared = AuroraArt()
+    let front: NSImage?, side: NSImage?, back: NSImage?
+    private init() {
+        func load(_ n: String) -> NSImage? {
+            (Bundle.main.url(forResource: n, withExtension: "png", subdirectory: "agents/pet") ?? Bundle.main.url(forResource: n, withExtension: "png")).flatMap(NSImage.init(contentsOf:))
+        }
+        front = load("bunny-front"); side = load("bunny-side"); back = load("bunny-back")
+    }
+    var available: Bool { front != nil && side != nil }
+}
+
+/// Smoothed values kept between frames (a class, so updating them doesn't redraw by itself).
+final class AuroraMotion {
+    var lookX: CGFloat = 0, lookY: CGFloat = 0
+    var facing: CGFloat = 0        // 0 = front … 1 = side
+    var last: TimeInterval = 0
+}
+
+struct AuroraBunnyView: View {
+    var height: CGFloat = 170
+    var mood: Buddy3DMood = .idle
+    var walkLeft = false
+    var followMouse = true
+    @State private var motion = AuroraMotion()
+    @State private var anchor = SpriteAnchor()
+
+    var body: some View {
+        let art = AuroraArt.shared
+        TimelineView(.animation) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            let st = step(t)
+            ZStack(alignment: .bottom) {
+                // ground shadow (shrinks while in the air)
+                Ellipse().fill(Color.black.opacity(0.22 - st.hop * 0.12))
+                    .frame(width: height * 0.42 * (1 - st.hop * 0.35), height: height * 0.06).blur(radius: 3)
+                ZStack {
+                    if let f = art.front {
+                        Image(nsImage: f).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                            .opacity(1 - motion.facing)
+                    }
+                    if let s = art.side {
+                        Image(nsImage: s).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                            .scaleEffect(x: walkLeft ? -1 : 1, y: 1)
+                            .opacity(motion.facing)
+                    }
+                }
+                .frame(height: height)
+                // a soft halo so the white bunny shows on white pages
+                .shadow(color: .black.opacity(0.35), radius: 1.2)
+                .shadow(color: .black.opacity(0.22), radius: 7, y: 3)
+                // turn toward the mouse, breathe, hop
+                .rotation3DEffect(.degrees(Double(motion.lookX) * 22), axis: (x: 0, y: 1, z: 0), anchor: .center, perspective: 0.5)
+                .rotation3DEffect(.degrees(Double(motion.lookY) * 10), axis: (x: 1, y: 0, z: 0), anchor: .bottom, perspective: 0.5)
+                .rotationEffect(.degrees(st.tilt), anchor: .bottom)
+                .scaleEffect(x: st.sx, y: st.sy, anchor: .bottom)
+                .offset(y: -st.hop * height * 0.16)
+            }
+            .frame(height: height * 1.12, alignment: .bottom)
+        }
+        .background(SpriteAnchorReader(anchor: anchor))
+    }
+
+    /// One frame of movement.
+    private func step(_ t: TimeInterval) -> (hop: CGFloat, sx: CGFloat, sy: CGFloat, tilt: Double) {
+        let dt = CGFloat(motion.last == 0 ? 1 / 60 : min(0.05, t - motion.last)); motion.last = t
+        // where to look (eased, no jumps)
+        var tx: CGFloat = 0, ty: CGFloat = 0
+        if followMouse, mood != .walking, let c = anchor.screenCenter {
+            let m = NSEvent.mouseLocation
+            tx = max(-1, min(1, (m.x - c.x) / 420)); ty = max(-1, min(1, (c.y - m.y) / 520)) * -1
+        }
+        let k = min(1, dt * 4.5)
+        motion.lookX += (tx - motion.lookX) * k; motion.lookY += (ty - motion.lookY) * k
+        motion.facing += ((mood == .walking ? 1 : 0) - motion.facing) * min(1, dt * 7)
+        let breathe = sin(t * 2.1)
+        switch mood {
+        case .walking:
+            // little hops: up, then a soft squash on landing
+            let p = (t / 0.42).truncatingRemainder(dividingBy: 1)
+            let hop = CGFloat(sin(p * .pi))
+            let land = CGFloat(max(0, 1 - p * 6))
+            return (hop, 1 + land * 0.05, 1 - land * 0.07 + hop * 0.03, walkLeft ? -4 * Double(hop) : 4 * Double(hop))
+        case .happy:
+            let hop = CGFloat(max(0, sin(t * 9)))
+            return (hop * 0.8, 1, 1 + hop * 0.03, sin(t * 6) * 7)
+        case .speaking:
+            return (0, 1 + CGFloat(breathe) * 0.008, 1 + CGFloat(abs(sin(t * 8))) * 0.02, sin(t * 3) * 2)
+        case .listening:
+            return (0, 1, 1 + CGFloat(breathe) * 0.012, 6)
+        case .working:
+            return (0, 1, 1 + CGFloat(breathe) * 0.01, sin(t * 2.5) * 3)
+        case .idle:
+            return (0, 1 - CGFloat(breathe) * 0.006, 1 + CGFloat(breathe) * 0.014, sin(t * 0.8) * 1.2)
+        }
     }
 }

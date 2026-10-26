@@ -468,7 +468,7 @@ struct ZuffiModePicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                Buddy3DView(kind: .bunny, mood: .happy).frame(width: 70, height: 80)
+                AuroraBunnyView(height: 74, mood: .happy).frame(width: 70, height: 84)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("What's Zuffi for?").font(.system(size: 22, weight: .bold, design: .rounded))
                     Text("I'll show only what you need. You can change this any time in Settings.").font(.system(size: 12)).foregroundColor(.secondary)

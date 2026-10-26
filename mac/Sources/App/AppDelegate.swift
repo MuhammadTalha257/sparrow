@@ -134,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Assistant.start()
         PhoneLink.shared.startIfEnabled()
         AgentStage.shared.start()
+        NotchHang.shared.start()                       // music bars and working agents under the notch
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { ZuffiModeWindow.shared.showIfNeeded() }   // "What's Zuffi for?" once                      // team agents pop up at the bottom of the screen while they work
         BizSync.shared.startIfLinked()
         SetupWizard.shared.showIfFirstRun()

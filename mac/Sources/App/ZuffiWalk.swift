@@ -253,9 +253,9 @@ struct WalkView: View {
                     Ellipse().fill(Color.black.opacity(0.18)).frame(width: 74 * (1 - hop / 120), height: 10).blur(radius: 3).offset(y: 3)
                     Group {
                         if ZuffiLook.shared.kind == .bunny, Buddy3DPrefs.on {
-                            Buddy3DView(kind: .bunny, mood: model.walking ? .walking : (model.answered && !model.cross ? .happy : .idle),
-                                        walkLeft: model.sprite.walkLeft, lookAtMouse: !model.walking)
-                                .frame(width: 170, height: 190)
+                            AuroraBunnyView(height: 150, mood: model.walking ? .walking : (model.answered && !model.cross ? .happy : .idle),
+                                            walkLeft: model.sprite.walkLeft, followMouse: !model.walking)
+                                .frame(width: 170, height: 180)
                         } else if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
                             ZuffiWalker(height: 168, walking: model.walking, facingLeft: model.sprite.walkLeft,
                                         pose: model.answered && !model.cross ? .wave : .stand)

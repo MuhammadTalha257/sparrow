@@ -316,8 +316,8 @@ struct PetView: View {
                 Group {
                     if ZuffiLook.shared.kind == .bunny, Buddy3DPrefs.on {
                         // the 3D bunny: smooth head that follows the mouse, real hops, blinks and ear twitches
-                        Buddy3DView(kind: .bunny, mood: Self.mood3D(model.walking, petPose, BotCanvasView.mood(voice, AppState.shared)), walkLeft: model.walkLeft)
-                            .frame(width: 170, height: 190)
+                        AuroraBunnyView(height: 150, mood: Self.mood3D(model.walking, petPose, BotCanvasView.mood(voice, AppState.shared)), walkLeft: model.walkLeft)
+                            .frame(width: 170, height: 180)
                             .scaleEffect(x: model.sprite.squash.width, y: model.sprite.squash.height, anchor: .bottom)
                             .allowsHitTesting(false)
                     } else if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
