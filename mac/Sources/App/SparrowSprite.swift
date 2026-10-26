@@ -257,7 +257,10 @@ enum Buddy3DKind: Equatable { case bunny; case robot(AgentField) }
 /// "3D pet" switch (Settings): on by default; the drawn bunny is the fallback.
 enum Buddy3DPrefs {
     /// The pet: your Aurora bunny (default) or the classic drawn one.
-    static var on: Bool { (UserDefaults.standard.object(forKey: "petAurora") as? Bool ?? true) && AuroraArt.shared.available }
+    @MainActor static var on: Bool {
+        let want = UserDefaults.standard.object(forKey: "petAurora") as? Bool ?? true
+        return want && AuroraArt.shared.available
+    }
 }
 enum Buddy3DMood: Equatable { case idle, working, speaking, listening, walking, happy }
 

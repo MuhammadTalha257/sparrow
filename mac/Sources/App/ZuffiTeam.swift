@@ -3311,34 +3311,51 @@ final class NotchHang: ObservableObject {
     }
 }
 
+/// Dancing bars shown beside the notch while sound plays.
+struct NotchBars: View {
+    var count = 14
+    var width: CGFloat = 2.5
+    var height: CGFloat = 18
+    private static let ink = LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#B98CFF")], startPoint: .top, endPoint: .bottom)
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 24)) { tl in
+            let t: Double = tl.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(0..<count, id: \.self) { i in
+                    Capsule().fill(Self.ink).frame(width: width, height: barHeight(i, t))
+                }
+            }
+        }
+        .frame(height: height)
+    }
+    private func barHeight(_ i: Int, _ t: Double) -> CGFloat {
+        let speed: Double = 3.1 + Double(i % 5) * 0.9
+        let v: Double = 0.35 + 0.65 * abs(sin(t * speed + Double(i) * 1.3))
+        return CGFloat(4.0 + (Double(height) - 4.0) * v)
+    }
+}
+
 struct NotchHangView: View {
     @ObservedObject private var hang = NotchHang.shared
     @ObservedObject private var team = ZuffiTeam.shared
     var body: some View {
         HStack(spacing: 8) {
-            if hang.audio {
-                TimelineView(.animation(minimumInterval: 1 / 24)) { tl in
-                    let t = tl.date.timeIntervalSinceReferenceDate
-                    HStack(alignment: .top, spacing: 2) {
-                        ForEach(0..<14, id: \.self) { i in
-                            let v = 0.35 + 0.65 * abs(sin(t * (3.1 + Double(i % 5) * 0.9) + Double(i) * 1.3))
-                            Capsule().fill(LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#B98CFF")], startPoint: .top, endPoint: .bottom))
-                                .frame(width: 2.5, height: 4 + 14 * v)
-                        }
-                    }
-                }
-                .frame(height: 20, alignment: .top)
-            }
-            ForEach(hang.working.prefix(6)) { r in
-                if let a = team.agent(r.agent) {
-                    AgentAvatar(agent: a, size: 20).overlay(Circle().stroke(AgentField.of(a).color, lineWidth: 1.5).scaleEffect(1.25).opacity(0.7))
-                        .onTapGesture { MissionControl.shared.show() }
-                        .help("\(a.name): \(r.steps.last?.text ?? r.task)")
-                }
-            }
+            if hang.audio { NotchBars() }
+            ForEach(hang.working.prefix(6)) { r in face(r) }
         }
-        .padding(.horizontal, 10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 1)
+    }
+    @ViewBuilder private func face(_ r: AgentRun) -> some View {
+        if let a = team.agent(r.agent) {
+            let c: Color = AgentField.of(a).color
+            let tip: String = a.name + ": " + (r.steps.last?.text ?? r.task)
+            AgentAvatar(agent: a, size: 20)
+                .overlay(Circle().stroke(c, lineWidth: 1.5).scaleEffect(1.25).opacity(0.7))
+                .onTapGesture { MissionControl.shared.show() }
+                .help(tip)
+        }
     }
 }
 
