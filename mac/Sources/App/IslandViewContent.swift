@@ -861,7 +861,7 @@ struct PromptView: View {
             if !state.chatHistory.isEmpty || thinking { conversation } else {
                 VStack(spacing: 8) {
                     Spacer(minLength: 0)
-                    ZuffiWalker(height: 110, walking: false, pose: listening ? .listen : .stand)
+                    LiveBunnyFace(size: 110, mood: listening ? .listening : nil)
                     Text("Ask me anything — type below or just talk").font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundColor(.white.opacity(0.75))
                     Spacer(minLength: 0)

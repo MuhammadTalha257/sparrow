@@ -351,7 +351,8 @@ struct TalkCard: View {
     var body: some View {
         GlanceCard(tint: "#E2648A") {
             VStack(spacing: 4) {
-                SparrowSpriteView(model: sprite, size: 74, deadZone: 40, mood: listening ? .listening : .idle) { VoiceEngine.shared.listenOnce() }
+                LiveBunnyFace(size: 74, mood: listening ? .listening : nil)
+                    .contentShape(Rectangle()).onTapGesture { VoiceEngine.shared.listenOnce() }
                     .frame(height: 76)
                 Text(listening ? (voice.heard.isEmpty ? "Listening…" : "“\(voice.heard)”") : "Say “Zuffi…”")
                     .font(.system(size: 10.5, weight: .bold, design: .rounded)).lineLimit(2).multilineTextAlignment(.center)
@@ -647,6 +648,20 @@ final class ZuffiHello {
     let model = HelloModel()
 
     func show() {
+        // Only the notch says hi: a small note from Aurora, then it folds away.
+        let name = AssistantPrefs.displayName
+        let st = AppState.shared
+        st.noteIsAlert = false; st.noteAction = nil
+        st.noteMessage = "Zuffi · Aurora\nHi\(name.isEmpty ? "" : " \(name)")! I'm here whenever you need me. Say \u{201C}Hey Zuffi\u{201D} or click the notch."
+        BunnyFaceCenter.shared.show(.happy, for: 5)
+        NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+        SoundEngine.shared.play("greet")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            MainActor.assumeIsolated { if AppState.shared.view == .note { NotificationCenter.default.post(name: .islandCollapse, object: nil) } }
+        }
+    }
+
+    func showOld() {
         let screen = IslandWindowController.notchScreen() ?? NSScreen.main ?? NSScreen.screens[0]
         let size = NSSize(width: 260, height: 300)
         let f = NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height - 34, width: size.width, height: size.height)
@@ -699,11 +714,7 @@ struct HelloView: View {
                 .scaleEffect(model.phase == 1 ? 1 : 0.2, anchor: .bottom)
                 .opacity(model.phase == 1 ? 1 : 0)
             Group {
-                if ZuffiLook.shared.kind == .bunny && ZuffiBodyArt.shared.available {
-                    ZuffiWalker(height: 200, walking: false, pose: .wave)
-                } else {
-                    ZuffiFace(frame: SparrowSprites.shared.available ? SparrowSprites.shared.reactions[8] : nil, size: 150)
-                }
+                Aurora3DView(pose: .happy, lookAtMouse: false).frame(width: 200, height: 210)
             }
             .rotationEffect(.degrees(wave ? 6 : -6), anchor: .bottom)
             .animation(.easeInOut(duration: 0.28).repeatCount(6, autoreverses: true), value: wave)

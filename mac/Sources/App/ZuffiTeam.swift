@@ -285,8 +285,8 @@ final class ZuffiTeam: ObservableObject {
     static let shared = ZuffiTeam()
 
     /// Leads the team: routes each question to the right people, sums up. Always there on the Business plan.
-    static let manager = TeamAgent(id: "zuffi-team-manager", division: "management", name: "Team Manager",
-                                   description: "Leads your AI team: sends each question only to the people who should answer it and brings back one clear answer with next steps.",
+    static let manager = TeamAgent(id: "zuffi-team-manager", division: "management", name: "Nik",
+                                   description: "Nik, your manager, leads your AI team: sends each question only to the people who should answer it and brings back one clear answer with next steps.",
                                    emoji: "🧭", prompt: "")
 
     /// Zuffi's own business agents (the 289 are general specialists; these know Zuffi's own business data).
@@ -1047,6 +1047,17 @@ final class ZuffiTeam: ObservableObject {
         let text = out.joined(separator: "\n\n")
         note(query, text)
         return text
+    }
+
+    /// "Give a task" (notch / dashboard): always team work, never the chat. Nik hands it to the right agent(s).
+    func assignTask(_ q: String) async -> String {
+        if let r = await dispatch(q) { return r }
+        guard ZuffiPlan.shared.isPaid else { return "Your team is part of Zuffi Pro and Business." }
+        let a = (await route(q, among: hiredAgents).first) ?? agent("zuffi-web") ?? Self.manager
+        MissionControl.shared.begin(q, agents: [a.id])
+        let run = await work(a, q)
+        note(q, run.result)
+        return run.result
     }
 
     /// The manager's summary: only what the team said, no new numbers.
@@ -3284,7 +3295,8 @@ final class NotchHang: ObservableObject {
     private func tick() {
         let on = UserDefaults.standard.object(forKey: "notchHang") as? Bool ?? true
         audio = on && Self.soundPlaying()
-        layout(show: on && (audio || !working.isEmpty) && AppState.shared.mode != .expanded)
+        // with the glass wings the closed notch shows this itself; the strip is only for when Zuffi is fully hidden
+        layout(show: on && (audio || !working.isEmpty) && (NotchDesign.on ? AppState.shared.mode == .hidden : AppState.shared.mode != .expanded))
     }
 
     private func layout(show: Bool) {
@@ -3367,11 +3379,22 @@ final class MissionControl: ObservableObject {
     @Published var question = ""
     @Published var agents: [String] = []
     @Published var started = Date.distantPast
+    @Published var result: String?
+
+    /// Give Nik a task: the window opens and the team gets to work (the answer shows here, not in the chat).
+    func assign(_ q: String) {
+        question = q; agents = []; result = nil; started = Date().addingTimeInterval(-1)
+        show()
+        Task { @MainActor in
+            let r = await ZuffiTeam.shared.assignTask(q)
+            MissionControl.shared.result = zClean(r)
+        }
+    }
     private var window: NSWindow?
     var enabled: Bool { UserDefaults.standard.object(forKey: "missionWindow") as? Bool ?? true }
 
     func begin(_ q: String, agents ids: [String]) {
-        question = q; agents = ids; started = Date().addingTimeInterval(-1)
+        question = q; agents = ids; started = Date().addingTimeInterval(-1); result = nil
         BunnyFaceCenter.shared.show(.thinking, for: 3)
         if enabled { show() }
     }
@@ -3379,7 +3402,7 @@ final class MissionControl: ObservableObject {
     func show() {
         if let w = window { w.orderFrontRegardless(); return }
         let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 430), styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
-        w.title = "Zuffi Manager"; w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isReleasedWhenClosed = false
+        w.title = "Nik — your manager"; w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isReleasedWhenClosed = false
         w.isMovableByWindowBackground = true; w.level = .floating; w.hidesOnDeactivate = false
         w.appearance = NSAppearance(named: .darkAqua)
         w.isOpaque = false; w.backgroundColor = .clear
@@ -3396,7 +3419,7 @@ struct MissionView: View {
     private var runs: [AgentRun] { team.runs.filter { $0.started >= mc.started && mc.agents.contains($0.agent) } }
     var body: some View {
         let rs = runs
-        let done = !rs.isEmpty && rs.allSatisfy { $0.status != "Working" }
+        let done = mc.result != nil || (!rs.isEmpty && rs.allSatisfy { $0.status != "Working" })
         ZStack {
             VisualEffectBlur().overlay(LinearGradient(colors: [Color(hex: "#0B1020").opacity(0.75), Color(hex: "#151A2E").opacity(0.6)], startPoint: .top, endPoint: .bottom))
             VStack(spacing: 10) {
@@ -3404,9 +3427,9 @@ struct MissionView: View {
                 HStack(spacing: 12) {
                     Buddy3DView(kind: .robot(.manager), mood: done ? .happy : .speaking).frame(width: 74, height: 84)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Zuffi Manager").font(.system(size: 15, weight: .bold, design: .rounded))
+                        Text("Nik · your manager").font(.system(size: 15, weight: .bold, design: .rounded))
                         Text("“\(mc.question.prefix(140))”").font(.system(size: 12)).foregroundColor(.white.opacity(0.8)).lineLimit(2)
-                        Text(done ? "All done — the answers are in your chat." : "I gave this to " + mc.agents.compactMap { team.agent($0)?.name }.joined(separator: ", ") + ".")
+                        Text(done ? "All done — here's what the team found." : mc.agents.isEmpty ? "Choosing who should do this…" : "I gave this to " + mc.agents.compactMap { team.agent($0)?.name }.joined(separator: ", ") + ".")
                             .font(.system(size: 11.5, weight: .semibold)).foregroundColor(done ? Color(hex: "#3FC48C") : Color(hex: "#F5B963"))
                     }
                     Spacer()
@@ -3448,6 +3471,18 @@ struct MissionView: View {
                             .overlay(RoundedRectangle(cornerRadius: 14).stroke(AgentField.of(a).color.opacity(0.45)))
                         }
                     }
+                }
+                if mc.agents.isEmpty && mc.result == nil {
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Nik is reading your task…").font(.system(size: 12.5)).foregroundColor(.white.opacity(0.8)) }
+                        .padding(.top, 10)
+                }
+                if let r = mc.result {
+                    ScrollView {
+                        Text(r).font(.system(size: 12.5)).foregroundColor(.white.opacity(0.92)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(12).frame(maxHeight: 150)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
                 }
                 Spacer(minLength: 0)
             }

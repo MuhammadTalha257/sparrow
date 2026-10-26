@@ -138,9 +138,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PhoneLink.shared.startIfEnabled()
         AgentStage.shared.start()
         NotchHang.shared.start()                       // music bars and working agents under the notch
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { ZuffiModeWindow.shared.showIfNeeded() }   // "What's Zuffi for?" once                      // team agents pop up at the bottom of the screen while they work
+        // At start only the notch says hi — the "What's Zuffi for?" choice and the first-run setup wait until you open the dashboard.
         BizSync.shared.startIfLinked()
-        SetupWizard.shared.showIfFirstRun()
         WebHub.shared.start()
         NativeSpeech.shared.start()
         HoldToTalk.start()
@@ -156,14 +155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Old "Sparrow" permission entries → fresh "Zuffi" ones (once)
         if SetupWizard.done { Task { await ScreenAgent.migrateFromSparrowOnce() } }
         // The bunny pops out and says hey, then the island opens with its tabs
-        if UserDefaults.standard.object(forKey: "helloOnOpen") as? Bool ?? true, SetupWizard.done {
+        if UserDefaults.standard.object(forKey: "helloOnOpen") as? Bool ?? true {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { ZuffiHello.shared.show() }
         }
-        // Pet mode: bring the bunny back if it was on screen last time
-        if UserDefaults.standard.bool(forKey: "petVisible") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                PetController.shared.show(); self?.updatePetMenuTitle()
-            }
-        }
+        // (the pet stays away at start — "Show pet" in the notch brings Aurora)
     }
 }

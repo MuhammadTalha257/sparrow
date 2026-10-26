@@ -81,23 +81,26 @@ enum SpeedToLead {
     private static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; return f }()
 
     static func check() {
-        guard !ZuffiPlan.shared.isPersonal, ZuffiPlan.shared.isBusiness else { return }   // business alerts only for a business
+        guard !ZuffiPlan.shared.isPersonal, ZuffiPlan.shared.isBusiness, ZuffiFocus.whatsapp else { return }   // business + WhatsApp only
         let now = Date()
         for l in ZuffiCRM.shared.leads where l.stage == "New" {
             guard let at = fmt.date(from: l.lastMessageAt) else { continue }
             let mins = Int(now.timeIntervalSince(at) / 60)
-            guard mins >= 5, mins < 24 * 60 else { continue }
+            guard mins >= 5, mins < 60 else { continue }      // only fresh messages — never "waited 1157 min" after a restart
             if !l.lastContact.isEmpty, l.lastContact >= String(l.lastMessageAt.prefix(10)), l.status != "New" { continue }
             let stage = mins >= 15 ? 15 : 5
             let key = l.key + "|" + l.lastMessageAt
             if (told[key] ?? 0) >= stage { continue }
+            let seenKey = "speedToLead." + key + "." + String(stage)
+            if UserDefaults.standard.bool(forKey: seenKey) { continue }   // already told (even before a restart)
+            UserDefaults.standard.set(true, forKey: seenKey)
             told[key] = stage
             // Notch layout: "from" line (green) · message · card ("✓ title — detail")
             let msg = "WhatsApp · \(l.display)\n" + (stage == 15 ? "Has waited \(mins) min — reply now or they'll go elsewhere." : "Is waiting for your reply (\(mins) min).")
                 + "\n✓ Reply now — Business → Inbox"
             AppState.shared.noteMessage = msg
+            NotchInbox.shared.add("WhatsApp · \(l.display)", "Waiting for your reply (\(mins) min)", icon: "message.fill", action: "whatsapp")
             NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
-            NotificationCenter.default.post(name: .petSay, object: msg)
         }
         if told.count > 400 { told.removeAll() }
     }

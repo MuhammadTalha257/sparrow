@@ -397,7 +397,7 @@ struct ZuffiHomePanel: View {
                     VStack(spacing: 6) {
                         // the little bunny head that follows your cursor
                         Group {
-                            if BunnyFaceCenter.on {
+                            if true {
                                 LiveBunnyFace(size: room.on ? 60 : 96)
                                     .contentShape(Rectangle()).onTapGesture { VoiceEngine.shared.listenOnce() }
                             } else {
@@ -646,25 +646,13 @@ struct ZuffiQuickSettings: View {
                 Button { ZuffiModeWindow.shared.show() } label: {
                     NotchListRowLabel(icon: "person.2.fill", tint: "#F59E3B", title: "Zuffi is for: \(ZuffiPlan.shared.mode?.title ?? "not chosen")", sub: "Personal assistant, business, freelancer, company or creator — change")
                 }.buttonStyle(.plain)
-                row("face.smiling", "Aurora\u{2019}s face on the notch", on: Binding(get: { BunnyFaceCenter.on }, set: { UserDefaults.standard.set($0, forKey: "bunnyFace") }))
-                row("cube.transparent", "3D fluffy Aurora (turn off for the picture bunny)", on: Binding(get: { Aurora3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "petAurora3D"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
-                row("hare.fill", "New soft bunny pet (turn off for the classic one)", on: Binding(get: { Buddy3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "petAurora"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
                 row("waveform", "Music bars & working agents under the notch", on: Binding(get: { UserDefaults.standard.object(forKey: "notchHang") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "notchHang") }))
                 row("rectangle.connected.to.line.below", "Show the Manager window when tasks are given out", on: Binding(get: { MissionControl.shared.enabled }, set: { UserDefaults.standard.set($0, forKey: "missionWindow") }))
                 row("person.3.sequence.fill", "Show AI agents on screen while they work", on: Binding(get: { AgentStage.shared.enabled }, set: { AgentStage.shared.enabled = $0 }))
                 row("eye.slash.fill", "Never show the pet on screen", on: Binding(get: { ZuffiWalk.petNever }, set: { UserDefaults.standard.set($0, forKey: "petNever"); if $0 { PetController.shared.hide() } }))
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Fur colour").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.6))
-                    HStack(spacing: 6) {
-                        ForEach(ZuffiLook.furs) { f in
-                            Circle().fill(Color(hex: f.multiply)).frame(width: 20, height: 20)
-                                .overlay(Circle().stroke(look.fur == f.id ? Color(hex: "#F7C948") : Color.white.opacity(0.25), lineWidth: look.fur == f.id ? 2 : 0.6))
-                                .onTapGesture { look.kind = .bunny; look.fur = f.id }.help(f.name)
-                        }
-                    }
-                }
-                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial).opacity(0.8))
+                AuroraColorPicker()
+                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial).opacity(0.8))
                 homeButtons
                 HStack(spacing: 6) {
                     pill("clock.arrow.circlepath", "History") { ZuffiNav.go(.history) }
@@ -742,9 +730,8 @@ struct ZuffiMini: View {
     var height: CGFloat
     var body: some View {
         let listening = voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk)
-        SparrowSpriteView(model: sprite, size: height, deadZone: 20,
-                          mood: listening ? .listening : voice.speaking ? .speaking : state.stateOverride != nil ? .thinking : .idle)
-            .allowsHitTesting(false)
+        let _ = listening
+        LiveBunnyFace(size: height)
     }
 }
 
@@ -1109,7 +1096,10 @@ struct NotchHomeView: View {
                             .overlay(Circle().stroke(Color(hex: "#121318"), lineWidth: 2))
                     }
                 }
-                Button { askFocus = true; if !ask.isEmpty { send() } } label: {
+                Button {
+                    let q = ask.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if q.isEmpty { askFocus = true } else { ask = ""; MissionControl.shared.assign(q) }
+                } label: {
                     Text("Give a task").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#111111"))
                         .frame(maxWidth: .infinity).frame(height: 34)
                         .background(Capsule().fill(Color.white))
@@ -1245,5 +1235,30 @@ struct CompactWings: View {
         }
         .frame(width: width, height: height)
         .allowsHitTesting(false)
+    }
+}
+
+/// Aurora's fur colour: a few ready colours, or any colour you like.
+struct AuroraColorPicker: View {
+    @State private var hex = AuroraColor.hex
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Aurora's colour").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.65))
+            HStack(spacing: 8) {
+                ForEach(AuroraColor.presets, id: \.hex) { c in
+                    Button { set(c.hex) } label: {
+                        Circle().fill(Color(hex: c.hex)).frame(width: 22, height: 22)
+                            .overlay(Circle().stroke(hex.lowercased() == c.hex.lowercased() ? Color(hex: "#3A6DF0") : Color.white.opacity(0.3), lineWidth: hex.lowercased() == c.hex.lowercased() ? 2.5 : 0.8))
+                    }.buttonStyle(.plain).help(c.name)
+                }
+                ColorPicker("", selection: Binding(get: { Color(hex: hex) }, set: { c in
+                    if let n = NSColor(c).usingColorSpace(.sRGB) { set(String(format: "#%02X%02X%02X", Int(n.redComponent * 255), Int(n.greenComponent * 255), Int(n.blueComponent * 255))) }
+                }), supportsOpacity: false).labelsHidden().help("Any colour")
+            }
+        }
+    }
+    private func set(_ h: String) {
+        hex = h; AuroraColor.hex = h
+        if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) }
     }
 }

@@ -314,7 +314,7 @@ struct PetView: View {
                 Ellipse().fill(Color.black.opacity(0.22))
                     .frame(width: 74, height: 10).blur(radius: 3).offset(y: 80)
                 Group {
-                    if ZuffiLook.shared.kind == .bunny, Aurora3DPrefs.on {
+                    if Aurora3DPrefs.on {
                         // the fluffy 3D Aurora: turns, hops, sits upright, gets cross when you ignore her
                         Aurora3DView(pose: model.angry ? .cross : AuroraPose.from(Self.mood3D(model.walking, petPose, BotCanvasView.mood(voice, AppState.shared))), faceLeft: model.walkLeft)
                             .frame(width: 170, height: 190)

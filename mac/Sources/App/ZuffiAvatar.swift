@@ -370,11 +370,7 @@ struct ZuffiLookSettings: View {
     private var preview: some View {
         ZStack {
             Circle().fill(Color(hex: "#FBE3EB")).frame(width: 78, height: 78)
-            if look.kind == .bunny && ZuffiBodyArt.shared.available {
-                ZuffiWalker(height: 74, walking: false)
-            } else {
-                ZuffiFace(frame: SparrowSprites.shared.directions.count == 9 ? SparrowSprites.shared.directions[4] : nil, size: 70)
-            }
+            LiveBunnyFace(size: 70)
         }
         .frame(width: 80, height: 80)
     }

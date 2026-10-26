@@ -23,7 +23,7 @@ struct UploadCanvasView: View {
                 .frame(width: 640, height: 176)
 
                 // Zuffi the bunny (the same face as everywhere else), moving like the old drawn character
-                SparrowSpriteView(model: bunny, size: CGFloat(f.d) * 1.25, deadZone: 40, mood: .idle)
+                LiveBunnyFace(size: CGFloat(f.d) * 1.25, mood: .happy)
                     .frame(width: CGFloat(f.d) * 1.3, height: CGFloat(f.d) * 1.3)
                     .scaleEffect(x: CGFloat(f.sx), y: CGFloat(f.sy))
                     .rotationEffect(.radians(f.tilt))

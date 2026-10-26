@@ -80,6 +80,21 @@ struct IslandContainer: View {
                 .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.26)],
                                                      startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
+            } else if state.mode == .compact && NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
+                // closed: glass wings either side, black right behind the camera so it melts into the notch
+                ZStack {
+                    VisualEffectBlur(material: .fullScreenUI)
+                    LinearGradient(stops: [
+                        .init(color: Color(hex: "#1E2030").opacity(0.42), location: 0),
+                        .init(color: Color(hex: "#1E2030").opacity(0.42), location: max(0, 0.5 - state.notchWidth / 2 / max(1, islandWidth))),
+                        .init(color: .black, location: max(0, 0.5 - state.notchWidth / 2 / max(1, islandWidth))),
+                        .init(color: .black, location: min(1, 0.5 + state.notchWidth / 2 / max(1, islandWidth))),
+                        .init(color: Color(hex: "#1E2030").opacity(0.42), location: min(1, 0.5 + state.notchWidth / 2 / max(1, islandWidth))),
+                        .init(color: Color(hex: "#1E2030").opacity(0.42), location: 1),
+                    ], startPoint: .leading, endPoint: .trailing)
+                }
+                .clipShape(shape)
+                .overlay(shape.stroke(Color.white.opacity(0.18), lineWidth: 0.8))
             } else {
                 shape.fill(Color.black)
             }
@@ -144,6 +159,9 @@ struct IslandContainer: View {
 
             // Closed: drag the little pill anywhere — drop it at the left or right edge to park it there.
             if state.mode == .compact {
+                if NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
+                    CompactWings(state: state, width: islandWidth, height: islandHeight, notch: state.notchWidth)
+                }
                 Color.clear.frame(width: islandWidth, height: islandHeight)
                     .contentShape(Rectangle())
                     .movesIsland()
@@ -356,6 +374,8 @@ struct BotPlacement: View {
                         .position(x: uploadCx, y: cy)
                 }
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
+            } else if state.mode == .compact && NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
+                EmptyView()          // the glass wings draw Aurora beside the camera
             } else if state.mode == .compact {
                 // Closed: one bunny face, centred under the notch, watching the cursor.
                 ZuffiMini(state: state, height: IslandDock.docked ? 38 : 36)

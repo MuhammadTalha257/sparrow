@@ -2313,6 +2313,10 @@ final class ZuffiHub: ObservableObject {
 
     func show(_ s: HubSection? = nil) {
         if let s { section = s }
+        // first time: the setup and "What's Zuffi for?" come here, not at start
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            MainActor.assumeIsolated { SetupWizard.shared.showIfFirstRun(); ZuffiModeWindow.shared.showIfNeeded() }
+        }
         if case .biz = section { ZuffiCRM.shared.reload() }
         if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
@@ -2422,7 +2426,7 @@ struct ZuffiHubView: View {
         HStack(spacing: 0) {
             Color.clear.frame(width: 70, height: 1)          // room for the window buttons
             HStack(spacing: 8) {
-                BunnyFaceView(mood: .smile, size: 30)
+                LiveBunnyFace(size: 32)
                 Text("Zuffi").font(.system(size: 15, weight: .bold, design: .rounded))
             }
             .padding(.trailing, 26)
@@ -2545,7 +2549,7 @@ struct ZuffiHubView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
                         LiveBunnyFace(size: 44).background(Circle().fill(Color.white.opacity(0.9)).frame(width: 50, height: 50))
-                        Text("Zuffi Manager").font(.system(size: 18, weight: .semibold))
+                        Text("Nik, your manager").font(.system(size: 18, weight: .semibold))
                     }
                     Text("Give me any job. I'll pick the right agent, show you every step, and ask you before anything is paid, sent or posted.")
                         .font(.system(size: 14)).foregroundColor(Color(hex: "#FFF7F2")).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
@@ -2558,7 +2562,7 @@ struct ZuffiHubView: View {
                 Spacer(minLength: 10)
                 Group {
                     if Aurora3DPrefs.on { Aurora3DView(pose: .sit, lookAtMouse: true).frame(width: 170, height: 170) }
-                    else { BunnyFaceView(mood: .happy, size: 130) }
+                    else { LiveBunnyFace(size: 130, mood: .happy) }
                 }
                 .allowsHitTesting(false)
             }
@@ -2683,6 +2687,6 @@ struct ZuffiHubView: View {
         guard !q.isEmpty else { return }
         hub.asking = false; task = ""
         // the chat shows the answer; the Manager window shows who is doing what
-        ZuffiChat.shared.ask(q)
+        MissionControl.shared.assign(q)
     }
 }

@@ -221,7 +221,7 @@ struct WalkView: View {
     private let ink = Color(hex: "#0C0C0C")
 
     var body: some View {
-        if ZuffiLook.shared.kind == .bunny, Aurora3DPrefs.on {
+        if Aurora3DPrefs.on {
             Walk3DView(model: model)
         } else {
             classic
@@ -373,7 +373,7 @@ struct Walk3DView: View {
             Spacer(minLength: 0)
             // what she says
             if let b = model.bubble {
-                SpeechBubble(fill: model.cross ? Color(hex: "#C2483F") : Color(hex: "#2E9D6A"), border: .clear) {
+                SpeechBubble(fill: model.tip != nil ? Color(hex: "#C2483F") : Color(hex: "#2E9D6A"), border: .clear) {
                     Text(b).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(.white)
                         .padding(.horizontal, 16).padding(.vertical, 9)
                 }
