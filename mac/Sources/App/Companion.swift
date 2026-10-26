@@ -314,7 +314,13 @@ struct PetView: View {
                 Ellipse().fill(Color.black.opacity(0.22))
                     .frame(width: 74, height: 10).blur(radius: 3).offset(y: 80)
                 Group {
-                    if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
+                    if ZuffiLook.shared.kind == .bunny, Buddy3DPrefs.on {
+                        // the 3D bunny: smooth head that follows the mouse, real hops, blinks and ear twitches
+                        Buddy3DView(kind: .bunny, mood: Self.mood3D(model.walking, petPose, BotCanvasView.mood(voice, AppState.shared)), walkLeft: model.walkLeft)
+                            .frame(width: 170, height: 190)
+                            .scaleEffect(x: model.sprite.squash.width, y: model.sprite.squash.height, anchor: .bottom)
+                            .allowsHitTesting(false)
+                    } else if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
                         // the whole bunny, always — walks on its feet, cups its ear when listening, waves on a click
                         ZuffiWalker(height: 168, walking: model.walking, facingLeft: model.walkLeft, pose: petPose)
                             .scaleEffect(x: model.sprite.squash.width, y: model.sprite.squash.height, anchor: .bottom)
@@ -384,6 +390,12 @@ struct PetView: View {
     }
 
     @State private var waveUntil = Date.distantPast
+    static func mood3D(_ walking: Bool, _ pose: ZuffiPose, _ m: SpriteMood) -> Buddy3DMood {
+        if walking { return .walking }
+        if pose == .wave { return .happy }
+        switch m { case .listening: return .listening; case .speaking: return .speaking; case .thinking: return .working; case .walking: return .walking; case .idle: return .idle }
+    }
+
     private var petPose: ZuffiPose {
         if voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) { return .listen }
         if model.reaching { return .listen }

@@ -2270,7 +2270,9 @@ struct AgentBuddyCard: View {
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: "#12141B").opacity(0.94)))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(f.color.opacity(0.55), lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
-            AgentRobot(field: f, working: working, done: run.status == "Done").frame(width: 92, height: 104)
+            Buddy3DView(kind: .robot(f), mood: working ? .working : run.status == "Done" ? .happy : .idle, lookAtMouse: true)
+                .frame(width: 120, height: 130)
+                .overlay(Color.white.opacity(0.001))
                 .onTapGesture { AgentStage.shared.keep(run.id); AgentStage.shared.open(agent) }
                 .scaleEffect(hover ? 1.06 : 1).onHover { hover = $0 }.animation(.spring(), value: hover)
             Text(agent.name).font(.system(size: 10, weight: .bold)).foregroundColor(.white)

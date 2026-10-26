@@ -252,7 +252,11 @@ struct WalkView: View {
                 ZStack(alignment: .bottom) {
                     Ellipse().fill(Color.black.opacity(0.18)).frame(width: 74 * (1 - hop / 120), height: 10).blur(radius: 3).offset(y: 3)
                     Group {
-                        if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
+                        if ZuffiLook.shared.kind == .bunny, Buddy3DPrefs.on {
+                            Buddy3DView(kind: .bunny, mood: model.walking ? .walking : (model.answered && !model.cross ? .happy : .idle),
+                                        walkLeft: model.sprite.walkLeft, lookAtMouse: !model.walking)
+                                .frame(width: 170, height: 190)
+                        } else if ZuffiBodyArt.shared.available || ZuffiLook.shared.kind != .bunny {
                             ZuffiWalker(height: 168, walking: model.walking, facingLeft: model.sprite.walkLeft,
                                         pose: model.answered && !model.cross ? .wave : .stand)
                         } else {

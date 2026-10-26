@@ -634,6 +634,7 @@ struct ZuffiQuickSettings: View {
                     row("figure.walk", "Zuffi on screen (pet)", on: Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
                     row("bell.and.waves.left.and.right", "The pet brings reminders (water, meetings…)", on: Binding(get: { ZuffiWalk.petBringsReminders }, set: { UserDefaults.standard.set($0, forKey: "petReminders") }))
                 }
+                row("cube.fill", "3D pet (smooth, looks at your mouse)", on: Binding(get: { Buddy3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "pet3D"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
                 row("person.3.sequence.fill", "Show AI agents on screen while they work", on: Binding(get: { AgentStage.shared.enabled }, set: { AgentStage.shared.enabled = $0 }))
                 row("eye.slash.fill", "Never show the pet on screen", on: Binding(get: { ZuffiWalk.petNever }, set: { UserDefaults.standard.set($0, forKey: "petNever"); if $0 { PetController.shared.hide() } }))
                 VStack(alignment: .leading, spacing: 6) {
