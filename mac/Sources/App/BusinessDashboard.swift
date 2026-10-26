@@ -2319,7 +2319,7 @@ final class ZuffiHub: ObservableObject {
         }
         if case .biz = section { ZuffiCRM.shared.reload() }
         if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1250, height: 820),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                          backing: .buffered, defer: false)
         w.title = "Zuffi"
@@ -2328,9 +2328,8 @@ final class ZuffiHub: ObservableObject {
         w.isReleasedWhenClosed = false
         w.isOpaque = false
         w.backgroundColor = .clear
-        w.appearance = NSAppearance(named: .darkAqua)
-        w.contentMinSize = NSSize(width: 940, height: 620)
-        w.contentView = NSHostingView(rootView: ZuffiHubView().preferredColorScheme(.dark))
+        w.contentMinSize = NSSize(width: 980, height: 640)
+        w.contentView = NSHostingView(rootView: ZuffiHubView())
         w.center()
         w.setFrameAutosaveName("ZuffiHubWindow")
         window = w
@@ -2370,14 +2369,41 @@ struct BizPageView: View {
     }
 }
 
-private enum Hub {
-    static let accent = Color(hex: "#3A6DF0")
-    static let line = Color(red: 113 / 255, green: 119 / 255, blue: 144 / 255).opacity(0.25)
-    static let text = Color(hex: "#F9FAFB")
-    static let muted = Color(hex: "#A6AAB9")
-    static let content = Color(red: 146 / 255, green: 151 / 255, blue: 179 / 255).opacity(0.13)
-    static let search = Color(hex: "#14162B").opacity(0.85)
-    static let hover = Color(red: 12 / 255, green: 15 / 255, blue: 25 / 255).opacity(0.35)
+// The look of your dashboard code: frosted glass, Poppins, blue #3A6DF0, a light/dark switch.
+@MainActor
+enum HubFont {
+    private static var done = false
+    static func register() {
+        guard !done else { return }; done = true
+        for n in ["Poppins-Regular", "Poppins-Medium", "Poppins-SemiBold"] {
+            if let u = Bundle.main.url(forResource: n, withExtension: "ttf", subdirectory: "agents/fonts") { CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil) }
+        }
+    }
+    static func p(_ size: CGFloat, _ w: Font.Weight = .medium) -> Font {
+        let name = w == .semibold || w == .bold ? "Poppins-SemiBold" : w == .regular ? "Poppins-Regular" : "Poppins-Medium"
+        return NSFont(name: name, size: size) != nil ? .custom(name, size: size) : .system(size: size, weight: w)
+    }
+}
+
+struct HubTheme {
+    let light: Bool
+    var app: Color { light ? Color.white.opacity(0.31) : Color(red: 16 / 255, green: 18 / 255, blue: 27 / 255).opacity(0.40) }
+    var border: Color { light ? Color.white.opacity(0.35) : Color(red: 113 / 255, green: 119 / 255, blue: 144 / 255).opacity(0.25) }
+    var text: Color { light ? Color(hex: "#3C3A3A") : Color(hex: "#F9FAFB") }
+    var inactive: Color { light ? Color(hex: "#333333") : Color(red: 113 / 255, green: 119 / 255, blue: 144 / 255).opacity(0.78) }
+    var hover: Color { light ? Color.white.opacity(0.35) : Color(red: 12 / 255, green: 15 / 255, blue: 25 / 255).opacity(0.30) }
+    var title: Color { light ? Color(hex: "#3C3A3A") : Color(hex: "#999BA5") }
+    var content: Color { Color(red: 146 / 255, green: 151 / 255, blue: 179 / 255).opacity(0.13) }
+    var buttonInactive: Color { light ? Color(hex: "#3C3A3A") : Color(hex: "#F9FAFB").opacity(0.55) }
+    var dropdown: Color { light ? Color(hex: "#F7F7F7") : Color(hex: "#21242D") }
+    var popup: Color { light ? .white : Color(red: 22 / 255, green: 25 / 255, blue: 37 / 255) }
+    var search: Color { light ? Color.white.opacity(0.31) : Color(hex: "#14162B") }
+    static let blue = Color(hex: "#3A6DF0")
+    static let green = Color(hex: "#3BF083")
+}
+
+enum HubPage: Hashable {
+    case home, team, missions, routines, settings, biz(BizTab)
 }
 
 struct ZuffiHubView: View {
@@ -2386,307 +2412,557 @@ struct ZuffiHubView: View {
     @ObservedObject private var nav = BizNav.shared
     @ObservedObject private var crm = ZuffiCRM.shared
     @ObservedObject private var plan = ZuffiPlan.shared
+    @AppStorage("hubLight") private var light = false
+    @State private var sub: [String: String] = [:]
     @State private var search = ""
     @State private var task = ""
+    @State private var askBefore = true
+    @State private var showNik = true
+    @State private var menuFor: String?
 
+    private var T: HubTheme { HubTheme(light: light) }
+    private var agents: [TeamAgent] { team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents }
     private var bizTabs: [BizTab] {
         BizTab.allCases.filter { !ZuffiFocus.hiddenBizTabs.contains($0.rawValue) && ($0 != .properties || crm.isEstate) && ($0 != .team || crm.kind != .freelancer) && $0 != .aiTeam }
     }
-    private var topTabs: [HubSection] {
-        var t: [HubSection] = [.home, .team, .missions]
-        if hub.showsBusiness { if bizTabs.contains(.inbox) { t.append(.biz(.inbox)) }; if bizTabs.contains(.money) { t.append(.biz(.money)) } }
-        t.append(.settings)
-        return t
+    private var page: HubPage {
+        switch hub.section {
+        case .home: return .home
+        case .team: return .team
+        case .missions: return .missions
+        case .routines: return .routines
+        case .settings: return .settings
+        case .biz(let t): return .biz(t)
+        }
     }
 
     var body: some View {
         ZStack {
-            VisualEffectBlur(material: .underWindowBackground).ignoresSafeArea()
-            LinearGradient(colors: [Color(hex: "#10121B").opacity(0.55), Color(hex: "#151827").opacity(0.45)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            VisualEffectBlur(material: .fullScreenUI).ignoresSafeArea()
+            (light ? LinearGradient(colors: [Color.white.opacity(0.72), Color.white.opacity(0.45)], startPoint: .top, endPoint: .bottom)
+                   : LinearGradient(colors: [Color(hex: "#0B0D16").opacity(0.35), Color(hex: "#0B0D16").opacity(0.35)], startPoint: .top, endPoint: .bottom)).ignoresSafeArea()
             VStack(spacing: 0) {
                 header
                 HStack(spacing: 0) {
-                    sidebar.frame(width: 240)
-                        .overlay(alignment: .trailing) { Rectangle().fill(Hub.line).frame(width: 1) }
+                    leftSide
                     VStack(spacing: 0) {
-                        subHeader
-                        page.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        mainHeader
+                        ScrollView { content.padding(.horizontal, 40).padding(.vertical, 20) }
+                            .background(T.app)
                     }
                 }
             }
-            if hub.asking { askSheet.transition(.opacity) }
+            .background(T.app)
+            if hub.asking { popup }
+            VStack { Spacer(); HStack { Spacer(); darkLight } }.padding(.trailing, 30).padding(.bottom, 50)
         }
-        .foregroundColor(Hub.text)
-        .animation(.easeInOut(duration: 0.2), value: hub.section)
-        .animation(.easeInOut(duration: 0.2), value: hub.asking)
+        .foregroundColor(T.text)
+        .font(HubFont.p(15))
+        .onAppear { HubFont.register() }
+        .preferredColorScheme(light ? .light : .dark)
     }
 
-    // MARK: top bar
+    // MARK: header (window dots are the real ones, top-left)
     private var header: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: 70, height: 1)          // room for the window buttons
-            HStack(spacing: 8) {
-                LiveBunnyFace(size: 32)
-                Text("Zuffi").font(.system(size: 15, weight: .bold, design: .rounded))
-            }
-            .padding(.trailing, 26)
-            ForEach(topTabs, id: \.self) { s in
-                Button { hub.section = s } label: {
-                    Text(s.title).font(.system(size: 14, weight: .medium))
-                        .foregroundColor(hub.section == s ? Hub.text : Hub.muted)
-                        .padding(.horizontal, 18).frame(height: 58)
-                        .overlay(alignment: .bottom) { Rectangle().fill(hub.section == s ? Hub.text : .clear).frame(height: 2) }
+            Color.clear.frame(width: 80, height: 1)
+            HStack(spacing: 10) {
+                LiveBunnyFace(size: 30)
+                Text("Zuffi").font(HubFont.p(16, .semibold))
+            }.padding(.trailing, 40)
+            ForEach(topLinks, id: \.0) { l in
+                Button { hub.section = l.1 } label: {
+                    Text(l.0).font(HubFont.p(15)).foregroundColor(isTop(l.1) ? T.text : T.inactive)
+                        .padding(.horizontal, 26).frame(height: 58)
+                        .overlay(alignment: .bottom) { Rectangle().fill(isTop(l.1) ? T.text : .clear).frame(height: 2) }
+                        .overlay(alignment: .topTrailing) { if l.2 { Circle().fill(HubTheme.blue).frame(width: 6, height: 6).offset(x: -16, y: 16) } }
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .semibold)).foregroundColor(Hub.muted)
-                TextField("Search", text: $search).textFieldStyle(.plain).font(.system(size: 14))
-                    .onSubmit { if !search.isEmpty { ZuffiChat.shared.open(prefill: search); search = "" } }
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundColor(T.inactive)
+                TextField("Search", text: $search).textFieldStyle(.plain).font(HubFont.p(15))
+                    .onSubmit { let q = search; search = ""; if !q.isEmpty { ZuffiChat.shared.open(prefill: q) } }
             }
-            .padding(.horizontal, 14).frame(height: 38).frame(maxWidth: 320)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Hub.search))
+            .padding(.horizontal, 16).frame(height: 40).frame(maxWidth: 400)
+            .background(RoundedRectangle(cornerRadius: 4).fill(T.search))
             .padding(.leading, 16)
-            Spacer(minLength: 12)
-            Button { ZuffiChat.shared.open() } label: {
-                Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 16)).foregroundColor(Hub.text)
-            }.buttonStyle(.plain).help("Chat with Zuffi")
-            Text(String(AssistantPrefs.displayName.prefix(1)).uppercased().isEmpty ? "Z" : String(AssistantPrefs.displayName.prefix(1)).uppercased())
-                .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                .frame(width: 32, height: 32).background(Circle().fill(Hub.accent)).overlay(Circle().stroke(Hub.text, lineWidth: 2))
-                .padding(.leading, 18).padding(.trailing, 24)
+            Spacer(minLength: 16)
+            HStack(spacing: 22) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "bell.fill").font(.system(size: 19)).foregroundColor(T.text)
+                    if NotchInbox.shared.notes.count > 0 {
+                        Text("\(min(9, NotchInbox.shared.notes.count))").font(.system(size: 10, weight: .semibold)).foregroundColor(.white)
+                            .frame(width: 16, height: 16).background(Circle().fill(HubTheme.blue)).offset(x: 6, y: -6)
+                    }
+                }
+                .onTapGesture { NotificationCenter.default.post(name: .hookExpand, object: IslandView.overview) }
+                .help("Notifications (opens the notch)")
+                let initial = String(AssistantPrefs.displayName.prefix(1)).uppercased()
+                Text(initial.isEmpty ? "Z" : initial).font(HubFont.p(13, .semibold)).foregroundColor(.white)
+                    .frame(width: 32, height: 32).background(Circle().fill(HubTheme.blue))
+                    .overlay(Circle().stroke(T.text, lineWidth: 2))
+            }
+            .padding(.leading, 40).padding(.trailing, 30)
         }
         .frame(height: 58)
-        .overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
+    }
+    private var topLinks: [(String, HubSection, Bool)] {
+        var l: [(String, HubSection, Bool)] = [("Home", .home, false), ("Team", .team, team.runs.contains { $0.status == "Working" }), ("Missions", .missions, false)]
+        if hub.showsBusiness { l.append(("Business", .biz(bizTabs.first ?? .today), !NotchInbox.shared.notes.isEmpty)) }
+        l.append(("Settings", .settings, false))
+        return l
+    }
+    private func isTop(_ s: HubSection) -> Bool {
+        if case .biz = s, case .biz = hub.section { return true }
+        return s == hub.section
     }
 
-    // MARK: side menu
-    private var sidebar: some View {
+    // MARK: left side
+    private var leftSide: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
-                group("Zuffi") {
-                    row("Home", "house", .home)
-                    Button { ZuffiChat.shared.open() } label: { rowLabel("Chat", "bubble.left", Hub.text, active: false) }.buttonStyle(.plain)
-                    row("Missions", "flag", .missions, badge: team.runs.filter { $0.status == "Working" }.count)
-                    row("Routines", "clock", .routines)
+            VStack(alignment: .leading, spacing: 20) {
+                side("Zuffi") {
+                    sideLink("square.grid.2x2.fill", "Home", .home)
+                    sideLink("flag.fill", "Missions", .missions, badge: team.runs.filter { $0.status == "Working" }.count)
+                    sideLink("clock.fill", "Routines", .routines)
+                    Button { ZuffiChat.shared.open() } label: { sideLabel("bubble.left.fill", "Chat", active: false) }.buttonStyle(.plain)
                 }
-                group("Your team") {
-                    ForEach(Array(teamAgents.prefix(6))) { a in
+                side("Your team") {
+                    ForEach(Array(agents.prefix(7))) { a in
                         Button { hub.section = .team } label: {
-                            HStack(spacing: 10) {
-                                AgentAvatar(agent: a, size: 22)
-                                Text(a.name).font(.system(size: 13.5)).lineLimit(1)
-                                Spacer()
-                                Circle().fill(ZuffiTeam.color(team.status(a))).frame(width: 7, height: 7)
+                            HStack(spacing: 8) {
+                                AgentAvatar(agent: a, size: 18)
+                                Text(a.name).font(HubFont.p(14, .regular)).lineLimit(1)
+                                Spacer(minLength: 4)
+                                if team.status(a) == .working { Circle().fill(HubTheme.blue).frame(width: 6, height: 6) }
                             }
-                            .padding(.horizontal, 10).frame(height: 36).contentShape(Rectangle())
+                            .padding(10).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                     }
                 }
                 if hub.showsBusiness {
-                    group("Business") {
-                        ForEach(bizTabs) { t in row(t.rawValue, t.icon, .biz(t), tint: Color(hex: t.tint)) }
-                    }
+                    side("Business") { ForEach(bizTabs) { t in sideLink(t.icon, t.rawValue, .biz(t)) } }
                 }
-                group("Settings") { row("Settings", "gearshape", .settings) }
+                side("Settings") {
+                    sideLink("hare.fill", "Pet & look", .settings, key: "Pet")
+                    sideLink("rectangle.topthird.inset.filled", "Notch", .settings, key: "Notch")
+                    sideLink("person.3.fill", "Agents", .settings, key: "Agents")
+                    sideLink("lock.fill", "Privacy & voice", .settings, key: "Privacy")
+                    sideLink("slider.horizontal.3", "More settings", .settings, key: "More")
+                }
             }
-            .padding(.horizontal, 16).padding(.vertical, 22)
+            .padding(26)
         }
+        .frame(width: 240)
+        .overlay(alignment: .trailing) { Rectangle().fill(T.border).frame(width: 1) }
     }
-    private var teamAgents: [TeamAgent] { team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents }
-
-    private func group<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 13)).foregroundColor(Hub.muted).padding(.leading, 10).padding(.bottom, 6)
+    private func side<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title).foregroundColor(T.inactive).padding(.bottom, 14)
             c()
         }
     }
-    private func row(_ label: String, _ icon: String, _ s: HubSection, tint: Color = Hub.text, badge: Int = 0) -> some View {
-        Button { hub.section = s } label: { rowLabel(label, icon, tint, active: hub.section == s, badge: badge) }.buttonStyle(.plain)
+    private func sideLink(_ icon: String, _ label: String, _ s: HubSection, badge: Int = 0, key: String? = nil) -> some View {
+        let active = hub.section == s && (key == nil || subFor(s) == key)
+        return Button {
+            hub.section = s
+            if let key { sub[subKey(s)] = key }
+        } label: { sideLabel(icon, label, active: active, badge: badge) }.buttonStyle(.plain)
     }
-    private func rowLabel(_ label: String, _ icon: String, _ tint: Color, active: Bool, badge: Int = 0) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundColor(tint).frame(width: 18)
-            Text(label).font(.system(size: 13.5)).lineLimit(1)
-            Spacer()
+    private func sideLabel(_ icon: String, _ label: String, active: Bool, badge: Int = 0) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 13)).frame(width: 16)
+            Text(label).font(HubFont.p(14, .regular)).lineLimit(1)
+            Spacer(minLength: 4)
             if badge > 0 {
-                Text("\(badge)").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white)
-                    .frame(minWidth: 18, minHeight: 18).background(Circle().fill(Hub.accent))
+                Text("\(badge)").font(.system(size: 11, weight: .semibold)).foregroundColor(.white).frame(width: 18, height: 18).background(Circle().fill(HubTheme.blue))
             }
         }
-        .padding(.horizontal, 10).frame(height: 36)
-        .background(RoundedRectangle(cornerRadius: 6).fill(active ? Hub.hover : .clear))
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 6).fill(active ? T.hover : .clear))
         .contentShape(Rectangle())
     }
 
-    // MARK: page header + page
-    private var subHeader: some View {
+    // MARK: main header (page name + its own links)
+    private func subKey(_ s: HubSection) -> String { if case .biz = s { return "biz" }; return "\(s)" }
+    private func subs(_ s: HubSection) -> [String] {
+        switch s {
+        case .home: return ["Overview", "Routines", "Activity"]
+        case .team: return ["All", "Working", "Hire"]
+        case .missions: return ["Running", "Done"]
+        case .settings: return ["Pet", "Notch", "Agents", "Privacy", "More"]
+        default: return []
+        }
+    }
+    private func subFor(_ s: HubSection) -> String { sub[subKey(s)] ?? subs(s).first ?? "" }
+    private var pageName: String {
+        switch hub.section {
+        case .home: return "Home"
+        case .team: return "Your team"
+        case .missions: return "Missions"
+        case .routines: return "Routines"
+        case .settings: return "Settings"
+        case .biz(let t): return t.rawValue
+        }
+    }
+    private var mainHeader: some View {
         HStack(spacing: 0) {
-            Text(hub.section.title).font(.system(size: 15, weight: .medium)).padding(.horizontal, 30)
+            Text(pageName).padding(.horizontal, 30).frame(minWidth: 180, alignment: .leading)
+            HStack(spacing: 0) {
+                ForEach(subs(hub.section), id: \.self) { n in
+                    Button { sub[subKey(hub.section)] = n } label: {
+                        Text(n).foregroundColor(subFor(hub.section) == n ? T.text : T.inactive)
+                            .padding(.horizontal, 24).frame(height: 58)
+                            .overlay(alignment: .bottom) { Rectangle().fill(subFor(hub.section) == n ? T.text : .clear).frame(height: 2) }
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.leading, 60)
             Spacer()
         }
-        .frame(height: 50)
-        .overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1) }
+        .frame(height: 58)
+        .overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
     }
 
-    @ViewBuilder private var page: some View {
+    // MARK: pages
+    @ViewBuilder private var content: some View {
         switch hub.section {
-        case .home: ScrollView { home.padding(.horizontal, 36).padding(.vertical, 22) }
-        case .team: BizAITeamView().foregroundColor(Ink.text)
-        case .missions: ScrollView { TeamActivityView().padding(24) }
-        case .routines: ScrollView { TeamJobsView().padding(24) }
-        case .settings: SettingsView()
+        case .home:
+            VStack(alignment: .leading, spacing: 0) {
+                banner
+                switch subFor(.home) {
+                case "Routines": routinesSection
+                case "Activity": activitySection
+                default: teamSection("Your team", agents); routinesSection
+                }
+            }
+        case .team:
+            VStack(alignment: .leading, spacing: 0) {
+                switch subFor(.team) {
+                case "Working": teamSection("Working now", agents.filter { team.status($0) == .working }, emptyText: "Nobody is working right now. Give Nik a task from Home.")
+                case "Hire": hireSection
+                default: teamSection("Everyone on your team", agents)
+                }
+            }
+        case .missions: activitySection
+        case .routines: routinesSection
+        case .settings: settingsPage
         case .biz(let t):
-            if !nav.formDone { BizSetupGate().foregroundColor(Ink.text) } else { BizPageView(tab: t).foregroundColor(Ink.text) }
+            if !nav.formDone { BizSetupGate().foregroundColor(Ink.text) } else { BizPageView(tab: t).foregroundColor(Ink.text).frame(minHeight: 600) }
         }
     }
 
-    // MARK: Home
-    private var home: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            // the banner: Zuffi Manager
-            HStack(alignment: .center, spacing: 20) {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 12) {
-                        LiveBunnyFace(size: 44).background(Circle().fill(Color.white.opacity(0.9)).frame(width: 50, height: 50))
-                        Text("Nik, your manager").font(.system(size: 18, weight: .semibold))
-                    }
-                    Text("Give me any job. I'll pick the right agent, show you every step, and ask you before anything is paid, sent or posted.")
-                        .font(.system(size: 14)).foregroundColor(Color(hex: "#FFF7F2")).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
-                    Button { hub.asking = true } label: {
-                        Text("Give a task").font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                            .padding(.horizontal, 26).frame(height: 38).background(Capsule().fill(Hub.accent))
-                    }.buttonStyle(.plain)
+    // the colourful banner (content-wrapper-header)
+    private var banner: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 14) {
+                    LiveBunnyFace(size: 30).background(Circle().fill(Color.white.opacity(0.9)).frame(width: 32, height: 32))
+                    Text("Nik, your manager").font(HubFont.p(17))
                 }
-                .frame(maxWidth: 440, alignment: .leading)
-                Spacer(minLength: 10)
-                Group {
-                    if Aurora3DPrefs.on { Aurora3DView(pose: .sit, lookAtMouse: true).frame(width: 170, height: 170) }
-                    else { LiveBunnyFace(size: 130, mood: .happy) }
-                }
-                .allowsHitTesting(false)
+                Text("Give Nik any job. He picks the right agent, shows you every step, and asks you before anything is paid, sent or posted.")
+                    .font(HubFont.p(14, .regular)).foregroundColor(Color(hex: "#EBECEC")).lineSpacing(6).padding(.top, 16)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { hub.asking = true } label: {
+                    Text("Give a task").font(HubFont.p(15)).foregroundColor(.white).padding(.horizontal, 26).padding(.vertical, 8)
+                        .background(Capsule().fill(HubTheme.blue))
+                }.buttonStyle(.plain).padding(.top, 16)
             }
-            .padding(.horizontal, 36).padding(.vertical, 22)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: [Color(hex: "#CF4AF3"), Color(hex: "#F631BC"), Color(hex: "#FF3A8B"), Color(hex: "#FF5E68"), Color(hex: "#FF8C51"), Color(hex: "#FFC848")], startPoint: .bottomLeading, endPoint: .topTrailing)))
-
-            // your team
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Your team").foregroundColor(Hub.muted)
-                VStack(spacing: 0) {
-                    ForEach(Array(teamAgents.enumerated()), id: \.element.id) { i, a in
-                        agentRow(a).overlay(alignment: .top) { if i > 0 { Rectangle().fill(Hub.line).frame(height: 1) } }
-                    }
-                }
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Hub.content))
-            }
-
-            // routines
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Routines").foregroundColor(Hub.muted)
-                if team.jobs.isEmpty {
-                    Text("No routines yet. Hiring an agent adds its everyday job, like a morning brief or a weekly report.")
-                        .font(.system(size: 13)).foregroundColor(Hub.muted)
-                        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(Hub.content))
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 16)], spacing: 16) {
-                        ForEach(team.jobs.prefix(6)) { j in jobCard(j) }
-                    }
-                }
-            }
+            .frame(maxWidth: 350, alignment: .leading)
+            .foregroundColor(.white)
+            Spacer()
+            Aurora3DView(pose: .sit, lookAtMouse: true).frame(width: 186, height: 186).padding(.top, -25).allowsHitTesting(false)
         }
+        .padding(.horizontal, 40).padding(.vertical, 20)
+        .background(RoundedRectangle(cornerRadius: 14).fill(LinearGradient(colors: ["#CF4AF3", "#E73BD7", "#F631BC", "#FD31A2", "#FF3A8B", "#FF4B78", "#FF5E68", "#FF705C", "#FF8C51", "#FFAA49", "#FFC848", "#FFE652"].map { Color(hex: $0) }, startPoint: .bottomLeading, endPoint: .topTrailing)))
     }
 
+    private func sectionTitle(_ t: String) -> some View { Text(t).foregroundColor(T.title).padding(.bottom, 14).padding(.top, 30) }
+
+    // a list like "Installed": one agent per row
+    private func teamSection(_ title: String, _ list: [TeamAgent], emptyText: String = "No agents yet — hire one from Team → Hire.") -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle(title)
+            VStack(spacing: 0) {
+                if list.isEmpty { Text(emptyText).font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(18).frame(maxWidth: .infinity, alignment: .leading) }
+                ForEach(Array(list.enumerated()), id: \.element.id) { i, a in
+                    agentRow(a).overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(T.app))
+        }
+    }
     private func agentRow(_ a: TeamAgent) -> some View {
-        let st = team.status(a)
+        let st = team.status(a), working = st == .working
         let run = team.runs.first { $0.agent == a.id }
-        let working = st == .working
-        return HStack(spacing: 16) {
-            AgentAvatar(agent: a, size: 28)
-            Text(a.name).font(.system(size: 15)).frame(width: 170, alignment: .leading).lineLimit(1)
-            Text(working ? (run?.steps.last?.text ?? run?.task ?? "") : a.description)
-                .font(.system(size: 13)).foregroundColor(Hub.muted).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 8) { Circle().fill(ZuffiTeam.color(st)).frame(width: 6, height: 6); Text(st.rawValue).font(.system(size: 14)) }
-                .frame(width: 150, alignment: .leading)
-            Button {
-                if working { MissionControl.shared.show() } else { team.use(a); ZuffiChat.shared.open() }
-            } label: {
-                Text(working ? "Watch" : "Ask").font(.system(size: 14, weight: .medium))
-                    .foregroundColor(working ? .white : Hub.text)
-                    .frame(width: 100, height: 32)
-                    .background(Capsule().fill(working ? Hub.accent : .clear))
-                    .overlay(Capsule().stroke(working ? .clear : Hub.muted, lineWidth: 1))
-            }.buttonStyle(.plain)
+        let f = AgentField.of(a)
+        return HStack(spacing: 0) {
+            HStack(spacing: 16) {
+                AgentAvatar(agent: a, size: 28).overlay(RoundedRectangle(cornerRadius: 8).stroke(f.color, lineWidth: 1))
+                Text(a.name).font(HubFont.p(16)).lineLimit(1)
+            }.frame(width: 230, alignment: .leading)
+            Text(working ? (run?.steps.last?.text ?? run?.task ?? "Working…") : a.description)
+                .font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 16)
+            HStack(spacing: 14) {
+                Circle().fill(working ? HubTheme.blue : st == .active ? HubTheme.green : ZuffiTeam.color(st)).frame(width: 6, height: 6)
+                Text(working ? "Working" : st == .active ? "Ready" : st.rawValue).font(HubFont.p(15))
+            }.frame(width: 140, alignment: .leading)
+            HStack(spacing: 0) {
+                Button {
+                    if working { MissionControl.shared.show() } else { task = "\(a.name), "; hub.asking = true }
+                } label: { statusButton(working ? "Watch" : "Give task", filled: !working) }.buttonStyle(.plain)
+                Menu {
+                    Button("Give a task") { task = "\(a.name), "; hub.asking = true }
+                    Button("Chat with \(a.name)") { team.use(a); ZuffiChat.shared.open() }
+                    Button(team.paused.contains(a.id) ? "Resume" : "Pause") { if team.paused.contains(a.id) { team.paused.remove(a.id) } else { team.paused.insert(a.id) } }
+                    if team.hired.contains(a.id) { Button("Remove from team") { team.fire(a) } }
+                } label: { dots }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 40)
+            }
+            .frame(width: 187, alignment: .trailing)
         }
-        .padding(.horizontal, 18).frame(height: 56)
+        .padding(.horizontal, 18).padding(.vertical, 10).frame(minHeight: 56)
+    }
+    private var dots: some View {
+        HStack(spacing: 2) { ForEach(0..<3, id: \.self) { _ in Circle().fill(T.buttonInactive).frame(width: 5, height: 5) } }.padding(.horizontal, 10)
+    }
+    private func statusButton(_ t: String, filled: Bool) -> some View {
+        Text(t).font(HubFont.p(15)).foregroundColor(filled ? .white : T.buttonInactive)
+            .padding(.horizontal, 24).padding(.vertical, 6)
+            .background(Capsule().fill(filled ? HubTheme.blue : .clear))
+            .overlay(Capsule().stroke(filled ? .clear : T.buttonInactive, lineWidth: 1))
     }
 
-    private func jobCard(_ j: TeamJob) -> some View {
-        let a = team.agent(j.agent)
-        return VStack(alignment: .leading, spacing: 0) {
+    // cards like "Apps in your plan": routines
+    private var routinesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle("Routines")
+            if team.jobs.isEmpty {
+                Text("No routines yet. Hiring an agent adds its everyday job — like a morning brief or a weekly report.")
+                    .font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)], spacing: 20) {
+                    ForEach(team.jobs) { j in routineCard(j) }
+                }
+            }
+        }
+    }
+    private func routineCard(_ j: TeamJob) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                if let a { AgentAvatar(agent: a, size: 28) }
-                Text(j.title).font(.system(size: 15)).lineLimit(1)
+                if let a = team.agent(j.agent) { AgentAvatar(agent: a, size: 28) }
+                Text(j.title).font(HubFont.p(16)).lineLimit(1)
             }
-            Text(j.task).font(.system(size: 13)).foregroundColor(Hub.muted).lineLimit(3).lineSpacing(3)
-                .padding(.top, 16).padding(.bottom, 16).frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1) }
+            Text(j.task).font(HubFont.p(14, .regular)).lineSpacing(5).lineLimit(3)
+                .padding(.top, 20).padding(.bottom, 20).frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
             HStack {
-                Text(String(format: "%02d:%02d", j.hour, j.minute) + (j.weekday == nil ? " · every day" : " · weekly"))
-                    .font(.system(size: 12)).foregroundColor(Hub.muted)
+                Text(String(format: "%02d:%02d", j.hour, j.minute) + (j.weekday == nil ? " · daily" : " · weekly")).font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
                 Spacer()
-                Button { Task { await ZuffiTeam.shared.runJob(j.id) } } label: {
-                    Text("Run now").font(.system(size: 13, weight: .medium)).foregroundColor(.white)
-                        .padding(.horizontal, 18).frame(height: 30).background(Capsule().fill(Hub.accent))
-                }.buttonStyle(.plain)
-            }
-            .padding(.top, 14)
+                Button { Task { await ZuffiTeam.shared.runJob(j.id) } } label: { statusButton("Run now", filled: true) }.buttonStyle(.plain)
+            }.padding(.top, 16)
         }
         .padding(20)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Hub.content))
+        .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(T.app))
     }
 
-    // MARK: "Give a task" pop-up
-    private var askSheet: some View {
-        ZStack {
-            Color(red: 36 / 255, green: 39 / 255, blue: 59 / 255).opacity(0.8).ignoresSafeArea().onTapGesture { hub.asking = false }
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Give Zuffi a task").font(.system(size: 17, weight: .medium))
-                    Spacer()
-                    Button { hub.asking = false } label: { Image(systemName: "xmark.circle").font(.system(size: 20)) }.buttonStyle(.plain)
-                }
-                .padding(.bottom, 4).overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1).offset(y: 8) }
-                Text("Say it in your own words. The Manager splits it into jobs and gives each one to the right agent.")
-                    .font(.system(size: 13)).foregroundColor(Hub.muted).padding(.top, 6)
-                TextEditor(text: $task).font(.system(size: 14)).scrollContentBackground(.hidden)
-                    .padding(8).frame(height: 90)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Hub.search))
-                Label("I'll always ask before paying, sending or posting anything.", systemImage: "checkmark.shield")
-                    .font(.system(size: 12.5)).foregroundColor(Hub.muted)
-                HStack {
-                    Spacer()
-                    Button { hub.asking = false } label: {
-                        Text("Cancel").font(.system(size: 14, weight: .medium)).padding(.horizontal, 22).frame(height: 32)
-                            .overlay(Capsule().stroke(Hub.muted))
-                    }.buttonStyle(.plain)
-                    Button { start() } label: {
-                        Text("Start").font(.system(size: 14, weight: .medium)).foregroundColor(.white).padding(.horizontal, 24).frame(height: 32)
-                            .background(Capsule().fill(Hub.accent))
-                    }.buttonStyle(.plain).disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    private var activitySection: some View {
+        let done = subFor(.missions) == "Done"
+        let runs = team.runs.filter { hub.section == .missions ? (done ? $0.status != "Working" : $0.status == "Working") : true }.prefix(30)
+        return VStack(alignment: .leading, spacing: 0) {
+            sectionTitle(hub.section == .missions ? (done ? "Finished" : "Running now") : "Recent work")
+            VStack(spacing: 0) {
+                if runs.isEmpty { Text(done ? "Nothing finished yet." : "Nothing running. Give Nik a task.").font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(18).frame(maxWidth: .infinity, alignment: .leading) }
+                ForEach(Array(runs.enumerated()), id: \.element.id) { i, r in
+                    HStack(spacing: 16) {
+                        if let a = team.agent(r.agent) { AgentAvatar(agent: a, size: 28) }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(team.agent(r.agent)?.name ?? "Agent").font(HubFont.p(15))
+                            Text(r.task).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(1)
+                        }
+                        Spacer()
+                        HStack(spacing: 10) {
+                            Circle().fill(r.status == "Working" ? HubTheme.blue : r.status == "Done" ? HubTheme.green : Color(hex: "#EF6B6B")).frame(width: 6, height: 6)
+                            Text(r.status).font(HubFont.p(14))
+                        }.frame(width: 130, alignment: .leading)
+                        Text(r.started.formatted(date: .omitted, time: .shortened)).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).frame(width: 70, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 18).padding(.vertical, 10)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
                 }
             }
-            .padding(26).frame(width: 480)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: "#161925")))
-            .shadow(color: .black.opacity(0.4), radius: 30, y: 12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
         }
     }
 
+    private var hireSection: some View {
+        let options = ZuffiTeam.builtins.filter { !team.hired.contains($0.id) && (hub.showsBusiness || ZuffiTeam.personalTeam.contains($0.id)) }
+        return teamListPlain("Agents you can add", options) { a in
+            Button { team.hire(a) } label: { statusButton("Hire", filled: true) }.buttonStyle(.plain)
+        }
+    }
+    private func teamListPlain<B: View>(_ title: String, _ list: [TeamAgent], @ViewBuilder button: @escaping (TeamAgent) -> B) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle(title)
+            VStack(spacing: 0) {
+                if list.isEmpty { Text("Everyone is already on your team.").font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(18).frame(maxWidth: .infinity, alignment: .leading) }
+                ForEach(Array(list.enumerated()), id: \.element.id) { i, a in
+                    HStack(spacing: 16) {
+                        AgentAvatar(agent: a, size: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(a.name).font(HubFont.p(16))
+                            Text(a.description).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(2)
+                        }
+                        Spacer()
+                        button(a)
+                    }
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+        }
+    }
+
+    // MARK: Settings (inside the dashboard)
+    @ViewBuilder private var settingsPage: some View {
+        switch subFor(.settings) {
+        case "Notch":
+            settingsList("Notch", [
+                toggleRow("rectangle.topthird.inset.filled", "New glass notch", "The wide notch with your agents and notifications", key: "notchWide", def: true),
+                toggleRow("waveform", "Music bars beside the notch", "Shows when any app plays sound", key: "notchHang", def: true),
+                toggleRow("rectangle.connected.to.line.below", "Show Nik's window for tasks", "Watch Nik hand out the work", key: "missionWindow", def: true),
+                toggleRow("hand.wave.fill", "Say hi when Zuffi starts", "Only the notch, nothing else pops up", key: "helloOnOpen", def: true),
+            ])
+        case "Agents":
+            settingsList("Agents", [
+                toggleRow("person.3.sequence.fill", "Agents on screen while they work", "Small robots in the corner", key: "agentsOnScreen", def: true),
+                fixedRow("checkmark.shield.fill", "Ask me before paying, sending or posting", "Always on, for your safety"),
+                fixedRow("globe", "Agents use websites in their own window", "Your mouse and browser stay free"),
+            ])
+        case "Privacy":
+            settingsList("Privacy & voice", [
+                fixedRow("lock.fill", "Your chats stay on this Mac", "Zuffi doesn't keep what you ask on its servers"),
+                actionRow("mic.fill", "Microphone and wake word", "Talk to Zuffi with “Hey Zuffi”", "Open") { NotificationCenter.default.post(name: .openFullSettings, object: nil) },
+            ])
+        case "More":
+            VStack(alignment: .leading, spacing: 0) {
+                sectionTitle("More settings")
+                SettingsView().frame(minHeight: 620).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        default:
+            VStack(alignment: .leading, spacing: 0) {
+                settingsList("Pet", [
+                    actionRow("hare.fill", "Aurora on screen", PetController.shared.isShown ? "She's on your screen" : "She's hidden", PetController.shared.isShown ? "Hide" : "Show") { PetController.shared.toggle() },
+                    toggleRow("bell.and.waves.left.and.right", "She brings reminders", "She comes to the front and holds them up", key: "petReminders", def: true),
+                    toggleRow("eye.slash.fill", "Never show the pet", "Reminders come to the notch instead", key: "petNever", def: false),
+                ])
+                sectionTitle("Aurora's colour")
+                AuroraColorPicker().padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+            }
+        }
+    }
+    private struct SRow: Identifiable { let id = UUID(); let view: AnyView }
+    private func settingsList(_ title: String, _ rows: [SRow]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionTitle(title)
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
+                    r.view.overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+        }
+    }
+    private func rowShell<R: View>(_ icon: String, _ title: String, _ sub: String, @ViewBuilder right: () -> R) -> SRow {
+        SRow(view: AnyView(
+            HStack(spacing: 16) {
+                Image(systemName: icon).font(.system(size: 13)).foregroundColor(HubTheme.blue)
+                    .frame(width: 28, height: 28).overlay(RoundedRectangle(cornerRadius: 6).stroke(HubTheme.blue.opacity(0.6)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(HubFont.p(15))
+                    Text(sub).font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                }
+                Spacer()
+                right()
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+        ))
+    }
+    private func toggleRow(_ icon: String, _ title: String, _ sub: String, key: String, def: Bool) -> SRow {
+        rowShell(icon, title, sub) {
+            Toggle("", isOn: Binding(get: { UserDefaults.standard.object(forKey: key) as? Bool ?? def }, set: { UserDefaults.standard.set($0, forKey: key); if key == "petNever", $0 { PetController.shared.hide() } }))
+                .toggleStyle(.switch).labelsHidden().tint(HubTheme.blue)
+        }
+    }
+    private func fixedRow(_ icon: String, _ title: String, _ sub: String) -> SRow {
+        rowShell(icon, title, sub) { Image(systemName: "checkmark.circle.fill").foregroundColor(HubTheme.green) }
+    }
+    private func actionRow(_ icon: String, _ title: String, _ sub: String, _ button: String, _ go: @escaping () -> Void) -> SRow {
+        rowShell(icon, title, sub) { Button(action: go) { statusButton(button, filled: false) }.buttonStyle(.plain) }
+    }
+
+    // MARK: pop-up: give Nik a task
+    private var popup: some View {
+        ZStack {
+            Color(red: 36 / 255, green: 39 / 255, blue: 59 / 255).opacity(0.8).ignoresSafeArea().onTapGesture { hub.asking = false }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Give Nik a task").font(HubFont.p(16))
+                    Spacer()
+                    Button { hub.asking = false } label: { Image(systemName: "xmark.circle").font(.system(size: 22)) }.buttonStyle(.plain)
+                }
+                .padding(.bottom, 20).overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
+                Text("Say it in your own words. Nik splits it into jobs and gives each one to the right agent. The answer shows in Nik's window, not in the chat.")
+                    .font(HubFont.p(14, .regular)).lineSpacing(7).padding(.vertical, 20).fixedSize(horizontal: false, vertical: true)
+                TextEditor(text: $task).font(HubFont.p(14, .regular)).scrollContentBackground(.hidden)
+                    .padding(10).frame(height: 90)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(T.search))
+                checkbox("Ask me before paying, sending or posting", $askBefore, locked: true).padding(.top, 20)
+                checkbox("Show me Nik's window while they work", $showNik).padding(.top, 14).padding(.bottom, 30)
+                HStack(spacing: 8) {
+                    Spacer()
+                    Button { hub.asking = false } label: { statusButton("Cancel", filled: false) }.buttonStyle(.plain)
+                    Button { start() } label: { statusButton("Start", filled: true) }.buttonStyle(.plain)
+                        .disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(.horizontal, 40).padding(.vertical, 30).frame(width: 500)
+            .background(RoundedRectangle(cornerRadius: 6).fill(T.popup))
+            .shadow(color: .black.opacity(0.4), radius: 30, y: 6)
+        }
+    }
+    private func checkbox(_ label: String, _ on: Binding<Bool>, locked: Bool = false) -> some View {
+        Button { if !locked { on.wrappedValue.toggle() } } label: {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 4).fill(on.wrappedValue ? HubTheme.blue : .clear).frame(width: 15, height: 15)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(on.wrappedValue ? HubTheme.blue : T.text, lineWidth: 1))
+                    .overlay(Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundColor(.white).opacity(on.wrappedValue ? 1 : 0))
+                Text(label).font(HubFont.p(14, .regular))
+            }
+        }.buttonStyle(.plain)
+    }
     private func start() {
         let q = task.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
         hub.asking = false; task = ""
-        // the chat shows the answer; the Manager window shows who is doing what
+        UserDefaults.standard.set(showNik, forKey: "missionWindow")
         MissionControl.shared.assign(q)
+    }
+
+    // MARK: the round light/dark button
+    private var darkLight: some View {
+        Button { light.toggle() } label: {
+            Image(systemName: "moon.fill").font(.system(size: 20)).foregroundColor(light ? T.text : Color(hex: "#FFCE45"))
+                .frame(width: 40, height: 40).background(Circle().fill(T.dropdown))
+                .shadow(color: .black.opacity(0.2), radius: 8, x: -1, y: 3)
+        }.buttonStyle(.plain).help("Light or dark")
     }
 }
