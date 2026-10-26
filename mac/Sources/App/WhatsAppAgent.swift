@@ -314,7 +314,7 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
     private var web: WKWebView?
     private var window: NSWindow?
 
-    func startIfEnabled() { if enabled { start() } }
+    func startIfEnabled() { if enabled, ZuffiFocus.whatsapp { start() } }
 
     func start() {
         // WhatsApp (leads, auto-replies) is part of Zuffi Business; Pro is for your own day.

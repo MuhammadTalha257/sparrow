@@ -111,6 +111,7 @@ final class AgentRouter {
         }
         // Linked WhatsApp: "link whatsapp", "unlink whatsapp", "read my whatsapp messages out loud"
         if lowered.range(of: #"^(link|connect|set up|setup) (my )?whats ?app( to zuffi)?$"#, options: .regularExpression) != nil {
+            guard ZuffiFocus.whatsapp else { return "WhatsApp linking is switched off in this version of Zuffi." }
             guard ZuffiPlan.shared.isBusiness else { WhatsAppLink.shared.showWindow(); return "Linking WhatsApp is part of Zuffi Business — on Pro, WhatsApp stays closed." }
             WhatsAppLink.shared.showWindow()
             return "Opening WhatsApp. On your phone: WhatsApp → Settings → Linked devices → Link a device, then scan the code."

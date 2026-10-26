@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import Combine
+import WebKit
 
 // =====================================================================
 // MARK: - Zuffi's team (agency-agents, MIT licence — see THIRD_PARTY_NOTICES.md)
@@ -53,7 +54,7 @@ enum AgentTool: String, Codable, CaseIterable {
 
 /// An agent's field: its colours, symbol and tools — so every kind of agent looks and works differently.
 enum AgentField: String, CaseIterable {
-    case manager, finance, bookings, customers, sales, marketing, research, travel, product, project, support, design, engineering, security, legal, health, data, strategy, education, games, other
+    case manager, finance, bookings, customers, sales, marketing, research, travel, web, product, project, support, design, engineering, security, legal, health, data, strategy, education, games, other
 
     var label: String {
         switch self {
@@ -65,6 +66,7 @@ enum AgentField: String, CaseIterable {
         case .marketing: return "Marketing"
         case .research: return "Research"
         case .travel: return "Travel"
+        case .web: return "Web tasks"
         case .product: return "Product"
         case .project: return "Projects"
         case .support: return "Support"
@@ -90,6 +92,7 @@ enum AgentField: String, CaseIterable {
         case .marketing: return "megaphone.fill"
         case .research: return "magnifyingglass"
         case .travel: return "airplane"
+        case .web: return "safari.fill"
         case .product: return "shippingbox.fill"
         case .project: return "checklist"
         case .support: return "bubble.left.and.text.bubble.right.fill"
@@ -116,6 +119,7 @@ enum AgentField: String, CaseIterable {
         case .marketing: return ["#A855F7", "#7E22CE"]
         case .research: return ["#06B6D4", "#0E7490"]
         case .travel: return ["#38BDF8", "#1E40AF"]
+        case .web: return ["#60A5FA", "#7C3AED"]
         case .product: return ["#6366F1", "#4338CA"]
         case .project: return ["#14B8A6", "#0F766E"]
         case .support: return ["#38BDF8", "#0284C7"]
@@ -141,7 +145,7 @@ enum AgentField: String, CaseIterable {
         case .customers: return [.customers, .contacts, .bookings]
         case .sales: return [.customers, .contacts]
         case .marketing: return [.customers, .web]
-        case .research, .strategy, .travel: return [.web]
+        case .research, .strategy, .travel, .web: return [.web]
         case .product: return [.customers, .web]
         case .data: return [.money, .bookings, .customers, .dashboard]
         case .support: return [.customers, .contacts]
@@ -154,6 +158,10 @@ enum AgentField: String, CaseIterable {
         let n = a.name.lowercased(), d = a.division.lowercased()
         func has(_ w: String...) -> Bool { w.contains { n.contains($0) } }
         if has("travel", "flight") { return .travel }
+        if a.id == "zuffi-web" { return .web }
+        if a.id == "zuffi-reviews" { return .customers }
+        if a.id == "zuffi-reports" { return .data }
+        if a.id == "zuffi-social" || a.id == "zuffi-writer" { return .marketing }
         if has("booking") { return .bookings }
         if has("customer relationship", "feedback") { return .customers }
         if d == "finance" || has("finance", "financial", "tax", "bookkeep", "accountant", "fp&a") { return .finance }
@@ -293,6 +301,37 @@ final class ZuffiTeam: ObservableObject {
                   You look after customer relationships for a small business. From the customer and contact data you're given, say who is new, returning, \
                   overdue for a visit or follow-up, and suggest short, friendly messages the owner can approve. Never send anything yourself.
                   """),
+        TeamAgent(id: "zuffi-social", division: "business", name: "Social Media Agent",
+                  description: "Plans your week of posts, makes the pictures and captions in your brand, and gets them ready for you to approve and post.",
+                  emoji: "📣", prompt: """
+                  You run a small business's social media. Plan posts from its offers, services, UK dates and what worked before. \
+                  For each post give: the day, a picture idea, the caption (short, warm, in the brand's tone) and 5-8 hashtags. Never invent prices or offers — use the business details. \
+                  Posting waits for the owner's approval.
+                  """),
+        TeamAgent(id: "zuffi-reviews", division: "business", name: "Reviews Agent",
+                  description: "Watches your Google and Facebook reviews, drafts warm replies for you to approve, and finds happy customers to ask for a review.",
+                  emoji: "⭐", prompt: """
+                  You look after the business's online reviews. Draft short, personal, polite replies (thank by name, mention what they liked, \
+                  for complaints apologise, offer to fix it privately). Never argue. Replies are sent only after the owner approves.
+                  """),
+        TeamAgent(id: "zuffi-reports", division: "business", name: "Reports Agent",
+                  description: "Writes your weekly report in plain words: what the team did, what worked, and what to do next week.",
+                  emoji: "📊", prompt: """
+                  You write a short weekly report for a small business owner from the team's real work and data you're given. \
+                  Plain words, numbers only from the data, three sections: done this week, what worked, next week's plan.
+                  """),
+        TeamAgent(id: "zuffi-web", division: "business", name: "Web Helper",
+                  description: "Does jobs on websites for you in its own browser tab — looks things up, fills forms, compares prices — while your mouse stays free. Asks before anything risky.",
+                  emoji: "🧭", prompt: """
+                  You do tasks on websites in your own browser tab. Explain each step briefly. Never type passwords or card numbers, never buy, send, \
+                  post or delete without the user's yes. If a site needs a login or a CAPTCHA, ask the user to do that part.
+                  """),
+        TeamAgent(id: "zuffi-writer", division: "business", name: "Writer",
+                  description: "Writes emails, proposals, posts, letters and summaries in your voice, ready for you to check.",
+                  emoji: "✍️", prompt: """
+                  You write clear, warm, well-structured text in the user's voice and language: emails, proposals, posts, letters, summaries. \
+                  Ask one question if something essential is missing; otherwise write it straight away.
+                  """),
         TeamAgent(id: "zuffi-travel", division: "business", name: "Travel Agent",
                   description: "Finds flights, hotels and trains: compares prices and times, gives you the links, and can open them in your browser. Never books or pays without your yes.",
                   emoji: "✈️", prompt: """
@@ -383,8 +422,20 @@ final class ZuffiTeam: ObservableObject {
         return d.split(separator: "-").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
     }
 
+    /// The focused team shown for now (the full list of specialists is hidden, not removed).
+    var focusAgents: [TeamAgent] {
+        let ids = ZuffiPlan.shared.isPersonal ? Self.personalTeam : Self.businessTeam + ["finance-financial-analyst", "zuffi-bookings", "zuffi-crm", "zuffi-travel", "zuffi-web", "zuffi-writer"]
+        var out: [TeamAgent] = []
+        for id in ids { if let a = agent(id), !out.contains(a) { out.append(a) } }
+        return out
+    }
+    static let personalTeam = ["zuffi-web", "research-synthesist", "zuffi-writer", "zuffi-travel"]
+    static let businessTeam = ["zuffi-social", "zuffi-reviews", "zuffi-competitors", "zuffi-reports"]
+
     /// A good first team for each kind of business.
     var starterTeam: [String] {
+        if ZuffiPlan.shared.isPersonal { return Self.personalTeam }
+        if ZuffiPlan.shared.mode != nil { return Self.businessTeam }
         var ids = ["finance-financial-analyst", "zuffi-bookings", "zuffi-crm", "marketing-social-media-strategist", "zuffi-competitors", "product-manager"]
         if ZuffiCRM.shared.isEstate { ids = ["finance-financial-analyst", "zuffi-bookings", "zuffi-crm", "sales-deal-strategist", "marketing-social-media-strategist", "zuffi-competitors"] }
         return ids.filter { agent($0) != nil }
@@ -646,6 +697,9 @@ final class ZuffiTeam: ObservableObject {
             guard !activeIDs.isEmpty else { return "You're already talking to plain Zuffi." }
             use(nil); return "Okay, I'm just Zuffi again."
         }
+        if t.range(of: #"^(show|open)( me)?( the| my)? (agent browser|agents at work|agents'? tabs?|what (my|the) agents are doing)$"#, options: .regularExpression) != nil {
+            AgentBrowser.shared.show(); return "Here's the agent browser — every agent's tab, live."
+        }
         // "this is my business dashboard" — Zuffi reads it from the screen and suggests the right team.
         if t.range(of: #"^(this is|here'?s|that'?s|this is our|it'?s) (my|our)? ?(business |salon |shop |booking |sales )?(dashboard|fresha|square|booksy|treatwell|admin( page)?|booking system|back ?office)\b|^(read|connect|learn|watch) (my|our|the) (business )?dashboard$"#, options: .regularExpression) != nil {
             return await connectDashboard()
@@ -735,6 +789,8 @@ final class ZuffiTeam: ObservableObject {
     static func intent(_ q: String) -> AgentField? {
         let t = q.lowercased()
         func m(_ p: String) -> Bool { t.range(of: p, options: .regularExpression) != nil }
+        if m(#"^(please )?(go to|open) [a-z0-9.-]+\.(com|co\.uk|org|net|io)\b.*\b(and|then)\b|\b(fill (in|out)?( the| this| a)? form|compare prices|on (amazon|ebay|argos|currys|john lewis|gumtree|etsy)|sign me up|check (the )?website)\b"#) { return .web }
+        if m(#"\b(write|draft|rewrite|proofread)( me)? (an? )?(email|proposal|letter|cover letter|summary|bio|description|reply)\b"#) { return .marketing }
         if m(#"\b(flights?|fly|airline|airport|hotels?|train tickets?|holiday|trip to|travel(ling)? to)\b"#) { return .travel }
         if m(#"\b(profit|revenue|income|turnover|takings|expenses?|costs?|spent|spend|tax|vat|cash ?flow|margin|earn(ed|ings)?|kamai|munafa|kharcha|money (in|out|made)|how much (did|have) we (make|made|sell|sold|earn))\b"#) { return .finance }
         if m(#"\b(bookings?|appointments?|booked|no.?shows?|cancell?ations?|slots?|site visits?|visits (today|tomorrow))\b"#) { return .bookings }
@@ -755,14 +811,18 @@ final class ZuffiTeam: ObservableObject {
 
     private static let defaultFor: [AgentField: String] = [
         .finance: "finance-financial-analyst", .bookings: "zuffi-bookings", .customers: "zuffi-crm", .marketing: "marketing-social-media-strategist",
-        .sales: "sales-coach", .product: "product-manager", .research: "research-synthesist", .travel: "zuffi-travel",
+        .sales: "sales-coach", .product: "product-manager", .research: "research-synthesist", .travel: "zuffi-travel", .web: "zuffi-web",
     ]
 
     /// The people who should answer: the field's person from the picked team, else from the hired team, else Zuffi's default.
     func route(_ question: String, among people: [TeamAgent]) async -> [TeamAgent] {
         let team = people.filter { $0.id != Self.manager.id }
         // "Today's business report" → money and bookings (and customers if they're on the team) — nobody else.
-        if question.lowercased().range(of: #"\b(business|daily|today'?s|weekly|monthly) (report|summary|update)\b|\breport (for|on) (today|this week|this month)\b"#, options: .regularExpression) != nil {
+        let ql = question.lowercased()
+        if ql.range(of: #"\b(weekly|week'?s) (report|summary)\b|\bwhat did (my|the) team do\b"#, options: .regularExpression) != nil, let r = agent("zuffi-reports") { return [r] }
+        if ql.range(of: #"\b(write|draft|rewrite|proofread)\b.*\b(email|proposal|letter|summary|bio|reply)\b"#, options: .regularExpression) != nil, let w = agent("zuffi-writer") { return [w] }
+        if ql.range(of: #"\breviews?\b"#, options: .regularExpression) != nil, ql.range(of: #"\b(google|facebook|reply|replies|customer)\b"#, options: .regularExpression) != nil, let r = agent("zuffi-reviews") { return [r] }
+        if ql.range(of: #"\b(business|daily|today'?s|monthly) (report|summary|update)\b|\breport (for|on) (today|this week|this month)\b"#, options: .regularExpression) != nil {
             let pool = team + hiredAgents
             var out: [TeamAgent] = []
             for f in [AgentField.finance, .bookings, .customers] {
@@ -771,7 +831,7 @@ final class ZuffiTeam: ObservableObject {
             if !out.isEmpty { return out }
         }
         if let f = Self.intent(question) {
-            let pickFrom = team + hiredAgents
+            let pickFrom = team + hiredAgents + focusAgents
             if f == .research, question.lowercased().range(of: #"competitor|competition|rival"#, options: .regularExpression) != nil,
                let c = pickFrom.first(where: { $0.id == "zuffi-competitors" }) ?? agent("zuffi-competitors") { return [c] }
             if let a = pickFrom.first(where: { AgentField.of($0) == f }) { return [a] }
@@ -848,8 +908,23 @@ final class ZuffiTeam: ObservableObject {
             }
         }
 
+        // Web jobs: the agent works in its own tab in the agent browser (watch it, pause it, take over).
+        if field == .web {
+            step(id, "Opening its own browser tab")
+            let ans = await AgentBrowser.shared.run(task, agent: a, runID: id)
+            let failed = ans.hasPrefix("I couldn't") || ans.hasPrefix("I stopped") || ans == "Stopped."
+            finish(id, Self.plain(ans), failed ? "Failed" : "Done")
+            return runs.first { $0.id == id }!
+        }
+
         // Everything else: the AI, with only the real data this agent's tools allow.
-        let data = TeamData.block(for: field.tools, question: task)
+        var data = TeamData.block(for: field.tools, question: task)
+        if a.id == "zuffi-reports" {
+            let week = runs.filter { $0.started > Date().addingTimeInterval(-7 * 86400) && $0.agent != a.id && $0.status != "Working" }
+            let lines = week.prefix(40).map { r in "\(agent(r.agent)?.name ?? r.agent) · \(r.started.formatted(date: .abbreviated, time: .omitted)) · \(r.status): \(r.task.prefix(80)) → \(r.result.prefix(140))" }
+            data.text += "\n\nTEAM WORK THIS WEEK (\(week.count) jobs):\n" + (lines.isEmpty ? "No jobs yet." : lines.joined(separator: "\n"))
+            data.sources.append("Team activity")
+        }
         for s in data.sources { step(id, "Looked at \(s)", source: s) }
         // Research like a person: search, open the pages, read them — each step shows on the agent's card.
         var webNotes = "", links: [WebLink] = []
@@ -941,7 +1016,7 @@ final class ZuffiTeam: ObservableObject {
     /// Zuffi as the manager: each job goes to the right field's agent (on the team, or Zuffi's own if nobody is hired for it),
     /// they work at the same time and show on screen. nil = not team work (Zuffi answers herself).
     func dispatch(_ query: String) async -> String? {
-        guard teamsAllowed, !Self.looksLikeCommand(query) else { return nil }
+        guard ZuffiPlan.shared.isPaid, !Self.looksLikeCommand(query) else { return nil }
         if query.lowercased().range(of: #"^(remind|set|add|save|delete|remove|open|play|call|note)\b"#, options: .regularExpression) != nil { return nil }
         let jobs = Self.splitTasks(query).compactMap { t -> (String, AgentField)? in Self.intent(t).map { (t, $0) } }
         guard !jobs.isEmpty else { return nil }
@@ -1422,7 +1497,14 @@ struct TeamMenu: View {
                 Button { BusinessDashboard.shared.show(.aiTeam) } label: { Label("Hire & manage your team…", systemImage: "person.badge.plus") }
                 Divider()
             }
-            ForEach(team.divisions, id: \.self) { d in
+            if !ZuffiFocus.allAgents {
+                Section("Zuffi's helpers") {
+                    ForEach(team.focusAgents) { a in
+                        Button { plan.isBusiness ? team.toggle(a) : team.use(a) } label: { Text("\(a.emoji) \(a.name)\(team.activeIDs.contains(a.id) ? "  ✓" : "")") }
+                    }
+                }
+            }
+            ForEach(ZuffiFocus.allAgents ? team.divisions : [], id: \.self) { d in
                 Menu(ZuffiTeam.divisionLabel(d)) {
                     ForEach(team.members(of: d)) { a in
                         Button { plan.isBusiness ? team.toggle(a) : team.use(a) } label: {
@@ -1490,7 +1572,7 @@ struct TeamSettings: View {
                     if !team.activeIDs.isEmpty { Button("Stop") { team.use(nil) }.controlSize(.small) } }
                 TextField("Search the team…", text: $search).textFieldStyle(.roundedBorder)
                 if !search.isEmpty {
-                    let hits = team.everyone.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.description.localizedCaseInsensitiveContains(search) }.prefix(12)
+                    let hits = (ZuffiFocus.allAgents ? team.everyone : team.focusAgents).filter { $0.name.localizedCaseInsensitiveContains(search) || $0.description.localizedCaseInsensitiveContains(search) }.prefix(12)
                     ForEach(Array(hits)) { a in
                         HStack {
                             AgentAvatar(agent: a, size: 26)
@@ -1536,6 +1618,7 @@ struct BizAITeamView: View {
                     }
                     Spacer()
                     if !team.working.isEmpty { HStack(spacing: 6) { ProgressView().controlSize(.small); Text(team.working).font(.system(size: 11)).foregroundColor(Ink.muted).lineLimit(1) } }
+                    Button { AgentBrowser.shared.show() } label: { Label("Agent browser", systemImage: "safari") }.controlSize(.small)
                     Toggle("Show agents on screen", isOn: $stage.enabled).toggleStyle(.switch).controlSize(.small).font(.system(size: 11))
                 }
                 if !team.suggestions.isEmpty { suggestionsBox }
@@ -1975,10 +2058,10 @@ struct TeamHireView: View {
                     .help("When you show Zuffi your business dashboard, it hires the suggested agents by itself.")
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundColor(Ink.faint)
-                    TextField("Search \(team.everyone.count) specialists…", text: $search).textFieldStyle(.plain).frame(width: 200)
+                    TextField(ZuffiFocus.allAgents ? "Search \(team.everyone.count) specialists…" : "Search your helpers…", text: $search).textFieldStyle(.plain).frame(width: 200)
                 }.padding(.horizontal, 10).frame(height: 30).inkPanel(Capsule())
             }
-            if search.isEmpty {
+            if search.isEmpty && ZuffiFocus.allAgents {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(team.divisions, id: \.self) { d in
@@ -1990,8 +2073,9 @@ struct TeamHireView: View {
                     }
                 }
             }
-            let list = search.isEmpty ? team.members(of: division)
-                : team.everyone.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.description.localizedCaseInsensitiveContains(search) }
+            let pool = ZuffiFocus.allAgents ? team.everyone : team.focusAgents
+            let list = !ZuffiFocus.allAgents && search.isEmpty ? team.focusAgents : search.isEmpty ? team.members(of: division)
+                : pool.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.description.localizedCaseInsensitiveContains(search) }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 10)], spacing: 10) {
                 ForEach(list.prefix(80)) { a in
                     let have = team.hired.contains(a.id)
@@ -2431,6 +2515,383 @@ struct AgentRobot: View {
             }
         case .crown:
             Image(systemName: "crown.fill").font(.system(size: 18)).foregroundStyle(LinearGradient(colors: [Color(hex: "#FFD66B"), Color(hex: "#F59E3B")], startPoint: .top, endPoint: .bottom)).offset(y: -30)
+        }
+    }
+}
+
+// MARK: - Agent browser: each agent works in its own tab inside Zuffi (your mouse stays free)
+//
+// Watch every agent live, pause it, or take over its tab. Agents read the page, click, type and scroll through the page itself
+// (not your mouse), so several work at the same time. Anything that buys, pays, sends, posts, deletes or submits waits for your yes.
+// Passwords and card numbers are never typed by an agent — it hands that part to you. Sign-ins stay in Zuffi's own browser.
+
+@MainActor
+final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate {
+    let id = UUID().uuidString
+    let agent: TeamAgent
+    let task: String
+    let web: WKWebView
+    @Published var title = "New tab"
+    @Published var url = ""
+    @Published var status = "Starting"           // Working · Paused · You're in control · Needs you · Done · Stopped
+    @Published var steps: [String] = []
+    @Published var paused = false
+    @Published var takeover = false
+    @Published var asking: String?                // "Click “Place order”?" waiting for a yes
+    var answer: CheckedContinuation<Bool, Never>?
+    var stopped = false
+    var runID: String?
+
+    init(agent: TeamAgent, task: String, store: WKWebsiteDataStore) {
+        self.agent = agent; self.task = task
+        let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = store
+        cfg.preferences.javaScriptCanOpenWindowsAutomatically = false
+        web = WKWebView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760), configuration: cfg)
+        web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+        super.init()
+        web.navigationDelegate = self
+    }
+
+    func say(_ s: String) {
+        steps.append(s)
+        if let r = runID { ZuffiTeam.shared.step(r, s) }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        title = webView.title ?? title; url = webView.url?.absoluteString ?? url
+    }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+        // web pages only (no file://, no app links)
+        guard let s = navigationAction.request.url?.scheme?.lowercased() else { return .cancel }
+        return ["http", "https", "about", "data", "blob"].contains(s) ? .allow : .cancel
+    }
+}
+
+@MainActor
+final class AgentBrowser: ObservableObject {
+    static let shared = AgentBrowser()
+    @Published var tabs: [BrowserTab] = []
+    @Published var selected: String?
+    private var window: NSWindow?
+
+    /// One sign-in store for all agent tabs (separate from Safari and WhatsApp).
+    private lazy var store: WKWebsiteDataStore = {
+        let key = "agentBrowserStore"
+        let id = UUID(uuidString: UserDefaults.standard.string(forKey: key) ?? "") ?? UUID()
+        UserDefaults.standard.set(id.uuidString, forKey: key)
+        return WKWebsiteDataStore(forIdentifier: id)
+    }()
+
+    func show(_ tabID: String? = nil) {
+        if let tabID { selected = tabID }
+        if selected == nil { selected = tabs.last?.id }
+        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        w.title = "Zuffi — agents at work"; w.titlebarAppearsTransparent = true; w.isReleasedWhenClosed = false
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentMinSize = NSSize(width: 900, height: 600)
+        w.contentView = NSHostingView(rootView: AgentBrowserView())
+        w.center(); w.setFrameAutosaveName("ZuffiAgentBrowser")
+        window = w
+        w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func close(_ t: BrowserTab) {
+        t.stopped = true; t.answer?.resume(returning: false); t.answer = nil
+        tabs.removeAll { $0.id == t.id }
+        if selected == t.id { selected = tabs.last?.id }
+    }
+
+    // MARK: the agent's hands
+
+    /// Reads the page: what you can click or type into (numbered), plus the visible text.
+    private static let readJS = """
+    (() => {
+      const vis = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+        return r.width > 2 && r.height > 2 && s.visibility !== 'hidden' && s.display !== 'none' && r.bottom > -200 && r.top < innerHeight + 1400; };
+      const items = []; let n = 0;
+      document.querySelectorAll('a[href],button,input,textarea,select,[role=button],[role=link],[role=tab],[role=menuitem],[contenteditable=true],summary').forEach(el => {
+        if (!vis(el) || n >= 120) return;
+        const id = ++n; el.setAttribute('data-zid', id);
+        const t = (el.getAttribute('aria-label') || el.innerText || el.value || el.placeholder || el.title || el.name || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+        items.push({ id, tag: el.tagName.toLowerCase(), type: (el.type || '').toLowerCase(), text: t, href: (el.href || '').slice(0, 90),
+          ac: (el.autocomplete || '').toLowerCase() });
+      });
+      const text = (document.body ? document.body.innerText : '').replace(/\\n{2,}/g, '\\n').slice(0, 3500);
+      return JSON.stringify({ title: document.title, url: location.href, items, text });
+    })()
+    """
+
+    private func read(_ t: BrowserTab) async -> [String: Any]? {
+        guard let raw = try? await t.web.evaluateJavaScript(Self.readJS) as? String, let d = raw.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+    }
+
+    private func waitLoaded(_ t: BrowserTab) async {
+        for _ in 0..<40 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if !t.web.isLoading, ((try? await t.web.evaluateJavaScript("document.readyState")) as? String) == "complete" { break }
+        }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        t.title = t.web.title ?? t.title; t.url = t.web.url?.absoluteString ?? t.url
+    }
+
+    private func js(_ t: BrowserTab, _ code: String) async -> String {
+        ((try? await t.web.evaluateJavaScript(code)) as? String) ?? ""
+    }
+    private static func q(_ s: String) -> String {
+        let d = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data("[\"\"]".utf8)
+        return String(String(data: d, encoding: .utf8)?.dropFirst().dropLast() ?? "\"\"")
+    }
+
+    /// Waits while paused / taken over; false when the tab was closed.
+    private func holdIfPaused(_ t: BrowserTab) async -> Bool {
+        while (t.paused || t.takeover) && !t.stopped { try? await Task.sleep(nanoseconds: 300_000_000) }
+        return !t.stopped
+    }
+
+    private func approve(_ t: BrowserTab, _ question: String) async -> Bool {
+        t.asking = question; t.status = "Needs you"
+        MacStatus.shared.toast("\(t.agent.emoji) \(t.agent.name) needs your OK", question, icon: "hand.raised.fill")
+        let ok = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in MainActor.assumeIsolated { t.answer = c } }
+        t.asking = nil; t.status = t.stopped ? "Stopped" : "Working"
+        ZuffiTeam.shared.log(t.agent.name, ok ? "You approved" : "You said no", question)
+        return ok
+    }
+    func reply(_ t: BrowserTab, _ yes: Bool) { t.answer?.resume(returning: yes); t.answer = nil }
+
+    static let rules = """
+    You are an agent doing a task in a web browser for the user. Each turn you get the page: title, url, the elements you can use (with numbers) and the visible text.
+    Reply with ONE next action as JSON only:
+    {"say": "very short step, e.g. 'Searching for flights'", "action": "click"|"type"|"select"|"scroll"|"go"|"back"|"wait"|"done"|"ask",
+     "id": element number (click/type/select), "text": text to type, "enter": true to press Enter after typing, "value": option for select,
+     "url": address for go, "dir": "down"|"up" for scroll, "answer": the result for done (what you found, with key facts and links), "question": what you need for ask,
+     "risky": true if this action buys, pays, sends, posts, publishes, submits a form, books, subscribes, deletes or changes an account}
+    Rules: use the fastest reliable way (search boxes, direct URLs). Never type passwords, card numbers, security codes or one-time codes — use "ask" so the user does it.
+    If there's a login wall or a CAPTCHA, use "ask". Decline non-essential cookies. Don't repeat the same action again and again. Use "done" as soon as you have the answer.
+    """
+
+    /// Runs one agent's task in a new tab. Returns its answer (or why it stopped).
+    func run(_ task: String, agent: TeamAgent, runID: String?) async -> String {
+        let t = BrowserTab(agent: agent, task: task, store: store)
+        t.runID = runID
+        tabs.append(t)
+        if selected == nil || tabs.count == 1 { selected = t.id }
+        t.status = "Working"
+        let start = Self.startURL(task)
+        t.say("Opening \(start.host ?? start.absoluteString)")
+        t.web.load(URLRequest(url: start))
+        await waitLoaded(t)
+        var history: [String] = []
+        for stepNo in 1...25 {
+            guard await holdIfPaused(t) else { return "Stopped." }
+            guard let page = await read(t) else { t.say("Couldn't read the page"); continue }
+            let items = (page["items"] as? [[String: Any]]) ?? []
+            let list = items.map { i -> String in
+                let id = i["id"] as? Int ?? 0, tag = i["tag"] as? String ?? "", type = i["type"] as? String ?? "", text = i["text"] as? String ?? ""
+                return "[\(id)] \(tag)\(type.isEmpty ? "" : "(\(type))") \(text)"
+            }.joined(separator: "\n")
+            let prompt = """
+            TASK: \(task)
+            STEPS SO FAR:
+            \(history.isEmpty ? "none" : history.suffix(10).joined(separator: "\n"))
+            PAGE: \(page["title"] as? String ?? "") — \(page["url"] as? String ?? "")
+            ELEMENTS:
+            \(list.prefix(9000))
+            VISIBLE TEXT:
+            \((page["text"] as? String ?? "").prefix(3000))
+            """
+            guard let raw = await AIService.shared.textAnswer(system: Self.rules, messages: [["role": "user", "content": prompt]], max: 400),
+                  let a = AIService.jsonIn(raw) as? [String: Any], let action = a["action"] as? String else {
+                t.say("The AI didn't answer — stopping"); t.status = "Stopped"
+                return "I couldn't reach an AI to work the page. Nothing was done after step \(stepNo - 1)."
+            }
+            let say = (a["say"] as? String) ?? action
+            let id = (a["id"] as? Int) ?? Int((a["id"] as? String) ?? "") ?? 0
+            let item = items.first { ($0["id"] as? Int) == id }
+            let itemText = (item?["text"] as? String ?? "").lowercased()
+            // risky? (the AI says so, or the button says buy / pay / send / post / delete…)
+            let riskyWords = itemText.range(of: #"\b(buy|pay|place order|checkout|purchase|send|post|publish|share|submit|delete|remove|confirm|book now|reserve|subscribe|sign up|transfer)\b"#, options: .regularExpression) != nil
+            let secret = ["password"].contains(item?["type"] as? String ?? "") || (item?["ac"] as? String ?? "").hasPrefix("cc-") || itemText.range(of: #"card number|cvv|cvc|security code|one.time"#, options: .regularExpression) != nil
+            if action == "type", secret {
+                t.say("This needs your password or card details — please type it yourself")
+                t.takeover = true; t.status = "You're in control"
+                MacStatus.shared.toast("\(agent.emoji) \(agent.name): your turn", "Please type your details in its tab, then press “Give back”.", icon: "lock.fill")
+                show(t.id)
+                history.append("Asked the user to type private details")
+                continue
+            }
+            if ((a["risky"] as? Bool) == true || ((action == "click" || action == "type") && riskyWords)) {
+                let ok = await approve(t, "\(say) — on \(t.web.url?.host ?? "this site")")
+                if !ok { history.append("User said NO to: \(say)"); t.say("You said no — skipping that"); continue }
+            }
+            t.say(say)
+            history.append("\(stepNo). \(action) \(id > 0 ? "[\(id)] \(itemText.prefix(40))" : "") \(a["text"] as? String ?? a["url"] as? String ?? "")")
+            switch action {
+            case "click":
+                let r = await js(t, "(() => { const el = document.querySelector('[data-zid=\"\(id)\"]'); if (!el) return 'missing'; el.scrollIntoView({block:'center'}); el.focus(); el.click(); return 'ok'; })()")
+                if r != "ok" { history.append("(that element wasn't there)") }
+                await waitLoaded(t)
+            case "type":
+                let text = Self.q((a["text"] as? String) ?? "")
+                let enter = (a["enter"] as? Bool) == true
+                _ = await js(t, """
+                (() => { const el = document.querySelector('[data-zid="\(id)"]'); if (!el) return 'missing'; el.scrollIntoView({block:'center'}); el.focus();
+                  if (el.isContentEditable) { document.execCommand('selectAll', false); document.execCommand('insertText', false, \(text)); }
+                  else { const p = Object.getPrototypeOf(el); const d = Object.getOwnPropertyDescriptor(p, 'value'); d && d.set ? d.set.call(el, \(text)) : (el.value = \(text));
+                    el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }
+                  \(enter ? "const k = {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true}; el.dispatchEvent(new KeyboardEvent('keydown', k)); el.dispatchEvent(new KeyboardEvent('keyup', k)); if (el.form) { el.form.requestSubmit ? el.form.requestSubmit() : el.form.submit(); }" : "")
+                  return 'ok'; })()
+                """)
+                if enter { await waitLoaded(t) } else { try? await Task.sleep(nanoseconds: 300_000_000) }
+            case "select":
+                _ = await js(t, "(() => { const el = document.querySelector('[data-zid=\"\(id)\"]'); if (!el) return 'missing'; el.value = \(Self.q((a["value"] as? String) ?? "")); el.dispatchEvent(new Event('change', {bubbles:true})); return 'ok'; })()")
+            case "scroll":
+                _ = await js(t, "window.scrollBy(0, \((a["dir"] as? String) == "up" ? -700 : 700)); 'ok'")
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            case "go":
+                if let s = a["url"] as? String, let u = URL(string: s.hasPrefix("http") ? s : "https://" + s) { t.web.load(URLRequest(url: u)); await waitLoaded(t) }
+            case "back":
+                t.web.goBack(); await waitLoaded(t)
+            case "wait":
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            case "ask":
+                let qn = (a["question"] as? String) ?? "I need your help on this page."
+                t.say("Asks you: \(qn)")
+                t.takeover = true; t.status = "You're in control"
+                MacStatus.shared.toast("\(agent.emoji) \(agent.name) needs you", qn, icon: "questionmark.circle.fill")
+                show(t.id)
+                history.append("Asked the user: \(qn) (they handled it in the tab)")
+            case "done":
+                let ans = (a["answer"] as? String) ?? "Done."
+                t.status = "Done"
+                return ans + "\n\n(Page: \(t.web.url?.absoluteString ?? ""))"
+            default:
+                history.append("(unknown action \(action))")
+            }
+        }
+        t.status = "Stopped"
+        return "I stopped after 25 steps without finishing. The tab is still open in the agent browser so you can carry on."
+    }
+
+    /// Where to start: a site named in the task, else a web search.
+    static func startURL(_ task: String) -> URL {
+        let l = task.lowercased()
+        if let r = l.range(of: #"(https?://\S+|\b[a-z0-9-]+\.(com|co\.uk|org|net|io|ai|uk)\S*)"#, options: .regularExpression) {
+            let s = String(l[r]); if let u = URL(string: s.hasPrefix("http") ? s : "https://" + s) { return u }
+        }
+        let q = task.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? task
+        return URL(string: "https://www.google.com/search?q=\(q)") ?? URL(string: "https://www.google.com")!
+    }
+}
+
+/// Shows one tab's live page.
+struct BrowserTabWeb: NSViewRepresentable {
+    let web: WKWebView
+    func makeNSView(context: Context) -> NSView { let v = NSView(); host(v); return v }
+    func updateNSView(_ v: NSView, context: Context) { host(v) }
+    private func host(_ v: NSView) {
+        guard web.superview !== v else { return }
+        web.removeFromSuperview()
+        web.translatesAutoresizingMaskIntoConstraints = true
+        web.frame = v.bounds; web.autoresizingMask = [.width, .height]
+        v.addSubview(web)
+    }
+}
+
+struct AgentBrowserView: View {
+    @ObservedObject private var browser = AgentBrowser.shared
+    var body: some View {
+        HStack(spacing: 0) {
+            // agents (tabs)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Agents at work").font(.system(size: 13, weight: .bold)).padding(.top, 34).padding(.horizontal, 12)
+                if browser.tabs.isEmpty {
+                    Text("When an agent works on a website, its tab appears here. Try: “Web Helper, find the cheapest train from London to Manchester tomorrow”.")
+                        .font(.system(size: 11)).foregroundColor(.secondary).padding(12)
+                }
+                ScrollView {
+                    VStack(spacing: 4) { ForEach(browser.tabs) { t in TabRow(tab: t, on: browser.selected == t.id) { browser.selected = t.id } } }.padding(.horizontal, 8)
+                }
+                Spacer()
+            }
+            .frame(width: 250).background(Color.black.opacity(0.25))
+            Divider()
+            if let t = browser.tabs.first(where: { $0.id == browser.selected }) { TabDetail(tab: t) }
+            else { Spacer(); Text("No agent selected").foregroundColor(.secondary); Spacer() }
+        }
+        .frame(minWidth: 900, minHeight: 600)
+    }
+
+    struct TabRow: View {
+        @ObservedObject var tab: BrowserTab
+        let on: Bool
+        let pick: () -> Void
+        var body: some View {
+            Button(action: pick) {
+                HStack(spacing: 8) {
+                    AgentAvatar(agent: tab.agent, size: 28)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(tab.agent.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Text(tab.status + " · " + (tab.steps.last ?? tab.task)).font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    Circle().fill(tab.status == "Done" ? Color.green : tab.status == "Needs you" || tab.status == "You're in control" ? Color.orange : tab.status == "Stopped" ? Color.gray : AgentField.of(tab.agent).color).frame(width: 8, height: 8)
+                }
+                .padding(8).background(RoundedRectangle(cornerRadius: 10).fill(on ? Color.white.opacity(0.1) : .clear))
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+        }
+    }
+
+    struct TabDetail: View {
+        @ObservedObject var tab: BrowserTab
+        @ObservedObject private var browser = AgentBrowser.shared
+        var body: some View {
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Button { tab.web.goBack() } label: { Image(systemName: "chevron.left") }.disabled(!tab.web.canGoBack)
+                        Button { tab.web.reload() } label: { Image(systemName: "arrow.clockwise") }
+                        Text(tab.url.isEmpty ? tab.task : tab.url).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                            .padding(.horizontal, 10).frame(maxWidth: .infinity, alignment: .leading).frame(height: 26).background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
+                        if tab.takeover {
+                            Button("Give back to \(tab.agent.name)") { tab.takeover = false; tab.status = "Working"; tab.say("You gave control back") }.buttonStyle(.borderedProminent)
+                        } else {
+                            Button("Take over") { tab.takeover = true; tab.status = "You're in control"; tab.say("You took over") }
+                        }
+                        Button(tab.paused ? "Resume" : "Pause") { tab.paused.toggle(); tab.status = tab.paused ? "Paused" : "Working" }
+                        Button { browser.close(tab) } label: { Image(systemName: "xmark") }.help("Stop and close this tab")
+                    }
+                    .controlSize(.small).padding(.horizontal, 10).padding(.top, 30).padding(.bottom, 8)
+                    if let q = tab.asking {
+                        HStack(spacing: 10) {
+                            Image(systemName: "hand.raised.fill").foregroundColor(.orange)
+                            Text("\(tab.agent.name) wants to: \(q)").font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                            Button("No") { browser.reply(tab, false) }
+                            Button("Yes, go ahead") { browser.reply(tab, true) }.buttonStyle(.borderedProminent).tint(.orange)
+                        }
+                        .padding(10).background(Color.orange.opacity(0.15))
+                    }
+                    BrowserTabWeb(web: tab.web)
+                }
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) { AgentAvatar(agent: tab.agent, size: 30); VStack(alignment: .leading, spacing: 1) { Text(tab.agent.name).font(.system(size: 12.5, weight: .bold)); Text(tab.status).font(.system(size: 10.5)).foregroundColor(.secondary) } }
+                    Text(tab.task).font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Divider()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(Array(tab.steps.enumerated()), id: \.offset) { i, s in
+                                HStack(alignment: .top, spacing: 6) { Text("\(i + 1).").font(.system(size: 10, weight: .bold)).foregroundColor(.secondary).frame(width: 20, alignment: .trailing); Text(s).font(.system(size: 11)) }
+                            }
+                        }
+                    }
+                }
+                .padding(12).padding(.top, 22).frame(width: 260)
+            }
         }
     }
 }

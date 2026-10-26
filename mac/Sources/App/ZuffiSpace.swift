@@ -615,7 +615,7 @@ struct ZuffiQuickSettings: View {
                     NotchListRowLabel(icon: "envelope.badge.fill", tint: "#2F80ED", title: "Add Gmail / Outlook to Mail", sub: "Then every new email shows here")
                 }.buttonStyle(.plain)
                 row("bell.badge", "Notifications at the notch (email, battery, devices)", on: Binding(get: { MacStatus.shared.toastsOn }, set: { MacStatus.shared.toastsOn = $0 }))
-                if ZuffiPlan.shared.isBusiness && !ZuffiPlan.shared.isPersonal {
+                if ZuffiFocus.whatsapp && ZuffiPlan.shared.isBusiness && !ZuffiPlan.shared.isPersonal {
                     row("message.fill", "WhatsApp linked to Zuffi (new messages instantly)", on: Binding(get: { WhatsAppLink.shared.enabled }, set: { $0 ? WhatsAppLink.shared.showWindow() : (WhatsAppLink.shared.enabled = false) }))
                     row("speaker.wave.2.bubble.left.fill", "Read new WhatsApp messages out loud", on: Binding(get: { WhatsAppLink.shared.readAloud }, set: { WhatsAppLink.shared.readAloud = $0 }))
                     row("arrowshape.turn.up.left.2.fill", "Auto-reply to customers on WhatsApp", on: Binding(get: { ZuffiCRM.shared.isOn(.autopilot) }, set: { ZuffiCRM.shared.set(.autopilot, $0) }))
@@ -634,6 +634,9 @@ struct ZuffiQuickSettings: View {
                     row("figure.walk", "Zuffi on screen (pet)", on: Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
                     row("bell.and.waves.left.and.right", "The pet brings reminders (water, meetings…)", on: Binding(get: { ZuffiWalk.petBringsReminders }, set: { UserDefaults.standard.set($0, forKey: "petReminders") }))
                 }
+                Button { ZuffiModeWindow.shared.show() } label: {
+                    NotchListRowLabel(icon: "person.2.fill", tint: "#F59E3B", title: "Zuffi is for: \(ZuffiPlan.shared.mode?.title ?? "not chosen")", sub: "Personal assistant, business, freelancer, company or creator — change")
+                }.buttonStyle(.plain)
                 row("cube.fill", "3D pet (smooth, looks at your mouse)", on: Binding(get: { Buddy3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "pet3D"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
                 row("person.3.sequence.fill", "Show AI agents on screen while they work", on: Binding(get: { AgentStage.shared.enabled }, set: { AgentStage.shared.enabled = $0 }))
                 row("eye.slash.fill", "Never show the pet on screen", on: Binding(get: { ZuffiWalk.petNever }, set: { UserDefaults.standard.set($0, forKey: "petNever"); if $0 { PetController.shared.hide() } }))
@@ -764,8 +767,9 @@ struct NotchFeaturesList: View {
 
     static let cats: [(String, String)] = [("business", "Business"), ("files", "Files & PDF"), ("everyday", "Every day"), ("create", "Create"), ("devices", "This Mac & devices")]
     static let all: [NotchFeature] = [
-        NotchFeature(id: "business", cat: "business", icon: "briefcase.fill", tint: "#F58FA8", name: "Business", sub: "Leads, WhatsApp agent, posts, money, team", business: true),
+        NotchFeature(id: "business", cat: "business", icon: "briefcase.fill", tint: "#F58FA8", name: "Business", sub: "Your AI team: posts, reviews, competitors, weekly report", business: true),
         NotchFeature(id: "aiteam", cat: "business", icon: "person.3.sequence.fill", tint: "#5B6CFF", name: "AI Team", sub: "Hire specialists, give them jobs — led by a Team Manager", business: true),
+        NotchFeature(id: "agentbrowser", cat: "devices", icon: "safari.fill", tint: "#7C3AED", name: "Agents at work", sub: "Watch your helpers work in their own browser tabs — pause or take over"),
         NotchFeature(id: "convert", cat: "files", icon: "arrow.triangle.2.circlepath", tint: "#38BDF8", name: "Convert a file", sub: "JPG, PNG, WebP, PDF, text"),
         NotchFeature(id: "sign", cat: "files", icon: "signature", tint: "#22A06B", name: "Sign a PDF", sub: "Draw your signature, done"),
         NotchFeature(id: "merge", cat: "files", icon: "square.stack.3d.up.fill", tint: "#E25A5A", name: "Merge PDFs", sub: "Join several into one"),
@@ -806,6 +810,7 @@ struct NotchFeaturesList: View {
         let words = query.lowercased().split(separator: " ").map(String.init)
         return Self.all.filter { f in
             if f.business && !biz { return false }
+            if f.id == "walink" && !ZuffiFocus.whatsapp { return false }
             if f.id == "jobs" && biz { return false }
             let hay = (f.name + " " + f.sub).lowercased()
             return words.allSatisfy { hay.contains($0) }
@@ -854,6 +859,7 @@ struct NotchFeaturesList: View {
         case "room": RoomListener.shared.toggle(); ZuffiNav.go(.overview)   // from the list → back to home, where the room card shows
         case "walink": WhatsAppLink.shared.showWindow(); NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "aiteam": BusinessDashboard.shared.show(.aiTeam); NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        case "agentbrowser": AgentBrowser.shared.show(); NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "business", "convert", "record", "screen", "agents", "data", "history", "pet", "meeting", "today":
             // Only fold the notch for things that open their own window; the rest show their answer in the notch.
             if id == "screen" || id == "record" || id == "meeting" { ZuffiNav.go(.overview) }

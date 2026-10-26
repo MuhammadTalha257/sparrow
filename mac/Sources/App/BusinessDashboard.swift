@@ -384,7 +384,7 @@ struct BusinessDashboardView: View {
         .id(look.version)          // a new look re-draws every page
     }
 
-    private var tabs: [BizTab] { BizTab.allCases.filter { ($0 != .properties || crm.isEstate) && ($0 != .team || crm.kind != .freelancer) } }
+    private var tabs: [BizTab] { BizTab.allCases.filter { !ZuffiFocus.hiddenBizTabs.contains($0.rawValue) && ($0 != .properties || crm.isEstate) && ($0 != .team || crm.kind != .freelancer) } }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {

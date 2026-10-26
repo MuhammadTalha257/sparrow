@@ -93,8 +93,19 @@ final class ZuffiPlan: ObservableObject {
     // MARK: Who Zuffi helps (the welcome form)
 
     /// "personal" (Just me) or "business". Business screens only show for a business.
-    var use: String { UserDefaults.standard.string(forKey: "zuffiUse") ?? "personal" }
-    var isPersonal: Bool { UserDefaults.standard.string(forKey: "zuffiProfile") != nil && use != "business" }
+    var use: String { mode.map { $0.isBusiness ? "business" : "personal" } ?? UserDefaults.standard.string(forKey: "zuffiUse") ?? "personal" }
+    var isPersonal: Bool {
+        if let m = mode { return m == .personal }
+        return UserDefaults.standard.string(forKey: "zuffiProfile") != nil && use != "business"
+    }
+    /// What Zuffi is for on this Mac (chosen once; changeable in Settings). nil = not chosen yet.
+    var mode: ZuffiMode? { ZuffiMode(rawValue: UserDefaults.standard.string(forKey: "zuffiMode") ?? "") }
+    func setMode(_ m: ZuffiMode) {
+        objectWillChange.send()
+        UserDefaults.standard.set(m.rawValue, forKey: "zuffiMode")
+        UserDefaults.standard.set(m.isBusiness ? "business" : "personal", forKey: "zuffiUse")
+        ZuffiTeam.shared.log("You", "Zuffi is for: \(m.title)")
+    }
     var profile: [String: String] { (UserDefaults.standard.dictionary(forKey: "zuffiProfile") as? [String: String]) ?? [:] }
 
     func saveProfile(_ o: [String: Any]) {
@@ -386,4 +397,109 @@ func zClean(_ s: String) -> String {
         .replacingOccurrences(of: #"<[^<>]{1,30}>|\{[^{}]{1,30}\}|\[(noise|music|silence|inaudible|pause)\]"#, with: " ", options: [.regularExpression, .caseInsensitive])
         .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
         .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+
+// MARK: - What Zuffi is for: a personal assistant, or a business (business · freelancer · one-person company · content creator)
+
+enum ZuffiMode: String, CaseIterable, Identifiable {
+    case personal, business, freelancer, company, creator
+    var id: String { rawValue }
+    var isBusiness: Bool { self != .personal }
+    var title: String {
+        switch self {
+        case .personal: return "Personal assistant"
+        case .business: return "Business"
+        case .freelancer: return "Freelancer"
+        case .company: return "One-person company"
+        case .creator: return "Content creator"
+        }
+    }
+    var sub: String {
+        switch self {
+        case .personal: return "Zuffi and her helpers run your Mac: research, writing, travel, tasks on websites, reminders, screen recording and more"
+        case .business: return "A shop, salon, café, clinic, trade… your AI team posts, watches reviews and competitors, and reports every week"
+        case .freelancer: return "Win and keep clients: posts, research, proposals and a weekly report"
+        case .company: return "You are the company: an AI team for marketing, research and admin"
+        case .creator: return "Plan, write and schedule content, follow trends and see what works"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .personal: return "person.crop.circle.fill"
+        case .business: return "storefront.fill"
+        case .freelancer: return "laptopcomputer"
+        case .company: return "building.2.fill"
+        case .creator: return "camera.aperture"
+        }
+    }
+}
+
+/// Parts of Zuffi switched off for now (kept in the app, ready to come back).
+enum ZuffiFocus {
+    /// WhatsApp linking, inbox and auto-replies.
+    static let whatsapp = false
+    /// The full list of 289 specialists (Zuffi's own focused team is shown instead).
+    static let allAgents = false
+    /// Business pages hidden for now.
+    static let hiddenBizTabs: Set<String> = ["Inbox", "Pipeline", "Properties", "Customers", "WhatsApp contacts", "Money", "Staff", "Data sources"]
+}
+
+/// "What's Zuffi for?" — asked once on this Mac.
+@MainActor
+final class ZuffiModeWindow {
+    static let shared = ZuffiModeWindow()
+    private var window: NSWindow?
+    func showIfNeeded() { if ZuffiPlan.shared.mode == nil, !ZuffiPlan.shared.isLocked { show() } }
+    func show() {
+        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 560), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+        w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isReleasedWhenClosed = false
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentView = NSHostingView(rootView: ZuffiModePicker { [weak self] in self?.window?.close() })
+        w.center(); window = w
+        w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+struct ZuffiModePicker: View {
+    var done: () -> Void
+    @State private var pick: ZuffiMode? = ZuffiPlan.shared.mode
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Buddy3DView(kind: .bunny, mood: .happy).frame(width: 70, height: 80)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("What's Zuffi for?").font(.system(size: 22, weight: .bold, design: .rounded))
+                    Text("I'll show only what you need. You can change this any time in Settings.").font(.system(size: 12)).foregroundColor(.secondary)
+                }
+            }
+            ForEach(ZuffiMode.allCases) { m in
+                Button { pick = m } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: m.icon).font(.system(size: 18, weight: .semibold)).foregroundColor(.white)
+                            .frame(width: 40, height: 40).background(RoundedRectangle(cornerRadius: 11).fill(m.isBusiness ? Color(hex: "#5B6CFF").gradient : Color(hex: "#F59E3B").gradient))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(m.title).font(.system(size: 13.5, weight: .bold)).foregroundColor(.primary)
+                            Text(m.sub).font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Image(systemName: pick == m ? "checkmark.circle.fill" : "circle").foregroundColor(pick == m ? Color(hex: "#F59E3B") : .secondary)
+                    }
+                    .padding(10).background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(pick == m ? 0.1 : 0.04)))
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+            HStack {
+                Spacer()
+                Button("Continue") {
+                    guard let m = pick else { return }
+                    ZuffiPlan.shared.setMode(m)
+                    done()
+                    if m.isBusiness { BusinessDashboard.shared.show() }
+                }.buttonStyle(.borderedProminent).tint(Color(hex: "#F59E3B")).disabled(pick == nil).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24).frame(width: 620)
+    }
 }

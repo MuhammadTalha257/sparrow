@@ -506,6 +506,9 @@ final class Buddy3DCoordinator: NSObject, SCNSceneRendererDelegate, @unchecked S
             n.addChildNode(node(SCNCapsule(capRadius: 0.02, height: 0.24), w)); n.addChildNode(node(SCNCone(topRadius: 0, bottomRadius: 0.035, height: 0.07), m, SCNVector3(0, 0.15, 0)))
         case .support:
             n.addChildNode(node(SCNSphere(radius: 0.09), m, SCNVector3.init(0, 0, 0), scale: SCNVector3(1.3, 0.9, 0.5)))
+        case .web:
+            n.addChildNode(node(SCNSphere(radius: 0.09), m))
+            let ring = node(SCNTorus(ringRadius: 0.12, pipeRadius: 0.012), w); ring.eulerAngles.x = 0.5; n.addChildNode(ring)
         default: return nil
         }
         return n
