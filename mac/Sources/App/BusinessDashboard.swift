@@ -33,6 +33,7 @@ final class BusinessDashboard {
             return
         }
         if let tab { BizNav.shared.tab = tab }
+        if ZuffiHub.oneWindow { ZuffiHub.shared.show(.biz(tab ?? BizNav.shared.tab)); return }
         ZuffiCRM.shared.reload()
         if window?.isVisible != true, BizLock.shared.enabled { BizLock.shared.locked = true }
         if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
@@ -2278,5 +2279,410 @@ struct BizFAQEditor: View {
             }
             .padding(.top, 4)
         }
+    }
+}
+
+// =====================================================================
+// MARK: - Zuffi: one window for everything (Home · Team · Missions · Settings, + business pages for businesses)
+//
+// A frosted-glass window over your desktop: a top bar with the main tabs, a side menu, and the page. Personal users
+// only see personal things; business, freelancer, one-person-company and creator modes also get the business pages.
+// Settings live here as a page — no separate Settings window.
+// =====================================================================
+
+enum HubSection: Hashable {
+    case home, team, missions, routines, settings, biz(BizTab)
+    var title: String {
+        switch self {
+        case .home: return "Home"
+        case .team: return "Team"
+        case .missions: return "Missions"
+        case .routines: return "Routines"
+        case .settings: return "Settings"
+        case .biz(let t): return t.rawValue
+        }
+    }
+}
+
+@MainActor
+final class ZuffiHub: ObservableObject {
+    static let shared = ZuffiHub()
+    @Published var section: HubSection = .home
+    @Published var asking = false
+    private var window: NSWindow?
+
+    func show(_ s: HubSection? = nil) {
+        if let s { section = s }
+        if case .biz = section { ZuffiCRM.shared.reload() }
+        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780),
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                         backing: .buffered, defer: false)
+        w.title = "Zuffi"
+        w.titlebarAppearsTransparent = true
+        w.titleVisibility = .hidden
+        w.isReleasedWhenClosed = false
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentMinSize = NSSize(width: 940, height: 620)
+        w.contentView = NSHostingView(rootView: ZuffiHubView().preferredColorScheme(.dark))
+        w.center()
+        w.setFrameAutosaveName("ZuffiHubWindow")
+        window = w
+        NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Settings and Business open in this one window (Settings can switch back to the old separate windows).
+    static var oneWindow: Bool { UserDefaults.standard.object(forKey: "hubOneWindow") as? Bool ?? true }
+
+    /// Business pages are shown only when Zuffi is set up for work (business, freelancer, one-person company, creator).
+    var showsBusiness: Bool { !ZuffiPlan.shared.isPersonal }
+}
+
+/// One business page, on its own.
+struct BizPageView: View {
+    let tab: BizTab
+    var body: some View {
+        switch tab {
+        case .today: BizTodayView()
+        case .inbox: BizInboxView()
+        case .aiTeam: BizAITeamView()
+        case .reports: BizReportsView()
+        case .contacts: BizContactsView()
+        case .sources: BizDataSourcesView()
+        case .pipeline: BizPipelineView()
+        case .records: BizRecordsView()
+        case .properties: BizPropertiesView()
+        case .money: BizMoneyView()
+        case .business: BizBusinessView()
+        case .team: BizTeamView()
+        case .automations: BizAutomationsView()
+        case .connect: BizConnectView()
+        case .learn: BizLearnView()
+        }
+    }
+}
+
+private enum Hub {
+    static let accent = Color(hex: "#3A6DF0")
+    static let line = Color(red: 113 / 255, green: 119 / 255, blue: 144 / 255).opacity(0.25)
+    static let text = Color(hex: "#F9FAFB")
+    static let muted = Color(hex: "#A6AAB9")
+    static let content = Color(red: 146 / 255, green: 151 / 255, blue: 179 / 255).opacity(0.13)
+    static let search = Color(hex: "#14162B").opacity(0.85)
+    static let hover = Color(red: 12 / 255, green: 15 / 255, blue: 25 / 255).opacity(0.35)
+}
+
+struct ZuffiHubView: View {
+    @ObservedObject private var hub = ZuffiHub.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var nav = BizNav.shared
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var plan = ZuffiPlan.shared
+    @State private var search = ""
+    @State private var task = ""
+
+    private var bizTabs: [BizTab] {
+        BizTab.allCases.filter { !ZuffiFocus.hiddenBizTabs.contains($0.rawValue) && ($0 != .properties || crm.isEstate) && ($0 != .team || crm.kind != .freelancer) && $0 != .aiTeam }
+    }
+    private var topTabs: [HubSection] {
+        var t: [HubSection] = [.home, .team, .missions]
+        if hub.showsBusiness { if bizTabs.contains(.inbox) { t.append(.biz(.inbox)) }; if bizTabs.contains(.money) { t.append(.biz(.money)) } }
+        t.append(.settings)
+        return t
+    }
+
+    var body: some View {
+        ZStack {
+            VisualEffectBlur(material: .underWindowBackground).ignoresSafeArea()
+            LinearGradient(colors: [Color(hex: "#10121B").opacity(0.55), Color(hex: "#151827").opacity(0.45)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            VStack(spacing: 0) {
+                header
+                HStack(spacing: 0) {
+                    sidebar.frame(width: 240)
+                        .overlay(alignment: .trailing) { Rectangle().fill(Hub.line).frame(width: 1) }
+                    VStack(spacing: 0) {
+                        subHeader
+                        page.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            }
+            if hub.asking { askSheet.transition(.opacity) }
+        }
+        .foregroundColor(Hub.text)
+        .animation(.easeInOut(duration: 0.2), value: hub.section)
+        .animation(.easeInOut(duration: 0.2), value: hub.asking)
+    }
+
+    // MARK: top bar
+    private var header: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: 70, height: 1)          // room for the window buttons
+            HStack(spacing: 8) {
+                BunnyFaceView(mood: .smile, size: 30)
+                Text("Zuffi").font(.system(size: 15, weight: .bold, design: .rounded))
+            }
+            .padding(.trailing, 26)
+            ForEach(topTabs, id: \.self) { s in
+                Button { hub.section = s } label: {
+                    Text(s.title).font(.system(size: 14, weight: .medium))
+                        .foregroundColor(hub.section == s ? Hub.text : Hub.muted)
+                        .padding(.horizontal, 18).frame(height: 58)
+                        .overlay(alignment: .bottom) { Rectangle().fill(hub.section == s ? Hub.text : .clear).frame(height: 2) }
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .semibold)).foregroundColor(Hub.muted)
+                TextField("Search", text: $search).textFieldStyle(.plain).font(.system(size: 14))
+                    .onSubmit { if !search.isEmpty { ZuffiChat.shared.open(prefill: search); search = "" } }
+            }
+            .padding(.horizontal, 14).frame(height: 38).frame(maxWidth: 320)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Hub.search))
+            .padding(.leading, 16)
+            Spacer(minLength: 12)
+            Button { ZuffiChat.shared.open() } label: {
+                Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 16)).foregroundColor(Hub.text)
+            }.buttonStyle(.plain).help("Chat with Zuffi")
+            Text(String(AssistantPrefs.displayName.prefix(1)).uppercased().isEmpty ? "Z" : String(AssistantPrefs.displayName.prefix(1)).uppercased())
+                .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                .frame(width: 32, height: 32).background(Circle().fill(Hub.accent)).overlay(Circle().stroke(Hub.text, lineWidth: 2))
+                .padding(.leading, 18).padding(.trailing, 24)
+        }
+        .frame(height: 58)
+        .overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1) }
+    }
+
+    // MARK: side menu
+    private var sidebar: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                group("Zuffi") {
+                    row("Home", "house", .home)
+                    Button { ZuffiChat.shared.open() } label: { rowLabel("Chat", "bubble.left", Hub.text, active: false) }.buttonStyle(.plain)
+                    row("Missions", "flag", .missions, badge: team.runs.filter { $0.status == "Working" }.count)
+                    row("Routines", "clock", .routines)
+                }
+                group("Your team") {
+                    ForEach(Array(teamAgents.prefix(6))) { a in
+                        Button { hub.section = .team } label: {
+                            HStack(spacing: 10) {
+                                AgentAvatar(agent: a, size: 22)
+                                Text(a.name).font(.system(size: 13.5)).lineLimit(1)
+                                Spacer()
+                                Circle().fill(ZuffiTeam.color(team.status(a))).frame(width: 7, height: 7)
+                            }
+                            .padding(.horizontal, 10).frame(height: 36).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
+                }
+                if hub.showsBusiness {
+                    group("Business") {
+                        ForEach(bizTabs) { t in row(t.rawValue, t.icon, .biz(t), tint: Color(hex: t.tint)) }
+                    }
+                }
+                group("Settings") { row("Settings", "gearshape", .settings) }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 22)
+        }
+    }
+    private var teamAgents: [TeamAgent] { team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents }
+
+    private func group<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 13)).foregroundColor(Hub.muted).padding(.leading, 10).padding(.bottom, 6)
+            c()
+        }
+    }
+    private func row(_ label: String, _ icon: String, _ s: HubSection, tint: Color = Hub.text, badge: Int = 0) -> some View {
+        Button { hub.section = s } label: { rowLabel(label, icon, tint, active: hub.section == s, badge: badge) }.buttonStyle(.plain)
+    }
+    private func rowLabel(_ label: String, _ icon: String, _ tint: Color, active: Bool, badge: Int = 0) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundColor(tint).frame(width: 18)
+            Text(label).font(.system(size: 13.5)).lineLimit(1)
+            Spacer()
+            if badge > 0 {
+                Text("\(badge)").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white)
+                    .frame(minWidth: 18, minHeight: 18).background(Circle().fill(Hub.accent))
+            }
+        }
+        .padding(.horizontal, 10).frame(height: 36)
+        .background(RoundedRectangle(cornerRadius: 6).fill(active ? Hub.hover : .clear))
+        .contentShape(Rectangle())
+    }
+
+    // MARK: page header + page
+    private var subHeader: some View {
+        HStack(spacing: 0) {
+            Text(hub.section.title).font(.system(size: 15, weight: .medium)).padding(.horizontal, 30)
+            Spacer()
+        }
+        .frame(height: 50)
+        .overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1) }
+    }
+
+    @ViewBuilder private var page: some View {
+        switch hub.section {
+        case .home: ScrollView { home.padding(.horizontal, 36).padding(.vertical, 22) }
+        case .team: BizAITeamView().foregroundColor(Ink.text)
+        case .missions: ScrollView { TeamActivityView().padding(24) }
+        case .routines: ScrollView { TeamJobsView().padding(24) }
+        case .settings: SettingsView()
+        case .biz(let t):
+            if !nav.formDone { BizSetupGate().foregroundColor(Ink.text) } else { BizPageView(tab: t).foregroundColor(Ink.text) }
+        }
+    }
+
+    // MARK: Home
+    private var home: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            // the banner: Zuffi Manager
+            HStack(alignment: .center, spacing: 20) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        LiveBunnyFace(size: 44).background(Circle().fill(Color.white.opacity(0.9)).frame(width: 50, height: 50))
+                        Text("Zuffi Manager").font(.system(size: 18, weight: .semibold))
+                    }
+                    Text("Give me any job. I'll pick the right agent, show you every step, and ask you before anything is paid, sent or posted.")
+                        .font(.system(size: 14)).foregroundColor(Color(hex: "#FFF7F2")).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                    Button { hub.asking = true } label: {
+                        Text("Give a task").font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                            .padding(.horizontal, 26).frame(height: 38).background(Capsule().fill(Hub.accent))
+                    }.buttonStyle(.plain)
+                }
+                .frame(maxWidth: 440, alignment: .leading)
+                Spacer(minLength: 10)
+                Group {
+                    if Aurora3DPrefs.on { Aurora3DView(pose: .sit, lookAtMouse: true).frame(width: 170, height: 170) }
+                    else { BunnyFaceView(mood: .happy, size: 130) }
+                }
+                .allowsHitTesting(false)
+            }
+            .padding(.horizontal, 36).padding(.vertical, 22)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: [Color(hex: "#CF4AF3"), Color(hex: "#F631BC"), Color(hex: "#FF3A8B"), Color(hex: "#FF5E68"), Color(hex: "#FF8C51"), Color(hex: "#FFC848")], startPoint: .bottomLeading, endPoint: .topTrailing)))
+
+            // your team
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Your team").foregroundColor(Hub.muted)
+                VStack(spacing: 0) {
+                    ForEach(Array(teamAgents.enumerated()), id: \.element.id) { i, a in
+                        agentRow(a).overlay(alignment: .top) { if i > 0 { Rectangle().fill(Hub.line).frame(height: 1) } }
+                    }
+                }
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Hub.content))
+            }
+
+            // routines
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Routines").foregroundColor(Hub.muted)
+                if team.jobs.isEmpty {
+                    Text("No routines yet. Hiring an agent adds its everyday job, like a morning brief or a weekly report.")
+                        .font(.system(size: 13)).foregroundColor(Hub.muted)
+                        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Hub.content))
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 16)], spacing: 16) {
+                        ForEach(team.jobs.prefix(6)) { j in jobCard(j) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func agentRow(_ a: TeamAgent) -> some View {
+        let st = team.status(a)
+        let run = team.runs.first { $0.agent == a.id }
+        let working = st == .working
+        return HStack(spacing: 16) {
+            AgentAvatar(agent: a, size: 28)
+            Text(a.name).font(.system(size: 15)).frame(width: 170, alignment: .leading).lineLimit(1)
+            Text(working ? (run?.steps.last?.text ?? run?.task ?? "") : a.description)
+                .font(.system(size: 13)).foregroundColor(Hub.muted).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) { Circle().fill(ZuffiTeam.color(st)).frame(width: 6, height: 6); Text(st.rawValue).font(.system(size: 14)) }
+                .frame(width: 150, alignment: .leading)
+            Button {
+                if working { MissionControl.shared.show() } else { team.use(a); ZuffiChat.shared.open() }
+            } label: {
+                Text(working ? "Watch" : "Ask").font(.system(size: 14, weight: .medium))
+                    .foregroundColor(working ? .white : Hub.text)
+                    .frame(width: 100, height: 32)
+                    .background(Capsule().fill(working ? Hub.accent : .clear))
+                    .overlay(Capsule().stroke(working ? .clear : Hub.muted, lineWidth: 1))
+            }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18).frame(height: 56)
+    }
+
+    private func jobCard(_ j: TeamJob) -> some View {
+        let a = team.agent(j.agent)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                if let a { AgentAvatar(agent: a, size: 28) }
+                Text(j.title).font(.system(size: 15)).lineLimit(1)
+            }
+            Text(j.task).font(.system(size: 13)).foregroundColor(Hub.muted).lineLimit(3).lineSpacing(3)
+                .padding(.top, 16).padding(.bottom, 16).frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1) }
+            HStack {
+                Text(String(format: "%02d:%02d", j.hour, j.minute) + (j.weekday == nil ? " · every day" : " · weekly"))
+                    .font(.system(size: 12)).foregroundColor(Hub.muted)
+                Spacer()
+                Button { Task { await ZuffiTeam.shared.runJob(j.id) } } label: {
+                    Text("Run now").font(.system(size: 13, weight: .medium)).foregroundColor(.white)
+                        .padding(.horizontal, 18).frame(height: 30).background(Capsule().fill(Hub.accent))
+                }.buttonStyle(.plain)
+            }
+            .padding(.top, 14)
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Hub.content))
+    }
+
+    // MARK: "Give a task" pop-up
+    private var askSheet: some View {
+        ZStack {
+            Color(red: 36 / 255, green: 39 / 255, blue: 59 / 255).opacity(0.8).ignoresSafeArea().onTapGesture { hub.asking = false }
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Give Zuffi a task").font(.system(size: 17, weight: .medium))
+                    Spacer()
+                    Button { hub.asking = false } label: { Image(systemName: "xmark.circle").font(.system(size: 20)) }.buttonStyle(.plain)
+                }
+                .padding(.bottom, 4).overlay(alignment: .bottom) { Rectangle().fill(Hub.line).frame(height: 1).offset(y: 8) }
+                Text("Say it in your own words. The Manager splits it into jobs and gives each one to the right agent.")
+                    .font(.system(size: 13)).foregroundColor(Hub.muted).padding(.top, 6)
+                TextEditor(text: $task).font(.system(size: 14)).scrollContentBackground(.hidden)
+                    .padding(8).frame(height: 90)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Hub.search))
+                Label("I'll always ask before paying, sending or posting anything.", systemImage: "checkmark.shield")
+                    .font(.system(size: 12.5)).foregroundColor(Hub.muted)
+                HStack {
+                    Spacer()
+                    Button { hub.asking = false } label: {
+                        Text("Cancel").font(.system(size: 14, weight: .medium)).padding(.horizontal, 22).frame(height: 32)
+                            .overlay(Capsule().stroke(Hub.muted))
+                    }.buttonStyle(.plain)
+                    Button { start() } label: {
+                        Text("Start").font(.system(size: 14, weight: .medium)).foregroundColor(.white).padding(.horizontal, 24).frame(height: 32)
+                            .background(Capsule().fill(Hub.accent))
+                    }.buttonStyle(.plain).disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(26).frame(width: 480)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: "#161925")))
+            .shadow(color: .black.opacity(0.4), radius: 30, y: 12)
+        }
+    }
+
+    private func start() {
+        let q = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        hub.asking = false; task = ""
+        // the chat shows the answer; the Manager window shows who is doing what
+        ZuffiChat.shared.ask(q)
     }
 }

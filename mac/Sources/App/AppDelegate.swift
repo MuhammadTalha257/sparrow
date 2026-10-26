@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(withTitle: "Open Zuffi", action: #selector(openIsland), keyEquivalent: "")
+        menu.addItem(withTitle: "Dashboard — home, team & settings…", action: #selector(openHub), keyEquivalent: "d")
         menu.addItem(withTitle: "Today — meetings & tasks…", action: #selector(openToday), keyEquivalent: "t")
         menu.addItem(withTitle: "More — habits, prayer, memory, invoices, tools…", action: #selector(openMore), keyEquivalent: "m")
         let pet = NSMenuItem(title: "Show Zuffi on screen", action: #selector(togglePet), keyEquivalent: "p")
@@ -66,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openToday() { TodayWindow.shared.show() }
+    @objc private func openHub() { ZuffiHub.shared.show(.home) }
     @objc private func openMore() { ZuffiNav.go(.features) }
 
     @objc private func togglePet() {
@@ -82,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openSettings() {
         // The island floats above every window; fold it away so it can't cover Settings.
         if AppState.shared.mode == .expanded { islandController?.collapse() }
+        if ZuffiHub.oneWindow { ZuffiHub.shared.show(.settings); return }
 
         if let w = settingsWindow, w.isVisible {
             placeBelowIsland(w)

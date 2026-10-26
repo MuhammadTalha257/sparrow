@@ -45,6 +45,16 @@ final class ZuffiChat: ObservableObject {
         }
     }
 
+    /// Open the chat and send this right away (used by "Give a task").
+    func ask(_ q: String) {
+        open()
+        if ZuffiPlan.shared.isLocked { return }
+        let st = AppState.shared
+        st.chatHistory.append(ChatMessage(role: .user, content: q))
+        st.stateOverride = .thinking
+        Task { await AIService.shared.chat(query: q, context: nil, state: st) }
+    }
+
     func open(prefill: String = "") {
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }   // trial over: choose a plan first
         if !prefill.isEmpty { draft = prefill }
