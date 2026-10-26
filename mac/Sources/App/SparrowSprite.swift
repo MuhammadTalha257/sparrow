@@ -782,3 +782,525 @@ struct AuroraBunnyView: View {
         }
     }
 }
+
+// MARK: - Aurora in real 3D: a fluffy bunny you can see from every side
+//
+// Soft fur is drawn the way games do it: each body part is drawn ~14 times, each copy a little bigger, and each copy only
+// keeps scattered "hair tips" — together they look like thick fur. She sits upright, hops (side view), stands on her back
+// legs to hold up a reminder, cheers, or gets cross. Her face (eyes, nose, mouth) is always drawn on top of the fur.
+
+enum AuroraPose: Equatable { case sit, hop, hold, happy, cross, listen }
+
+enum Aurora3DPrefs {
+    /// The 3D pet (default) — off = your picture bunny.
+    static var on: Bool { UserDefaults.standard.object(forKey: "petAurora3D") as? Bool ?? true }
+}
+
+struct Aurora3DView: NSViewRepresentable {
+    var pose: AuroraPose = .sit
+    var faceLeft = false
+    var lookAtMouse = true
+    func makeCoordinator() -> Aurora3DRig { Aurora3DRig() }
+    func makeNSView(context: Context) -> SCNView { context.coordinator.makeView(lookAtMouse: lookAtMouse) }
+    func updateNSView(_ v: SCNView, context: Context) { context.coordinator.set(pose: pose, faceLeft: faceLeft) }
+    static func dismantleNSView(_ v: SCNView, coordinator: Aurora3DRig) { coordinator.stop() }
+}
+
+/// Maps the pet's older moods to a 3D pose.
+extension AuroraPose {
+    static func from(_ m: Buddy3DMood) -> AuroraPose {
+        switch m {
+        case .walking: return .hop
+        case .happy: return .happy
+        case .listening: return .listen
+        default: return .sit
+        }
+    }
+}
+
+final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var pose: AuroraPose = .sit
+    private var faceLeft = false
+    private var targetYaw: CGFloat = 0, targetPitch: CGFloat = 0
+    private var timer: Timer?
+    private weak var view: SCNView?
+
+    // smoothed state (render thread only)
+    private var last: TimeInterval = 0, t: CGFloat = 0, phase: CGFloat = 0
+    private var stand: CGFloat = 0.62, hopAmt: CGFloat = 0, turn: CGFloat = 0, yaw: CGFloat = 0, pitch: CGFloat = 0
+    private var cheer: CGFloat = 0, crossAmt: CGFloat = 0, holdAmt: CGFloat = 0, listen: CGFloat = 0
+    private var nextBlink: CGFloat = 2
+
+    private let root = SCNNode(), stance = SCNNode(), hips = SCNNode(), chest = SCNNode(), neck = SCNNode(), head = SCNNode()
+    private let camNode = SCNNode()
+    private var thighs: [SCNNode] = [], feet: [SCNNode] = [], arms: [SCNNode] = [], ears: [SCNNode] = []
+    private var eyes: [SCNNode] = [], brows: [SCNNode] = [], faceBits: [SCNNode] = []
+
+    private static let shells = 14
+    private static let geoMod = """
+    #pragma arguments
+    float shellH;
+    float furLen;
+    #pragma body
+    _geometry.position.xyz += _geometry.normal * (furLen * shellH);
+    """
+    private static let surfMod = """
+    #pragma arguments
+    float shellH;
+    float furDensity;
+    #pragma body
+    float2 cell = floor(_surface.diffuseTexcoord * furDensity);
+    float r = fract(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
+    if (shellH > 0.0 && r < pow(shellH, 0.75)) { discard_fragment(); }
+    float ao = mix(0.62, 1.0, shellH);
+    _surface.diffuse.rgb = mix(_surface.diffuse.rgb * ao, float3(1.0, 1.0, 1.0), shellH * 0.35);
+    """
+
+    func set(pose p: AuroraPose, faceLeft l: Bool) { lock.lock(); pose = p; faceLeft = l; lock.unlock() }
+
+    @MainActor func makeView(lookAtMouse: Bool) -> SCNView {
+        let v = SCNView(frame: NSRect(x: 0, y: 0, width: 170, height: 180), options: [SCNView.Option.preferredRenderingAPI.rawValue: SCNRenderingAPI.metal.rawValue])
+        v.backgroundColor = .clear
+        v.antialiasingMode = .multisampling4X
+        v.preferredFramesPerSecond = 60
+        v.rendersContinuously = true
+        let scene = SCNScene()
+        scene.background.contents = NSColor.clear
+        build(scene)
+        v.scene = scene
+        v.pointOfView = camNode
+        v.delegate = self
+        v.isPlaying = true
+        view = v
+        if lookAtMouse {
+            timer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.aim() } }
+        }
+        return v
+    }
+    func stop() { timer?.invalidate(); timer = nil }
+
+    @MainActor private func aim() {
+        guard let v = view, let w = v.window else { return }
+        let r = w.convertToScreen(v.convert(v.bounds, to: nil))
+        let m = NSEvent.mouseLocation
+        let dx = m.x - r.midX, dy = m.y - (r.minY + r.height * 0.7)
+        let near = hypot(dx, dy) < 30
+        lock.lock()
+        targetYaw = near ? 0 : max(-0.7, min(0.7, dx / 380))
+        targetPitch = near ? 0 : max(-0.3, min(0.3, -dy / 420))
+        lock.unlock()
+    }
+
+    // MARK: building
+
+    private static func swatch(_ c: NSColor) -> NSImage {
+        let img = NSImage(size: NSSize(width: 4, height: 4)); img.lockFocus(); c.setFill(); NSRect(x: 0, y: 0, width: 4, height: 4).fill(); img.unlockFocus(); return img
+    }
+    private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> NSColor { NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: 1) }
+
+    /// A furry ellipsoid: the skin plus `shells` growing layers of hair tips.
+    private func fur(_ rx: CGFloat, _ ry: CGFloat, _ rz: CGFloat, _ c: NSColor, len: CGFloat = 0.07, density: CGFloat = 40, at p: SCNVector3 = SCNVector3Zero) -> SCNNode {
+        let g = SCNNode(); g.position = p; g.scale = SCNVector3(rx, ry, rz)
+        let sphere = SCNSphere(radius: 1); sphere.segmentCount = 36
+        let avg = (rx + ry + rz) / 3
+        let tex = Self.swatch(c)
+        for i in 0...Self.shells {
+            guard let geo = sphere.copy() as? SCNGeometry else { continue }
+            let m = SCNMaterial()
+            m.lightingModel = .lambert
+            m.diffuse.contents = tex
+            m.shaderModifiers = [.geometry: Self.geoMod, .surface: Self.surfMod]
+            m.setValue(NSNumber(value: Double(i) / Double(Self.shells)), forKey: "shellH")
+            m.setValue(NSNumber(value: Double(len / avg)), forKey: "furLen")
+            m.setValue(NSNumber(value: Double(density)), forKey: "furDensity")
+            geo.materials = [m]
+            g.addChildNode(SCNNode(geometry: geo))
+        }
+        return g
+    }
+    /// Face parts are drawn on top of the fur (and faded out when they turn away from you).
+    private func faceBit(_ g: SCNGeometry, _ m: SCNMaterial, _ p: SCNVector3, scale s: SCNVector3 = SCNVector3(1, 1, 1)) -> SCNNode {
+        m.readsFromDepthBuffer = false; m.writesToDepthBuffer = false
+        g.materials = [m]
+        let n = SCNNode(geometry: g); n.position = p; n.scale = s; n.renderingOrder = 100
+        return n
+    }
+    private func flat(_ c: NSColor) -> SCNMaterial { let m = SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents = c; return m }
+
+    private func build(_ scene: SCNScene) {
+        let cam = SCNCamera(); cam.fieldOfView = 28; cam.zNear = 0.1; cam.zFar = 40
+        camNode.camera = cam; camNode.position = SCNVector3(0, 1.15, 6.2); camNode.look(at: SCNVector3(0, 0.95, 0))
+        scene.rootNode.addChildNode(camNode)
+        func light(_ type: SCNLight.LightType, _ i: CGFloat, _ p: SCNVector3, _ c: NSColor = .white) {
+            let l = SCNLight(); l.type = type; l.intensity = i; l.color = c
+            let n = SCNNode(); n.light = l; n.position = p; n.look(at: SCNVector3(0, 0.8, 0)); scene.rootNode.addChildNode(n)
+        }
+        light(.ambient, 520, SCNVector3Zero, Self.rgb(255, 248, 240))
+        light(.directional, 760, SCNVector3(3, 6, 4))
+        light(.directional, 380, SCNVector3(-4, 3, -4), Self.rgb(207, 224, 255))
+        // soft ground shadow
+        let shImg = NSImage(size: NSSize(width: 128, height: 128)); shImg.lockFocus()
+        NSGradient(colors: [NSColor(calibratedWhite: 0, alpha: 0.4), NSColor(calibratedWhite: 0, alpha: 0)])?.draw(fromCenter: NSPoint(x: 64, y: 64), radius: 0, toCenter: NSPoint(x: 64, y: 64), radius: 62, options: [])
+        shImg.unlockFocus()
+        let sm = SCNMaterial(); sm.lightingModel = .constant; sm.diffuse.contents = shImg; sm.writesToDepthBuffer = false
+        let sp = SCNPlane(width: 1.9, height: 1.3); sp.materials = [sm]
+        let shn = SCNNode(geometry: sp); shn.eulerAngles.x = -.pi / 2; shn.position = SCNVector3(0, 0.003, 0)
+        scene.rootNode.addChildNode(shn)
+
+        let cream = Self.rgb(242, 228, 226), cream2 = Self.rgb(235, 216, 214), bib = Self.rgb(251, 247, 241), pink = Self.rgb(244, 179, 189)
+        scene.rootNode.addChildNode(root)
+        stance.position = SCNVector3(0, 0.06, -0.42); root.addChildNode(stance)
+        hips.position = SCNVector3(0, 0.5, 0.42); stance.addChildNode(hips)
+        hips.addChildNode(fur(0.56, 0.52, 0.56, cream, len: 0.085, density: 50, at: SCNVector3(0, 0.08, -0.02)))
+        hips.addChildNode(fur(0.16, 0.16, 0.14, .white, len: 0.07, density: 20, at: SCNVector3(0, 0.24, -0.62)))
+        for s in [-1.0, 1.0] as [CGFloat] {
+            let th = SCNNode(); th.position = SCNVector3(0.36 * s, -0.02, -0.08); hips.addChildNode(th); thighs.append(th)
+            th.addChildNode(fur(0.2, 0.3, 0.34, cream, len: 0.06, at: SCNVector3(0, -0.08, 0.02)))
+            let ft = SCNNode(); ft.position = SCNVector3(0, -0.42, -0.06); th.addChildNode(ft); feet.append(ft)
+            ft.addChildNode(fur(0.12, 0.07, 0.3, cream2, len: 0.04, density: 30, at: SCNVector3(0, 0, 0.17)))
+        }
+        chest.position = SCNVector3(0, 0.12, 0.42); hips.addChildNode(chest)
+        chest.addChildNode(fur(0.42, 0.46, 0.42, cream, len: 0.085, density: 50))
+        chest.addChildNode(fur(0.3, 0.32, 0.2, bib, len: 0.06, at: SCNVector3(0, -0.08, 0.3)))
+        for s in [-1.0, 1.0] as [CGFloat] {
+            let a = SCNNode(); a.position = SCNVector3(0.2 * s, -0.12, 0.24); chest.addChildNode(a); arms.append(a)
+            a.addChildNode(fur(0.085, 0.24, 0.09, cream, len: 0.035, density: 25, at: SCNVector3(0, -0.2, 0)))
+            a.addChildNode(fur(0.08, 0.06, 0.1, cream2, len: 0.03, density: 20, at: SCNVector3(0, -0.44, 0.03)))
+        }
+        neck.position = SCNVector3(0, 0.36, 0.22); chest.addChildNode(neck)
+        head.position = SCNVector3(0, 0.22, 0.04); head.scale = SCNVector3(1.28, 1.28, 1.28); neck.addChildNode(head)
+        head.addChildNode(fur(0.36, 0.34, 0.34, cream, len: 0.075, density: 55))
+        for s in [-1.0, 1.0] as [CGFloat] { head.addChildNode(fur(0.17, 0.13, 0.15, bib, len: 0.05, at: SCNVector3(0.15 * s, -0.12, 0.2))) }
+        head.addChildNode(fur(0.13, 0.1, 0.1, bib, len: 0.04, at: SCNVector3(0, -0.11, 0.3)))
+        for s in [-1.0, 1.0] as [CGFloat] {
+            let e = SCNNode(); e.position = SCNVector3(0.12 * s, 0.26, -0.04); e.eulerAngles.z = -0.12 * s; head.addChildNode(e); ears.append(e)
+            e.addChildNode(fur(0.11, 0.38, 0.05, cream, len: 0.04, density: 30, at: SCNVector3(0, 0.38, 0)))
+            e.addChildNode(fur(0.06, 0.3, 0.02, pink, len: 0.02, density: 20, at: SCNVector3(0, 0.36, 0.06)))
+        }
+        // face, on top of the fur
+        let eyeM = SCNMaterial(); eyeM.lightingModel = .physicallyBased
+        eyeM.diffuse.contents = Self.rgb(43, 26, 18); eyeM.roughness.contents = 0.05; eyeM.clearCoat.contents = 1; eyeM.clearCoatRoughness.contents = 0.02
+        for s in [-1.0, 1.0] as [CGFloat] {
+            let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3(0.165 * s, 0.02, 0.39), scale: SCNVector3(0.085, 0.097, 0.04))
+            e.eulerAngles.y = 0.42 * s
+            let hl = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(0.3 * s, 0.4, 0.9), scale: SCNVector3(0.26, 0.23, 0.2))
+            let hl2 = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(-0.35 * s, -0.4, 0.9), scale: SCNVector3(0.11, 0.1, 0.1))
+            e.addChildNode(hl); e.addChildNode(hl2)
+            head.addChildNode(e); eyes.append(e); faceBits.append(e)
+            let blush = faceBit(SCNSphere(radius: 1), flat(NSColor(calibratedRed: 0.96, green: 0.66, blue: 0.7, alpha: 0.55)), SCNVector3(0.22 * s, -0.11, 0.37), scale: SCNVector3(0.06, 0.035, 0.02))
+            head.addChildNode(blush); faceBits.append(blush)
+            let brow = faceBit(SCNCapsule(capRadius: 0.012, height: 0.12), flat(Self.rgb(150, 110, 100)), SCNVector3(0.16 * s, 0.14, 0.4))
+            brow.eulerAngles.z = .pi / 2 + 0.45 * s; brow.opacity = 0
+            head.addChildNode(brow); brows.append(brow)
+        }
+        let noseM = SCNMaterial(); noseM.lightingModel = .physicallyBased; noseM.diffuse.contents = Self.rgb(240, 138, 156); noseM.roughness.contents = 0.3
+        let nose = faceBit(SCNSphere(radius: 1), noseM, SCNVector3(0, -0.06, 0.43), scale: SCNVector3(0.035, 0.025, 0.025))
+        head.addChildNode(nose); faceBits.append(nose)
+        let mouth = faceBit(SCNCapsule(capRadius: 0.006, height: 0.06), flat(Self.rgb(155, 111, 102)), SCNVector3(0, -0.11, 0.425))
+        mouth.eulerAngles.z = .pi / 2
+        head.addChildNode(mouth); faceBits.append(mouth)
+    }
+
+    // MARK: moving (every frame)
+
+    func renderer(_ renderer: any SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        lock.lock(); let p = pose, left = faceLeft, ty = targetYaw, tp = targetPitch; lock.unlock()
+        let dt = CGFloat(last == 0 ? 1.0 / 60 : min(0.05, time - last)); last = time; t += dt
+        func ease(_ v: inout CGFloat, _ to: CGFloat, _ rate: CGFloat = 5) { v += (to - v) * (1 - exp(-dt * rate)) }
+
+        let hopping = p == .hop
+        ease(&hopAmt, hopping ? 1 : 0, 6)
+        ease(&holdAmt, p == .hold ? 1 : 0, 4)
+        ease(&cheer, p == .happy ? 1 : 0, 6)
+        ease(&crossAmt, p == .cross ? 1 : 0, 6)
+        ease(&listen, p == .listen ? 1 : 0, 4)
+        let wantStand: CGFloat = hopping ? 0 : p == .hold ? 1 : p == .happy ? 0.85 : 0.62
+        ease(&stand, wantStand, 3.5)
+        ease(&turn, hopping ? (left ? -.pi / 2 : .pi / 2) : 0, 6)
+        root.eulerAngles.y = turn
+
+        phase += dt * 1.9 * hopAmt
+        let ph = phase.truncatingRemainder(dividingBy: 1) * .pi * 2
+        let hop = max(0, sin(ph)) * hopAmt
+        let kick = sin(ph) * hopAmt
+        let STAND: CGFloat = 1.12
+        // happy: little jumps
+        let jump = cheer * max(0, sin(t * 9)) * 0.22
+        stance.eulerAngles.x = -STAND * stand - 0.12 * kick
+        stance.position.y = 0.06 + 0.16 * hop + jump
+        for th in thighs { th.eulerAngles.x = 0.55 * kick }
+        // cross: stomps one foot
+        let stomp = crossAmt * max(0, sin(t * 10)) * 0.35
+        for (i, f) in feet.enumerated() { f.eulerAngles.x = STAND * stand - 0.55 * kick - (i == 1 ? stomp : 0) }
+
+        let br = 1 + 0.018 * sin(t * 2.4)
+        chest.scale = SCNVector3(br, br, br)
+
+        // arms: hop swing / folded when sitting / held out for the card / up when cheering
+        let swing = -0.6 * sin(ph + .pi) * hopAmt
+        let sitArms: CGFloat = 0.9 * (1 - hopAmt) * (1 - holdAmt) * (1 - cheer)
+        let holdArms: CGFloat = -0.16 * holdAmt
+        let cheerArms: CGFloat = (-2.04 + 0.25 * sin(t * 12)) * cheer
+        for (i, a) in arms.enumerated() {
+            let s: CGFloat = i == 0 ? -1 : 1
+            a.eulerAngles.x = swing + sitArms + holdArms + cheerArms
+            a.eulerAngles.z = -0.15 * s * sitArms / 0.9 + 0.35 * s * cheer
+        }
+
+        // head: level face when standing, follows the mouse, tilts when listening, shakes when cross
+        ease(&yaw, hopping ? 0 : ty, 5); ease(&pitch, hopping ? 0 : tp, 5)
+        neck.eulerAngles.x = STAND * stand * 0.85 + 0.08 * sin(ph + 1) * hopAmt + pitch
+        head.eulerAngles = SCNVector3(0, yaw + crossAmt * 0.12 * sin(t * 14), 0.2 * listen + 0.04 * sin(t * 0.9))
+
+        // ears: lag behind the hop, perk up when happy, flatten back when cross
+        for (i, e) in ears.enumerated() {
+            let s: CGFloat = i == 0 ? -1 : 1
+            let twitch: CGFloat = sin(t * 0.9 + CGFloat(i) * 2) > 0.97 ? 0.25 : 0
+            e.eulerAngles.x = -0.25 * kick + 0.06 * sin(t * 3 + CGFloat(i)) - 0.15 * stand - 1.1 * crossAmt
+            e.eulerAngles.z = -0.12 * s - twitch * s + 0.25 * s * crossAmt - 0.08 * s * cheer
+        }
+
+        // eyes: blink, squint when happy, narrow when cross
+        if t > nextBlink + 0.16 { nextBlink = t + 2.5 + CGFloat((sin(t * 3.7) + 1) * 1.5) }
+        let blink: CGFloat = (t > nextBlink && t < nextBlink + 0.16) ? 0.12 : 1
+        let eyeY: CGFloat = 0.097 * blink * (1 - 0.7 * cheer) * (1 - 0.3 * crossAmt)
+        for e in eyes { e.scale.y += (eyeY - e.scale.y) * min(1, dt * 22) }
+        for b in brows { b.opacity = crossAmt }
+
+        // hide face parts that turn away from the camera (they're drawn on top of the fur)
+        let cam = camNode.worldPosition
+        for f in faceBits + brows {
+            let wp = f.worldPosition
+            let toCam = SCNVector3(cam.x - wp.x, cam.y - wp.y, cam.z - wp.z)
+            let fwd = f.worldFront          // SceneKit's front is -Z; our face parts look along +Z
+            let len = max(0.0001, sqrt(toCam.x * toCam.x + toCam.y * toCam.y + toCam.z * toCam.z))
+            let d = -(fwd.x * toCam.x + fwd.y * toCam.y + fwd.z * toCam.z) / len
+            let vis = max(0, min(1, (d - 0.1) / 0.25))
+            if brows.contains(f) { f.opacity = vis * crossAmt } else { f.opacity = vis }
+        }
+
+        // camera rises a little when she stands up
+        let target = SCNVector3(0, 0.95 + 0.25 * stand, 0)
+        camNode.position = SCNVector3(0, 1.15 + 0.2 * stand, 6.2)
+        camNode.look(at: target)
+    }
+}
+
+// MARK: - Aurora's face (notch, dashboard): one fluffy bunny face with many feelings
+
+enum BunnyMood: String, CaseIterable {
+    case smile, happy, laugh, love, wink, thinking, surprised, cross, sad, sleepy, listening, busy
+}
+
+/// Short feelings that other parts of the app can show for a moment (a notification → surprised, a task done → love…).
+@MainActor
+final class BunnyFaceCenter: ObservableObject {
+    static let shared = BunnyFaceCenter()
+    @Published private(set) var flash: BunnyMood?
+    private var until = Date.distantPast
+    func show(_ m: BunnyMood, for seconds: Double = 2.5) {
+        flash = m; until = Date().addingTimeInterval(seconds)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.05) {
+            MainActor.assumeIsolated { let c = BunnyFaceCenter.shared; if Date() >= c.until { c.flash = nil } }
+        }
+    }
+    /// Notch and dashboard use her face instead of the old head (Settings can switch it off).
+    static var on: Bool { UserDefaults.standard.object(forKey: "bunnyFace") as? Bool ?? true }
+}
+
+struct BunnyFaceView: View {
+    var mood: BunnyMood
+    var size: CGFloat = 60
+    var talking = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            Canvas { ctx, sz in
+                let s = min(sz.width, sz.height) / 134
+                ctx.translateBy(x: (sz.width - 134 * s) / 2 + 6 * s, y: (sz.height - 134 * s) / 2 + 14 * s)
+                ctx.scaleBy(x: s, y: s)
+                Self.draw(&ctx, mood: mood, t: t, talking: talking)
+            }
+            .frame(width: size, height: size)
+            .offset(y: CGFloat(sin(t * 2.2)) * size * 0.015)
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("Aurora looks \(mood.rawValue)")
+    }
+
+    private static func c(_ hex: String) -> Color { Color(hex: hex) }
+
+    static func draw(_ ctx: inout GraphicsContext, mood: BunnyMood, t: Double, talking: Bool) {
+        let ears: (CGFloat, CGFloat) = {
+            switch mood {
+            case .happy: return (-12, 12)
+            case .laugh: return (-14, 14)
+            case .love: return (-10, 10)
+            case .wink: return (-6, 14)
+            case .thinking: return (-4, 16)
+            case .surprised: return (-2, 2)
+            case .cross: return (-48, 48)
+            case .sad: return (-62, 62)
+            case .sleepy: return (-40, 40)
+            case .listening: return (4, -4)
+            default: return (-8, 8)
+            }
+        }()
+        let wiggle = CGFloat(sin(t * 1.6)) * 2
+        func ear(_ cx: CGFloat, _ deg: CGFloat) {
+            var e = ctx
+            e.translateBy(x: cx, y: 40); e.rotate(by: .degrees(Double(deg + wiggle))); e.translateBy(x: -cx, y: -40)
+            e.fill(Path(ellipseIn: CGRect(x: cx - 11, y: -7, width: 22, height: 54)), with: .color(c("#F6ECEA")))
+            e.stroke(Path(ellipseIn: CGRect(x: cx - 11, y: -7, width: 22, height: 54)), with: .color(c("#E3D2CF")), lineWidth: 1)
+            e.fill(Path(ellipseIn: CGRect(x: cx - 5.5, y: 3, width: 11, height: 38)), with: .color(c("#F4B6BF")))
+        }
+        ear(44, ears.0); ear(76, ears.1)
+
+        // head with a soft, fluffy edge
+        let head = Path(ellipseIn: CGRect(x: 15, y: 33, width: 90, height: 78))
+        ctx.drawLayer { l in
+            l.addFilter(.shadow(color: .black.opacity(0.18), radius: 3, y: 1))
+            l.fill(head, with: .radialGradient(Gradient(colors: [.white, c("#F7EEEC"), c("#E7D6D3")]), center: CGPoint(x: 52, y: 58), startRadius: 2, endRadius: 58))
+        }
+        for i in 0..<18 {   // little tufts around the edge
+            let a = Double(i) / 18 * .pi * 2
+            let x = 60 + cos(a) * 44, y = 72 + sin(a) * 38
+            ctx.fill(Path(ellipseIn: CGRect(x: x - 4, y: y - 4, width: 8, height: 8)), with: .color(c("#F3E7E4").opacity(0.9)))
+        }
+        ctx.fill(Path(ellipseIn: CGRect(x: 38, y: 74, width: 44, height: 28)), with: .color(.white.opacity(0.9)))
+        let blushes: [BunnyMood: Double] = [.love: 1, .laugh: 0.85, .cross: 0.9, .happy: 0.8, .wink: 0.7, .sad: 0.3, .sleepy: 0.4, .thinking: 0.4, .busy: 0.4]
+        let blush: Double = blushes[mood] ?? 0.55
+        ctx.fill(Path(ellipseIn: CGRect(x: 25, y: 81, width: 18, height: 10)), with: .color(c("#F7A9B4").opacity(blush)))
+        ctx.fill(Path(ellipseIn: CGRect(x: 77, y: 81, width: 18, height: 10)), with: .color(c("#F7A9B4").opacity(blush)))
+
+        // eyes
+        let blink = (t.truncatingRemainder(dividingBy: 4.2)) > 4.05
+        let ink = c("#2A1A12")
+        func openEye(_ x: CGFloat, look: CGSize = .zero, rx: CGFloat = 8.5, ry: CGFloat = 10) {
+            if blink { var p = Path(); p.move(to: CGPoint(x: x - 8, y: 70)); p.addQuadCurve(to: CGPoint(x: x + 8, y: 70), control: CGPoint(x: x, y: 74)); ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 3, lineCap: .round)); return }
+            let r = CGRect(x: x - rx, y: 68 - ry + look.height, width: rx * 2, height: ry * 2)
+            ctx.fill(Path(ellipseIn: r), with: .radialGradient(Gradient(colors: [c("#7A5444"), c("#3A2219"), c("#120A07")]), center: CGPoint(x: x, y: 70 + look.height), startRadius: 0, endRadius: ry * 1.2))
+            ctx.fill(Path(ellipseIn: CGRect(x: x + 3 + look.width - 3.6, y: 63 + look.height - 3.6, width: 7.2, height: 7.2)), with: .color(.white))
+            ctx.fill(Path(ellipseIn: CGRect(x: x - 3 + look.width - 1.5, y: 73 + look.height - 1.5, width: 3, height: 3)), with: .color(.white))
+        }
+        func arcEye(_ x: CGFloat, up: Bool = true) {
+            var p = Path(); p.move(to: CGPoint(x: x - 9, y: 70)); p.addQuadCurve(to: CGPoint(x: x + 9, y: 70), control: CGPoint(x: x, y: up ? 61 : 76))
+            ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
+        }
+        func heart(_ x: CGFloat) {
+            var p = Path(); p.move(to: CGPoint(x: x, y: 77))
+            p.addCurve(to: CGPoint(x: x, y: 63), control1: CGPoint(x: x - 12, y: 69), control2: CGPoint(x: x - 7, y: 58))
+            p.addCurve(to: CGPoint(x: x, y: 77), control1: CGPoint(x: x + 7, y: 58), control2: CGPoint(x: x + 12, y: 69))
+            ctx.fill(p, with: .color(c("#F0607A")))
+        }
+        switch mood {
+        case .happy, .laugh: arcEye(42); arcEye(78)
+        case .sleepy: arcEye(42, up: false); arcEye(78, up: false)
+        case .wink: openEye(42); arcEye(78)
+        case .love: heart(42); heart(78)
+        case .thinking: openEye(42, look: CGSize(width: 3, height: -3)); openEye(78, look: CGSize(width: 3, height: -3))
+        case .surprised, .listening: openEye(42, rx: 10, ry: 12); openEye(78, rx: 10, ry: 12)
+        case .cross: openEye(42, rx: 7, ry: 8); openEye(78, rx: 7, ry: 8)
+        case .sad: openEye(42, look: CGSize(width: 0, height: 2)); openEye(78, look: CGSize(width: 0, height: 2))
+        case .busy: openEye(42, look: CGSize(width: -2, height: 2)); openEye(78, look: CGSize(width: -2, height: 2))
+        case .smile: openEye(42); openEye(78)
+        }
+
+        // brows
+        let brow = c("#B88E82")
+        func line(_ a: CGPoint, _ b: CGPoint, _ ctrl: CGPoint? = nil) {
+            var p = Path(); p.move(to: a); if let k = ctrl { p.addQuadCurve(to: b, control: k) } else { p.addLine(to: b) }
+            ctx.stroke(p, with: .color(brow), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        }
+        switch mood {
+        case .cross: line(CGPoint(x: 33, y: 56), CGPoint(x: 50, y: 63)); line(CGPoint(x: 87, y: 56), CGPoint(x: 70, y: 63))
+        case .sad: line(CGPoint(x: 34, y: 62), CGPoint(x: 49, y: 56)); line(CGPoint(x: 86, y: 62), CGPoint(x: 71, y: 56))
+        case .thinking: line(CGPoint(x: 33, y: 56), CGPoint(x: 50, y: 55), CGPoint(x: 42, y: 52)); line(CGPoint(x: 70, y: 53), CGPoint(x: 87, y: 54), CGPoint(x: 79, y: 47))
+        case .surprised: line(CGPoint(x: 33, y: 52), CGPoint(x: 50, y: 52), CGPoint(x: 42, y: 46)); line(CGPoint(x: 70, y: 52), CGPoint(x: 87, y: 52), CGPoint(x: 79, y: 46))
+        case .busy: line(CGPoint(x: 33, y: 58), CGPoint(x: 50, y: 58), CGPoint(x: 42, y: 56)); line(CGPoint(x: 70, y: 58), CGPoint(x: 87, y: 58), CGPoint(x: 79, y: 56))
+        default: break
+        }
+
+        // nose + mouth
+        var nose = Path(); nose.move(to: CGPoint(x: 56, y: 80)); nose.addQuadCurve(to: CGPoint(x: 64, y: 80), control: CGPoint(x: 60, y: 77))
+        nose.addQuadCurve(to: CGPoint(x: 60, y: 84.5), control: CGPoint(x: 63, y: 83.5)); nose.addQuadCurve(to: CGPoint(x: 56, y: 80), control: CGPoint(x: 57, y: 83.5))
+        ctx.fill(nose, with: .color(c("#F08A9C")))
+        let mouthInk = c("#8E5F57")
+        func stroke(_ p: Path) { ctx.stroke(p, with: .color(mouthInk), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)) }
+        let open = talking && sin(t * 14) > 0
+        var m = Path()
+        switch mood {
+        case .laugh, .surprised:
+            if mood == .laugh {
+                m.move(to: CGPoint(x: 49, y: 88)); m.addLine(to: CGPoint(x: 71, y: 88)); m.addQuadCurve(to: CGPoint(x: 49, y: 88), control: CGPoint(x: 60, y: 108))
+            } else { m.addEllipse(in: CGRect(x: 56, y: 88, width: 8, height: 10)) }
+            ctx.fill(m, with: .color(c("#C9545F"))); stroke(m)
+        case .happy: m.move(to: CGPoint(x: 50, y: 89)); m.addQuadCurve(to: CGPoint(x: 70, y: 89), control: CGPoint(x: 60, y: 99)); stroke(m)
+        case .wink: m.move(to: CGPoint(x: 50, y: 89)); m.addQuadCurve(to: CGPoint(x: 70, y: 88), control: CGPoint(x: 60, y: 97)); stroke(m)
+        case .thinking: m.move(to: CGPoint(x: 53, y: 92)); m.addQuadCurve(to: CGPoint(x: 65, y: 93), control: CGPoint(x: 58, y: 90)); stroke(m)
+        case .cross: m.move(to: CGPoint(x: 51, y: 94)); m.addQuadCurve(to: CGPoint(x: 69, y: 94), control: CGPoint(x: 60, y: 88)); stroke(m)
+        case .sad: m.move(to: CGPoint(x: 52, y: 95)); m.addQuadCurve(to: CGPoint(x: 68, y: 95), control: CGPoint(x: 60, y: 89)); stroke(m)
+        case .sleepy: m.move(to: CGPoint(x: 55, y: 92)); m.addQuadCurve(to: CGPoint(x: 65, y: 92), control: CGPoint(x: 60, y: 94)); stroke(m)
+        case .busy: m.move(to: CGPoint(x: 54, y: 92)); m.addLine(to: CGPoint(x: 66, y: 92)); stroke(m)
+        default:
+            if open { m.addEllipse(in: CGRect(x: 55, y: 88, width: 10, height: 8)); ctx.fill(m, with: .color(c("#C9545F"))); stroke(m) }
+            else { m.move(to: CGPoint(x: 52, y: 90)); m.addQuadCurve(to: CGPoint(x: 60, y: 90), control: CGPoint(x: 56, y: 94)); m.addQuadCurve(to: CGPoint(x: 68, y: 90), control: CGPoint(x: 64, y: 94)); stroke(m) }
+        }
+
+        // extras
+        switch mood {
+        case .sad:
+            var tear = Path(); tear.move(to: CGPoint(x: 86, y: 78)); tear.addQuadCurve(to: CGPoint(x: 86, y: 88), control: CGPoint(x: 90, y: 85)); tear.addQuadCurve(to: CGPoint(x: 86, y: 78), control: CGPoint(x: 82, y: 85))
+            ctx.fill(tear, with: .color(c("#8CC8F2")))
+        case .cross:
+            var st = Path(); st.move(to: CGPoint(x: 100, y: 30)); st.addLine(to: CGPoint(x: 106, y: 24)); st.move(to: CGPoint(x: 104, y: 38)); st.addLine(to: CGPoint(x: 112, y: 36)); st.move(to: CGPoint(x: 96, y: 24)); st.addLine(to: CGPoint(x: 97, y: 16))
+            ctx.stroke(st, with: .color(c("#E5534B")), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        case .thinking:
+            let dots = [(100.0, 40.0, 3.0), (107.0, 31.0, 4.0), (114.0, 20.0, 5.5)]
+            for (i, d) in dots.enumerated() {
+                let on = Int(t * 2.5) % 4 > i
+                ctx.fill(Path(ellipseIn: CGRect(x: d.0 - d.2, y: d.1 - d.2, width: d.2 * 2, height: d.2 * 2)), with: .color(c("#B7AFC9").opacity(on ? 1 : 0.35)))
+            }
+        case .sleepy:
+            var z = Path(); z.move(to: CGPoint(x: 96, y: 28)); z.addLine(to: CGPoint(x: 105, y: 28)); z.addLine(to: CGPoint(x: 96, y: 37)); z.addLine(to: CGPoint(x: 105, y: 37))
+            ctx.stroke(z, with: .color(c("#8FA3C9")), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+        case .happy, .love:
+            for (x, y, r) in [(104.0, 22.0, 5.0), (14.0, 30.0, 3.5)] {
+                var sp = Path(); sp.move(to: CGPoint(x: x, y: y - r)); sp.addLine(to: CGPoint(x: x + r * 0.35, y: y - r * 0.35)); sp.addLine(to: CGPoint(x: x + r, y: y)); sp.addLine(to: CGPoint(x: x + r * 0.35, y: y + r * 0.35)); sp.addLine(to: CGPoint(x: x, y: y + r)); sp.addLine(to: CGPoint(x: x - r * 0.35, y: y + r * 0.35)); sp.addLine(to: CGPoint(x: x - r, y: y)); sp.addLine(to: CGPoint(x: x - r * 0.35, y: y - r * 0.35)); sp.closeSubpath()
+                ctx.fill(sp, with: .color(c("#F5B963").opacity(0.6 + 0.4 * sin(t * 4))))
+            }
+        default: break
+        }
+    }
+}
+
+extension BunnyMood {
+    /// Her face from what's happening right now.
+    @MainActor static func now(_ voice: VoiceEngine, _ state: AppState) -> BunnyMood {
+        if let f = BunnyFaceCenter.shared.flash { return f }
+        if voice.status.hasPrefix("Listening") || LiveSession.shared.listeningNow { return .listening }
+        if voice.speaking || LiveSession.shared.speakingNow { return .smile }
+        if [.thinking, .working, .searching].contains(state.effectiveState) || LiveSession.shared.workingNow { return .thinking }
+        if ZuffiTeam.shared.runs.contains(where: { $0.status == "Working" && Date().timeIntervalSince($0.started) < 900 }) { return .busy }
+        if NowPlaying.shared.hasTrack || NotchHang.shared.audio { return .happy }
+        let h = Calendar.current.component(.hour, from: Date())
+        if (h >= 23 || h < 6) && Date().timeIntervalSince(state.lastActivity) > 600 { return .sleepy }
+        return .smile
+    }
+}
+
+/// Her face, kept up to date with what's happening (listening, thinking, agents at work, music, a quick feeling…).
+struct LiveBunnyFace: View {
+    var size: CGFloat
+    @ObservedObject private var voice = VoiceEngine.shared
+    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var center = BunnyFaceCenter.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var hang = NotchHang.shared
+    var body: some View {
+        BunnyFaceView(mood: BunnyMood.now(voice, state), size: size, talking: voice.speaking)
+            .animation(.easeInOut(duration: 0.2), value: BunnyMood.now(voice, state))
+    }
+}

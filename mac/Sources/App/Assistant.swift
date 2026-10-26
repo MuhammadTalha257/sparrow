@@ -1351,9 +1351,10 @@ struct MicButton: View {
 // MARK: - Appearance: glass look + where Zuffi sits
 
 struct VisualEffectBlur: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .hudWindow
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
-        v.material = .hudWindow
+        v.material = material
         v.blendingMode = .behindWindow
         v.state = .active
         v.appearance = NSAppearance(named: .darkAqua)

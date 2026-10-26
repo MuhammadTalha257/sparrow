@@ -396,7 +396,14 @@ struct ZuffiHomePanel: View {
                 HStack(spacing: 0) {
                     VStack(spacing: 6) {
                         // the little bunny head that follows your cursor
-                        SparrowSpriteView(model: head, size: room.on ? 56 : 92, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
+                        Group {
+                            if BunnyFaceCenter.on {
+                                LiveBunnyFace(size: room.on ? 60 : 96)
+                                    .contentShape(Rectangle()).onTapGesture { VoiceEngine.shared.listenOnce() }
+                            } else {
+                                SparrowSpriteView(model: head, size: room.on ? 56 : 92, deadZone: 40, mood: mood) { VoiceEngine.shared.listenOnce() }
+                            }
+                        }
                             .frame(width: room.on ? 60 : 96, height: room.on ? 60 : 96)
                             .frame(width: pw - 8)
                             .overlay(alignment: .topTrailing) { NotchAgentsRow().padding(.trailing, 6) }
@@ -639,6 +646,8 @@ struct ZuffiQuickSettings: View {
                 Button { ZuffiModeWindow.shared.show() } label: {
                     NotchListRowLabel(icon: "person.2.fill", tint: "#F59E3B", title: "Zuffi is for: \(ZuffiPlan.shared.mode?.title ?? "not chosen")", sub: "Personal assistant, business, freelancer, company or creator — change")
                 }.buttonStyle(.plain)
+                row("face.smiling", "Aurora\u{2019}s face on the notch", on: Binding(get: { BunnyFaceCenter.on }, set: { UserDefaults.standard.set($0, forKey: "bunnyFace") }))
+                row("cube.transparent", "3D fluffy Aurora (turn off for the picture bunny)", on: Binding(get: { Aurora3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "petAurora3D"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
                 row("hare.fill", "New soft bunny pet (turn off for the classic one)", on: Binding(get: { Buddy3DPrefs.on }, set: { UserDefaults.standard.set($0, forKey: "petAurora"); if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) } }))
                 row("waveform", "Music bars & working agents under the notch", on: Binding(get: { UserDefaults.standard.object(forKey: "notchHang") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "notchHang") }))
                 row("rectangle.connected.to.line.below", "Show the Manager window when tasks are given out", on: Binding(get: { MissionControl.shared.enabled }, set: { UserDefaults.standard.set($0, forKey: "missionWindow") }))

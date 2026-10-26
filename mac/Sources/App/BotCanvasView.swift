@@ -22,7 +22,13 @@ struct BotCanvasView: View {
 
     var body: some View {
         // The bunny everywhere — except the file-drop "mailbox" animation, which is drawn.
-        if SparrowSprites.shared.available, state.view != .upload, state.view != .uploading, state.mode != .hidden {
+        if BunnyFaceCenter.on, state.view != .upload, state.view != .uploading, state.mode != .hidden {
+            GeometryReader { g in
+                LiveBunnyFace(size: min(g.size.width, g.size.height))
+                    .frame(width: g.size.width, height: g.size.height, alignment: .center)
+                    .allowsHitTesting(false)
+            }
+        } else if SparrowSprites.shared.available, state.view != .upload, state.view != .uploading, state.mode != .hidden {
             GeometryReader { g in
                 SparrowSpriteView(model: sprite, size: min(g.size.width, g.size.height - particleOverhang),
                                   deadZone: 40, mood: Self.mood(voice, state))

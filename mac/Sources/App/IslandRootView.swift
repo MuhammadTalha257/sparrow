@@ -58,14 +58,15 @@ struct IslandContainer: View {
                                     cornerRadius: cornerRadius, topRadius: islandTopRadius)
             if state.glassStyle && state.mode == .expanded {
                 ZStack {
-                    VisualEffectBlur()
-                    // Black at the very top so it melts into the notch, warm glass below
+                    // clear glass: you can see your windows through it, softly blurred
+                    VisualEffectBlur(material: .fullScreenUI)
+                    // Black at the very top so it melts into the notch, see-through glass below
                     if SparrowPosition.current == .notch && !IslandDock.docked {
                         LinearGradient(stops: [
                             .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.85), location: 0.12),
-                            .init(color: Color(hex: "#1E2433").opacity(0.5), location: 0.45),
-                            .init(color: Color(hex: "#2A2F40").opacity(0.4), location: 1),
+                            .init(color: .black.opacity(0.88), location: 0.10),
+                            .init(color: Color(hex: "#161A26").opacity(0.42), location: 0.38),
+                            .init(color: Color(hex: "#1C2131").opacity(0.34), location: 1),
                         ], startPoint: .top, endPoint: .bottom)
                     } else {
                         LinearGradient(colors: [Color(hex: "#1B2131").opacity(0.62), Color(hex: "#2B3244").opacity(0.42)],
@@ -76,7 +77,7 @@ struct IslandContainer: View {
                                    center: UnitPoint(x: 0.08, y: 0.75), startRadius: 4, endRadius: 240)
                 }
                 .clipShape(shape)
-                .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.12)],
+                .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.26)],
                                                      startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
             } else {

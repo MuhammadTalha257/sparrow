@@ -27,6 +27,8 @@ final class WalkModel: ObservableObject {
     @Published var emoji = "⏰"
     /// When the happy dance started (nil = not dancing).
     @Published var danceStart: Date?
+    /// A short tip when you say "Not yet".
+    @Published var tip: String?
 }
 
 @MainActor
@@ -40,7 +42,7 @@ final class ZuffiWalk {
     private var queue: [Visit] = []
     private var current: Visit?
     private var timeout: DispatchWorkItem?
-    private let size = NSSize(width: 360, height: 400)
+    private let size = NSSize(width: 380, height: 470)
 
     /// Water, coffee and medicine: only one of each is ever waiting (they used to pile up while the Mac slept or you were away).
     private static let health: Set<String> = ["water", "coffee", "meds"]
@@ -75,7 +77,7 @@ final class ZuffiWalk {
         let v = queue.removeFirst()
         current = v
         let m = model
-        m.answered = false; m.cross = false; m.bubble = nil; m.danceStart = nil
+        m.answered = false; m.cross = false; m.bubble = nil; m.danceStart = nil; m.tip = nil
         m.title = v.title; m.sub = v.sub
         switch v.kind {
         case "water": m.icon = "waterbottle.fill"; m.tint = "#4FA7FF"; m.yes = "Take"; m.sprite.prop = "waterbottle.fill"
@@ -86,14 +88,15 @@ final class ZuffiWalk {
         case "task": m.icon = "checkmark.circle.fill"; m.tint = "#2E8A68"; m.yes = "Done"; m.sprite.prop = nil
         default: m.icon = "bell.fill"; m.tint = "#E2648A"; m.yes = "Done"; m.sprite.prop = nil
         }
-        m.later = "Later"
+        m.later = "Not yet"
         m.emoji = ["water": "💧", "coffee": "☕", "meds": "💊", "meeting": "📅", "task": "✅", "prayer": "🌙", "birthday": "🎂"][v.kind] ?? "⏰"
 
         let screen = NSScreen.main ?? NSScreen.screens[0]
         let vf = screen.visibleFrame
         let p = panel ?? makePanel()
         panel = p
-        let y = vf.minY + 6
+        // she comes to the front: the middle of your screen (a little low, so she doesn't cover what you're reading)
+        let y = Self.walkY(vf, size)
         p.setFrame(NSRect(x: vf.minX - size.width, y: y, width: size.width, height: size.height), display: false)
         p.alphaValue = 1
         p.orderFrontRegardless()
@@ -127,6 +130,7 @@ final class ZuffiWalk {
             model.sprite.react(v.kind == "meeting" ? 4 : 1, for: 1.6)       // starstruck / heart
             model.bubble = ["water": "Yay! Stay fresh 💗", "coffee": "Enjoy your coffee! ☕💗", "meds": "Well done! 💊💗", "meeting": "Good luck! 🍀", "prayer": "I’ll nudge you again at the next prayer 💗", "task": "Yay, done! 🎉"][v.kind] ?? "Done! ✨"
             model.danceStart = Date()        // the happy dance
+            BunnyFaceCenter.shared.show(.love, for: 3)
             SoundEngine.shared.play("approve")
             if let id = v.itemId { Task { _ = await WebHub.shared.callJS("return window.Sparrow.completeItem(id)", ["id": id]) } }
             if isHealth(v) {
@@ -139,7 +143,9 @@ final class ZuffiWalk {
             if !quiet {
                 model.cross = true
                 model.sprite.react(3, for: 1.6)                                // surprised "hmph"
-                model.bubble = "Hmph! I'll come back in 10 minutes 😤"
+                model.bubble = "Hmph! I'll be back in 10 min."
+                model.tip = Self.tip(for: v.kind, title: v.title)
+                BunnyFaceCenter.shared.show(.cross, for: 4)
             }
             if let id = v.itemId {
                 Task { _ = await WebHub.shared.callJS("return window.Sparrow.snoozeItem(id, 10)", ["id": id]) }
@@ -150,7 +156,7 @@ final class ZuffiWalk {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: w)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + (quiet ? 0.1 : yes ? 2.4 : 1.7)) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (quiet ? 0.1 : yes ? 2.6 : 3.6)) {
             MainActor.assumeIsolated { ZuffiWalk.shared.leave() }
         }
     }
@@ -178,6 +184,22 @@ final class ZuffiWalk {
         })
     }
 
+    static func walkY(_ vf: NSRect, _ size: NSSize) -> CGFloat {
+        vf.minY + max(6, (vf.height - size.height) * 0.32)
+    }
+
+    /// A short, kind tip for "Not yet" — practical, never preachy.
+    static func tip(for kind: String, title: String) -> String {
+        switch kind {
+        case "water": return "A few sips now keeps tiredness and headaches away."
+        case "coffee": return "Have it before 3pm so it doesn't spoil your sleep."
+        case "meds": return "Taking it on time keeps it working properly."
+        case "meeting": return "Leave a couple of minutes early so you're not rushed."
+        case "prayer": return "Even a short pause now will help you reset."
+        default: return "Just do the first two minutes of it. Starting is the hardest part."
+        }
+    }
+
     private func makePanel() -> NSPanel {
         let p = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
@@ -199,6 +221,14 @@ struct WalkView: View {
     private let ink = Color(hex: "#0C0C0C")
 
     var body: some View {
+        if ZuffiLook.shared.kind == .bunny, Aurora3DPrefs.on {
+            Walk3DView(model: model)
+        } else {
+            classic
+        }
+    }
+
+    private var classic: some View {
         VStack(spacing: 10) {
             Spacer(minLength: 0)
             if let b = model.bubble {
@@ -275,7 +305,7 @@ struct WalkView: View {
             }
             .frame(height: 230, alignment: .bottom)
         }
-        .frame(width: 360, height: 400)
+        .frame(width: 380, height: 470)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.walking)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.bubble)
     }
@@ -323,4 +353,92 @@ struct SpeechBubble<Content: View>: View {
 }
 struct BubbleTail: Shape {
     func path(in r: CGRect) -> Path { var p = Path(); p.move(to: CGPoint(x: r.minX, y: r.minY)); p.addLine(to: CGPoint(x: r.maxX, y: r.minY)); p.addLine(to: CGPoint(x: r.midX, y: r.maxY)); p.closeSubpath(); return p }
+}
+
+/// The 3D Aurora brings a reminder: she stands on her back legs and holds it up. Done → she cheers. Not yet → she gets cross,
+/// gives you a tip, and says she'll be back in 10 minutes.
+struct Walk3DView: View {
+    @ObservedObject var model: WalkModel
+    private let ink = Color(hex: "#1B1A18")
+
+    private var pose: AuroraPose {
+        if model.walking { return .hop }
+        if model.cross { return .cross }
+        if model.answered { return .happy }
+        return .hold
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+            // what she says
+            if let b = model.bubble {
+                SpeechBubble(fill: model.cross ? Color(hex: "#C2483F") : Color(hex: "#2E9D6A"), border: .clear) {
+                    Text(b).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 9)
+                }
+                .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
+            } else if !model.walking {
+                SpeechBubble(fill: ink, border: .clear) {
+                    Text("Hey! Don't forget this").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                }
+                .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
+            }
+            ZStack(alignment: .bottom) {
+                Aurora3DView(pose: pose, faceLeft: model.sprite.walkLeft, lookAtMouse: !model.walking)
+                    .frame(width: 230, height: 250)
+                    .allowsHitTesting(false)
+                if let d = model.danceStart, model.answered, !model.cross {
+                    TimelineView(.animation) { tl in JoyBurst(elapsed: tl.date.timeIntervalSince(d)) }.offset(y: -90).allowsHitTesting(false)
+                }
+                // the card she holds in her front paws
+                if !model.walking {
+                    card
+                        .offset(y: -18)
+                        .transition(.scale(scale: 0.6, anchor: .top).combined(with: .opacity))
+                }
+            }
+            .frame(height: 300, alignment: .bottom)
+        }
+        .frame(width: 380, height: 470)
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: model.walking)
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.bubble)
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.answered)
+    }
+
+    @ViewBuilder private var card: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let tip = model.tip {
+                Text("ZUFFI'S TIP").font(.system(size: 10, weight: .heavy, design: .rounded)).tracking(0.8).foregroundColor(Color(hex: "#8A6A2F"))
+                Text(tip).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(ink).fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(spacing: 6) {
+                    Circle().fill(Color(hex: model.tint)).frame(width: 7, height: 7)
+                    Text("REMINDER").font(.system(size: 10, weight: .heavy, design: .rounded)).tracking(0.8).foregroundColor(Color(hex: "#8A6A2F"))
+                }
+                Text("\(model.title) \(model.emoji)").font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(ink)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                if !model.sub.isEmpty { Text(model.sub).font(.system(size: 12)).foregroundColor(Color(hex: "#5F5A52")).lineLimit(1) }
+                if !model.answered {
+                    HStack(spacing: 8) {
+                        Button { ZuffiWalk.shared.answer(yes: true) } label: {
+                            Text(model.yes).font(.system(size: 13, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(ink)).foregroundColor(.white)
+                        }.buttonStyle(.plain)
+                        Button { ZuffiWalk.shared.answer(yes: false) } label: {
+                            Text(model.later).font(.system(size: 13, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: "#F1EEE8"))).foregroundColor(ink)
+                        }.buttonStyle(.plain)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 250, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
+        .shadow(color: .black.opacity(0.22), radius: 14, y: 8)
+        .rotationEffect(.degrees(-1.5))
+    }
 }

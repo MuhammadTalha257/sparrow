@@ -3372,6 +3372,7 @@ final class MissionControl: ObservableObject {
 
     func begin(_ q: String, agents ids: [String]) {
         question = q; agents = ids; started = Date().addingTimeInterval(-1)
+        BunnyFaceCenter.shared.show(.thinking, for: 3)
         if enabled { show() }
     }
 
