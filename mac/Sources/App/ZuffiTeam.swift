@@ -164,6 +164,7 @@ enum AgentField: String, CaseIterable {
         if a.id == "zuffi-reviews" { return .customers }
         if a.id == "zuffi-reports" { return .data }
         if a.id == "zuffi-docs" { return .data }
+        if a.id == "zuffi-seo" { return .research }
         if a.id == "zuffi-social" || a.id == "zuffi-writer" || a.id == "zuffi-instagram" || a.id == "zuffi-facebook" { return .marketing }
         if a.id == "zuffi-whatsapp" { return .customers }
         if has("booking") { return .bookings }
@@ -212,6 +213,7 @@ struct AgentRun: Codable, Identifiable, Hashable {
     var finished: Date?
     var job: String?                  // the daily job it ran for
     var links: [WebLink]?             // pages it read (research)
+    var output: String?               // the file it made (a PDF of the work, a spreadsheet…)
 }
 
 struct JobRun: Codable, Hashable { var at = Date(); var status: String; var summary: String }
@@ -312,6 +314,14 @@ final class ZuffiTeam: ObservableObject {
                   You run a small business's social media. Plan posts from its offers, services, UK dates and what worked before. \
                   For each post give: the day, a picture idea, the caption (short, warm, in the brand's tone) and 5-8 hashtags. Never invent prices or offers — use the business details. \
                   Posting waits for the owner's approval.
+                  """),
+        TeamAgent(id: "zuffi-seo", division: "business", name: "SEO Agent",
+                  description: "Checks your website, Google listing and social profiles like an SEO expert — titles, keywords, speed, rankings, bios — and tells you exactly what to change, from what, to what.",
+                  emoji: "🔎", prompt: """
+                  You are a senior SEO and local-search specialist. From the real audit data you're given (the page's title, description, headings, \
+                  missing alt text, schema, sitemap, where the business ranks on Google for its keywords, and its social profiles), \
+                  say exactly what to change: "Change: <what it is now> → To: <your suggestion> — Why". Pick the keywords people really search for this kind of \
+                  business in its area, say where each one goes, and fix the social bios and hashtags too. Never invent rankings or numbers you weren't given.
                   """),
         TeamAgent(id: "zuffi-instagram", division: "business", name: "Instagram Agent",
                   description: "Checks your Instagram and your competitors', plans posts and reels with captions and hashtags, and drafts replies to comments and DMs for you to approve.",
@@ -473,7 +483,7 @@ final class ZuffiTeam: ObservableObject {
         return out
     }
     static let personalTeam = ["zuffi-travel", "research-synthesist", "zuffi-writer", "zuffi-web", "zuffi-docs"]
-    static let businessTeam = ["zuffi-social", "zuffi-instagram", "zuffi-facebook", "zuffi-whatsapp", "zuffi-reviews", "zuffi-competitors", "zuffi-reports"]
+    static let businessTeam = ["zuffi-seo", "zuffi-social", "zuffi-instagram", "zuffi-facebook", "zuffi-whatsapp", "zuffi-reviews", "zuffi-competitors", "zuffi-reports"]
 
     /// A good first team for each kind of business.
     var starterTeam: [String] {
@@ -545,6 +555,16 @@ final class ZuffiTeam: ObservableObject {
     func finish(_ id: String, _ result: String, _ status: String) {
         guard let i = runs.firstIndex(where: { $0.id == id }) else { return }
         runs[i].result = result; runs[i].status = status; runs[i].finished = Date()
+        // Real work leaves a real output: a tidy PDF of it (with its sources) in Downloads › Zuffi › Outputs.
+        if status == "Done", runs[i].output == nil, runs[i].agent != Self.manager.id, result.count > 280 {
+            let r = runs[i], name = agent(r.agent).map(AgentEdits.name) ?? "Agent"
+            let dir = DocsAgent.folder().appendingPathComponent("Outputs", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent(DocsAgent.safeName("\(name) - \(r.task.prefix(40))") + ".pdf")
+            var body = "Task: \(r.task)\nBy: \(name) · \(r.started.formatted(date: .abbreviated, time: .shortened))\n\n" + result
+            if let l = r.links, !l.isEmpty { body += "\n\nSources\n" + l.prefix(12).map { "- \($0.title): \($0.url)" }.joined(separator: "\n") }
+            if DocsAgent.writePDF(title: String(r.task.prefix(80)), body: body, to: url) { runs[i].output = url.path }
+        }
     }
     func log(_ who: String, _ action: String, _ detail: String = "") {
         audit.insert(AuditEntry(who: who, action: action, detail: String(detail.prefix(300))), at: 0)
@@ -668,6 +688,7 @@ final class ZuffiTeam: ObservableObject {
     func defaultJob(for a: TeamAgent) -> TeamJob? {
         let dash = !sources.isEmpty
         switch a.id {
+        case "zuffi-seo": return TeamJob(agent: a.id, title: "Weekly SEO check", task: "Check my website, Google ranking and social profiles, and tell me exactly what to change this week.", hour: 10, minute: 15, weekday: 2)
         case "zuffi-instagram": return TeamJob(agent: a.id, title: "Today's Instagram", task: "Check my Instagram and two competitors, then give me today's post or reel: idea, hook, caption, hashtags and the best time to post.", hour: 10, minute: 0)
         case "zuffi-facebook": return TeamJob(agent: a.id, title: "Facebook page check", task: "Check my Facebook page and local competitors, then suggest today's post and one local group or ad idea worth trying.", hour: 10, minute: 30)
         case "zuffi-whatsapp": return TeamJob(agent: a.id, title: "WhatsApp follow-ups", task: "Who should get a WhatsApp message today (new enquiries, no reply yet, follow-ups, customers to win back)? Write each message for me to approve.", hour: 9, minute: 30)
@@ -881,6 +902,7 @@ final class ZuffiTeam: ObservableObject {
         let ql = question.lowercased()
         if ql.range(of: #"\b(weekly|week'?s) (report|summary)\b|\bwhat did (my|the) team do\b"#, options: .regularExpression) != nil, let r = agent("zuffi-reports") { return [r] }
         if ql.range(of: #"\b(write|draft|rewrite|proofread)\b.*\b(email|proposal|letter|summary|bio|reply)\b"#, options: .regularExpression) != nil, let w = agent("zuffi-writer") { return [w] }
+        if ql.range(of: #"\b(seo|keywords?|google rank|ranking|search engine|meta description|website audit|show up on google)\b"#, options: .regularExpression) != nil, let seo = agent("zuffi-seo") { return [seo] }
         if ql.range(of: #"\breviews?\b"#, options: .regularExpression) != nil, ql.range(of: #"\b(google|facebook|reply|replies|customer)\b"#, options: .regularExpression) != nil, let r = agent("zuffi-reviews") { return [r] }
         if ql.range(of: #"\b(business|daily|today'?s|monthly) (report|summary|update)\b|\breport (for|on) (today|this week|this month)\b"#, options: .regularExpression) != nil {
             let pool = team + hiredAgents
@@ -999,6 +1021,14 @@ final class ZuffiTeam: ObservableObject {
             return runs.first { $0.id == id }!
         }
 
+        // SEO: a real audit of the website, Google results and social profiles, then exact changes.
+        if a.id == "zuffi-seo" {
+            let text = await SEOAgent.run(task, agent: a, runID: id, step: { self.step(id, $0, source: "SEO audit") })
+            finish(id, text, text.hasPrefix("I couldn't") || text.hasPrefix("Add your") ? "Needs input" : "Done")
+            if !text.hasPrefix("I couldn't") { lastWork = (a, task, text, "", Date()) }
+            return runs.first { $0.id == id }!
+        }
+
         // Documents & Data: makes a real spreadsheet file (CSV, opens in Excel or Numbers) or a new PDF from the owner's data.
         if a.id == "zuffi-docs" {
             let (text, ok) = await DocsAgent.run(task, step: { self.step(id, $0) })
@@ -1052,11 +1082,30 @@ final class ZuffiTeam: ObservableObject {
             finish(id, why + ((runs.first { $0.id == id }?.links ?? []).isEmpty ? "" : "\nThe pages I found are linked below."), "Failed")
             return runs.first { $0.id == id }!
         }
+        // A second look, like a senior checking a junior's work: complete, specific, best option first, next step — facts only from the sources.
+        var answerText = reply
+        let isQuestion = answerText.contains("?") && answerText.count < 500
+        if !isQuestion, answerText.count > 200 {
+            step(id, "Checking the answer like a senior would")
+            if let better = await AIService.shared.oneShot("""
+                THE OWNER'S REQUEST: \(task)
+                DRAFT ANSWER:
+                \(answerText)
+                SOURCES AND DATA (the only facts allowed):
+                \(String((data.text + "\n" + webNotes).prefix(14000)))
+                Improve the draft so the owner is fully satisfied: answer exactly what they need, best option first with the reason, concrete details (names, prices, dates, steps) \
+                from the sources, what to watch out for, and the next step. Remove anything vague or not backed by the sources. Keep it easy to read (short lines, "- " bullets). \
+                Reply with the improved answer only.
+                """, system: systemPrompt(for: a, data: "")) {
+                let b = Self.plain(better)
+                if b.count > 150, Self.badAnswer(b, agent: a, data: data.text + webNotes, question: task) == nil { answerText = b }
+            }
+        }
         let shownLinks = runs.first { $0.id == id }?.links ?? []
-        let withLinks = shownLinks.isEmpty ? reply : reply + "\n\nLinks:\n" + shownLinks.prefix(6).map { "• \($0.title.prefix(70)) — \($0.url)" }.joined(separator: "\n")
-        let asks = reply.contains("?") && reply.count < 500 && reply.lowercased().range(of: #"could you|can you (tell|share|give|confirm)|please (tell|share|send|confirm)|what (is|are) your|which (city|one|date|airport|day)|when (do|would) you|do you (want|prefer)"#, options: .regularExpression) != nil
+        let withLinks = shownLinks.isEmpty ? answerText : answerText + "\n\nLinks:\n" + shownLinks.prefix(6).map { "• \($0.title.prefix(70)) — \($0.url)" }.joined(separator: "\n")
+        let asks = answerText.contains("?") && answerText.count < 500 && answerText.lowercased().range(of: #"could you|can you (tell|share|give|confirm)|please (tell|share|send|confirm)|what (is|are) your|which (city|one|date|airport|day)|when (do|would) you|do you (want|prefer)"#, options: .regularExpression) != nil
         finish(id, withLinks, asks ? "Needs input" : "Done")
-        if asks { awaiting = (a, task, Date()) } else { lastWork = (a, task, reply, data.text + "\n" + webNotes, Date()) }
+        if asks { awaiting = (a, task, Date()) } else { lastWork = (a, task, answerText, data.text + "\n" + webNotes, Date()) }
         return runs.first { $0.id == id }!
     }
 
@@ -4466,6 +4515,11 @@ struct AgentOfficeView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Result").font(HubFont.p(15, .semibold))
                 ScrollView { ChatRichText(text: r).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 300)
+                if let out = runs.compactMap(\.output).first {
+                    Button { NSWorkspace.shared.open(URL(fileURLWithPath: out)) } label: {
+                        Label("Open the output (\(URL(fileURLWithPath: out).pathExtension.uppercased()))", systemImage: "doc.richtext.fill").font(HubFont.p(13)).foregroundColor(Color(hex: "#8FB4FF"))
+                    }.buttonStyle(.plain)
+                }
                 HStack(spacing: 8) {
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(r, forType: .string) } label: {
                         Text("Copy").font(HubFont.p(13)).foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 36).background(Capsule().fill(HubTheme.blue))
@@ -5628,6 +5682,16 @@ struct LibraryView: View {
             let name = team.agent(r.agent).map(AgentEdits.name) ?? r.agent
             VStack(alignment: .leading, spacing: 14) {
                 header(r.task, sub: "\(name) · \(r.status) · \(r.started.formatted(date: .abbreviated, time: .shortened))", text: "Task: \(r.task)\n\n\(r.result)")
+                if let out = r.output, FileManager.default.fileExists(atPath: out) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.richtext.fill").foregroundColor(HubTheme.blue)
+                        Text(URL(fileURLWithPath: out).lastPathComponent).font(HubFont.p(13)).lineLimit(1)
+                        Spacer()
+                        pill("Open output", filled: true) { NSWorkspace.shared.open(URL(fileURLWithPath: out)) }
+                        pill("Show in Finder", filled: false) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: out)]) }
+                    }
+                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(T.content))
+                }
                 DisclosureGroup("How \(name) worked (\(r.steps.count) steps)") {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(r.steps.enumerated()), id: \.offset) { i, s in Text("\(i + 1). \(s.text)").font(HubFont.p(12, .regular)).foregroundColor(T.inactive) }
@@ -5955,5 +6019,117 @@ final class DailyReport: ObservableObject {
         list()
         NotchInbox.shared.add("Today's report is ready", "\(done.count) done · \(failed.count) failed", icon: "doc.text.fill", action: "dashboard")
         return url
+    }
+}
+
+
+// MARK: - SEO Agent: a real audit (website, Google, social profiles) and exact "change this to that" suggestions
+
+@MainActor
+enum SEOAgent {
+    static func audit(_ url: String) async -> String {
+        guard let u = URL(string: url) else { return "" }
+        let t0 = Date()
+        guard let (d, code) = await ZuffiReach.get(url, timeout: 20), let h = String(data: d, encoding: .utf8) ?? String(data: d, encoding: .isoLatin1) else { return "Website \(url): couldn't open it." }
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        func all(_ p: String) -> [String] {
+            guard let re = try? NSRegularExpression(pattern: p, options: [.caseInsensitive, .dotMatchesLineSeparators]) else { return [] }
+            return re.matches(in: h, range: NSRange(h.startIndex..., in: h)).compactMap { m in Range(m.range(at: 1), in: h).map { ZuffiReach.stripHTML(String(h[$0])) } }
+        }
+        let title = all(#"<title[^>]*>(.*?)</title>"#).first ?? ""
+        let desc = all(#"<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)"#).first ?? all(#"<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description"#).first ?? ""
+        let h1 = all(#"<h1[^>]*>(.*?)</h1>"#), h2 = all(#"<h2[^>]*>(.*?)</h2>"#)
+        let imgs = all(#"(<img\b[^>]*>)"#)
+        let noAlt = imgs.filter { !$0.lowercased().contains("alt=") || $0.lowercased().contains("alt=\"\"") }.count
+        let imgTags = (try? NSRegularExpression(pattern: "<img\\b", options: .caseInsensitive))?.numberOfMatches(in: h, range: NSRange(h.startIndex..., in: h)) ?? 0
+        let missingAlt = (try? NSRegularExpression(pattern: #"<img\b(?![^>]*\balt=["'][^"']+["'])[^>]*>"#, options: .caseInsensitive))?.numberOfMatches(in: h, range: NSRange(h.startIndex..., in: h)) ?? noAlt
+        let text = ZuffiReach.stripHTML(h)
+        let words = text.split(whereSeparator: { $0.isWhitespace }).count
+        let lower = h.lowercased()
+        var robots = "?", sitemap = "?"
+        if let host = u.host {
+            let base = "\(u.scheme ?? "https")://\(host)"
+            if let (_, c) = await ZuffiReach.get(base + "/robots.txt", timeout: 8) { robots = c < 400 ? "found" : "missing (\(c))" }
+            if let (_, c) = await ZuffiReach.get(base + "/sitemap.xml", timeout: 8) { sitemap = c < 400 ? "found" : "missing (\(c))" }
+        }
+        return """
+        WEBSITE AUDIT — \(url) (HTTP \(code), \(ms) ms, \(d.count / 1024) KB)
+        - HTTPS: \(url.hasPrefix("https") ? "yes" : "NO")
+        - Title (\(title.count) chars): \(title.isEmpty ? "MISSING" : title)
+        - Meta description (\(desc.count) chars): \(desc.isEmpty ? "MISSING" : desc)
+        - H1 headings (\(h1.count)): \(h1.prefix(3).joined(separator: " | "))
+        - H2 headings (\(h2.count)): \(h2.prefix(8).joined(separator: " | "))
+        - Words on the page: \(words)
+        - Images: \(imgTags), without alt text: \(missingAlt)
+        - Mobile viewport tag: \(lower.contains("name=\"viewport\"") || lower.contains("name='viewport'") ? "yes" : "NO")
+        - Canonical link: \(lower.contains("rel=\"canonical\"") ? "yes" : "no")
+        - Open Graph (social sharing) tags: \(lower.contains("og:title") ? "yes" : "no")
+        - LocalBusiness / schema.org data: \(lower.contains("schema.org") ? (lower.contains("localbusiness") ? "LocalBusiness found" : "some schema") : "none")
+        - robots.txt: \(robots) · sitemap.xml: \(sitemap)
+        - Start of the page text: \(text.prefix(1200))
+        """
+    }
+
+    static func run(_ task: String, agent: TeamAgent, runID: String?, step: (String) -> Void) async -> String {
+        let f = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+        let name = ZuffiBusiness.shared.businessName.trimmingCharacters(in: .whitespaces)
+        let given = (try? NSRegularExpression(pattern: #"https?://\S+"#)).map { re in re.matches(in: task, range: NSRange(task.startIndex..., in: task)).compactMap { Range($0.range, in: task).map { String(task[$0]) } } } ?? []
+        var site = given.first { !$0.contains("instagram.com") && !$0.contains("facebook.com") && !$0.contains("tiktok.com") } ?? (f["website"] ?? "")
+        site = site.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !site.isEmpty, !site.hasPrefix("http") { site = "https://" + site }
+        let socials = (given.filter { $0.contains("instagram.com") || $0.contains("facebook.com") || $0.contains("tiktok.com") } + [f["instagram"], f["facebook"], f["tiktok"]].compactMap { $0 })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !site.isEmpty || !socials.isEmpty || !name.isEmpty else {
+            return "Add your website or social links on the Business page (or paste the link here) and I'll do a full SEO check."
+        }
+        var data: [String] = []
+        if !site.isEmpty { step("Auditing your website: \(URL(string: site)?.host ?? site)"); data.append(await audit(site)) }
+        // Keywords people search for this business, and where it shows up on Google now
+        let kind = f["type"] ?? "", area = (f["address"] ?? "").components(separatedBy: ",").last?.trimmingCharacters(in: .whitespaces) ?? ""
+        step("Choosing the keywords your customers search")
+        let kwRaw = await AIService.shared.oneShot("""
+            List the 4 Google searches local customers most likely type to find a business like this. JSON only: ["keyword", ...]
+            Business: \(name) · \(kind) · \(area)
+            \(ZuffiTeam.businessContext.prefix(1500))
+            """) ?? ""
+        var keywords = (AIService.jsonIn(kwRaw) as? [String]) ?? []
+        if keywords.isEmpty, !kind.isEmpty { keywords = ["\(kind) \(area)", "best \(kind) near me"] }
+        let host = URL(string: site)?.host?.replacingOccurrences(of: "www.", with: "") ?? ""
+        var ranks: [String] = []
+        for k in keywords.prefix(4) {
+            step("Searching Google for “\(k)”")
+            let res = await ZuffiReach.search(k, agent: agent, runID: runID, limit: 10)
+            let pos = res.firstIndex { (!host.isEmpty && $0.url.contains(host)) || (!name.isEmpty && $0.title.lowercased().contains(name.lowercased())) }
+            let top = res.prefix(3).map { URL(string: $0.url)?.host ?? $0.title }.joined(separator: ", ")
+            ranks.append("- “\(k)”: \(pos.map { "you are #\($0 + 1)" } ?? "you're not in the top \(res.count)") · top results: \(top)")
+        }
+        if !ranks.isEmpty { data.append("GOOGLE RESULTS NOW (\(Date().formatted(date: .abbreviated, time: .omitted))):\n" + ranks.joined(separator: "\n")) }
+        // Social profiles
+        for sURL in socials.prefix(3) {
+            guard let u = URL(string: sURL.hasPrefix("http") ? sURL : "https://" + sURL) else { continue }
+            step("Reading your profile: \(u.host ?? sURL)")
+            if let r = await ZuffiReach.browserRead(u, agent: agent, runID: runID) { data.append("SOCIAL PROFILE \(u.absoluteString):\n" + String(r.text.prefix(3000))) }
+        }
+        if let g = f["google"], !g.isEmpty, let u = URL(string: g) {
+            step("Reading your Google listing")
+            if let r = await ZuffiReach.browserRead(u, agent: agent, runID: runID) { data.append("GOOGLE LISTING:\n" + String(r.text.prefix(2500))) }
+        }
+        step("Writing exactly what to change")
+        guard let report = await AIService.shared.oneShot("""
+            Write an SEO report for \(name.isEmpty ? "this business" : name)\(kind.isEmpty ? "" : " (\(kind))")\(area.isEmpty ? "" : " in \(area)"). Owner's request: \(task)
+            Use ONLY the audit data below. Sections (plain text, "- " bullets):
+            ## Score and the 3 biggest wins
+            ## Website — change this to that   (each line: Change: … → To: … — Why)
+            ## Keywords to target   (keyword → where to put it: title, description, H1, page text, Google listing, bio)
+            ## Google right now   (where they rank, who beats them and why)
+            ## Social profiles   (bio now → better bio, name/username, hashtags, highlights, link in bio, what to post)
+            ## Google Business profile
+            ## This month's SEO plan (week 1–4)
+            AUDIT DATA:
+            \(data.joined(separator: "\n\n").prefix(20000))
+            """, system: ZuffiTeam.shared.systemPrompt(for: agent, business: true)), report.count > 200 else {
+            return "I couldn't write the SEO report this time — check that an AI is set up in Settings."
+        }
+        return zClean(report)
     }
 }
