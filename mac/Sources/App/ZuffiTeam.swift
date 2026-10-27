@@ -4793,8 +4793,8 @@ enum ZuffiReach {
         guard let (d, code) = await get(url, headers: headers), code < 400 else { return nil }
         return try? JSONSerialization.jsonObject(with: d)
     }
-    static func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
-    static func stripHTML(_ h: String) -> String {
+    nonisolated static func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+    nonisolated static func stripHTML(_ h: String) -> String {
         var t = h.replacingOccurrences(of: #"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>"#, with: " ", options: .regularExpression)
         t = t.replacingOccurrences(of: #"(?i)<br\s*/?>|</p>|</div>|</li>|</h[1-6]>"#, with: "\n", options: .regularExpression)
         t = t.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
@@ -4802,7 +4802,7 @@ enum ZuffiReach {
         t = t.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression).replacingOccurrences(of: #"\n\s*\n+"#, with: "\n", options: .regularExpression)
         return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    static func isBlockPage(_ t: String) -> Bool {
+    nonisolated static func isBlockPage(_ t: String) -> Bool {
         let l = t.prefix(4000).lowercased()
         return l.contains("just a moment...") || l.contains("performing security verification") || l.contains("attention required! | cloudflare") || l.contains("unusual traffic") || l.contains("are you a robot")
     }
@@ -4889,7 +4889,7 @@ enum ZuffiReach {
         }
         return ReachItem(title: url.host ?? "", url: p.url, text: p.text, via: "Agent browser")
     }
-    static func looksLoggedOut(_ t: String) -> Bool {
+    nonisolated static func looksLoggedOut(_ t: String) -> Bool {
         let l = t.prefix(2500).lowercased()
         return (l.contains("log in") || l.contains("sign in") || l.contains("sign up")) && t.count < 2500
     }
