@@ -873,6 +873,7 @@ final class ZuffiTeam: ObservableObject {
         func m(_ p: String) -> Bool { t.range(of: p, options: .regularExpression) != nil }
         if m(#"^(please )?(go to|open) [a-z0-9.-]+\.(com|co\.uk|org|net|io)\b.*\b(and|then)\b|\b(fill (in|out)?( the| this| a)? form|compare prices|on (amazon|ebay|argos|currys|john lewis|gumtree|etsy)|sign me up|check (the )?website)\b"#) { return .web }
         if m(#"\b(write|draft|rewrite|proofread)( me)? (an? )?(email|proposal|letter|cover letter|summary|bio|description|reply)\b"#) { return .marketing }
+        if m(#"\breviews?\b"#) { return .customers }
         if m(#"\b(flights?|fly|airline|airport|hotels?|train tickets?|holiday|trip to|travel(ling)? to)\b"#) { return .travel }
         if m(#"\b(profit|revenue|income|turnover|takings|expenses?|costs?|spent|spend|tax|vat|cash ?flow|margin|earn(ed|ings)?|kamai|munafa|kharcha|money (in|out|made)|how much (did|have) we (make|made|sell|sold|earn))\b"#) { return .finance }
         if m(#"\b(bookings?|appointments?|booked|no.?shows?|cancell?ations?|slots?|site visits?|visits (today|tomorrow))\b"#) { return .bookings }
@@ -1022,6 +1023,37 @@ final class ZuffiTeam: ObservableObject {
             return runs.first { $0.id == id }!
         }
 
+        // "Go to Google and get our reviews, find the negative ones…": do exactly that in the browser (you watch the tab), then a clean report.
+        if Self.isActionTask(task), !(field == .travel && Self.isFlightQuestion(task)), ChannelAgent.channelTask(task) == nil {
+            let biz = ZuffiBusiness.shared.businessName.trimmingCharacters(in: .whitespaces)
+            let area = (((UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:])["address"] ?? "")
+            var job = task
+            if !biz.isEmpty, task.lowercased().range(of: #"\b(our|my|us|we)\b"#, options: .regularExpression) != nil {
+                job += "\n(Our business is “\(biz)”\(area.isEmpty ? "" : ", \(area)").)"
+            }
+            step(id, "Opening the browser to do it")
+            let raw = await AgentBrowser.shared.run(job + """
+
+                Do exactly what the owner asked, step by step, like a careful senior \(a.name). Open the real pages, scroll, click "more" / "all reviews" / next pages \
+                until you have everything needed. Don't stop at the first screen. When finished, use "done" and put EVERYTHING you found in the answer: \
+                names, dates, ratings, the exact text, whether it was replied to, numbers and links.
+                """, agent: a, runID: id, start: Self.actionStart(job))
+            let failed = raw.hasPrefix("I couldn't") || raw.hasPrefix("I stopped") || raw == "Stopped."
+            if failed { finish(id, raw, "Failed"); return runs.first { $0.id == id }! }
+            step(id, "Writing your report")
+            let report = await AIService.shared.oneShot("""
+                THE OWNER ASKED: \(task)
+                WHAT YOU FOUND IN THE BROWSER:
+                \(raw.prefix(16000))
+                Write the report the owner asked for, as a senior \(a.name): first the direct answer, then the details (lists with names, dates, ratings, quotes, links), \
+                what it means, and what to do next. Use ONLY what was found. If something couldn't be found, say so.
+                """, system: systemPrompt(for: a, data: "")) ?? raw
+            let text = Self.plain(report)
+            finish(id, text, "Done")
+            lastWork = (a, task, text, String(raw.prefix(8000)), Date())
+            return runs.first { $0.id == id }!
+        }
+
         // Your own accounts ("go to Instagram and check who follows us"): done on the account itself, never a web search about it.
         if let ch = ChannelAgent.channelTask(task) {
             let (text, ok) = await ChannelAgent.run(task, channel: ch, agent: a, runID: id, step: { self.step(id, $0, source: ch.name) })
@@ -1130,6 +1162,15 @@ final class ZuffiTeam: ObservableObject {
 
     /// What the Travel agent read on Google Flights last (so "which one is cheapest?" is answered from the same page).
     var flightPage: (trip: String, text: String, url: String)?
+
+    /// "Go to Google and…", "open booking.com and…", "check our reviews on Google", "read the comments on…" — the owner wants it DONE on the site.
+    static func isActionTask(_ q: String) -> Bool {
+        let l = q.lowercased()
+        if l.range(of: #"^(please |ok(ay)? |nik,? |zuffi,? )*(go( to| on)?|open|visit|browse|log ?in to)\b"#, options: .regularExpression) != nil { return true }
+        if l.range(of: #"\b(go|open|visit) (to )?(google|chrome|safari|the browser|[a-z0-9-]+\.(com|co\.uk|org|net|io|pk))\b"#, options: .regularExpression) != nil { return true }
+        if l.range(of: #"\b(check|read|get|collect|find|list)\b.*\b(reviews?|ratings?|comments?)\b.*\b(on|from|in) (google|google maps|facebook|tripadvisor|trustpilot|yelp|booking\.com|amazon)\b"#, options: .regularExpression) != nil { return true }
+        return false
+    }
 
     static func isFlightQuestion(_ q: String) -> Bool {
         q.lowercased().range(of: #"\b(flights?|fly|flying|airline|air ?fare|plane tickets?|tickets? to)\b"#, options: .regularExpression) != nil
@@ -3114,12 +3155,14 @@ final class AgentBrowser: ObservableObject {
         tabs.append(t)
         if selected == nil || tabs.count == 1 { selected = t.id }
         t.status = "Working"
+        // You watch it work: the agent's browser window comes up with its tab.
+        if UserDefaults.standard.object(forKey: "watchBrowser") as? Bool ?? true { show(t.id) }
         let start = startAt ?? Self.startURL(task)
         t.say("Opening \(start.host ?? start.absoluteString)")
         t.web.load(URLRequest(url: start))
         await waitLoaded(t)
         var history: [String] = []
-        for stepNo in 1...25 {
+        for stepNo in 1...35 {
             guard await holdIfPaused(t) else { return "Stopped." }
             guard let page = await read(t) else { t.say("Couldn't read the page"); continue }
             let items = (page["items"] as? [[String: Any]]) ?? []
@@ -3135,7 +3178,7 @@ final class AgentBrowser: ObservableObject {
             ELEMENTS:
             \(list.prefix(9000))
             VISIBLE TEXT:
-            \((page["text"] as? String ?? "").prefix(3000))
+            \((page["text"] as? String ?? "").prefix(6000))
             """
             guard let raw = await AIService.shared.textAnswer(system: Self.rules, messages: [["role": "user", "content": prompt]], max: 400),
                   let a = AIService.jsonIn(raw) as? [String: Any], let action = a["action"] as? String else {
@@ -3243,6 +3286,17 @@ final class AgentBrowser: ObservableObject {
     }
 
     /// Where to start: a site named in the task, else a web search.
+    /// Where an action task starts: Google Maps for reviews of a place, Google for "go to Google…", else the site named or a Google search.
+    static func actionStart(_ task: String) -> URL {
+        let l = task.lowercased()
+        let line = task.components(separatedBy: "\n")
+        let biz = line.last(where: { $0.hasPrefix("(Our business is") }).flatMap { $0.components(separatedBy: "“").dropFirst().first?.components(separatedBy: "”").first } ?? ""
+        if l.contains("review"), !biz.isEmpty, let q = (biz + " reviews").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            return URL(string: "https://www.google.com/search?q=\(q)&hl=en-GB") ?? startURL(task)
+        }
+        return startURL(task)
+    }
+
     static func startURL(_ task: String) -> URL {
         let l = task.lowercased()
         if let r = l.range(of: #"(https?://\S+|\b[a-z0-9-]+\.(com|co\.uk|org|net|io|ai|uk)\S*)"#, options: .regularExpression) {
