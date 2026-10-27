@@ -114,7 +114,18 @@ final class AIService {
     /// Who the user is: the welcome form and everything they asked Zuffi to remember (sent by the app's web part), else the Mac's own copy of the form.
     static var userFacts: String {
         let f = UserDefaults.standard.string(forKey: "zuffiFacts") ?? ""
-        return (f.isEmpty ? ZuffiPlan.shared.profileLine : f) + ZuffiMemory.shared.itemsLine + ZuffiCRM.shared.memoryContext() + RoomListener.shared.contextLine
+        // The business (services, prices, customers) only joins in when you're talking to Nik — never the everyday chat.
+        let biz = ZuffiChat.shared.who == .nik ? ZuffiCRM.shared.memoryContext() : ""
+        return (f.isEmpty ? ZuffiPlan.shared.profileLine : f) + ZuffiMemory.shared.itemsLine + biz + RoomListener.shared.contextLine
+    }
+
+    /// "which one is cheapest?", "and the route?", "what about tuesday" — a follow-up to the last job, not a new request.
+    static func isFollowUp(_ q: String, after a: TeamAgent) -> Bool {
+        let t = q.lowercased()
+        if let f = ZuffiTeam.intent(t), f != AgentField.of(a) { return false }
+        let short = t.split(separator: " ").count <= 16
+        let refers = t.range(of: #"\b(which|that|those|these|it|them|cheapest|best|route|via|stop|stops|when|time|times|how long|duration|details?|more|other|compare|first|second|third|last|book|link)\b"#, options: .regularExpression) != nil
+        return short && refers
     }
     nonisolated static func asksAboutZuffi(_ q: String) -> Bool {
         q.lowercased().range(of: #"\b(zuffi|sparrow|you|your|yourself|app|plan|plans|pro|business|price|prices|cost|subscription|trial|feature|features|setting|settings|how (do|can|to)|can i|where is|what can|help|lisan)\b"#, options: .regularExpression) != nil
@@ -161,33 +172,63 @@ final class AIService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         if ZuffiPlan.shared.isLocked { finish(ZuffiPlan.shared.lockedMessage, state: state, emote: .happy); ZuffiPlan.shared.openAccount(); return }
         var context = context
-        // 0) Zuffi's team: "use the finance agent", "who are you?", "who are you guys?", "assign … to research and product manager"
-        if let r = await ZuffiTeam.shared.handle(query) {
-            remember(user: query, assistant: r)
-            finish(r, state: state, emote: .happy); return
-        }
-        // Team members picked: the Team Manager routes the question, they answer from real data, and every step is logged.
-        if context == nil, !ZuffiTeam.shared.activeAgents.isEmpty, !ZuffiTeam.looksLikeCommand(query) {
+        let who = ZuffiChat.shared.who
+        let team = ZuffiTeam.shared
+        // An agent asked you something ("which city?"): this message goes back to it, with the original task.
+        if context == nil, let w = team.awaiting, Date().timeIntervalSince(w.at) < 20 * 60, !ZuffiTeam.looksLikeCommand(query) {
+            team.awaiting = nil
             state.stateOverride = .thinking
-            let r = await ZuffiTeam.shared.ask(query)
+            let run = await team.work(w.agent, w.task + "\nMore details from the owner: " + query)
+            let r = "\(w.agent.name):\n\(run.result)"
+            remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return
+        }
+        // A follow-up about the last job ("which one is cheapest, and the route?") goes back to the same agent, with the same facts.
+        if context == nil, let lw = team.lastWork, Date().timeIntervalSince(lw.at) < 30 * 60, Self.isFollowUp(query, after: lw.agent) {
+            state.stateOverride = .thinking
+            let r: String
+            if AgentField.of(lw.agent) == .travel, let fp = team.flightPage {
+                r = "\(lw.agent.name):\n" + (await team.flightAnswer(lw.agent, question: query, trip: fp.trip, page: fp.text, url: fp.url)).0
+            } else {
+                let run = await team.work(lw.agent, "Earlier task: \(lw.task)\nYour earlier answer:\n\(lw.result.prefix(2500))\n\nFollow-up from the owner: \(query)\nAnswer the follow-up using your earlier answer and its facts.")
+                r = "\(lw.agent.name):\n\(run.result)"
+            }
+            remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return
+        }
+        // 0) Zuffi's team: "use the finance agent", "who are you?", "who are you guys?", "assign … to research and product manager"
+        if let r = await team.handle(query) {
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
+        // Talking to one agent (picked at the top of the chat).
+        if context == nil, case .agent(let id) = who, let a = team.agent(id), !ZuffiTeam.looksLikeCommand(query) {
+            state.stateOverride = .thinking
+            let r = await team.ask(query, who: [a])
+            remember(user: query, assistant: r)
+            finish(r, state: state, emote: .happy); return
+        }
+        // Talking to Nik: business questions — he gives each to the right business agent and sums up.
+        if context == nil, who == .nik, !ZuffiTeam.looksLikeCommand(query) {
+            state.stateOverride = .thinking
+            let r = await team.dispatch(query) ?? (await team.answer(query, people: [ZuffiTeam.manager], routeOnly: false))
+            remember(user: query, assistant: r)
+            finish(r, state: state, emote: .happy); return
+        }
+        let business = who == .nik
         // "What's our profit today?" / "how many bookings today?" — straight from the Money page, bookings and the dashboard, never guessed.
-        if context == nil, ZuffiPlan.shared.isBusiness, ZuffiTeam.isFiguresQuestion(query),
+        if context == nil, business, ZuffiPlan.shared.isBusiness, ZuffiTeam.isFiguresQuestion(query),
            query.lowercased().range(of: #"\b(our|my|we|us|today|yesterday|this (week|month)|last (week|month))\b"#, options: .regularExpression) != nil,
            let f = ZuffiTeam.intent(query), f == .finance || f == .bookings {
             let r = f == .finance ? TeamData.financeAnswer(query).0 : TeamData.bookingsAnswer(query).0
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
-        let agentOn = ZuffiTeam.shared.active != nil
+        let agentOn = false
         // 0) Questions about the user ("what's my date of birth?") — from the welcome form, no AI, works offline.
         if context == nil, let me = await ZuffiPlan.shared.aboutMe(query) { finish(me, state: state, emote: .happy); return }
-        // 0b) Your data: daily messages, and spreadsheets you hand over.
-        if let r = ZuffiCRM.shared.handle(query) { finish(r, state: state, emote: .happy); return }
-        if let r = ZuffiMoney.shared.handle(query) { finish(r, state: state, emote: .happy); return }
-        if let r = await ZuffiProperties.shared.handle(query) { finish(r, state: state, emote: .happy); return }
+        // 0b) Your business data — only with Nik (the everyday chat never mixes in the business).
+        if business, let r = ZuffiCRM.shared.handle(query) { finish(r, state: state, emote: .happy); return }
+        if business, let r = ZuffiMoney.shared.handle(query) { finish(r, state: state, emote: .happy); return }
+        if business, let r = await ZuffiProperties.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         if let r = ZuffiData.shared.handleCommand(query) { finish(r, state: state, emote: .happy); return }
         if case .file(_, let fileURL)? = context, let fileURL, ZuffiData.isSheet(fileURL) {
             let saved = await ZuffiData.shared.importSheet(fileURL)
@@ -199,10 +240,10 @@ final class AIService {
             }
         }
         if let r = await ZuffiPA.shared.handle(query) { finish(r, state: state, emote: .happy); return }
-        // Business: research, finance, bookings, marketing, travel… Zuffi gives each job to the right agent (they pop up on screen and work).
-        if context == nil, ZuffiPlan.shared.isBusiness {
+        // Everyday jobs (flights, research, a website, writing): Zuffi gives them to her own helpers — never the business agents.
+        if context == nil, ZuffiPlan.shared.isPaid {
             state.stateOverride = .thinking
-            if let r = await ZuffiTeam.shared.dispatch(query) { remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return }
+            if let r = await team.dispatch(query, personalOnly: true) { remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return }
             state.stateOverride = nil
         }
         // 1) Built-in commands run instantly, offline, with no API key.

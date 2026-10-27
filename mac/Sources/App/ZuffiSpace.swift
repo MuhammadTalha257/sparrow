@@ -1019,7 +1019,7 @@ struct NotchHomeView: View {
     private let W = IslandConst.width(for: .overview)
     private let H = IslandConst.viewLayouts[.overview]!.height
     private var agents: [TeamAgent] { team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents }
-    private let pillFill = Color.white.opacity(0.12), pillLine = Color.white.opacity(0.16)
+    private let pillFill = Color.white.opacity(0.10), pillLine = Color.white.opacity(0.22)
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -1060,27 +1060,14 @@ struct NotchHomeView: View {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "text.bubble").font(.system(size: 12)).foregroundColor(.white.opacity(0.75))
-                    TextField("Ask Zuffi or give a job…", text: $ask)
-                        .textFieldStyle(.plain).font(.system(size: 13)).foregroundColor(.white)
+                    TextField("Ask Zuffi anything…", text: $ask)
+                        .textFieldStyle(.plain).font(.system(size: 14)).foregroundColor(.white)
                         .focused($askFocus)
                         .onSubmit { send() }
                 }
-                .padding(.horizontal, 12).frame(height: 38)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(pillFill))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pillLine))
-                Button { if music.hasTrack { music.send("playpause") } } label: {
-                    HStack(spacing: 8) {
-                        if music.playing || hang.audio { NotchBars(count: 7, width: 2, height: 12) } else { Image(systemName: "music.note").font(.system(size: 11)).foregroundColor(.white.opacity(0.6)) }
-                        Text(music.hasTrack ? "\(music.title)\(music.artist.isEmpty ? "" : " · \(music.artist)")" : (hang.audio ? "Sound is playing" : "Nothing playing"))
-                            .font(.system(size: 13)).foregroundColor(.white.opacity(music.hasTrack || hang.audio ? 1 : 0.6)).lineLimit(1)
-                        Spacer(minLength: 4)
-                        if music.hasTrack { Image(systemName: music.playing ? "pause.fill" : "play.fill").font(.system(size: 10)).foregroundColor(.white.opacity(0.8)) }
-                    }
-                    .padding(.horizontal, 12).frame(height: 38)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(pillFill))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pillLine))
-                    .contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                .padding(.horizontal, 14).frame(height: 66)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(pillFill))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(pillLine))
             }
 
             VStack(spacing: 10) {
@@ -1218,9 +1205,7 @@ struct CompactWings: View {
                 .contentShape(Rectangle())
             Color.clear.frame(width: notch)
             HStack(spacing: 6) {
-                if hang.audio || music.playing {
-                    NotchBars(count: 7, width: 2.5, height: 14)
-                } else if !working.isEmpty {
+                if !working.isEmpty {
                     HStack(spacing: -5) {
                         ForEach(working.prefix(3)) { r in
                             if let a = team.agent(r.agent) { AgentAvatar(agent: a, size: 16).clipShape(Circle()).overlay(Circle().stroke(Color.black, lineWidth: 1.5)) }

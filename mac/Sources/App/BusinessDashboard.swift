@@ -2836,13 +2836,12 @@ struct ZuffiHubView: View {
         case "Notch":
             settingsList("Notch", [
                 toggleRow("rectangle.topthird.inset.filled", "New glass notch", "The wide notch with your agents and notifications", key: "notchWide", def: true),
-                toggleRow("waveform", "Music bars beside the notch", "Shows when any app plays sound", key: "notchHang", def: true),
                 toggleRow("rectangle.connected.to.line.below", "Show Nik's window for tasks", "Watch Nik hand out the work", key: "missionWindow", def: true),
                 toggleRow("hand.wave.fill", "Say hi when Zuffi starts", "Only the notch, nothing else pops up", key: "helloOnOpen", def: true),
             ])
         case "Agents":
             settingsList("Agents", [
-                toggleRow("person.3.sequence.fill", "Agents on screen while they work", "Small robots in the corner", key: "agentsOnScreen", def: true),
+                fixedRow("person.3.sequence.fill", "Agents work in the Agent Office", "They never cover your screen — watch them in their tab"),
                 fixedRow("checkmark.shield.fill", "Ask me before paying, sending or posting", "Always on, for your safety"),
                 fixedRow("globe", "Agents use websites in their own window", "Your mouse and browser stay free"),
             ])

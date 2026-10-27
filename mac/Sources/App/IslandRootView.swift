@@ -64,9 +64,9 @@ struct IslandContainer: View {
                     if SparrowPosition.current == .notch && !IslandDock.docked {
                         LinearGradient(stops: [
                             .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.88), location: 0.10),
-                            .init(color: Color(hex: "#161A26").opacity(0.42), location: 0.38),
-                            .init(color: Color(hex: "#1C2131").opacity(0.34), location: 1),
+                            .init(color: .black.opacity(0.85), location: 0.09),
+                            .init(color: Color(hex: "#161A26").opacity(0.26), location: 0.34),
+                            .init(color: Color(hex: "#1C2131").opacity(0.18), location: 1),
                         ], startPoint: .top, endPoint: .bottom)
                     } else {
                         LinearGradient(colors: [Color(hex: "#1B2131").opacity(0.62), Color(hex: "#2B3244").opacity(0.42)],
@@ -77,7 +77,7 @@ struct IslandContainer: View {
                                    center: UnitPoint(x: 0.08, y: 0.75), startRadius: 4, endRadius: 240)
                 }
                 .clipShape(shape)
-                .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.26)],
+                .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.38)],
                                                      startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
             } else if state.mode == .compact && NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {

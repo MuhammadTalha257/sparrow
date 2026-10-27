@@ -377,9 +377,24 @@ final class ZuffiTeam: ObservableObject {
     @Published var working = ""          // shown while something runs
     /// "Hire Bookings Agent?" waiting for a yes.
     var pendingHire: [TeamAgent] = []
+    /// An agent asked you something ("which city?") — your next message goes back to it with the original task.
+    var awaiting: (agent: TeamAgent, task: String, at: Date)?
+    /// The last job done in the chat, so "which one is cheapest?" goes back to the same agent with the same facts.
+    var lastWork: (agent: TeamAgent, task: String, result: String, facts: String, at: Date)?
+    /// Personal helpers (everyday): the chat with Zuffi only uses these. Business agents work only in the business tabs or with Nik.
+    static let personalFields: Set<AgentField> = [.web, .research, .travel, .data, .education, .design]
+    static func isPersonal(_ a: TeamAgent) -> Bool { personalTeam.contains(a.id) || personalFields.contains(AgentField.of(a)) || a.id == "zuffi-writer" }
+    /// Who you can talk to in the chat.
+    var chatAgents: [TeamAgent] {
+        let personal = (Self.personalTeam.compactMap { agent($0) })
+        let biz = ZuffiPlan.shared.isPersonal ? [] : hiredAgents.filter { !Self.isPersonal($0) }
+        var out: [TeamAgent] = []
+        for a in personal + biz where !out.contains(a) { out.append(a) }
+        return out
+    }
 
     /// A new chat: plain Zuffi again, and the team forgets the old topic.
-    func newConversation() { activeIDs = []; recent = []; pendingHire = [] }
+    func newConversation() { activeIDs = []; recent = []; pendingHire = []; awaiting = nil; lastWork = nil; flightPage = nil }
 
     private var saveTasks: [String: Task<Void, Never>] = [:]
     private func saveSoon(_ name: String) {
@@ -540,12 +555,13 @@ final class ZuffiTeam: ObservableObject {
     }
 
     /// Identity first, then the rules, the business, and only the real data this agent's tools allow.
-    func systemPrompt(for a: TeamAgent, part: String = "", others: [TeamAgent] = [], data: String = "") -> String {
+    func systemPrompt(for a: TeamAgent, part: String = "", others: [TeamAgent] = [], data: String = "", business: Bool? = nil) -> String {
+        let useBusiness = business ?? !Self.isPersonal(a)
         let field = AgentField.of(a)
         let owner = AssistantPrefs.displayName.isEmpty ? "the owner" : AssistantPrefs.displayName
         let team = others.isEmpty ? "" : "\nYou're working together with: " + others.map(\.name).joined(separator: ", ") + ". Do only your own part; don't repeat theirs."
         return """
-        You are \(a.name) \(a.emoji), a senior \(a.name) (\(field.label)) with 15+ years of experience, working on \(owner)'s team inside Zuffi. Zuffi is the owner's AI assistant and business manager; you are one of the team members, led by the Team Manager.\(team)
+        You are \(a.name) \(a.emoji), a senior \(a.name) (\(field.label)) with 15+ years of experience, working for \(owner) inside Zuffi. You are one of the team members, led by Nik, the manager.\(team)
         WHO YOU ARE
         - Speak as yourself, in the first person. If asked who you are, say “I'm your \(a.name)” and in one line how you help this business. Never call yourself Zuffi or “an AI model”.
         - Your expertise: \(a.description)
@@ -553,13 +569,13 @@ final class ZuffiTeam: ObservableObject {
         HOW YOU WORK
         - Think like the best \(a.name) in the field, for THIS business: practical steps, examples, what to do first.
         - NUMBERS: use only numbers that appear in VERIFIED DATA below. Never invent, estimate or "assume" revenue, costs, tax, profit, bookings, customers or prices. If a number you need isn't there, say it can't be verified yet and ask the owner for it (or to open the page). Label figures as actual (from data), calculated (show the sum) or missing.
+        - If the request is unclear or a detail you need is missing (which city or airport, dates, budget, who it's for…), DON'T guess: ask one to three short questions and stop.
         - If you need a fact about the business that isn't here, ask one or two short questions first.
         - If the question belongs to another field, say who on the team should take it.
         - You think, read and write. You can't send messages, post, pay, book or delete — suggest it and ask the owner to OK it.
         - Reply in the owner's language. Plain text with line breaks: no markdown, no ** or ##, no tables. Short paragraphs or numbered steps.
         \(part.isEmpty ? "" : "\nYOUR PART OF THIS JOB: \(part)\nKeep it under 180 words.\n")
-        ABOUT THE BUSINESS
-        \(Self.businessContext)
+        \(useBusiness ? "ABOUT THE BUSINESS\n" + Self.businessContext : "This is the owner's own everyday request — it is NOT about their business. Don't mention their business.")
 
         VERIFIED DATA (the only figures you may use)
         \(data.isEmpty ? "(none for this question)" : data)
@@ -910,6 +926,27 @@ final class ZuffiTeam: ObservableObject {
             }
         }
 
+        // Flights: ask first if the trip isn't clear; then really open Google Flights and read the results — never guess prices.
+        if field == .travel, Self.isFlightQuestion(task) {
+            if let q = Self.flightQuestions(task) {
+                awaiting = (a, task, Date())
+                step(id, "Asked you for the missing details")
+                finish(id, q, "Needs input")
+                return runs.first { $0.id == id }!
+            }
+            let trip = Self.flightTrip(task)
+            step(id, "Opening Google Flights — \(trip.label)", source: "Google Flights")
+            let page = await AgentBrowser.shared.readPage(trip.url, agent: a, runID: id)
+            step(id, page.text.count > 600 ? "Read the flight results" : "Google Flights didn't show results", source: "Google Flights")
+            flightPage = (trip.label, page.text, trip.url.absoluteString)
+            if let i = runs.firstIndex(where: { $0.id == id }) { runs[i].links = [WebLink(title: "Google Flights — \(trip.label)", url: trip.url.absoluteString)] }
+            step(id, "Writing the answer")
+            let (text, ok) = await flightAnswer(a, question: task, trip: trip.label, page: page.text, url: trip.url.absoluteString)
+            finish(id, text, ok ? "Done" : "Failed")
+            if ok { lastWork = (a, task, text, page.text, Date()) }
+            return runs.first { $0.id == id }!
+        }
+
         // Web jobs: the agent works in its own tab in the agent browser (watch it, pause it, take over).
         if field == .web {
             step(id, "Opening its own browser tab")
@@ -968,8 +1005,112 @@ final class ZuffiTeam: ObservableObject {
         }
         let shownLinks = runs.first { $0.id == id }?.links ?? []
         let withLinks = shownLinks.isEmpty ? reply : reply + "\n\nLinks:\n" + shownLinks.prefix(6).map { "• \($0.title.prefix(70)) — \($0.url)" }.joined(separator: "\n")
-        finish(id, withLinks, reply.contains("?") && reply.count < 400 && reply.lowercased().range(of: #"could you|can you (tell|share|give)|please (tell|share|send)|what (is|are) your"#, options: .regularExpression) != nil ? "Needs input" : "Done")
+        let asks = reply.contains("?") && reply.count < 500 && reply.lowercased().range(of: #"could you|can you (tell|share|give|confirm)|please (tell|share|send|confirm)|what (is|are) your|which (city|one|date|airport|day)|when (do|would) you|do you (want|prefer)"#, options: .regularExpression) != nil
+        finish(id, withLinks, asks ? "Needs input" : "Done")
+        if asks { awaiting = (a, task, Date()) } else { lastWork = (a, task, reply, data.text + "\n" + webNotes, Date()) }
         return runs.first { $0.id == id }!
+    }
+
+    // MARK: Flights — real results only
+
+    /// What the Travel agent read on Google Flights last (so "which one is cheapest?" is answered from the same page).
+    var flightPage: (trip: String, text: String, url: String)?
+
+    static func isFlightQuestion(_ q: String) -> Bool {
+        q.lowercased().range(of: #"\b(flights?|fly|flying|airline|air ?fare|plane tickets?|tickets? to)\b"#, options: .regularExpression) != nil
+    }
+
+    private static let countryCities: [String: [String]] = [
+        "pakistan": ["Lahore", "Islamabad", "Karachi", "Peshawar", "Multan", "Sialkot", "Faisalabad"], "pak": ["Lahore", "Islamabad", "Karachi", "Peshawar", "Multan", "Sialkot", "Faisalabad"],
+        "uk": ["London", "Manchester", "Birmingham", "Glasgow", "Edinburgh"], "england": ["London", "Manchester", "Birmingham"], "united kingdom": ["London", "Manchester", "Birmingham"],
+        "india": ["Delhi", "Mumbai", "Bangalore"], "uae": ["Dubai", "Abu Dhabi", "Sharjah"], "usa": ["New York", "Los Angeles", "Chicago"], "america": ["New York", "Los Angeles", "Chicago"],
+        "us": ["New York", "Los Angeles", "Chicago"], "turkey": ["Istanbul", "Antalya", "Izmir"], "spain": ["Barcelona", "Madrid", "Malaga"], "saudi": ["Jeddah", "Riyadh", "Madinah"],
+        "saudi arabia": ["Jeddah", "Riyadh", "Madinah"], "italy": ["Rome", "Milan", "Venice"], "france": ["Paris", "Nice", "Lyon"], "canada": ["Toronto", "Vancouver", "Montreal"],
+        "bangladesh": ["Dhaka", "Sylhet", "Chittagong"], "egypt": ["Cairo", "Sharm el-Sheikh", "Hurghada"], "greece": ["Athens", "Crete", "Rhodes"], "portugal": ["Lisbon", "Porto", "Faro"],
+    ]
+
+    /// "from london to lahore" → ("london", "lahore").
+    static func fromTo(_ q: String) -> (String, String) {
+        let t = q.lowercased().replacingOccurrences(of: "\n", with: " ")
+        let stop = #"(?: on| for| in| next| this| tomorrow| and| one| return| around| between| from the|,|\.|\?|$)"#
+        for p in [#"from ([a-z][a-z ]*?) to ([a-z][a-z ]*?)"# + stop, #"([a-z]+(?: [a-z]+)?) to ([a-z][a-z ]*?)"# + stop] {
+            if let re = try? NSRegularExpression(pattern: p), let m = re.matches(in: t, range: NSRange(t.startIndex..., in: t)).last,
+               let a = Range(m.range(at: 1), in: t), let b = Range(m.range(at: 2), in: t) {
+                var from = String(t[a]).trimmingCharacters(in: .whitespaces), to = String(t[b]).trimmingCharacters(in: .whitespaces)
+                for w in ["cheap flight", "cheapest flight", "flights", "flight", "cheap", "cheapest", "a ", "fly", "i want", "want", "go", "find me", "find"] { from = from.replacingOccurrences(of: w, with: "").trimmingCharacters(in: .whitespaces) }
+                to = to.replacingOccurrences(of: "flights", with: "").trimmingCharacters(in: .whitespaces)
+                if !from.isEmpty || !to.isEmpty { return (from, to) }
+            }
+        }
+        return ("", "")
+    }
+
+    static func hasDate(_ q: String) -> Bool {
+        let t = q.lowercased()
+        if t.range(of: #"\b(today|tomorrow|tonight|next (week|month|weekend)|this (week|month|weekend)|any ?time|anytime|flexible|whenever|any date|cheapest (day|date|month)|january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|monday|tuesday|wednesday|thursday|friday|saturday|sunday|eid|christmas|summer|winter)\b"#, options: .regularExpression) != nil { return true }
+        if let d = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue), d.firstMatch(in: q, range: NSRange(q.startIndex..., in: q)) != nil { return true }
+        return false
+    }
+
+    /// The questions to ask before searching (nil = enough to search).
+    static func flightQuestions(_ q: String) -> String? {
+        let (from, to) = fromTo(q)
+        var ask: [String] = []
+        if from.isEmpty { ask.append("Where are you flying from? (city or airport, e.g. London Heathrow)") }
+        else if let cities = countryCities[from] { ask.append("Which city in \(from.capitalized) are you flying from? (\(cities.joined(separator: ", ")))") }
+        if to.isEmpty { ask.append("Where do you want to fly to?") }
+        else if let cities = countryCities[to] { ask.append("Which city in \(to == "pak" ? "Pakistan" : to.capitalized)? (\(cities.joined(separator: ", ")))") }
+        if !hasDate(q) { ask.append("When do you want to fly? (a date, a month, or “any time” for the cheapest day)") }
+        if q.lowercased().range(of: #"\b(one.?way|single|return|round.?trip|coming back|back on)\b"#, options: .regularExpression) == nil, !ask.isEmpty { ask.append("One way or return?") }
+        guard !ask.isEmpty else { return nil }
+        return "I'll find real prices on Google Flights. First I need to know:\n" + ask.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+    }
+
+    static func flightTrip(_ q: String) -> (label: String, url: URL) {
+        let (from, to) = fromTo(q)
+        let t = q.lowercased()
+        let ret = t.range(of: #"\b(return|round.?trip|coming back|back on)\b"#, options: .regularExpression) != nil
+        // the date words exactly as you said them
+        var when = ""
+        if let r = t.range(of: #"\b(on|in|for|around|next|this|tomorrow|today)\b[^.?\n]{0,40}"#, options: .regularExpression) { when = String(t[r]) }
+        if t.range(of: #"any ?time|anytime|flexible|whenever|any date"#, options: .regularExpression) != nil { when = "" }
+        var phrase = "Flights from \(from) to \(to)"
+        if !when.isEmpty { phrase += " " + when }
+        phrase += ret ? " return" : " one way"
+        let enc = phrase.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? phrase
+        let url = URL(string: "https://www.google.com/travel/flights?q=\(enc)&hl=en-GB&curr=GBP") ?? URL(string: "https://www.google.com/travel/flights")!
+        let label = "\(from.capitalized) → \(to.capitalized)" + (when.isEmpty ? ", cheapest dates" : ", \(when)") + (ret ? ", return" : ", one way")
+        return (label, url)
+    }
+
+    /// The answer from the page Google Flights showed. Every price must be on that page.
+    func flightAnswer(_ a: TeamAgent, question: String, trip: String, page: String, url: String) async -> (String, Bool) {
+        guard page.count > 600, page.range(of: #"[£$€]\s?\d|Rs\.?\s?\d|PKR"#, options: .regularExpression) != nil else {
+            return ("I opened Google Flights for \(trip) but it didn't show any prices I could read, so I won't guess.\nOpen the results yourself:\n• Google Flights — \(url)", false)
+        }
+        let system = """
+        You are the Travel Agent. The text below is the Google Flights results page you just opened for: \(trip).
+        Answer the owner's question using ONLY this page. Copy prices, times, airlines and airports exactly as written. Never add a price that isn't on the page.
+        Layout (plain text, no markdown symbols):
+        Cheapest: <airline> — <price>
+        Route: <departure airport> → <stop city/airport if any> → <arrival airport>
+        Times: <depart> → <arrive> (<duration>, <stops>)
+        Then a heading "Other options:" with up to 4 lines "• <airline> — <price> · <depart>–<arrive> · <duration> · <stops>".
+        End with one line about the date/trip type shown. If the page doesn't show something, say it isn't shown.
+        PAGE TEXT:
+        \(page.prefix(12000))
+        """
+        for attempt in 0..<2 {
+            let extra = attempt == 0 ? "" : "\nIMPORTANT: your last answer used a price that isn't on the page. Use only prices from the page."
+            guard let r = await AIService.shared.textAnswer(system: system + extra, messages: [["role": "user", "content": question]], max: 700) else {
+                return ("I read the Google Flights page but couldn't reach an AI to sum it up. Nothing was made up — open the results:\n• Google Flights — \(url)", false)
+            }
+            let clean = Self.plain(r)
+            if Self.badAnswer(clean, agent: a, data: page) == nil {
+                return (clean + "\n\nSources:\n• Google Flights — \(trip) — \(url)", true)
+            }
+        }
+        return ("I couldn't get reliable prices from the page, so I won't guess. Open the results:\n• Google Flights — \(url)", false)
     }
 
     /// Flight / hotel searches as links (Google Flights, Skyscanner, Booking.com) from "london to lahore".
@@ -1017,14 +1158,16 @@ final class ZuffiTeam: ObservableObject {
 
     /// Zuffi as the manager: each job goes to the right field's agent (on the team, or Zuffi's own if nobody is hired for it),
     /// they work at the same time and show on screen. nil = not team work (Zuffi answers herself).
-    func dispatch(_ query: String) async -> String? {
+    func dispatch(_ query: String, personalOnly: Bool = false) async -> String? {
         guard ZuffiPlan.shared.isPaid, !Self.looksLikeCommand(query) else { return nil }
         if query.lowercased().range(of: #"^(remind|set|add|save|delete|remove|open|play|call|note)\b"#, options: .regularExpression) != nil { return nil }
         let jobs = Self.splitTasks(query).compactMap { t -> (String, AgentField)? in Self.intent(t).map { (t, $0) } }
         guard !jobs.isEmpty else { return nil }
         var plan: [(TeamAgent, String)] = []
         for (task, _) in jobs {
-            if let a = await route(task, among: hiredAgents).first, !plan.contains(where: { $0.0 == a && $0.1 == task }) { plan.append((a, task)) }
+            if let a = await route(task, among: personalOnly ? hiredAgents.filter(Self.isPersonal) : hiredAgents).first,
+               !personalOnly || Self.isPersonal(a),
+               !plan.contains(where: { $0.0 == a && $0.1 == task }) { plan.append((a, task)) }
         }
         guard !plan.isEmpty else { return nil }
         if plan.count > 1 { log("Zuffi", "Gave out \(plan.count) jobs", plan.map { "\($0.0.name): \($0.1.prefix(40))" }.joined(separator: " · ")) }
@@ -1085,9 +1228,9 @@ final class ZuffiTeam: ObservableObject {
            question.lowercased().range(of: #"profit|money|income|expense"#, options: .regularExpression) == nil { return "talked about an earlier topic" }
         // Money figures are checked for agents that work with money (and the manager's summary): every amount must be in the data.
         let f = AgentField.of(a)
-        guard f.tools.contains(.money) || f.tools.contains(.dashboard) || a.id == manager.id else { return nil }
+        guard f.tools.contains(.money) || f.tools.contains(.dashboard) || a.id == manager.id || [.travel, .research, .web].contains(f) else { return nil }
         let unknown = amounts(in: t).subtracting(amounts(in: data))
-        if !unknown.isEmpty { return "used figures that aren't in your data (\(unknown.prefix(3).joined(separator: ", ")))" }
+        if !unknown.isEmpty { return "used prices or figures it didn't actually read anywhere (\(unknown.prefix(3).joined(separator: ", ")))" }
         return nil
     }
 
@@ -2252,7 +2395,7 @@ struct BizReportsView: View {
 final class AgentStage: ObservableObject {
     static let shared = AgentStage()
     @Published var showing: [String] = []          // run ids on screen
-    @Published var enabled: Bool = UserDefaults.standard.object(forKey: "agentsOnScreen") as? Bool ?? true {
+    @Published var enabled: Bool = false {      // agents work in their tabs (Agent Office), never over your desktop
         didSet { UserDefaults.standard.set(enabled, forKey: "agentsOnScreen"); if !enabled { showing = []; layout() } }
     }
     private var panel: NSPanel?
@@ -2805,6 +2948,36 @@ final class AgentBrowser: ObservableObject {
         return "I stopped after 25 steps without finishing. The tab is still open in the agent browser so you can carry on."
     }
 
+    /// Opens a page in the agent's own tab and reads what's on it (results that load after the page do too).
+    /// Google's cookie screen is answered with "Reject all".
+    func readPage(_ url: URL, agent: TeamAgent, runID: String?) async -> (text: String, url: String) {
+        let t = BrowserTab(agent: agent, task: "Reading \(url.host ?? "a page")", store: store)
+        t.runID = runID
+        tabs.append(t)
+        if selected == nil || tabs.count == 1 { selected = t.id }
+        t.status = "Working"
+        t.say("Opening \(url.host ?? url.absoluteString)")
+        t.web.load(URLRequest(url: url))
+        await waitLoaded(t)
+        if (t.web.url?.host ?? "").contains("consent.") {
+            let r = await js(t, "(() => { const b = [...document.querySelectorAll('button,input[type=submit]')].find(x => /reject all|decline all|reject/i.test(x.innerText || x.value || '')); if (b) { b.click(); return 'ok'; } return 'none'; })()")
+            if r == "ok" { t.say("Said no to extra cookies"); await waitLoaded(t) }
+        }
+        var text = ""
+        for i in 0..<10 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            text = await js(t, "document.body ? document.body.innerText : ''")
+            if text.count > 3000 || (i > 4 && text.range(of: #"[£$€]\s?\d|Rs\.?\s?\d|PKR"#, options: .regularExpression) != nil) { break }
+        }
+        _ = await js(t, "window.scrollBy(0, 1400); 'ok'")
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        let more = await js(t, "document.body ? document.body.innerText : ''")
+        if more.count > text.count { text = more }
+        t.say(text.count > 400 ? "Read the page" : "The page showed almost nothing")
+        t.status = "Done"
+        return (String(text.prefix(16000)), t.web.url?.absoluteString ?? url.absoluteString)
+    }
+
     /// Where to start: a site named in the task, else a web search.
     static func startURL(_ task: String) -> URL {
         let l = task.lowercased()
@@ -3294,7 +3467,8 @@ final class NotchHang: ObservableObject {
 
     private func tick() {
         let on = UserDefaults.standard.object(forKey: "notchHang") as? Bool ?? true
-        audio = on && Self.soundPlaying()
+        audio = false                    // no sound bars on the notch (kept for later)
+        _ = on
         // with the glass wings the closed notch shows this itself; the strip is only for when Zuffi is fully hidden
         layout(show: on && (audio || !working.isEmpty) && (NotchDesign.on ? AppState.shared.mode == .hidden : AppState.shared.mode != .expanded))
     }

@@ -26,6 +26,24 @@ final class ChatKeyPanel: NSPanel {
 final class ZuffiChat: ObservableObject {
     static let shared = ZuffiChat()
     @Published var draft = ""
+    /// Who you're talking to: Zuffi (everyday, no business data), Nik (your business manager) or one agent.
+    enum Who: Equatable { case zuffi, nik, agent(String) }
+    @Published var who: Who = .zuffi {
+        didSet {
+            switch who {
+            case .agent(let id): ZuffiTeam.shared.activeIDs = [id]
+            default: ZuffiTeam.shared.activeIDs = []
+            }
+            ZuffiTeam.shared.awaiting = nil
+        }
+    }
+    var whoTitle: String {
+        switch who {
+        case .zuffi: return "Zuffi"
+        case .nik: return "Nik · your business manager"
+        case .agent(let id): return ZuffiTeam.shared.agent(id)?.name ?? "Agent"
+        }
+    }
     @Published var focusTick = 0
     private var panel: ChatKeyPanel?
     let width: CGFloat = 460
@@ -238,8 +256,24 @@ struct ZuffiChatView: View {
                     Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
                         .frame(width: 26, height: 26).background(Circle().fill(Color.white.opacity(0.1)))
                 }.buttonStyle(.plain).help("New chat")
-                Text(ZuffiTeam.shared.active.map { "\($0.emoji) \($0.name)" } ?? "Conversation")
-                    .font(.system(size: 14, weight: .bold, design: .rounded)).lineLimit(1)
+                Menu {
+                    Button { chat.who = .zuffi } label: { Label("Zuffi — everyday help", systemImage: "sparkles") }
+                    if !ZuffiPlan.shared.isPersonal {
+                        Button { chat.who = .nik } label: { Label("Nik — your business manager", systemImage: "person.crop.circle.badge.checkmark") }
+                    }
+                    Divider()
+                    ForEach(ZuffiTeam.shared.chatAgents) { a in
+                        Button { chat.who = .agent(a.id) } label: { Text(a.name) }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Talking to").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
+                        Text(chat.whoTitle).font(.system(size: 14, weight: .bold, design: .rounded)).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundColor(.white.opacity(0.7))
+                    }
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("Choose who you're talking to")
                 Spacer()
                 ProviderMenu(state: state)
                 if let last = state.chatHistory.last(where: { $0.role == .assistant }) {
@@ -302,15 +336,27 @@ struct ZuffiChatView: View {
         if m.role == .user {
             HStack {
                 Spacer(minLength: 50)
-                Text(m.content).font(.system(size: 12.5)).foregroundColor(Color(hex: "#2A1520"))
+                Text(m.content).font(.system(size: 14)).foregroundColor(Color(hex: "#2A1520"))
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(Capsule(style: .continuous).fill(Color.white.opacity(0.92)))
                     .textSelection(.enabled)
             }
         } else {
-            Text(m.content).font(.system(size: 12.5)).foregroundColor(.white.opacity(0.95))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 8) {
+                ChatRichText(text: m.content)
+                HStack(spacing: 14) {
+                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(m.content, forType: .string) } label: {
+                        Label("Copy", systemImage: "doc.on.doc").font(.system(size: 11, weight: .semibold))
+                    }.buttonStyle(.plain)
+                    Button { ChatRichText.save(m.content) } label: {
+                        Label("Save", systemImage: "square.and.arrow.down").font(.system(size: 11, weight: .semibold))
+                    }.buttonStyle(.plain)
+                }
+                .foregroundColor(.white.opacity(0.55))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
         }
     }
 
@@ -345,5 +391,95 @@ struct ZuffiChatView: View {
             await AIService.shared.chat(query: q, context: ctx, state: state)
             await MainActor.run { focused = true }
         }
+    }
+}
+
+
+/// An answer laid out to read easily: paragraphs, headings, bullet and numbered lists, and links as small cards.
+struct ChatRichText: View {
+    let text: String
+    enum Block: Hashable { case para(String), heading(String), bullet(String), number(String, String), link(String, String) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            ForEach(Array(Self.parse(text).enumerated()), id: \.offset) { _, b in block(b) }
+        }
+        .textSelection(.enabled)
+    }
+
+    @ViewBuilder private func block(_ b: Block) -> some View {
+        switch b {
+        case .para(let t):
+            Text(t).font(.system(size: 14)).lineSpacing(4).foregroundColor(.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true)
+        case .heading(let t):
+            Text(t).font(.system(size: 14.5, weight: .bold)).foregroundColor(.white).padding(.top, 2)
+        case .bullet(let t):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Circle().fill(Color(hex: "#F5B963")).frame(width: 5, height: 5).offset(y: -2)
+                Text(t).font(.system(size: 14)).lineSpacing(3).foregroundColor(.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true)
+            }
+        case .number(let n, let t):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(n).font(.system(size: 13, weight: .bold)).foregroundColor(Color(hex: "#F5B963")).frame(minWidth: 16, alignment: .trailing)
+                Text(t).font(.system(size: 14)).lineSpacing(3).foregroundColor(.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true)
+            }
+        case .link(let title, let url):
+            Button { if let u = URL(string: url) { NSWorkspace.shared.open(u) } } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "link").font(.system(size: 11, weight: .semibold)).foregroundColor(Color(hex: "#8FB4FF"))
+                        .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.08)))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                        Text(URL(string: url)?.host?.replacingOccurrences(of: "www.", with: "") ?? "").font(.system(size: 11)).foregroundColor(.white.opacity(0.5)).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.5))
+                }
+                .padding(8).background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+        }
+    }
+
+    static func parse(_ raw: String) -> [Block] {
+        var out: [Block] = []
+        let urlRE = try? NSRegularExpression(pattern: #"https?://\S+"#)
+        for line0 in raw.components(separatedBy: .newlines) {
+            var line = line0.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            if line.lowercased() == "links:" || line.lowercased() == "sources:" { out.append(.heading("Sources")); continue }
+            // a link line: "• Title — https://…" or just a URL
+            let ns = line as NSString
+            if let m = urlRE?.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+                let url = ns.substring(with: m.range).trimmingCharacters(in: CharacterSet(charactersIn: ".,)"))
+                var title = ns.replacingCharacters(in: m.range, with: "").replacingOccurrences(of: #"^[•\-\*]\s*"#, with: "", options: .regularExpression)
+                title = title.trimmingCharacters(in: CharacterSet(charactersIn: " —-:–"))
+                if title.count < 120 { out.append(.link(title.isEmpty ? (URL(string: url)?.host ?? "Link") : title, url)); continue }
+            }
+            line = line.replacingOccurrences(of: "**", with: "")
+            if let r = line.range(of: #"^[•\-\*]\s+"#, options: .regularExpression) { out.append(.bullet(String(line[r.upperBound...]))); continue }
+            if let r = line.range(of: #"^\d{1,2}[.)]\s+"#, options: .regularExpression) {
+                out.append(.number(String(line[..<r.upperBound]).trimmingCharacters(in: .whitespaces), String(line[r.upperBound...]))); continue
+            }
+            if line.hasSuffix(":"), line.count < 60 { out.append(.heading(String(line.dropLast()))); continue }
+            // "options: * hair cut * nail * …" written on one line → a list
+            let inline = line.components(separatedBy: CharacterSet(charactersIn: "•")).count > 2 ? "•" : (line.components(separatedBy: " * ").count > 2 ? " * " : "")
+            if !inline.isEmpty {
+                let bits = line.components(separatedBy: inline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                if let first = bits.first { out.append(.para(first)) }
+                for b in bits.dropFirst() { out.append(.bullet(b)) }
+                continue
+            }
+            out.append(.para(line))
+        }
+        return out
+    }
+
+    /// Save an answer as a text file you choose.
+    @MainActor static func save(_ text: String) {
+        let p = NSSavePanel()
+        p.nameFieldStringValue = "Zuffi answer.txt"
+        p.allowedContentTypes = [.plainText]
+        if p.runModal() == .OK, let u = p.url { try? text.write(to: u, atomically: true, encoding: .utf8) }
     }
 }
