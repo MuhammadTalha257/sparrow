@@ -1018,7 +1018,7 @@ struct NotchHomeView: View {
 
     private let W = IslandConst.width(for: .overview)
     private let H = IslandConst.viewLayouts[.overview]!.height
-    private var agents: [TeamAgent] { team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents }
+    private var agents: [TeamAgent] { [ZuffiTeam.manager] + team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id } }
     private let pillFill = Color.white.opacity(0.10), pillLine = Color.white.opacity(0.22)
 
     var body: some View {
@@ -1147,11 +1147,11 @@ struct NotchHomeView: View {
                     if st == .working { MissionControl.shared.show() } else { team.use(a); ZuffiChat.shared.open() }
                 } label: {
                     HStack(spacing: 8) {
-                        Circle().fill(st == .working ? Color(hex: "#F5B963") : ZuffiTeam.color(st)).frame(width: 8, height: 8)
-                            .opacity(st == .working ? 0.6 + 0.4 * abs(sin(Date().timeIntervalSinceReferenceDate * 3)) : 1)
+                        RobotFace(agent: a, size: 26, working: st == .working)
+                            .overlay(alignment: .bottomTrailing) { Circle().fill(st == .working ? Color(hex: "#F5B963") : ZuffiTeam.color(st)).frame(width: 7, height: 7).overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 1)) }
                         VStack(alignment: .leading, spacing: 1) {
                             Text(a.name).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
-                            Text(st == .working ? (run?.steps.last?.text ?? "Working…") : st == .active ? "Ready" : st.rawValue)
+                            Text(st == .working ? (run?.steps.last?.text ?? "Working…") : a.id == ZuffiTeam.manager.id ? "Your manager" : st == .active ? "Ready" : st.rawValue)
                                 .font(.system(size: 10.5)).foregroundColor(.white.opacity(0.74)).lineLimit(1)
                         }
                         Spacer(minLength: 0)

@@ -450,7 +450,8 @@ final class ZuffiTeam: ObservableObject {
 
     /// The focused team shown for now (the full list of specialists is hidden, not removed).
     var focusAgents: [TeamAgent] {
-        let ids = ZuffiPlan.shared.isPersonal ? Self.personalTeam : Self.businessTeam + ["finance-financial-analyst", "zuffi-bookings", "zuffi-crm", "zuffi-travel", "zuffi-web", "zuffi-writer"]
+        // business agents only once the business form is filled in
+        let ids = ZuffiPlan.shared.isPersonal || !BizNav.shared.formDone ? Self.personalTeam : Self.personalTeam + Self.businessTeam + ["finance-financial-analyst", "zuffi-bookings", "zuffi-crm"]
         var out: [TeamAgent] = []
         for id in ids { if let a = agent(id), !out.contains(a) { out.append(a) } }
         return out
@@ -1400,6 +1401,8 @@ final class ZuffiTeam: ObservableObject {
         guard teamsAllowed else { return }
         let now = Date(), cal = Calendar.current
         for job in jobs where job.enabled && !jobRunning.contains(job.id) {
+            // a business agent's daily job waits until the business form is done
+            if let a = agent(job.agent), !Self.isPersonal(a), !BizNav.shared.formDone { continue }
             if let wd = job.weekday, cal.component(.weekday, from: now) != wd { continue }
             guard let due = cal.date(bySettingHour: job.hour, minute: job.minute, second: 0, of: now), now >= due else { continue }
             if let last = job.lastRun, last >= due { continue }
@@ -4102,8 +4105,8 @@ final class OfficeModel: ObservableObject {
 
     var officeAgents: [TeamAgent] {
         let team = ZuffiTeam.shared
-        var list = ZuffiTeam.personalTeam.compactMap { team.agent($0) }
-        if !ZuffiPlan.shared.isPersonal { list += team.hiredAgents.filter { !ZuffiTeam.isPersonal($0) } }
+        let biz = !ZuffiPlan.shared.isPersonal && BizNav.shared.formDone
+        let list = team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id && (ZuffiTeam.isPersonal($0) || biz) }
         var out: [TeamAgent] = []; for a in list where !out.contains(a) { out.append(a) }
         return Array(out.prefix(8))
     }
@@ -4258,5 +4261,46 @@ struct AgentOfficeView: View {
         guard !a.isEmpty else { return }
         model.reply = ""
         mc.reply(a)
+    }
+}
+
+/// A small living robot face (same look as the Agent Office robots): its colour, white face, blinking eyes, a smile and a
+/// bobbing antenna. It floats gently like Zuffi; when the agent is working it bobs faster and its eyes glance about.
+struct RobotFace: View {
+    let agent: TeamAgent
+    var size: CGFloat = 30
+    var working = false
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate + Double(abs(agent.id.hashValue % 100)) / 10
+            let col = Color(nsColor: RobotLook.color(for: agent))
+            let s = size
+            let blink = t.truncatingRemainder(dividingBy: 3.6) > 3.47
+            let look = working ? CGFloat(sin(t * 2.4)) * s * 0.035 : 0
+            ZStack {
+                // antenna
+                Capsule().fill(Color.white).frame(width: s * 0.05, height: s * 0.16).offset(y: -s * 0.5)
+                Circle().fill(col).frame(width: s * 0.15, height: s * 0.15).offset(y: -s * 0.6)
+                    .shadow(color: col.opacity(working ? 0.9 : 0.3), radius: working ? 3 : 1)
+                // head
+                Ellipse().fill(RadialGradient(colors: [col.opacity(0.75), col], center: UnitPoint(x: 0.35, y: 0.25), startRadius: 0, endRadius: s * 0.6))
+                    .frame(width: s, height: s * 0.88)
+                    .overlay(Ellipse().fill(Color.white.opacity(0.35)).frame(width: s * 0.3, height: s * 0.14).offset(x: -s * 0.2, y: -s * 0.28))
+                // face panel
+                Ellipse().fill(Color.white).frame(width: s * 0.72, height: s * 0.54).offset(y: s * 0.04)
+                HStack(spacing: s * 0.17) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        Capsule().fill(Color(hex: "#111216")).frame(width: s * 0.12, height: blink ? s * 0.025 : s * 0.15)
+                            .overlay(Circle().fill(Color.white).frame(width: s * 0.04).offset(x: s * 0.02, y: -s * 0.03).opacity(blink ? 0 : 1))
+                    }
+                }.offset(x: look, y: s * 0.0)
+                Circle().trim(from: 0.1, to: 0.4).stroke(Color(hex: "#111216"), style: StrokeStyle(lineWidth: s * 0.035, lineCap: .round))
+                    .frame(width: s * 0.2, height: s * 0.2).offset(y: s * 0.06)
+            }
+            .frame(width: s, height: s * 1.2)
+            .offset(y: CGFloat(sin(t * (working ? 5 : 2))) * s * 0.05)
+            .rotationEffect(.degrees(sin(t * 0.9) * 4))
+        }
+        .frame(width: size, height: size * 1.2)
     }
 }

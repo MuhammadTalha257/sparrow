@@ -2422,7 +2422,10 @@ struct ZuffiHubView: View {
     @State private var menuFor: String?
 
     private var T: HubTheme { HubTheme(light: light) }
-    private var agents: [TeamAgent] { team.hiredAgents.isEmpty ? team.focusAgents : team.hiredAgents }
+    private var agents: [TeamAgent] {
+        let list = [ZuffiTeam.manager] + team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id }
+        return nav.formDone ? list : list.filter { $0.id == ZuffiTeam.manager.id || ZuffiTeam.isPersonal($0) }
+    }
     private var bizTabs: [BizTab] {
         BizTab.allCases.filter { !ZuffiFocus.hiddenBizTabs.contains($0.rawValue) && ($0 != .properties || crm.isEstate) && ($0 != .team || crm.kind != .freelancer) && $0 != .aiTeam }
     }
@@ -2540,7 +2543,7 @@ struct ZuffiHubView: View {
                     ForEach(Array(agents.prefix(7))) { a in
                         Button { hub.section = .team } label: {
                             HStack(spacing: 8) {
-                                AgentAvatar(agent: a, size: 18)
+                                RobotFace(agent: a, size: 18)
                                 Text(a.name).font(HubFont.p(14, .regular)).lineLimit(1)
                                 Spacer(minLength: 4)
                                 if team.status(a) == .working { Circle().fill(HubTheme.blue).frame(width: 6, height: 6) }
@@ -2711,7 +2714,7 @@ struct ZuffiHubView: View {
         let f = AgentField.of(a)
         return HStack(spacing: 0) {
             HStack(spacing: 16) {
-                AgentAvatar(agent: a, size: 28).overlay(RoundedRectangle(cornerRadius: 8).stroke(f.color, lineWidth: 1))
+                RobotFace(agent: a, size: 28).overlay(RoundedRectangle(cornerRadius: 8).stroke(f.color, lineWidth: 1))
                 Text(a.name).font(HubFont.p(16)).lineLimit(1)
             }.frame(width: 230, alignment: .leading)
             Text(working ? (run?.steps.last?.text ?? run?.task ?? "Working…") : a.description)
@@ -2764,7 +2767,7 @@ struct ZuffiHubView: View {
     private func routineCard(_ j: TeamJob) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                if let a = team.agent(j.agent) { AgentAvatar(agent: a, size: 28) }
+                if let a = team.agent(j.agent) { RobotFace(agent: a, size: 28) }
                 Text(j.title).font(HubFont.p(16)).lineLimit(1)
             }
             Text(j.task).font(HubFont.p(14, .regular)).lineSpacing(5).lineLimit(3)
@@ -2790,7 +2793,7 @@ struct ZuffiHubView: View {
                 if runs.isEmpty { Text(done ? "Nothing finished yet." : "Nothing running. Give Nik a task.").font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(18).frame(maxWidth: .infinity, alignment: .leading) }
                 ForEach(Array(runs.enumerated()), id: \.element.id) { i, r in
                     HStack(spacing: 16) {
-                        if let a = team.agent(r.agent) { AgentAvatar(agent: a, size: 28) }
+                        if let a = team.agent(r.agent) { RobotFace(agent: a, size: 28) }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(team.agent(r.agent)?.name ?? "Agent").font(HubFont.p(15))
                             Text(r.task).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(1)
@@ -2811,9 +2814,23 @@ struct ZuffiHubView: View {
     }
 
     private var hireSection: some View {
-        let options = ZuffiTeam.builtins.filter { !team.hired.contains($0.id) && (hub.showsBusiness || ZuffiTeam.personalTeam.contains($0.id)) }
-        return teamListPlain("Agents you can add", options) { a in
-            Button { team.hire(a) } label: { statusButton("Hire", filled: true) }.buttonStyle(.plain)
+        let options = ZuffiTeam.builtins.filter { !team.hired.contains($0.id) && ((hub.showsBusiness && nav.formDone) || ZuffiTeam.personalTeam.contains($0.id)) }
+        // Zuffi's picks for you: what it found in your business first, then the agents that fit your kind of work
+        var picks = team.suggestions.map(\.agent)
+        if hub.showsBusiness && nav.formDone { picks += ZuffiTeam.businessTeam + ["finance-financial-analyst", "zuffi-bookings", "zuffi-crm"] }
+        picks += ZuffiTeam.personalTeam
+        var seen = Set<String>()
+        let suggested = picks.filter { seen.insert($0).inserted }.compactMap { id in options.first { $0.id == id } }.prefix(5)
+        let rest = options.filter { a in !suggested.contains { $0.id == a.id } }
+        return VStack(alignment: .leading, spacing: 24) {
+            if !suggested.isEmpty {
+                teamListPlain("Zuffi suggests for you", Array(suggested)) { a in
+                    Button { team.hire(a, why: "Suggested by Zuffi") } label: { statusButton("Hire", filled: true) }.buttonStyle(.plain)
+                }
+            }
+            teamListPlain("More agents you can add", rest) { a in
+                Button { team.hire(a) } label: { statusButton("Hire", filled: false) }.buttonStyle(.plain)
+            }
         }
     }
     private func teamListPlain<B: View>(_ title: String, _ list: [TeamAgent], @ViewBuilder button: @escaping (TeamAgent) -> B) -> some View {
@@ -2823,7 +2840,7 @@ struct ZuffiHubView: View {
                 if list.isEmpty { Text("Everyone is already on your team.").font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(18).frame(maxWidth: .infinity, alignment: .leading) }
                 ForEach(Array(list.enumerated()), id: \.element.id) { i, a in
                     HStack(spacing: 16) {
-                        AgentAvatar(agent: a, size: 28)
+                        RobotFace(agent: a, size: 28)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(a.name).font(HubFont.p(16))
                             Text(a.description).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(2)
