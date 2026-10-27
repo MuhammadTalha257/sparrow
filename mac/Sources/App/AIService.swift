@@ -199,10 +199,16 @@ final class AIService {
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
-        // Talking to one agent (picked at the top of the chat).
-        if context == nil, case .agent(let id) = who, let a = team.agent(id), !ZuffiTeam.looksLikeCommand(query) {
+        // Talking to one agent (picked at the top of the chat) — with the file you attached, if any.
+        if case .agent(let id) = who, let a = team.agent(id), !ZuffiTeam.looksLikeCommand(query) {
             state.stateOverride = .thinking
-            let r = await team.ask(query, who: [a])
+            var q = query
+            if let context {
+                let (text, _) = Self.describe(context, limit: 60_000)
+                if !text.isEmpty { q += "\n\nTHE FILE THE OWNER GAVE YOU (\(context.key)):\n" + text }
+                state.promptContext = nil
+            }
+            let r = await team.ask(q, who: [a])
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }

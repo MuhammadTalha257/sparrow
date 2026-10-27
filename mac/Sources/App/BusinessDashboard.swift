@@ -2291,11 +2291,12 @@ struct BizFAQEditor: View {
 // =====================================================================
 
 enum HubSection: Hashable {
-    case home, team, missions, routines, settings, biz(BizTab)
+    case home, team, office, missions, routines, settings, biz(BizTab)
     var title: String {
         switch self {
         case .home: return "Home"
         case .team: return "Team"
+        case .office: return "Office"
         case .missions: return "Missions"
         case .routines: return "Routines"
         case .settings: return "Settings"
@@ -2403,7 +2404,7 @@ struct HubTheme {
 }
 
 enum HubPage: Hashable {
-    case home, team, missions, routines, settings, biz(BizTab)
+    case home, team, office, missions, routines, settings, biz(BizTab)
 }
 
 struct ZuffiHubView: View {
@@ -2429,6 +2430,7 @@ struct ZuffiHubView: View {
         switch hub.section {
         case .home: return .home
         case .team: return .team
+        case .office: return .office
         case .missions: return .missions
         case .routines: return .routines
         case .settings: return .settings
@@ -2447,8 +2449,12 @@ struct ZuffiHubView: View {
                     leftSide
                     VStack(spacing: 0) {
                         mainHeader
-                        ScrollView { content.padding(.horizontal, 40).padding(.vertical, 20) }
-                            .background(T.app)
+                        if hub.section == .office {
+                            AgentOfficeView(light: light).frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
+                        } else {
+                            ScrollView { content.padding(.horizontal, 40).padding(.vertical, 20) }
+                                .background(T.app)
+                        }
                     }
                 }
             }
@@ -2509,7 +2515,7 @@ struct ZuffiHubView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
     }
     private var topLinks: [(String, HubSection, Bool)] {
-        var l: [(String, HubSection, Bool)] = [("Home", .home, false), ("Team", .team, team.runs.contains { $0.status == "Working" }), ("Missions", .missions, false)]
+        var l: [(String, HubSection, Bool)] = [("Home", .home, false), ("Team", .team, team.runs.contains { $0.status == "Working" }), ("Office", .office, false), ("Missions", .missions, false)]
         if hub.showsBusiness { l.append(("Business", .biz(bizTabs.first ?? .today), !NotchInbox.shared.notes.isEmpty)) }
         l.append(("Settings", .settings, false))
         return l
@@ -2525,6 +2531,7 @@ struct ZuffiHubView: View {
             VStack(alignment: .leading, spacing: 20) {
                 side("Zuffi") {
                     sideLink("square.grid.2x2.fill", "Home", .home)
+                    sideLink("building.2.fill", "Agent Office", .office)
                     sideLink("flag.fill", "Missions", .missions, badge: team.runs.filter { $0.status == "Working" }.count)
                     sideLink("clock.fill", "Routines", .routines)
                     Button { ZuffiChat.shared.open() } label: { sideLabel("bubble.left.fill", "Chat", active: false) }.buttonStyle(.plain)
@@ -2601,6 +2608,7 @@ struct ZuffiHubView: View {
         switch hub.section {
         case .home: return "Home"
         case .team: return "Your team"
+        case .office: return "Agent Office"
         case .missions: return "Missions"
         case .routines: return "Routines"
         case .settings: return "Settings"
@@ -2647,6 +2655,7 @@ struct ZuffiHubView: View {
                 default: teamSection("Everyone on your team", agents)
                 }
             }
+        case .office: EmptyView()
         case .missions: activitySection
         case .routines: routinesSection
         case .settings: settingsPage

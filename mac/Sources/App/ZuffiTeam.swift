@@ -4,6 +4,7 @@ import AppKit
 import Combine
 import WebKit
 import CoreAudio
+import SceneKit
 
 // =====================================================================
 // MARK: - Zuffi's team (agency-agents, MIT licence — see THIRD_PARTY_NOTICES.md)
@@ -162,6 +163,7 @@ enum AgentField: String, CaseIterable {
         if a.id == "zuffi-web" { return .web }
         if a.id == "zuffi-reviews" { return .customers }
         if a.id == "zuffi-reports" { return .data }
+        if a.id == "zuffi-docs" { return .data }
         if a.id == "zuffi-social" || a.id == "zuffi-writer" { return .marketing }
         if has("booking") { return .bookings }
         if has("customer relationship", "feedback") { return .customers }
@@ -338,9 +340,17 @@ final class ZuffiTeam: ObservableObject {
                   description: "Finds flights, hotels and trains: compares prices and times, gives you the links, and can open them in your browser. Never books or pays without your yes.",
                   emoji: "✈️", prompt: """
                   You find travel options for the owner: flights, hotels, trains, car hire. Use the web notes you're given and name each source. \
-                  Ask for what's missing (from, to, dates, how many people, one-way or return) — briefly — but still give useful links straight away. \
-                  Give options with times and prices only when the notes show them; otherwise say prices must be checked on the link. \
+                  If anything is missing (which city or airport, dates, how many people, one-way or return) ask for it first and stop. \
+                  Give times and prices only when you read them on a real page; otherwise say they must be checked on the link. Never estimate a price. \
                   You can't book or pay; say “I can open the cheapest option in your browser” and wait for a yes.
+                  """),
+        TeamAgent(id: "zuffi-docs", division: "business", name: "Documents & Data",
+                  description: "Turns data you give it into neat spreadsheets, fixes and tidies messy data (duplicates, formats, gaps), and reads PDFs and documents to pull out what you need.",
+                  emoji: "📄", prompt: """
+                  You handle the owner's documents and data. From the file or text you're given: tidy it (remove duplicates, fix dates, names and number formats, \
+                  flag missing values), lay it out as a clear table (columns first, then rows), and pull out exactly what was asked. \
+                  Use only what is in the file or text — never invent rows, totals or values. Say which rows you changed and why. \
+                  If the file or a needed column is missing, ask for it.
                   """),
         TeamAgent(id: "zuffi-competitors", division: "business", name: "Competitor Research Agent",
                   description: "Researches competitors near you — prices, offers, reviews, what they do better — and suggests what to change.",
@@ -382,8 +392,7 @@ final class ZuffiTeam: ObservableObject {
     /// The last job done in the chat, so "which one is cheapest?" goes back to the same agent with the same facts.
     var lastWork: (agent: TeamAgent, task: String, result: String, facts: String, at: Date)?
     /// Personal helpers (everyday): the chat with Zuffi only uses these. Business agents work only in the business tabs or with Nik.
-    static let personalFields: Set<AgentField> = [.web, .research, .travel, .data, .education, .design]
-    static func isPersonal(_ a: TeamAgent) -> Bool { personalTeam.contains(a.id) || personalFields.contains(AgentField.of(a)) || a.id == "zuffi-writer" }
+    static func isPersonal(_ a: TeamAgent) -> Bool { personalTeam.contains(a.id) }
     /// Who you can talk to in the chat.
     var chatAgents: [TeamAgent] {
         let personal = (Self.personalTeam.compactMap { agent($0) })
@@ -446,7 +455,7 @@ final class ZuffiTeam: ObservableObject {
         for id in ids { if let a = agent(id), !out.contains(a) { out.append(a) } }
         return out
     }
-    static let personalTeam = ["zuffi-web", "research-synthesist", "zuffi-writer", "zuffi-travel"]
+    static let personalTeam = ["zuffi-travel", "research-synthesist", "zuffi-writer", "zuffi-web", "zuffi-docs"]
     static let businessTeam = ["zuffi-social", "zuffi-reviews", "zuffi-competitors", "zuffi-reports"]
 
     /// A good first team for each kind of business.
@@ -3558,22 +3567,37 @@ final class MissionControl: ObservableObject {
     /// Give Nik a task: the window opens and the team gets to work (the answer shows here, not in the chat).
     func assign(_ q: String) {
         question = q; agents = []; result = nil; started = Date().addingTimeInterval(-1)
-        show()
+        ZuffiHub.shared.show(.office)
         Task { @MainActor in
             let r = await ZuffiTeam.shared.assignTask(q)
-            MissionControl.shared.result = zClean(r)
+            // an agent that asked a question shows it in the office; otherwise the answer
+            if ZuffiTeam.shared.awaiting == nil { MissionControl.shared.result = zClean(r) }
         }
     }
     private var window: NSWindow?
     var enabled: Bool { UserDefaults.standard.object(forKey: "missionWindow") as? Bool ?? true }
 
     func begin(_ q: String, agents ids: [String]) {
-        question = q; agents = ids; started = Date().addingTimeInterval(-1); result = nil
+        if Date().timeIntervalSince(started) > 5 || question != q { started = Date().addingTimeInterval(-1); result = nil }
+        question = q; agents = ids
         BunnyFaceCenter.shared.show(.thinking, for: 3)
-        if enabled { show() }
+        OfficeModel.shared.sync()
+    }
+
+    /// You answered an agent's question in the office: it carries on with the original task.
+    func reply(_ text: String) {
+        let team = ZuffiTeam.shared
+        guard let w = team.awaiting else { return }
+        team.awaiting = nil
+        result = nil
+        Task { @MainActor in
+            let run = await team.work(w.agent, w.task + "\nMore details from the owner: " + text)
+            MissionControl.shared.result = zClean(run.status == "Needs input" ? "" : run.result).isEmpty ? nil : zClean(run.result)
+        }
     }
 
     func show() {
+        if ZuffiHub.oneWindow { ZuffiHub.shared.show(.office); return }
         if let w = window { w.orderFrontRegardless(); return }
         let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 430), styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
         w.title = "Nik — your manager"; w.titlebarAppearsTransparent = true; w.titleVisibility = .hidden; w.isReleasedWhenClosed = false
@@ -3682,5 +3706,557 @@ struct NotchAgentsRow: View {
                     .onTapGesture { if st == .working { MissionControl.shared.show() } else { team.use(a); ZuffiChat.shared.open() } }
             }
         }
+    }
+}
+
+// =====================================================================
+// MARK: - The Agent Office: watch Nik hand out the work and each agent do it
+//
+// A small, real-looking office in 3D (wood floor, desks, windows, plants, soft shadows). Each agent is a cute glossy robot
+// in its field's colour with its own item (pilot cap, glasses, beret…). When you give a task, the office opens: Nik walks
+// to the right desk, hands over the task card, the agent works (its screen shows what it's doing), asks you if something's
+// missing, and the result appears with Copy and Save.
+// =====================================================================
+
+@MainActor
+enum RobotLook {
+    static func item(for a: TeamAgent) -> String {
+        switch a.id {
+        case ZuffiTeam.manager.id: return "tie"
+        case "zuffi-travel": return "cap"
+        case "zuffi-writer": return "beret"
+        case "zuffi-web": return "globe"
+        case "zuffi-docs": return "sheet"
+        case "zuffi-social": return "megaphone"
+        case "zuffi-reviews": return "star"
+        case "zuffi-reports": return "chart"
+        case "zuffi-bookings": return "calendar"
+        case "zuffi-crm": return "heart"
+        case "zuffi-competitors": return "glasses"
+        default: return AgentField.of(a) == .research ? "glasses" : ""
+        }
+    }
+    static func color(for a: TeamAgent) -> NSColor {
+        let hex: String
+        switch a.id {
+        case ZuffiTeam.manager.id: hex = "#F5B963"
+        case "zuffi-travel": hex = "#33C3A4"
+        case "zuffi-writer": hex = "#F07FAA"
+        case "zuffi-web": hex = "#4C9BF5"
+        case "zuffi-docs": hex = "#F2A23A"
+        case "zuffi-social": hex = "#FF7A59"
+        case "zuffi-reviews": hex = "#E8C24A"
+        case "zuffi-reports": hex = "#3DBE7E"
+        default: hex = AgentField.of(a) == .research ? "#9B7BFF" : AgentField.of(a).colors[0]
+        }
+        return NSColor(Color(hex: hex)).usingColorSpace(.deviceRGB) ?? .systemBlue
+    }
+}
+
+/// Builds the robots and the room. Everything here runs on the main actor; the per-frame movement runs on SceneKit's thread.
+struct OfficeRobot { let root: SCNNode; let body: SCNNode; let head: SCNNode; let hands: [SCNNode]; let eyes: [SCNNode]; let bubble: SCNNode }
+
+@MainActor
+enum OfficeBuilder {
+    static func gloss(_ c: NSColor, rough: CGFloat = 0.18) -> SCNMaterial {
+        let m = SCNMaterial(); m.lightingModel = .physicallyBased
+        m.diffuse.contents = c; m.roughness.contents = rough; m.metalness.contents = 0.0
+        m.clearCoat.contents = 1.0; m.clearCoatRoughness.contents = 0.08
+        return m
+    }
+    static func matte(_ c: NSColor, rough: CGFloat = 0.8) -> SCNMaterial {
+        let m = SCNMaterial(); m.lightingModel = .physicallyBased; m.diffuse.contents = c; m.roughness.contents = rough; m.metalness.contents = 0.0; return m
+    }
+    static func node(_ g: SCNGeometry, _ m: SCNMaterial, _ p: SCNVector3 = SCNVector3Zero, scale: SCNVector3 = SCNVector3(1, 1, 1)) -> SCNNode {
+        g.materials = [m]; let n = SCNNode(geometry: g); n.position = p; n.scale = scale; n.castsShadow = true; return n
+    }
+    static func hex(_ h: String) -> NSColor { NSColor(Color(hex: h)).usingColorSpace(.deviceRGB) ?? .gray }
+
+
+    /// One cute glossy robot: onion-round head with a white face, shiny eyes, a smile, an antenna, a little floating body and hands.
+    static func robot(_ a: TeamAgent) -> OfficeRobot {
+        let col = RobotLook.color(for: a)
+        let root = SCNNode(), body = SCNNode(); root.addChildNode(body)
+        let head = node(SCNSphere(radius: 0.6), gloss(col), SCNVector3(0, 1.15, 0), scale: SCNVector3(1.0, 0.9, 0.95))
+        (head.geometry as? SCNSphere)?.segmentCount = 48
+        body.addChildNode(head)
+        let tip = node(SCNCone(topRadius: 0.0, bottomRadius: 0.26, height: 0.22), gloss(col), SCNVector3(0, 0.6, 0)); head.addChildNode(tip)
+        head.addChildNode(node(SCNSphere(radius: 1), gloss(.white), SCNVector3(0, -0.05, 0.45), scale: SCNVector3(0.46, 0.36, 0.27)))
+        let eyeM = gloss(hex("#111216"), rough: 0.05)
+        var eyes: [SCNNode] = []
+        for s in [-1.0, 1.0] as [CGFloat] {
+            let e = node(SCNSphere(radius: 0.075), eyeM, SCNVector3(0.16 * s, -0.01, 0.7), scale: SCNVector3(1, 1.15, 0.6))
+            let hl = SCNMaterial(); hl.lightingModel = .constant; hl.diffuse.contents = NSColor.white
+            e.addChildNode(node(SCNSphere(radius: 0.022), hl, SCNVector3(0.025, 0.03, 0.05)))
+            head.addChildNode(e); eyes.append(e)
+        }
+        let sp = NSBezierPath()
+        sp.appendArc(withCenter: .zero, radius: 0.075, startAngle: 200, endAngle: 340, clockwise: false)
+        sp.appendArc(withCenter: .zero, radius: 0.055, startAngle: 340, endAngle: 200, clockwise: true); sp.close()
+        let smile = node(SCNShape(path: sp, extrusionDepth: 0.01), gloss(hex("#111216")), SCNVector3(0, -0.06, 0.71)); head.addChildNode(smile)
+        let ant = SCNNode(); ant.position = SCNVector3(0, 0.68, 0); head.addChildNode(ant)
+        ant.addChildNode(node(SCNCylinder(radius: 0.02, height: 0.18), gloss(.white), SCNVector3(0, 0.09, 0)))
+        let ring = node(SCNTorus(ringRadius: 0.07, pipeRadius: 0.018), gloss(.white), SCNVector3(0, 0.08, 0)); ant.addChildNode(ring)
+        ant.addChildNode(node(SCNSphere(radius: 0.075), gloss(col), SCNVector3(0, 0.22, 0)))
+        body.addChildNode(node(SCNSphere(radius: 1), gloss(col), SCNVector3(0, 0.45, 0), scale: SCNVector3(0.3, 0.26, 0.26)))
+        body.addChildNode(node(SCNSphere(radius: 0.06), gloss(.white), SCNVector3(0, 0.47, 0.25)))
+        var hands: [SCNNode] = []
+        for s in [-1.0, 1.0] as [CGFloat] {
+            let h = node(SCNSphere(radius: 1), gloss(col), SCNVector3(0.42 * s, 0.5, 0.05), scale: SCNVector3(0.1, 0.16, 0.08))
+            h.eulerAngles.z = 0.5 * s; body.addChildNode(h); hands.append(h)
+        }
+        let dark = gloss(hex("#22232B")), white = gloss(.white)
+        switch RobotLook.item(for: a) {
+        case "tie":
+            let t = node(SCNCone(topRadius: 0.0, bottomRadius: 0.07, height: 0.22), gloss(hex("#2F3A67")), SCNVector3(0, 0.5, 0.27)); t.eulerAngles.x = .pi; body.addChildNode(t)
+            for s in [-1.0, 1.0] as [CGFloat] { head.addChildNode(node(SCNSphere(radius: 0.1), dark, SCNVector3(0.6 * s, 0.0, 0))) }
+            let band = node(SCNTorus(ringRadius: 0.6, pipeRadius: 0.03), dark, SCNVector3(0, 0, 0)); band.eulerAngles.z = .pi / 2; band.scale = SCNVector3(1, 1, 0.12); head.addChildNode(band)
+        case "cap":
+            head.addChildNode(node(SCNCylinder(radius: 0.44, height: 0.18), gloss(hex("#1F3B57")), SCNVector3(0, 0.52, 0)))
+            head.addChildNode(node(SCNBox(width: 0.5, height: 0.03, length: 0.3, chamferRadius: 0.05), dark, SCNVector3(0, 0.44, 0.38)))
+            head.addChildNode(node(SCNSphere(radius: 0.05), gloss(hex("#FFD34D")), SCNVector3(0, 0.55, 0.45)))
+        case "glasses":
+            for s in [-1.0, 1.0] as [CGFloat] { let r = node(SCNTorus(ringRadius: 0.1, pipeRadius: 0.014), dark, SCNVector3(0.16 * s, -0.01, 0.73)); r.eulerAngles.x = .pi / 2; head.addChildNode(r) }
+        case "beret":
+            head.addChildNode(node(SCNSphere(radius: 0.46), gloss(hex("#3A2A4A")), SCNVector3(-0.08, 0.52, 0), scale: SCNVector3(1, 0.3, 1)))
+        case "globe":
+            ant.addChildNode(node(SCNSphere(radius: 0.11), gloss(hex("#9CD3FF")), SCNVector3(0, 0.25, 0)))
+        case "sheet":
+            let sh = node(SCNBox(width: 0.34, height: 0.42, length: 0.03, chamferRadius: 0.02), white, SCNVector3(0.5, 0.42, 0.18)); sh.eulerAngles.z = -0.2
+            for i in 0..<4 { sh.addChildNode(node(SCNBox(width: 0.22, height: 0.025, length: 0.01, chamferRadius: 0), gloss(col), SCNVector3(0, 0.12 - CGFloat(i) * 0.08, 0.02))) }
+            body.addChildNode(sh)
+        case "megaphone":
+            let m = node(SCNCone(topRadius: 0.04, bottomRadius: 0.14, height: 0.3), white, SCNVector3(0.62, 0.55, 0.1)); m.eulerAngles.z = -.pi / 2; body.addChildNode(m)
+        case "star":
+            let st = NSBezierPath()
+            for i in 0..<10 { let r: CGFloat = i % 2 == 1 ? 0.07 : 0.16, an = CGFloat(i) / 10 * .pi * 2 + .pi / 2; let p = NSPoint(x: cos(an) * r, y: sin(an) * r); i == 0 ? st.move(to: p) : st.line(to: p) }
+            st.close(); body.addChildNode(node(SCNShape(path: st, extrusionDepth: 0.05), gloss(hex("#FFD34D")), SCNVector3(0.55, 0.6, 0.1)))
+        case "chart":
+            for i in 0..<3 { let h = 0.12 + CGFloat(i) * 0.1; body.addChildNode(node(SCNBox(width: 0.08, height: h, length: 0.08, chamferRadius: 0.02), white, SCNVector3(0.45 + CGFloat(i) * 0.1, 0.42 + h / 2, 0.15))) }
+        case "calendar":
+            let c = node(SCNBox(width: 0.32, height: 0.3, length: 0.04, chamferRadius: 0.03), white, SCNVector3(0.5, 0.45, 0.15)); c.addChildNode(node(SCNBox(width: 0.32, height: 0.08, length: 0.045, chamferRadius: 0.02), gloss(hex("#E5534B")), SCNVector3(0, 0.11, 0))); body.addChildNode(c)
+        case "heart":
+            let hp = NSBezierPath(); hp.move(to: NSPoint(x: 0, y: -0.12)); hp.curve(to: NSPoint(x: 0, y: 0.06), controlPoint1: NSPoint(x: -0.2, y: 0.0), controlPoint2: NSPoint(x: -0.08, y: 0.16))
+            hp.curve(to: NSPoint(x: 0, y: -0.12), controlPoint1: NSPoint(x: 0.08, y: 0.16), controlPoint2: NSPoint(x: 0.2, y: 0.0)); hp.close()
+            body.addChildNode(node(SCNShape(path: hp, extrusionDepth: 0.05), gloss(hex("#F0607A")), SCNVector3(0.52, 0.55, 0.12)))
+        default: break
+        }
+        // name tag + speech bubble (always face the camera)
+        let tag = billboard(Self.labelImage(a.name, col), width: 2.1, height: 0.46); tag.position = SCNVector3(0, 2.25, 0); root.addChildNode(tag)
+        let bubble = billboard(NSImage(size: NSSize(width: 4, height: 4)), width: 2.9, height: 0.9); bubble.position = SCNVector3(0, 2.95, 0); bubble.isHidden = true; root.addChildNode(bubble)
+        let shadow = SCNPlane(width: 0.9, height: 0.9)
+        let sm = SCNMaterial(); sm.lightingModel = .constant; sm.diffuse.contents = blob(); sm.writesToDepthBuffer = false; shadow.materials = [sm]
+        let sn = SCNNode(geometry: shadow); sn.eulerAngles.x = -.pi / 2; sn.position = SCNVector3(0, 0.012, 0); root.addChildNode(sn)
+        return OfficeRobot(root: root, body: body, head: head, hands: hands, eyes: eyes, bubble: bubble)
+    }
+
+    static func billboard(_ img: NSImage, width: CGFloat, height: CGFloat) -> SCNNode {
+        let p = SCNPlane(width: width, height: height)
+        let m = SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents = img; m.isDoubleSided = true; m.readsFromDepthBuffer = false; m.writesToDepthBuffer = false
+        p.materials = [m]
+        let n = SCNNode(geometry: p); n.renderingOrder = 50; n.constraints = [SCNBillboardConstraint()]
+        return n
+    }
+    static func blob() -> NSImage {
+        let img = NSImage(size: NSSize(width: 64, height: 64)); img.lockFocus()
+        NSGradient(colors: [NSColor(calibratedWhite: 0, alpha: 0.32), NSColor(calibratedWhite: 0, alpha: 0)])?.draw(fromCenter: NSPoint(x: 32, y: 32), radius: 0, toCenter: NSPoint(x: 32, y: 32), radius: 31, options: [])
+        img.unlockFocus(); return img
+    }
+    static func labelImage(_ text: String, _ dot: NSColor) -> NSImage {
+        let size = NSSize(width: 512, height: 112)
+        let img = NSImage(size: size); img.lockFocus()
+        let font = NSFont.systemFont(ofSize: 40, weight: .semibold)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+        let w = min(500, (text as NSString).size(withAttributes: attrs).width + 70)
+        NSColor(calibratedRed: 0.06, green: 0.07, blue: 0.1, alpha: 0.85).setFill()
+        NSBezierPath(roundedRect: NSRect(x: (512 - w) / 2, y: 18, width: w, height: 76), xRadius: 38, yRadius: 38).fill()
+        dot.setFill(); NSBezierPath(ovalIn: NSRect(x: (512 - w) / 2 + 22, y: 47, width: 18, height: 18)).fill()
+        (text as NSString).draw(at: NSPoint(x: (512 - w) / 2 + 52, y: 31), withAttributes: attrs)
+        img.unlockFocus(); return img
+    }
+    static func bubbleImage(_ text: String, _ accent: NSColor) -> NSImage {
+        let img = NSImage(size: NSSize(width: 640, height: 200)); img.lockFocus()
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 10, y: 40, width: 620, height: 150), xRadius: 40, yRadius: 40).fill()
+        let tail = NSBezierPath(); tail.move(to: NSPoint(x: 300, y: 42)); tail.line(to: NSPoint(x: 320, y: 8)); tail.line(to: NSPoint(x: 340, y: 42)); tail.close(); tail.fill()
+        accent.setFill(); NSRect(x: 40, y: 78, width: 8, height: 74).fill()
+        let para = NSMutableParagraphStyle(); para.lineBreakMode = .byTruncatingTail
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 36, weight: .medium), .foregroundColor: NSColor(calibratedWhite: 0.1, alpha: 1), .paragraphStyle: para]
+        (String(text.prefix(90)) as NSString).draw(in: NSRect(x: 66, y: 58, width: 540, height: 110), withAttributes: attrs)
+        img.unlockFocus(); return img
+    }
+    /// What an agent's screen shows.
+    static func screenImage(_ title: String, _ line: String, _ color: NSColor, busy: Bool) -> NSImage {
+        let img = NSImage(size: NSSize(width: 512, height: 320)); img.lockFocus()
+        NSColor(calibratedRed: 0.055, green: 0.07, blue: 0.125, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: 512, height: 320).fill()
+        if busy {
+            NSColor.white.setFill(); NSRect(x: 0, y: 274, width: 512, height: 46).fill()
+            NSColor(calibratedWhite: 0.88, alpha: 1).setFill(); NSBezierPath(roundedRect: NSRect(x: 60, y: 284, width: 380, height: 26), xRadius: 13, yRadius: 13).fill()
+            (title as NSString).draw(at: NSPoint(x: 78, y: 288), withAttributes: [.font: NSFont.systemFont(ofSize: 15), .foregroundColor: NSColor.darkGray])
+            NSColor(calibratedWhite: 0.96, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: 512, height: 274).fill()
+            let para = NSMutableParagraphStyle(); para.lineBreakMode = .byWordWrapping
+            (String(line.prefix(140)) as NSString).draw(in: NSRect(x: 22, y: 40, width: 468, height: 210), withAttributes: [.font: NSFont.systemFont(ofSize: 24, weight: .medium), .foregroundColor: NSColor(calibratedWhite: 0.15, alpha: 1), .paragraphStyle: para])
+            color.setFill(); NSRect(x: 22, y: 24, width: 160, height: 6).fill()
+        } else {
+            color.withAlphaComponent(0.25).setFill(); NSRect(x: 0, y: 0, width: 512, height: 320).fill()
+            ("Ready" as NSString).draw(at: NSPoint(x: 206, y: 140), withAttributes: [.font: NSFont.systemFont(ofSize: 34, weight: .semibold), .foregroundColor: NSColor.white])
+        }
+        img.unlockFocus(); return img
+    }
+    /// Wood planks (drawn, so the floor looks like real wood).
+    static func woodImage() -> NSImage {
+        let size = NSSize(width: 1024, height: 1024)
+        let img = NSImage(size: size); img.lockFocus()
+        var y: CGFloat = 0, row = 0
+        while y < size.height {
+            var x: CGFloat = row % 2 == 0 ? 0 : -180
+            while x < size.width {
+                let t = CGFloat((row * 7 + Int(x)) % 11) / 11
+                NSColor(calibratedRed: 0.74 + 0.06 * t, green: 0.56 + 0.05 * t, blue: 0.40 + 0.04 * t, alpha: 1).setFill()
+                NSRect(x: x, y: y, width: 360, height: 64).fill()
+                for g in 0..<5 { NSColor(calibratedRed: 0.62, green: 0.45, blue: 0.31, alpha: 0.18).setFill(); NSRect(x: x + 10, y: y + 10 + CGFloat(g) * 10, width: 330, height: 1.2).fill() }
+                NSColor(calibratedRed: 0.45, green: 0.32, blue: 0.22, alpha: 0.6).setFill(); NSRect(x: x, y: y, width: 2, height: 64).fill()
+                x += 360
+            }
+            NSColor(calibratedRed: 0.45, green: 0.32, blue: 0.22, alpha: 0.5).setFill(); NSRect(x: 0, y: y, width: size.width, height: 2).fill()
+            y += 64; row += 1
+        }
+        img.unlockFocus(); return img
+    }
+    static func skyImage() -> NSImage {
+        let img = NSImage(size: NSSize(width: 64, height: 128)); img.lockFocus()
+        NSGradient(colors: [hex("#CFE8FF"), hex("#8EC5F5")])?.draw(in: NSRect(x: 0, y: 0, width: 64, height: 128), angle: 90)
+        img.unlockFocus(); return img
+    }
+}
+
+final class OfficeRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
+    struct Seat { let id: String; let robot: OfficeRobot; let screen: SCNMaterial; let home: SCNVector3; let rest: CGFloat }
+    let scene = SCNScene()
+    private(set) var seats: [String: Seat] = [:]
+    private var nik: OfficeRobot!
+    private let nikHome = SCNVector3(0, 0, 1.6)
+    private let card = SCNNode()
+    // shared with the main actor
+    private let lock = NSLock()
+    private var queue: [String] = []          // desks Nik still has to visit
+    private var busyIDs: Set<String> = []
+    private var missionKey = Date.distantPast
+    // render thread
+    private var last: TimeInterval = 0, t: CGFloat = 0
+    private var walkTarget: SCNVector3?, handing: CGFloat = -1, handingTo: String?
+
+    @MainActor init(agents: [TeamAgent]) {
+        super.init()
+        build(agents)
+    }
+
+    @MainActor private func build(_ agents: [TeamAgent]) {
+        let root = scene.rootNode
+        scene.lightingEnvironment.contents = OfficeBuilder.skyImage(); scene.lightingEnvironment.intensity = 0.9
+        scene.background.contents = OfficeBuilder.hex("#1B1E2B")
+        // camera: looking down into the office
+        let cam = SCNCamera(); cam.fieldOfView = 34; cam.zNear = 0.1; cam.zFar = 200
+        cam.wantsHDR = true; cam.bloomIntensity = 0.15; cam.screenSpaceAmbientOcclusionIntensity = 0.7; cam.screenSpaceAmbientOcclusionRadius = 0.6
+        let cn = SCNNode(); cn.name = "camera"; cn.camera = cam; cn.position = SCNVector3(0, 17, 17.5); cn.look(at: SCNVector3(0, 0, 0.3)); root.addChildNode(cn)
+        // light: warm sun through the windows (soft shadows) + a soft sky fill
+        let sun = SCNLight(); sun.type = .directional; sun.intensity = 1700; sun.color = OfficeBuilder.hex("#FFF2E2")
+        sun.castsShadow = true; sun.shadowMode = .deferred; sun.shadowRadius = 6; sun.shadowSampleCount = 16; sun.shadowColor = NSColor(calibratedWhite: 0, alpha: 0.45)
+        sun.orthographicScale = 16; sun.shadowMapSize = CGSize(width: 2048, height: 2048)
+        let sn = SCNNode(); sn.light = sun; sn.position = SCNVector3(6, 14, 8); sn.look(at: SCNVector3Zero); root.addChildNode(sn)
+        let amb = SCNLight(); amb.type = .ambient; amb.intensity = 420; amb.color = OfficeBuilder.hex("#E6E9FF")
+        let an = SCNNode(); an.light = amb; root.addChildNode(an)
+        // floor, walls, windows
+        let wood = SCNMaterial(); wood.lightingModel = .physicallyBased; wood.diffuse.contents = OfficeBuilder.woodImage(); wood.roughness.contents = 0.55
+        wood.diffuse.wrapS = .repeat; wood.diffuse.wrapT = .repeat; wood.diffuse.contentsTransform = SCNMatrix4MakeScale(3, 3, 1)
+        let floor = SCNNode(geometry: SCNBox(width: 26, height: 0.2, length: 18, chamferRadius: 0)); floor.geometry?.materials = [wood]; floor.position = SCNVector3(0, -0.1, 0); root.addChildNode(floor)
+        let wall = OfficeBuilder.matte(OfficeBuilder.hex("#3B4060"))
+        root.addChildNode(OfficeBuilder.node(SCNBox(width: 26, height: 6, length: 0.3, chamferRadius: 0), wall, SCNVector3(0, 3, -9)))
+        root.addChildNode(OfficeBuilder.node(SCNBox(width: 0.3, height: 6, length: 18, chamferRadius: 0), OfficeBuilder.matte(OfficeBuilder.hex("#343852")), SCNVector3(-13, 3, 0)))
+        let glass = SCNMaterial(); glass.lightingModel = .constant; glass.diffuse.contents = OfficeBuilder.skyImage(); glass.emission.contents = OfficeBuilder.skyImage(); glass.emission.intensity = 0.6
+        for x in [-8.0, -2.0, 4.0, 10.0] as [CGFloat] {
+            root.addChildNode(OfficeBuilder.node(SCNBox(width: 3.6, height: 2.4, length: 0.05, chamferRadius: 0), glass, SCNVector3(x, 3.4, -8.83)))
+            root.addChildNode(OfficeBuilder.node(SCNBox(width: 3.8, height: 0.12, length: 0.12, chamferRadius: 0), OfficeBuilder.matte(.white), SCNVector3(x, 2.15, -8.8)))
+        }
+        // a rug, a sofa corner, bookshelf, plants, coffee
+        let rug = OfficeBuilder.node(SCNCylinder(radius: 2.6, height: 0.02), OfficeBuilder.matte(OfficeBuilder.hex("#5C4B8A"), rough: 1), SCNVector3(0, 0.01, 1.5)); rug.castsShadow = false; root.addChildNode(rug)
+        let shelf = OfficeBuilder.node(SCNBox(width: 3.2, height: 2.2, length: 0.5, chamferRadius: 0.04), OfficeBuilder.matte(OfficeBuilder.hex("#E9E3D8")), SCNVector3(9.5, 1.1, -8.5)); root.addChildNode(shelf)
+        let bookColors = ["#E5534B", "#3A6DF0", "#F5B963", "#3DBE7E", "#9B7BFF", "#2F3A67"]
+        for r in 0..<3 { for i in 0..<9 { let h = 0.42 + CGFloat((i * 7 + r) % 4) * 0.05
+            shelf.addChildNode(OfficeBuilder.node(SCNBox(width: 0.24, height: h, length: 0.32, chamferRadius: 0.02), OfficeBuilder.matte(OfficeBuilder.hex(bookColors[(i + r) % 6]), rough: 0.6), SCNVector3(-1.3 + CGFloat(i) * 0.3, -0.75 + CGFloat(r) * 0.72 + h / 2, 0.05))) } }
+        for (x, z) in [(-11.8, -7.6), (11.8, 6.8), (-11.8, 6.8), (6.6, -8.1)] as [(CGFloat, CGFloat)] {
+            let p = SCNNode(); p.position = SCNVector3(x, 0, z); root.addChildNode(p)
+            p.addChildNode(OfficeBuilder.node(SCNCylinder(radius: 0.32, height: 0.55), OfficeBuilder.matte(OfficeBuilder.hex("#E7E2D8")), SCNVector3(0, 0.27, 0)))
+            for i in 0..<7 { let a = CGFloat(i); let leaf = OfficeBuilder.node(SCNSphere(radius: 0.3), OfficeBuilder.matte(OfficeBuilder.hex(i % 2 == 0 ? "#3E9B63" : "#2F7D4F"), rough: 0.7), SCNVector3(cos(a) * 0.18, 0.95 + CGFloat(i % 3) * 0.12, sin(a) * 0.18), scale: SCNVector3(0.5, 1.25, 0.5)); leaf.eulerAngles.z = cos(a) * 0.5; p.addChildNode(leaf) }
+        }
+        // desks — one per agent, in rows of four
+        for (i, a) in agents.prefix(8).enumerated() {
+            let col = i % 4, row = i / 4
+            let x = CGFloat(col) * 5 - 7.5, z: CGFloat = row == 0 ? -4.5 : 4.5
+            let color = RobotLook.color(for: a)
+            let desk = SCNNode(); desk.position = SCNVector3(x, 0, z); root.addChildNode(desk)
+            desk.addChildNode(OfficeBuilder.node(SCNBox(width: 2.4, height: 0.12, length: 1.2, chamferRadius: 0.05), OfficeBuilder.matte(OfficeBuilder.hex("#F2EEE8"), rough: 0.45), SCNVector3(0, 0.95, 0)))
+            for s in [-1.0, 1.0] as [CGFloat] { desk.addChildNode(OfficeBuilder.node(SCNBox(width: 0.1, height: 0.95, length: 1.0, chamferRadius: 0.03), OfficeBuilder.matte(OfficeBuilder.hex("#3B3F55")), SCNVector3(1.05 * s, 0.47, 0))) }
+            desk.addChildNode(OfficeBuilder.node(SCNBox(width: 1.3, height: 0.82, length: 0.07, chamferRadius: 0.03), OfficeBuilder.matte(OfficeBuilder.hex("#1B1E2B"), rough: 0.35), SCNVector3(0, 1.55, -0.38)))
+            desk.addChildNode(OfficeBuilder.node(SCNCylinder(radius: 0.04, height: 0.3), OfficeBuilder.matte(OfficeBuilder.hex("#1B1E2B")), SCNVector3(0, 1.12, -0.38)))
+            let screen = SCNMaterial(); screen.lightingModel = .constant; screen.diffuse.contents = OfficeBuilder.screenImage("", "", color, busy: false)
+            let sp = SCNPlane(width: 1.2, height: 0.72); sp.materials = [screen]
+            let scr = SCNNode(geometry: sp); scr.position = SCNVector3(0, 1.55, -0.34); desk.addChildNode(scr)
+            desk.addChildNode(OfficeBuilder.node(SCNCylinder(radius: 0.08, height: 0.16), OfficeBuilder.gloss(color), SCNVector3(0.85, 1.09, 0.2)))
+            desk.addChildNode(OfficeBuilder.node(SCNBox(width: 0.5, height: 0.03, length: 0.2, chamferRadius: 0.01), OfficeBuilder.matte(OfficeBuilder.hex("#2A2D3A")), SCNVector3(-0.1, 1.03, 0.15)))
+            let r = OfficeBuilder.robot(a)
+            let home = SCNVector3(x + 1.55, 0, z + 0.55)
+            r.root.position = home; r.root.eulerAngles.y = -0.55; r.root.scale = SCNVector3(0.85, 0.85, 0.85)
+            root.addChildNode(r.root)
+            seats[a.id] = Seat(id: a.id, robot: r, screen: screen, home: home, rest: -0.55)
+        }
+        nik = OfficeBuilder.robot(ZuffiTeam.manager)
+        nik.root.position = nikHome; nik.root.scale = SCNVector3(0.95, 0.95, 0.95); root.addChildNode(nik.root)
+        // the task card Nik carries
+        let cm = SCNMaterial(); cm.lightingModel = .constant; cm.diffuse.contents = OfficeBuilder.screenImage("", "", OfficeBuilder.hex("#3A6DF0"), busy: false); cm.isDoubleSided = true
+        let cp = SCNPlane(width: 0.62, height: 0.39); cp.materials = [cm]; card.geometry = cp; card.isHidden = true; card.constraints = [SCNBillboardConstraint()]
+        root.addChildNode(card)
+    }
+
+    // MARK: from the main actor
+    @MainActor func startMission(_ key: Date, agents: [String]) {
+        lock.lock(); defer { lock.unlock() }
+        guard key != missionKey else { return }
+        missionKey = key; queue = agents.filter { seats[$0] != nil }
+        nik.bubble.geometry?.firstMaterial?.diffuse.contents = OfficeBuilder.bubbleImage(agents.isEmpty ? "Let me read your task…" : "On it — I'll give this to the team!", OfficeBuilder.hex("#F5B963"))
+        nik.bubble.isHidden = false
+    }
+    @MainActor func update(agent id: String, working: Bool, title: String, line: String, bubble: String?) {
+        guard let s = seats[id] else { return }
+        let col = RobotLook.color(for: ZuffiTeam.shared.agent(id) ?? ZuffiTeam.manager)
+        s.screen.diffuse.contents = OfficeBuilder.screenImage(title, line, col, busy: working)
+        if let b = bubble, !b.isEmpty {
+            s.robot.bubble.geometry?.firstMaterial?.diffuse.contents = OfficeBuilder.bubbleImage(b, col); s.robot.bubble.isHidden = false
+        } else { s.robot.bubble.isHidden = true }
+        lock.lock(); if working { busyIDs.insert(id) } else { busyIDs.remove(id) }; lock.unlock()
+    }
+
+    // MARK: every frame (SceneKit's thread)
+    func renderer(_ renderer: any SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        let dt = CGFloat(last == 0 ? 1.0 / 60 : min(0.05, time - last)); last = time; t += dt
+        lock.lock(); let busy = busyIDs; var next: String? = nil
+        if walkTarget == nil, handing < 0, !queue.isEmpty { next = queue.removeFirst() }
+        lock.unlock()
+        // Nik: walk to the next desk, hand over the card, then go back to the middle
+        if let n = next, let s = seats[n] {
+            walkTarget = SCNVector3(s.home.x + 0.2, 0, s.home.z + 1.3); handingTo = n; card.isHidden = false
+        }
+        if let target = walkTarget {
+            if walk(nik.root, to: target, dt: dt) {
+                walkTarget = nil
+                if handingTo != nil { handing = 0 } else { card.isHidden = true }
+            }
+        } else if handing >= 0, let to = handingTo, let s = seats[to] {
+            handing += dt / 0.8
+            let a = nik.root.position, b = s.home
+            let k = min(1, handing)
+            card.position = SCNVector3(a.x + (b.x - a.x) * k, 1.1, a.z + (b.z - a.z) * k)
+            if handing >= 1 {
+                handing = -1; handingTo = nil; card.isHidden = true
+                lock.lock(); let more = !queue.isEmpty; lock.unlock()
+                if !more { walkTarget = nikHome; nik.bubble.isHidden = true }
+            }
+        }
+        if walkTarget == nil, handing < 0 { nik.root.eulerAngles.y += (0 - nik.root.eulerAngles.y) * min(1, dt * 3) }
+        if !card.isHidden, handing < 0 { let p = nik.root.position; card.position = SCNVector3(p.x, 1.25, p.z + 0.2) }
+        animate(nik, busy: false, phase: 0)
+        for (i, (id, s)) in seats.enumerated() {
+            let isBusy = busy.contains(id)
+            animate(s.robot, busy: isBusy, phase: CGFloat(i))
+            // a working agent turns to its screen; then back to face you
+            let want: CGFloat = isBusy ? -0.95 : s.rest
+            s.robot.root.eulerAngles.y += (want - s.robot.root.eulerAngles.y) * min(1, dt * 3)
+        }
+    }
+    private func walk(_ n: SCNNode, to: SCNVector3, dt: CGFloat) -> Bool {
+        let dx = to.x - n.position.x, dz = to.z - n.position.z
+        let d = sqrt(dx * dx + dz * dz)
+        if d < 0.05 { return true }
+        let step = min(d, 2.6 * dt)
+        n.position = SCNVector3(n.position.x + dx / d * step, 0, n.position.z + dz / d * step)
+        n.eulerAngles.y = atan2(dx, dz)
+        return false
+    }
+    private func animate(_ r: OfficeRobot, busy: Bool, phase: CGFloat) {
+        r.body.position.y = 0.06 * sin(t * 2.2 + phase) + 0.08
+        for (i, h) in r.hands.enumerated() { h.position.y = 0.5 + (busy ? 0.05 * sin(t * 16 + CGFloat(i) * 2) : 0.03 * sin(t * 2 + CGFloat(i))) }
+        r.head.eulerAngles.z = 0.05 * sin(t * 0.9 + phase)
+        let blink = (t + phase).truncatingRemainder(dividingBy: 3.8) > 3.7
+        for e in r.eyes { e.scale.y = blink ? 0.15 : 1.15 }
+    }
+}
+
+/// Keeps the office in step with the team: who's working, what their screen shows, what they're saying.
+@MainActor
+final class OfficeModel: ObservableObject {
+    static let shared = OfficeModel()
+    @Published var rig: OfficeRig?
+    @Published var reply = ""
+    private var watch: AnyCancellable?, watch2: AnyCancellable?
+    private var agentIDs: [String] = []
+
+    var officeAgents: [TeamAgent] {
+        let team = ZuffiTeam.shared
+        var list = ZuffiTeam.personalTeam.compactMap { team.agent($0) }
+        if !ZuffiPlan.shared.isPersonal { list += team.hiredAgents.filter { !ZuffiTeam.isPersonal($0) } }
+        var out: [TeamAgent] = []; for a in list where !out.contains(a) { out.append(a) }
+        return Array(out.prefix(8))
+    }
+
+    func ensure() {
+        let ids = officeAgents.map(\.id)
+        if rig == nil || ids != agentIDs { agentIDs = ids; rig = OfficeRig(agents: officeAgents) }
+        if watch == nil {
+            watch = ZuffiTeam.shared.$runs.receive(on: RunLoop.main).sink { _ in MainActor.assumeIsolated { OfficeModel.shared.sync() } }
+            watch2 = MissionControl.shared.$agents.receive(on: RunLoop.main).sink { _ in MainActor.assumeIsolated { OfficeModel.shared.sync() } }
+        }
+        sync()
+    }
+
+    func sync() {
+        guard let rig else { return }
+        let mc = MissionControl.shared
+        if mc.started > Date.distantPast { rig.startMission(mc.started, agents: mc.agents) }
+        for id in agentIDs {
+            let r = ZuffiTeam.shared.runs.first { $0.agent == id && $0.started >= mc.started.addingTimeInterval(-1) }
+            let working = r?.status == "Working"
+            let line = r?.steps.last?.text ?? ""
+            let bubble: String? = r == nil ? nil : working ? line : r!.status == "Needs input" ? "I need a bit more from you" : r!.status == "Done" ? "Done!" : nil
+            rig.update(agent: id, working: working, title: r.flatMap { $0.links?.first?.url }.flatMap { URL(string: $0)?.host } ?? "working", line: line, bubble: bubble)
+        }
+    }
+}
+
+struct OfficeSceneView: NSViewRepresentable {
+    let rig: OfficeRig
+    func makeNSView(context: Context) -> SCNView {
+        let v = SCNView(frame: .zero)
+        v.scene = rig.scene; v.delegate = rig; v.isPlaying = true; v.rendersContinuously = true
+        v.antialiasingMode = .multisampling4X; v.backgroundColor = .clear
+        v.pointOfView = rig.scene.rootNode.childNode(withName: "camera", recursively: false)
+        v.allowsCameraControl = true
+        v.defaultCameraController.interactionMode = .orbitTurntable
+        v.defaultCameraController.maximumVerticalAngle = 75
+        return v
+    }
+    func updateNSView(_ v: SCNView, context: Context) {
+        if v.scene !== rig.scene { v.scene = rig.scene; v.delegate = rig; v.pointOfView = rig.scene.rootNode.childNode(withName: "camera", recursively: false) }
+    }
+}
+
+/// The Agent Office page (in the dashboard).
+struct AgentOfficeView: View {
+    @ObservedObject private var model = OfficeModel.shared
+    @ObservedObject private var mc = MissionControl.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @State private var task = ""
+    var light = false
+    init(light: Bool = false) { self.light = light }
+
+    private var runs: [AgentRun] { team.runs.filter { $0.started >= mc.started.addingTimeInterval(-1) && (mc.agents.isEmpty || mc.agents.contains($0.agent)) } }
+    private var asking: AgentRun? { runs.first { $0.status == "Needs input" } }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if let rig = model.rig { OfficeSceneView(rig: rig) } else { Color.clear }
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.clock").foregroundColor(.white.opacity(0.7))
+                    TextField("Give Nik a task — e.g. cheapest flight London to Lahore in December", text: $task)
+                        .textFieldStyle(.plain).font(HubFont.p(14, .regular)).foregroundColor(.white)
+                        .onSubmit(give)
+                    Button(action: give) {
+                        Text("Give to Nik").font(HubFont.p(14)).foregroundColor(.white).padding(.horizontal, 18).frame(height: 36)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(HubTheme.blue))
+                    }.buttonStyle(.plain)
+                }
+                .padding(.leading, 14).padding(.trailing, 5).frame(height: 46)
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color(red: 16 / 255, green: 18 / 255, blue: 27 / 255).opacity(0.7)))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.15)))
+                .padding(16)
+                Spacer()
+                HStack(alignment: .bottom, spacing: 16) {
+                    stepsPanel
+                    Spacer()
+                    resultCard
+                }
+                .padding(16)
+            }
+        }
+        .onAppear { model.ensure() }
+    }
+
+    private func give() {
+        let q = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        task = ""
+        mc.assign(q)
+    }
+
+    @ViewBuilder private var stepsPanel: some View {
+        let all = runs.flatMap { r in r.steps.suffix(4).map { (team.agent(r.agent)?.name ?? "Agent", $0.text) } }
+        if !all.isEmpty || !mc.question.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("What's happening").font(HubFont.p(13, .semibold)).foregroundColor(.white)
+                if !mc.question.isEmpty { Text("Task: \(mc.question)").font(HubFont.p(12, .regular)).foregroundColor(.white.opacity(0.75)).lineLimit(2) }
+                ForEach(Array(all.suffix(7).enumerated()), id: \.offset) { i, s in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("\(i + 1).").font(HubFont.p(12)).foregroundColor(.white.opacity(0.5))
+                        Text("\(s.0): \(s.1)").font(HubFont.p(12, .regular)).foregroundColor(i == all.suffix(7).count - 1 ? .white : .white.opacity(0.6)).lineLimit(2)
+                    }
+                }
+            }
+            .padding(14).frame(width: 320, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 16 / 255, green: 18 / 255, blue: 27 / 255).opacity(0.72)))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12)))
+        }
+    }
+
+    @ViewBuilder private var resultCard: some View {
+        if let ask = asking {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(team.agent(ask.agent)?.name ?? "Agent") needs a bit more").font(HubFont.p(15, .semibold))
+                ChatRichText(text: ask.result)
+                HStack(spacing: 8) {
+                    TextField("Your answer", text: $model.reply).textFieldStyle(.plain).font(HubFont.p(13, .regular))
+                        .padding(.horizontal, 10).frame(height: 36).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                        .onSubmit { answer() }
+                    Button(action: answer) {
+                        Text("Send").font(HubFont.p(13)).foregroundColor(.white).padding(.horizontal, 16).frame(height: 36).background(Capsule().fill(HubTheme.blue))
+                    }.buttonStyle(.plain)
+                }
+            }
+            .foregroundColor(.white).padding(18).frame(width: 400, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 16 / 255, green: 18 / 255, blue: 27 / 255).opacity(0.82)))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.14)))
+        } else if let r = mc.result {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Result").font(HubFont.p(15, .semibold))
+                ScrollView { ChatRichText(text: r).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 300)
+                HStack(spacing: 8) {
+                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(r, forType: .string) } label: {
+                        Text("Copy").font(HubFont.p(13)).foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 36).background(Capsule().fill(HubTheme.blue))
+                    }.buttonStyle(.plain)
+                    Button { ChatRichText.save(r) } label: {
+                        Text("Save").font(HubFont.p(13)).foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 36).overlay(Capsule().stroke(Color.white.opacity(0.55)))
+                    }.buttonStyle(.plain)
+                }
+            }
+            .foregroundColor(.white).padding(18).frame(width: 420, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 16 / 255, green: 18 / 255, blue: 27 / 255).opacity(0.82)))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.14)))
+        }
+    }
+
+    private func answer() {
+        let a = model.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !a.isEmpty else { return }
+        model.reply = ""
+        mc.reply(a)
     }
 }
