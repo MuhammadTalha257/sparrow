@@ -178,7 +178,7 @@ final class AIService {
         if context == nil, let w = team.awaiting, Date().timeIntervalSince(w.at) < 20 * 60, !ZuffiTeam.looksLikeCommand(query) {
             team.awaiting = nil
             state.stateOverride = .thinking
-            let run = await team.work(w.agent, w.task + "\nMore details from the owner: " + query)
+            let run = await team.work(w.agent, w.task + "\nMore details from the owner (already answered — don't ask these again): " + query)
             let r = "\(w.agent.name):\n\(run.result)"
             remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return
         }

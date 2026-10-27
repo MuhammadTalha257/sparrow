@@ -120,6 +120,10 @@ final class ZuffiData: ObservableObject {
     func relevant(to q: String) -> [Sheet] {
         guard !sheets.isEmpty else { return [] }
         let l = q.lowercased()
+        // Only when they mean THEIR data ("my listings", "in the sheet", a sheet by name) — "cheap room in Slough" is a web question.
+        let mine = l.range(of: #"\b(my|our|the|this|these)\s+(sheets?|spreadsheets?|excel|data|file|table|list|listings|leads|clients|customers|properties|bookings|appointments|records)\b|\b(in|from) (the |my )?(sheet|spreadsheet|excel|file)\b"#, options: .regularExpression) != nil
+        let named0 = sheets.contains { l.contains($0.name.lowercased()) && $0.name.count > 3 }
+        guard mine || named0 else { return [] }
         let named = sheets.filter { l.contains($0.name.lowercased()) || $0.name.lowercased().split(separator: " ").contains { $0.count > 3 && l.contains($0) } }
         if !named.isEmpty { return named }
         // Ordinary words never pull in a sheet ("who are you and what you do FOR me" matched a column called "For").

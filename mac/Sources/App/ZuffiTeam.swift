@@ -164,7 +164,8 @@ enum AgentField: String, CaseIterable {
         if a.id == "zuffi-reviews" { return .customers }
         if a.id == "zuffi-reports" { return .data }
         if a.id == "zuffi-docs" { return .data }
-        if a.id == "zuffi-social" || a.id == "zuffi-writer" { return .marketing }
+        if a.id == "zuffi-social" || a.id == "zuffi-writer" || a.id == "zuffi-instagram" || a.id == "zuffi-facebook" { return .marketing }
+        if a.id == "zuffi-whatsapp" { return .customers }
         if has("booking") { return .bookings }
         if has("customer relationship", "feedback") { return .customers }
         if d == "finance" || has("finance", "financial", "tax", "bookkeep", "accountant", "fp&a") { return .finance }
@@ -312,6 +313,21 @@ final class ZuffiTeam: ObservableObject {
                   For each post give: the day, a picture idea, the caption (short, warm, in the brand's tone) and 5-8 hashtags. Never invent prices or offers — use the business details. \
                   Posting waits for the owner's approval.
                   """),
+        TeamAgent(id: "zuffi-instagram", division: "business", name: "Instagram Agent",
+                  description: "Checks your Instagram and your competitors', plans posts and reels with captions and hashtags, and drafts replies to comments and DMs for you to approve.",
+                  emoji: "📸", prompt: """
+                  You grow a small business on Instagram. Look at what the business and its competitors post (from the pages you read),                   then plan posts and reels: the idea, the first 3 seconds hook, the caption, 8-12 hashtags and the best time to post.                   Draft replies to comments or DMs when asked. Never invent prices or offers. You never post, follow, like or send — the owner approves and posts.
+                  """),
+        TeamAgent(id: "zuffi-facebook", division: "business", name: "Facebook Agent",
+                  description: "Looks after your Facebook page: post ideas and captions, local groups worth joining, ad ideas with a budget, and replies to comments for you to approve.",
+                  emoji: "👍", prompt: """
+                  You run a small business's Facebook page. From what you read (the page, competitors, local groups) suggest posts,                   events and simple ad ideas with audience, budget and the message. Draft replies to comments and reviews.                   Never invent prices or offers. You never post, join, like or send — the owner approves first.
+                  """),
+        TeamAgent(id: "zuffi-whatsapp", division: "business", name: "WhatsApp Agent",
+                  description: "Writes WhatsApp replies, follow-ups and offers for your customers in your tone, and spots who needs a message today — you approve before anything is sent.",
+                  emoji: "💬", prompt: """
+                  You look after the business's WhatsApp customers. Using the customer and lead data, say who needs a message today                   (new enquiries, no reply yet, follow-ups, past customers to win back) and write each message: short, friendly, in the owner's language and tone.                   Never promise prices or availability that aren't in the data. Nothing is sent until the owner approves.
+                  """),
         TeamAgent(id: "zuffi-reviews", division: "business", name: "Reviews Agent",
                   description: "Watches your Google and Facebook reviews, drafts warm replies for you to approve, and finds happy customers to ask for a review.",
                   emoji: "⭐", prompt: """
@@ -457,7 +473,7 @@ final class ZuffiTeam: ObservableObject {
         return out
     }
     static let personalTeam = ["zuffi-travel", "research-synthesist", "zuffi-writer", "zuffi-web", "zuffi-docs"]
-    static let businessTeam = ["zuffi-social", "zuffi-reviews", "zuffi-competitors", "zuffi-reports"]
+    static let businessTeam = ["zuffi-social", "zuffi-instagram", "zuffi-facebook", "zuffi-whatsapp", "zuffi-reviews", "zuffi-competitors", "zuffi-reports"]
 
     /// A good first team for each kind of business.
     var starterTeam: [String] {
@@ -571,7 +587,7 @@ final class ZuffiTeam: ObservableObject {
         let owner = AssistantPrefs.displayName.isEmpty ? "the owner" : AssistantPrefs.displayName
         let team = others.isEmpty ? "" : "\nYou're working together with: " + others.map(\.name).joined(separator: ", ") + ". Do only your own part; don't repeat theirs."
         return """
-        You are \(a.name) \(a.emoji), a senior \(a.name) (\(field.label)) with 15+ years of experience, working for \(owner) inside Zuffi. You are one of the team members, led by Nik, the manager.\(team)
+        You are \(AgentEdits.name(a)) \(a.emoji), a senior \(a.name) (\(field.label)) with 15+ years of experience, working for \(owner) inside Zuffi. You are one of the team members, led by Nik, the manager.\(team)
         WHO YOU ARE
         - Speak as yourself, in the first person. If asked who you are, say “I'm your \(a.name)” and in one line how you help this business. Never call yourself Zuffi or “an AI model”.
         - Your expertise: \(a.description)
@@ -580,16 +596,23 @@ final class ZuffiTeam: ObservableObject {
         - Think like the best \(a.name) in the field, for THIS business: practical steps, examples, what to do first.
         - NUMBERS: use only numbers that appear in VERIFIED DATA below. Never invent, estimate or "assume" revenue, costs, tax, profit, bookings, customers or prices. If a number you need isn't there, say it can't be verified yet and ask the owner for it (or to open the page). Label figures as actual (from data), calculated (show the sum) or missing.
         - If the request is unclear or a detail you need is missing (which city or airport, dates, budget, who it's for…), DON'T guess: ask one to three short questions and stop.
+        - Ask ONCE only. If the task says "already answered", never ask again: use their details, and if something is still missing, say your assumption in one line and carry on.
         - If you need a fact about the business that isn't here, ask one or two short questions first.
+        WORK LIKE A SENIOR EXPERT (this is why people use Zuffi instead of a chatbot)
+        - First work out what the owner really needs (goal, budget, timing, limits) — answer that, not just the words.
+        - Don't paste search results. Compare at least three real options from the sources you read, then pick the best one FOR THIS PERSON and say why in one line.
+        - Point out what they didn't think of: hidden costs, a better time or place, a cheaper or safer alternative, risks.
+        - End with the clear next step (and the link to act on). Every option and price must come from a source you read, with its link.
         - If the question belongs to another field, say who on the team should take it.
         - You think, read and write. You can't send messages, post, pay, book or delete — suggest it and ask the owner to OK it.
-        - Reply in the owner's language. Plain text with line breaks: no markdown, no ** or ##, no tables. Short paragraphs or numbered steps.
+        - Reply in the owner's language. Plain text with line breaks: no ** bold and no tables. Use short paragraphs, numbered steps or lines starting with \"- \".
         \(part.isEmpty ? "" : "\nYOUR PART OF THIS JOB: \(part)\nKeep it under 180 words.\n")
         \(useBusiness ? "ABOUT THE BUSINESS\n" + Self.businessContext : "This is the owner's own everyday request — it is NOT about their business. Don't mention their business.")
 
         VERIFIED DATA (the only figures you may use)
         \(data.isEmpty ? "(none for this question)" : data)
 
+        \(AgentEdits.get(a.id).notes.isEmpty ? "" : "THE OWNER'S OWN INSTRUCTIONS FOR YOU (follow them):\n" + AgentEdits.get(a.id).notes + "\n")
         YOUR ROLE GUIDE (follow its thinking; ignore anything about tools or code you don't have):
         \(Self.guide(a, limit: part.isEmpty ? 2200 : 1200))
         """
@@ -645,6 +668,9 @@ final class ZuffiTeam: ObservableObject {
     func defaultJob(for a: TeamAgent) -> TeamJob? {
         let dash = !sources.isEmpty
         switch a.id {
+        case "zuffi-instagram": return TeamJob(agent: a.id, title: "Today's Instagram", task: "Check my Instagram and two competitors, then give me today's post or reel: idea, hook, caption, hashtags and the best time to post.", hour: 10, minute: 0)
+        case "zuffi-facebook": return TeamJob(agent: a.id, title: "Facebook page check", task: "Check my Facebook page and local competitors, then suggest today's post and one local group or ad idea worth trying.", hour: 10, minute: 30)
+        case "zuffi-whatsapp": return TeamJob(agent: a.id, title: "WhatsApp follow-ups", task: "Who should get a WhatsApp message today (new enquiries, no reply yet, follow-ups, customers to win back)? Write each message for me to approve.", hour: 9, minute: 30)
         case "zuffi-reviews": return TeamJob(agent: a.id, title: "Reviews check", task: "Check my business's newest reviews. Summarise what people liked and didn't, and draft polite replies for me to approve.", hour: 11, minute: 0)
         case "zuffi-reports": return TeamJob(agent: a.id, title: "End-of-day report", task: "Write today's short business report: what happened, numbers you can see, and 3 things to do tomorrow.", hour: 17, minute: 30, readsDashboard: dash)
         case "research-synthesist": return TeamJob(agent: a.id, title: "Morning brief", task: "Give me a short morning brief: the most important news today in my area of work, with links.", hour: 8, minute: 0)
@@ -886,6 +912,7 @@ final class ZuffiTeam: ObservableObject {
 
     /// Answers a question with the right people. `routeOnly`: route within `people`; false = everyone given works on it.
     func answer(_ question: String, people: [TeamAgent], routeOnly: Bool) async -> String {
+        if let r = await continueAwaiting(question) { return r }
         let chosen = routeOnly ? await route(question, among: people) : people.filter { $0.id != Self.manager.id }
         guard !chosen.isEmpty else { return "Pick someone from the team first." }
         let mgrRun = chosen.count > 1 || people.count > 1 ? begin(Self.manager, question) : nil
@@ -992,11 +1019,9 @@ final class ZuffiTeam: ObservableObject {
         // Research like a person: search, open the pages, read them — each step shows on the agent's card.
         var webNotes = "", links: [WebLink] = []
         if field.tools.contains(.web), NetStatus.shared.online {
-            step(id, "Searching the web for “\(task.prefix(80))”…", source: "Web search")
-            let r = await AIService.webSearch(task)
+            let r = await ZuffiReach.research(task, agent: a, runID: id, step: { self.step(id, $0, source: "Web") })
             webNotes = r.notes; links = r.links
-            for l in links.prefix(5) { step(id, "Reading: \(l.title.prefix(90))") }
-            if links.isEmpty { step(id, "The free search found nothing — asking the AI with Google Search if it's available") }
+            if links.isEmpty { step(id, "The searches found nothing — asking the AI with Google Search if it's available") }
         }
         if field == .travel { links = Self.travelLinks(task) + links }
         if !links.isEmpty, let i = runs.firstIndex(where: { $0.id == id }) { runs[i].links = Array(links.prefix(10)) }
@@ -1007,7 +1032,7 @@ final class ZuffiTeam: ObservableObject {
         var problem = ""
         for attempt in 0..<2 {
             let extra = attempt == 0 ? "" : "\n\nIMPORTANT: your last answer broke the rules (\(problem)). Answer again as \(a.name), only about this question, using only verified numbers, and don't claim you can book, buy, send or access anything."
-            let r = await AIService.shared.textAnswerFull(system: system + extra, messages: recent + [["role": "user", "content": task]], max: 900,
+            let r = await AIService.shared.textAnswerFull(system: system + extra, messages: recent + [["role": "user", "content": task]], max: 1500,
                                                           web: field.tools.contains(.web), notes: webNotes.isEmpty ? nil : webNotes)
             guard let text = r.text else { problem = "no AI answered"; break }
             if !r.links.isEmpty, let i = runs.firstIndex(where: { $0.id == id }) {
@@ -1077,8 +1102,18 @@ final class ZuffiTeam: ObservableObject {
     }
 
     /// The questions to ask before searching (nil = enough to search).
+    /// A city of that country you mentioned anywhere (e.g. you answered "Lahore" to "which city in Pakistan?").
+    static func cityIn(_ q: String, _ country: String) -> String? {
+        guard let cities = countryCities[country] else { return nil }
+        let l = q.lowercased()
+        return cities.first { l.contains($0.lowercased()) }
+    }
     static func flightQuestions(_ q: String) -> String? {
-        let (from, to) = fromTo(q)
+        // Asked once already: never ask again — go with what you said.
+        if q.contains("already answered") { return nil }
+        var (from, to) = fromTo(q)
+        if let c = cityIn(q, from) { from = c }
+        if let c = cityIn(q, to) { to = c }
         var ask: [String] = []
         if from.isEmpty { ask.append("Where are you flying from? (city or airport, e.g. London Heathrow)") }
         else if let cities = countryCities[from] { ask.append("Which city in \(from.capitalized) are you flying from? (\(cities.joined(separator: ", ")))") }
@@ -1091,7 +1126,9 @@ final class ZuffiTeam: ObservableObject {
     }
 
     static func flightTrip(_ q: String) -> (label: String, url: URL) {
-        let (from, to) = fromTo(q)
+        var (from, to) = fromTo(q)
+        if let c = cityIn(q, from) { from = c }
+        if let c = cityIn(q, to) { to = c }
         let t = q.lowercased()
         let ret = t.range(of: #"\b(return|round.?trip|coming back|back on)\b"#, options: .regularExpression) != nil
         // the date words exactly as you said them
@@ -1182,9 +1219,42 @@ final class ZuffiTeam: ObservableObject {
 
     /// Zuffi as the manager: each job goes to the right field's agent (on the team, or Zuffi's own if nobody is hired for it),
     /// they work at the same time and show on screen. nil = not team work (Zuffi answers herself).
+    /// Zuffi's own everyday helpers (always available — no hiring needed): who should take this?
+    func personalRoute(_ q: String) -> TeamAgent? {
+        let t = q.lowercased()
+        func m(_ p: String) -> Bool { t.range(of: p, options: .regularExpression) != nil }
+        if m(#"\b(spreadsheet|excel|csv|pdf|sheet|clean (this|the|my) data|fix (this|the|my) data|make a table)\b"#) { return agent("zuffi-docs") }
+        if m(#"\b(write|draft|rewrite|proofread|reply to)\b.*\b(email|letter|message|post|caption|bio|cv|resume|cover letter|essay|speech|toast|story|poem)\b"#) { return agent("zuffi-writer") }
+        if m(#"\b(flights?|fly to|airline|hotels?|holiday|vacation|trip|travel|travell?ing|itinerary|visit (germany|france|spain|italy|turkey|dubai|japan|[a-z]+)|places to (go|visit|see)|where (should|can) i go|tour|backpack)\b"#) { return agent("zuffi-travel") }
+        if m(#"^(please )?(go to|open) [a-z0-9.-]+\.(com|co\.uk|org|net|io)\b.*\b(and|then)\b|\b(fill (in|out)?( the| this| a)? form|sign me up|add to (my )?basket)\b"#) { return agent("zuffi-web") }
+        if m(#"\b(search|find|look(ing)? for|looking|research|compare|recommend|best|cheapest|cheap|price of|prices|cost of|rent|room|flat|house to|jobs?|course|school|restaurant|near me|in [a-z]+ area|where (can|do) i (buy|get|find)|which (is|one)|news|latest|review of|vs\.?|versus|how (do|can|to) i (find|get|choose))\b"#) { return agent("research-synthesist") }
+        return nil
+    }
+
+    /// You answered an agent's question (in the chat, the task bar or the Office): it carries on with the first task — no asking again.
+    func continueAwaiting(_ reply: String) async -> String? {
+        guard let w = awaiting, Date().timeIntervalSince(w.at) < 30 * 60, !Self.looksLikeCommand(reply) else { return nil }
+        // A clearly different, long new task is a new job, not an answer.
+        let words = reply.split(separator: " ").count
+        if words > 14, let f = Self.intent(reply), f != AgentField.of(w.agent) { return nil }
+        awaiting = nil
+        MissionControl.shared.begin(w.task, agents: [w.agent.id])
+        let run = await work(w.agent, w.task + "\nMore details from the owner (already answered — don't ask these again): " + reply)
+        return "\(w.agent.emoji) \(w.agent.name):\n\(run.result)"
+    }
+
     func dispatch(_ query: String, personalOnly: Bool = false) async -> String? {
         guard ZuffiPlan.shared.isPaid, !Self.looksLikeCommand(query) else { return nil }
         if query.lowercased().range(of: #"^(remind|set|add|save|delete|remove|open|play|call|note)\b"#, options: .regularExpression) != nil { return nil }
+        if let r = await continueAwaiting(query) { return r }
+        // Everyday jobs go to Zuffi's own helpers (travel, research, writing, documents, websites).
+        if personalOnly {
+            guard let a = personalRoute(query) else { return nil }
+            MissionControl.shared.begin(query, agents: [a.id])
+            let run = await work(a, query)
+            note(query, run.result)
+            return "\(a.emoji) \(a.name):\n\(run.result)"
+        }
         let jobs = Self.splitTasks(query).compactMap { t -> (String, AgentField)? in Self.intent(t).map { (t, $0) } }
         guard !jobs.isEmpty else { return nil }
         var plan: [(TeamAgent, String)] = []
@@ -1218,7 +1288,12 @@ final class ZuffiTeam: ObservableObject {
 
     /// "Give a task" (notch / dashboard): always team work, never the chat. Nik hands it to the right agent(s).
     func assignTask(_ q: String) async -> String {
+        if let r = await continueAwaiting(q) { return r }
         if let r = await dispatch(q) { return r }
+        if let a = personalRoute(q), ZuffiPlan.shared.isPaid {
+            MissionControl.shared.begin(q, agents: [a.id])
+            let run = await work(a, q); note(q, run.result); return run.result
+        }
         guard ZuffiPlan.shared.isPaid else { return "Your team is part of Zuffi Pro and Business." }
         let a = (await route(q, among: hiredAgents).first) ?? agent("zuffi-web") ?? Self.manager
         MissionControl.shared.begin(q, agents: [a.id])
@@ -2836,6 +2911,49 @@ final class AgentBrowser: ObservableObject {
         t.title = t.web.title ?? t.title; t.url = t.web.url?.absoluteString ?? t.url
     }
 
+    /// A Google search in an agent tab (you can watch it). Returns the result links; empty if Google asks for a check (we never get around those).
+    func googleResults(_ query: String, agent: TeamAgent, runID: String?) async -> [(title: String, url: String, snippet: String)] {
+        guard let enc = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), let url = URL(string: "https://www.google.com/search?q=\(enc)&hl=en-GB&num=10") else { return [] }
+        let t = BrowserTab(agent: agent, task: "Google: \(query.prefix(60))", store: store)
+        t.runID = runID; tabs.append(t)
+        if selected == nil || tabs.count == 1 { selected = t.id }
+        t.status = "Working"; t.say("Searching Google for “\(query.prefix(70))”")
+        t.web.load(URLRequest(url: url)); await waitLoaded(t)
+        if (t.web.url?.host ?? "").contains("consent.") {
+            let r = await js(t, "(() => { const b = [...document.querySelectorAll('button,input[type=submit]')].find(x => /reject all|decline all|reject/i.test(x.innerText || x.value || '')); if (b) { b.click(); return 'ok'; } return 'none'; })()")
+            if r == "ok" { t.say("Said no to extra cookies"); await waitLoaded(t) }
+        }
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        if (t.web.url?.path ?? "").hasPrefix("/sorry") {
+            t.say("Google asked for a check — using another search instead"); t.status = "Done"; return []
+        }
+        let raw = await js(t, """
+        JSON.stringify([...document.querySelectorAll('a h3')].slice(0, 10).map(h => { const a = h.closest('a'); const box = h.closest('div.g, div[data-hveid], div.MjjYud') || a.parentElement;
+          const sn = box ? (box.querySelector('div.VwiC3b, span.aCOpRe, div[data-sncf]') || {}).innerText || '' : '';
+          return { t: h.innerText, u: a ? a.href : '', s: sn }; }).filter(x => x.u.startsWith('http') && !x.u.includes('google.com/')))
+        """)
+        t.status = "Done"
+        guard let d = raw.data(using: .utf8), let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: String]] else { return [] }
+        t.say("Found \(arr.count) results")
+        return arr.map { (title: $0["t"] ?? "", url: $0["u"] ?? "", snippet: $0["s"] ?? "") }
+    }
+
+    /// Opens a site's sign-in page in Zuffi's own agent browser — you sign in yourself (Zuffi never sees or types your password).
+    func signIn(_ site: String, url: URL) {
+        let t = BrowserTab(agent: ZuffiTeam.manager, task: "Sign in to \(site)", store: store)
+        tabs.append(t); selected = t.id
+        t.status = "You're in control"; t.takeover = true
+        t.say("Sign in to \(site) yourself — agents will then read it with your sign-in (read only).")
+        t.web.load(URLRequest(url: url))
+        show(t.id)
+    }
+
+    /// Is this site already signed in, in the agent browser? (checks for its usual session cookie)
+    func isSignedIn(_ domain: String, cookie: String) async -> Bool {
+        let all = await store.httpCookieStore.allCookies()
+        return all.contains { $0.domain.contains(domain) && $0.name == cookie }
+    }
+
     private func js(_ t: BrowserTab, _ code: String) async -> String {
         ((try? await t.web.evaluateJavaScript(code)) as? String) ?? ""
     }
@@ -3608,7 +3726,7 @@ final class MissionControl: ObservableObject {
         team.awaiting = nil
         result = nil
         Task { @MainActor in
-            let run = await team.work(w.agent, w.task + "\nMore details from the owner: " + text)
+            let run = await team.work(w.agent, w.task + "\nMore details from the owner (already answered — don't ask these again): " + text)
             MissionControl.shared.result = zClean(run.status == "Needs input" ? "" : run.result).isEmpty ? nil : zClean(run.result)
         }
     }
@@ -3744,7 +3862,8 @@ enum RobotLook {
         case "zuffi-writer": return "beret"
         case "zuffi-web": return "globe"
         case "zuffi-docs": return "sheet"
-        case "zuffi-social": return "megaphone"
+        case "zuffi-social", "zuffi-instagram", "zuffi-facebook": return "megaphone"
+        case "zuffi-whatsapp": return "heart"
         case "zuffi-reviews": return "star"
         case "zuffi-reports": return "chart"
         case "zuffi-bookings": return "calendar"
@@ -3754,6 +3873,7 @@ enum RobotLook {
         }
     }
     static func color(for a: TeamAgent) -> NSColor {
+        if let c = AgentEdits.get(a.id).color, !c.isEmpty { return NSColor(Color(hex: c)).usingColorSpace(.deviceRGB) ?? .systemBlue }
         let hex: String
         switch a.id {
         case ZuffiTeam.manager.id: hex = "#F5B963"
@@ -3762,6 +3882,9 @@ enum RobotLook {
         case "zuffi-web": hex = "#4C9BF5"
         case "zuffi-docs": hex = "#F2A23A"
         case "zuffi-social": hex = "#FF7A59"
+        case "zuffi-instagram": hex = "#E1306C"
+        case "zuffi-facebook": hex = "#1877F2"
+        case "zuffi-whatsapp": hex = "#25D366"
         case "zuffi-reviews": hex = "#E8C24A"
         case "zuffi-reports": hex = "#3DBE7E"
         default: hex = AgentField.of(a) == .research ? "#9B7BFF" : AgentField.of(a).colors[0]
@@ -3859,7 +3982,7 @@ enum OfficeBuilder {
         default: break
         }
         // name tag + speech bubble (always face the camera)
-        let tag = billboard(Self.labelImage(a.name, col), width: 2.1, height: 0.46); tag.position = SCNVector3(0, 2.25, 0); root.addChildNode(tag)
+        let tag = billboard(Self.labelImage(AgentEdits.name(a), col), width: 2.1, height: 0.46); tag.position = SCNVector3(0, 2.25, 0); root.addChildNode(tag)
         let bubble = billboard(NSImage(size: NSSize(width: 4, height: 4)), width: 2.9, height: 0.9); bubble.position = SCNVector3(0, 2.95, 0); bubble.isHidden = true; root.addChildNode(bubble)
         let shadow = SCNPlane(width: 0.9, height: 0.9)
         let sm = SCNMaterial(); sm.lightingModel = .constant; sm.diffuse.contents = blob(); sm.writesToDepthBuffer = false; shadow.materials = [sm]
@@ -3962,6 +4085,10 @@ final class OfficeRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
     // render thread
     private var last: TimeInterval = 0, t: CGFloat = 0
     private var walkTarget: SCNVector3?, handing: CGFloat = -1, handingTo: String?
+    // agents move too: a happy hop when they get a task, a walk to Nik with the result when they finish
+    private var prevBusy: Set<String> = []
+    private var hops: [String: CGFloat] = [:]
+    private var trips: [String: (phase: Int, wait: CGFloat)] = [:]
 
     @MainActor init(agents: [TeamAgent]) {
         super.init()
@@ -4082,12 +4209,40 @@ final class OfficeRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
         if walkTarget == nil, handing < 0 { nik.root.eulerAngles.y += (0 - nik.root.eulerAngles.y) * min(1, dt * 3) }
         if !card.isHidden, handing < 0 { let p = nik.root.position; card.position = SCNVector3(p.x, 1.25, p.z + 0.2) }
         animate(nik, busy: false, phase: 0)
+        for id in busy.subtracting(prevBusy) { hops[id] = 0; trips[id] = nil }
+        for id in prevBusy.subtracting(busy) where seats[id] != nil { trips[id] = (0, 0) }
+        prevBusy = busy
         for (i, (id, s)) in seats.enumerated() {
             let isBusy = busy.contains(id)
             animate(s.robot, busy: isBusy, phase: CGFloat(i))
-            // a working agent turns to its screen; then back to face you
+            let root = s.robot.root
+            if var trip = trips[id] {
+                // carry the result to Nik, wait a moment, then go back to the desk
+                let meet = SCNVector3(nikHome.x + (s.home.x < 0 ? -0.9 : 0.9), 0, nikHome.z + 0.3)
+                switch trip.phase {
+                case 0: if walk(root, to: meet, dt: dt) { trip.phase = 1 }
+                        root.position.y = abs(sin(t * 9)) * 0.08
+                case 1: trip.wait += dt; root.eulerAngles.y += (atan2(nikHome.x - root.position.x, nikHome.z - root.position.z) - root.eulerAngles.y) * min(1, dt * 4)
+                        root.position.y = trip.wait < 0.5 ? sin(trip.wait / 0.5 * .pi) * 0.35 : 0
+                        if trip.wait > 1.6 { trip.phase = 2 }
+                default: if walk(root, to: s.home, dt: dt) { trips[id] = nil; root.position.y = 0; continue }
+                        root.position.y = abs(sin(t * 9)) * 0.08
+                }
+                trips[id] = trip
+                continue
+            }
+            if let h = hops[id] {
+                // got a task: jump up with a spin, then sit back to work
+                let k = h + dt / 0.75
+                root.position.y = sin(min(1, k) * .pi) * 0.7
+                root.eulerAngles.y = s.rest + min(1, k) * .pi * 2
+                if k >= 1 { hops[id] = nil; root.position.y = 0; root.eulerAngles.y = s.rest } else { hops[id] = k }
+                continue
+            }
+            // a working agent turns to its screen and bobs while it types; then back to face you
             let want: CGFloat = isBusy ? -0.95 : s.rest
-            s.robot.root.eulerAngles.y += (want - s.robot.root.eulerAngles.y) * min(1, dt * 3)
+            root.eulerAngles.y += (want - root.eulerAngles.y) * min(1, dt * 3)
+            root.position.y = isBusy ? abs(sin(t * 6 + CGFloat(i))) * 0.05 : 0
         }
     }
     private func walk(_ n: SCNNode, to: SCNVector3, dt: CGFloat) -> Bool {
@@ -4124,6 +4279,8 @@ final class OfficeModel: ObservableObject {
         var out: [TeamAgent] = []; for a in list where !out.contains(a) { out.append(a) }
         return Array(out.prefix(8))
     }
+
+    func rebuild() { rig = nil; agentIDs = []; ensure() }
 
     func ensure() {
         let ids = officeAgents.map(\.id)
@@ -4187,6 +4344,10 @@ struct AgentOfficeView: View {
                     TextField("Give Nik a task — e.g. cheapest flight London to Lahore in December", text: $task)
                         .textFieldStyle(.plain).font(HubFont.p(14, .regular)).foregroundColor(.white)
                         .onSubmit(give)
+                    Menu {
+                        ForEach([ZuffiTeam.manager] + model.officeAgents, id: \.id) { a in Button("Edit \(AgentEdits.name(a))…") { AgentEditor.open(a) } }
+                    } label: { Image(systemName: "slider.horizontal.3").foregroundColor(.white.opacity(0.8)) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30).help("Edit your agents")
                     Button(action: give) {
                         Text("Give to Nik").font(HubFont.p(14)).foregroundColor(.white).padding(.horizontal, 18).frame(height: 36)
                             .background(RoundedRectangle(cornerRadius: 10).fill(HubTheme.blue))
@@ -4285,7 +4446,7 @@ struct RobotFace: View {
     var size: CGFloat = 30
     var working = false
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in
+        TimelineView(.periodic(from: .now, by: 1.0 / 30)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate + Double(abs(agent.id.hashValue % 100)) / 10
             let col = Color(nsColor: RobotLook.color(for: agent))
             let s = size
@@ -4312,8 +4473,10 @@ struct RobotFace: View {
                     .frame(width: s * 0.2, height: s * 0.2).offset(y: s * 0.06)
             }
             .frame(width: s, height: s * 1.2)
-            .offset(y: CGFloat(sin(t * (working ? 5 : 2))) * s * 0.05)
-            .rotationEffect(.degrees(sin(t * 0.9) * 4))
+            // floats like Zuffi; hops when it's working
+            .offset(x: CGFloat(sin(t * 0.7)) * s * 0.04, y: working ? -CGFloat(abs(sin(t * 5))) * s * 0.16 : CGFloat(sin(t * 2)) * s * 0.09)
+            .rotationEffect(.degrees(working ? sin(t * 10) * 6 : sin(t * 1.1) * 7))
+            .scaleEffect(1 + (working ? 0.04 * CGFloat(sin(t * 10)) : 0.02 * CGFloat(sin(t * 2))))
         }
         .frame(width: size, height: size * 1.2)
     }
@@ -4601,5 +4764,691 @@ enum DocsAgent {
         } while start < doc.length
         ctx.closePDF()
         return true
+    }
+}
+
+
+// =====================================================================
+// MARK: - Zuffi Reach: agents can reach more of the internet (search, read any page, video, social, Chinese sites)
+// Ideas from Agent Reach (MIT), rebuilt in Swift. Read-only: agents search and read; they never post, like or send.
+// =====================================================================
+
+struct ReachItem { var title: String; var url: String; var text: String; var via: String }
+
+@MainActor
+enum ZuffiReach {
+    static let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+    /// Backup readers (Jina Reader, Exa) send the page address or search words to those services; owners can turn them off.
+    static var backupOn: Bool { UserDefaults.standard.object(forKey: "reachBackup") as? Bool ?? true }
+
+    static func get(_ url: String, headers: [String: String] = [:], timeout: TimeInterval = 12) async -> (Data, Int)? {
+        guard let u = URL(string: url) else { return nil }
+        var r = URLRequest(url: u, timeoutInterval: timeout)
+        r.setValue(ua, forHTTPHeaderField: "User-Agent")
+        for (k, v) in headers { r.setValue(v, forHTTPHeaderField: k) }
+        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { return nil }
+        return (d, (resp as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+    static func json(_ url: String, headers: [String: String] = [:]) async -> Any? {
+        guard let (d, code) = await get(url, headers: headers), code < 400 else { return nil }
+        return try? JSONSerialization.jsonObject(with: d)
+    }
+    static func enc(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
+    static func stripHTML(_ h: String) -> String {
+        var t = h.replacingOccurrences(of: #"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>"#, with: " ", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"(?i)<br\s*/?>|</p>|</div>|</li>|</h[1-6]>"#, with: "\n", options: .regularExpression)
+        t = t.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        for (a, b) in [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&nbsp;", " "), ("&pound;", "£")] { t = t.replacingOccurrences(of: a, with: b) }
+        t = t.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression).replacingOccurrences(of: #"\n\s*\n+"#, with: "\n", options: .regularExpression)
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    static func isBlockPage(_ t: String) -> Bool {
+        let l = t.prefix(4000).lowercased()
+        return l.contains("just a moment...") || l.contains("performing security verification") || l.contains("attention required! | cloudflare") || l.contains("unusual traffic") || l.contains("are you a robot")
+    }
+
+    // MARK: Search the web — Google (in an agent tab you can watch) → DuckDuckGo → Exa
+
+    static func search(_ q: String, agent: TeamAgent, runID: String?, limit: Int = 8) async -> [ReachItem] {
+        var out: [ReachItem] = []
+        for r in await AgentBrowser.shared.googleResults(q, agent: agent, runID: runID) where !out.contains(where: { $0.url == r.url }) {
+            out.append(ReachItem(title: r.title, url: r.url, text: r.snippet, via: "Google"))
+        }
+        if out.count < 3 { out += (await duck(q)).filter { i in !out.contains { $0.url == i.url } } }
+        if out.count < 3, backupOn { out += (await exaSearch(q, limit: limit)).filter { i in !out.contains { $0.url == i.url } } }
+        return Array(out.prefix(limit))
+    }
+    static func duck(_ q: String) async -> [ReachItem] {
+        guard let (d, _) = await get("https://html.duckduckgo.com/html/?q=\(enc(q))&kl=uk-en"), let h = String(data: d, encoding: .utf8) else { return [] }
+        var out: [ReachItem] = []
+        let blocks = h.components(separatedBy: "class=\"result__a\"").dropFirst()
+        for b in blocks.prefix(10) {
+            guard let hr = b.range(of: #"href="([^"]+)""#, options: .regularExpression) else { continue }
+            var href = String(b[hr]).replacingOccurrences(of: "href=\"", with: "").dropLast().description
+            if let r = href.range(of: "uddg=") { href = String(href[r.upperBound...]).components(separatedBy: "&").first?.removingPercentEncoding ?? href }
+            if href.hasPrefix("//") { href = "https:" + href }
+            let title = stripHTML(String(b.drop(while: { $0 != ">" }).dropFirst().prefix(while: { $0 != "<" })))
+            var snip = ""
+            if let sr = b.range(of: "result__snippet") { snip = stripHTML(String(b[sr.upperBound...].drop(while: { $0 != ">" }).dropFirst().prefix(400)).components(separatedBy: "</a>").first ?? "") }
+            if href.hasPrefix("http"), !href.contains("duckduckgo.com") { out.append(ReachItem(title: title, url: href, text: snip, via: "DuckDuckGo")) }
+        }
+        return out
+    }
+    static func exaCall(_ tool: String, _ args: [String: Any]) async -> String? {
+        guard let u = URL(string: "https://mcp.exa.ai/mcp") else { return nil }
+        var r = URLRequest(url: u, timeoutInterval: 25); r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type"); r.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": tool, "arguments": args]])
+        guard let (d, _) = try? await URLSession.shared.data(for: r), let raw = String(data: d, encoding: .utf8) else { return nil }
+        let payload = raw.components(separatedBy: "\n").filter { $0.hasPrefix("data:") }.last.map { String($0.dropFirst(5)) } ?? raw
+        guard let j = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any], j["error"] == nil,
+              let res = j["result"] as? [String: Any], (res["isError"] as? Bool) != true, let content = res["content"] as? [[String: Any]] else { return nil }
+        return content.compactMap { $0["text"] as? String }.joined(separator: "\n")
+    }
+    static func exaSearch(_ q: String, limit: Int) async -> [ReachItem] {
+        guard let text = await exaCall("web_search_exa", ["query": q, "numResults": limit]) else { return [] }
+        return ("\n" + text).components(separatedBy: "\nTitle: ").dropFirst().compactMap { b in
+            let lines = b.components(separatedBy: "\n")
+            let title = lines.first ?? ""
+            guard let url = lines.first(where: { $0.hasPrefix("URL: ") })?.dropFirst(5) else { return nil }
+            let body = lines.drop { !$0.hasPrefix("Text:") && !$0.hasPrefix("Highlights:") }.dropFirst().joined(separator: "\n")
+            return ReachItem(title: title, url: String(url), text: String(body.prefix(1500)), via: "Exa")
+        }
+    }
+
+    // MARK: Read any page — the site's own reader first, then Jina Reader, a plain fetch, Exa, and finally the agent browser
+
+    static func read(_ urlString: String, agent: TeamAgent, runID: String?) async -> ReachItem? {
+        guard let url = URL(string: urlString), let host = url.host?.lowercased() else { return nil }
+        if let site = await siteReader(url, host: host) { return site }
+        if needsSignIn(host) { return await browserRead(url, agent: agent, runID: runID) }
+        if backupOn, let (d, code) = await get("https://r.jina.ai/" + urlString, headers: ["Accept": "text/plain"], timeout: 20), code < 400,
+           let t = String(data: d, encoding: .utf8), t.count > 300, !isBlockPage(t) {
+            let title = t.range(of: #"(?m)^Title:\s*(.*)$"#, options: .regularExpression).map { String(t[$0].dropFirst(6)).trimmingCharacters(in: .whitespaces) } ?? host
+            let body = t.components(separatedBy: "Markdown Content:").last ?? t
+            return ReachItem(title: title, url: urlString, text: String(body.prefix(14000)), via: "Jina Reader")
+        }
+        if let (d, code) = await get(urlString), code < 400, let h = String(data: d, encoding: .utf8) ?? String(data: d, encoding: .isoLatin1) {
+            let t = stripHTML(h)
+            if t.count > 800, !isBlockPage(t) {
+                let title = h.range(of: #"(?is)<title[^>]*>(.*?)</title>"#, options: .regularExpression).map { stripHTML(String(h[$0])) } ?? host
+                return ReachItem(title: title, url: urlString, text: String(t.prefix(14000)), via: "Page")
+            }
+        }
+        if backupOn, let t = await exaCall("web_fetch_exa", ["urls": [urlString], "maxCharacters": 14000]), t.count > 300 {
+            return ReachItem(title: host, url: urlString, text: t, via: "Exa")
+        }
+        return await browserRead(url, agent: agent, runID: runID)
+    }
+    static func browserRead(_ url: URL, agent: TeamAgent, runID: String?) async -> ReachItem? {
+        let p = await AgentBrowser.shared.readPage(url, agent: agent, runID: runID)
+        guard p.text.count > 200 else { return nil }
+        if isBlockPage(p.text) { return ReachItem(title: url.host ?? "", url: url.absoluteString, text: "(This site showed a robot check, so I couldn't read it. You can open it yourself.)", via: "Blocked") }
+        if let s = Site.forHost(url.host ?? ""), looksLoggedOut(p.text) {
+            return ReachItem(title: s.name, url: url.absoluteString, text: "(\(s.name) needs you to sign in first: Settings → Agents → Sign in to sites.)", via: "Needs sign-in")
+        }
+        return ReachItem(title: url.host ?? "", url: p.url, text: p.text, via: "Agent browser")
+    }
+    static func looksLoggedOut(_ t: String) -> Bool {
+        let l = t.prefix(2500).lowercased()
+        return (l.contains("log in") || l.contains("sign in") || l.contains("sign up")) && t.count < 2500
+    }
+
+    // MARK: Sites that need your sign-in (in Zuffi's agent browser — you sign in yourself, once)
+
+    struct Site: Identifiable { let id: String; let name: String; let domain: String; let cookie: String; let login: String; let search: String
+        static let all: [Site] = [
+            Site(id: "x", name: "X (Twitter)", domain: "x.com", cookie: "auth_token", login: "https://x.com/i/flow/login", search: "https://x.com/search?q=%@&f=live"),
+            Site(id: "instagram", name: "Instagram", domain: "instagram.com", cookie: "sessionid", login: "https://www.instagram.com/accounts/login/", search: "https://www.instagram.com/explore/search/keyword/?q=%@"),
+            Site(id: "facebook", name: "Facebook", domain: "facebook.com", cookie: "c_user", login: "https://www.facebook.com/login", search: "https://www.facebook.com/search/top?q=%@"),
+            Site(id: "linkedin", name: "LinkedIn", domain: "linkedin.com", cookie: "li_at", login: "https://www.linkedin.com/login", search: "https://www.linkedin.com/search/results/all/?keywords=%@"),
+            Site(id: "reddit", name: "Reddit", domain: "reddit.com", cookie: "reddit_session", login: "https://www.reddit.com/login/", search: "https://old.reddit.com/search?q=%@"),
+            Site(id: "xiaohongshu", name: "Xiaohongshu (RED)", domain: "xiaohongshu.com", cookie: "web_session", login: "https://www.xiaohongshu.com/explore", search: "https://www.xiaohongshu.com/search_result?keyword=%@"),
+            Site(id: "bilibili", name: "Bilibili", domain: "bilibili.com", cookie: "SESSDATA", login: "https://passport.bilibili.com/login", search: "https://search.bilibili.com/all?keyword=%@"),
+            Site(id: "xueqiu", name: "Xueqiu", domain: "xueqiu.com", cookie: "xq_a_token", login: "https://xueqiu.com/", search: "https://xueqiu.com/k?q=%@"),
+        ]
+        static func forHost(_ h: String) -> Site? { all.first { h == $0.domain || h.hasSuffix("." + $0.domain) } }
+    }
+    static func needsSignIn(_ host: String) -> Bool { ["x.com", "twitter.com", "instagram.com", "facebook.com", "xiaohongshu.com"].contains { host == $0 || host.hasSuffix("." + $0) } }
+
+    // MARK: Each site's own reader (public, read-only)
+
+    static func siteReader(_ url: URL, host: String) async -> ReachItem? {
+        let path = url.path
+        if host.hasSuffix("youtube.com") || host == "youtu.be" {
+            let id = host == "youtu.be" ? String(path.dropFirst()) : URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "v" }?.value ?? (path.hasPrefix("/shorts/") ? String(path.dropFirst(8)) : "")
+            if !id.isEmpty { return await youtubeVideo(id) }
+        }
+        if host == "github.com" {
+            let parts = path.split(separator: "/").map(String.init)
+            if parts.count >= 2 { return await githubRepo(parts[0], parts[1], issue: parts.count >= 4 && (parts[2] == "issues" || parts[2] == "pull") ? Int(parts[3]) : nil) }
+        }
+        if host.hasSuffix("reddit.com"), path.contains("/comments/") { return await redditPost(url) }
+        if host.hasSuffix("linkedin.com"), path.hasPrefix("/jobs/view/") {
+            let id = path.split(separator: "/").last.map { String($0).components(separatedBy: "-").last ?? String($0) } ?? ""
+            return await linkedinJob(id)
+        }
+        if host.hasSuffix("v2ex.com"), path.hasPrefix("/t/"), let id = Int(path.split(separator: "/").dropFirst().first ?? "") { return await v2exTopic(id) }
+        if host.hasSuffix("bilibili.com"), let r = path.range(of: #"BV[0-9A-Za-z]{10}"#, options: .regularExpression) { return await bilibiliVideo(String(path[r])) }
+        if host.hasSuffix("xueqiu.com"), path.hasPrefix("/S/") { return await stockQuote(String(path.dropFirst(3))) }
+        return nil
+    }
+
+    // YouTube: title, channel, description and the subtitles (no download, no key)
+    static func youtubeVideo(_ id: String) async -> ReachItem? {
+        guard let (d, _) = await get("https://www.youtube.com/watch?v=\(id)&hl=en", headers: ["Accept-Language": "en-GB,en;q=0.9"]), let h = String(data: d, encoding: .utf8),
+              let r = h.range(of: "ytInitialPlayerResponse = ") else { return nil }
+        let rest = h[r.upperBound...]
+        guard let end = rest.range(of: ";</script>") ?? rest.range(of: ";var ") else { return nil }
+        guard let j = try? JSONSerialization.jsonObject(with: Data(rest[..<end.lowerBound].utf8)) as? [String: Any] else { return nil }
+        let v = j["videoDetails"] as? [String: Any] ?? [:]
+        let title = v["title"] as? String ?? "YouTube video", author = v["author"] as? String ?? ""
+        let mins = (Int(v["lengthSeconds"] as? String ?? "") ?? 0) / 60, views = v["viewCount"] as? String ?? ""
+        var text = "Channel: \(author) · \(mins) min · \(views) views\n\nDescription:\n\(v["shortDescription"] as? String ?? "")"
+        let tracks = (((j["captions"] as? [String: Any])?["playerCaptionsTracklistRenderer"] as? [String: Any])?["captionTracks"] as? [[String: Any]]) ?? []
+        let track = tracks.first { ($0["languageCode"] as? String)?.hasPrefix("en") == true } ?? tracks.first
+        if let base = track?["baseUrl"] as? String, let cj = await json(base + "&fmt=json3") as? [String: Any], let events = cj["events"] as? [[String: Any]] {
+            let words = events.compactMap { e in (e["segs"] as? [[String: Any]])?.compactMap { $0["utf8"] as? String }.joined() }.joined().replacingOccurrences(of: "\n", with: " ")
+            if words.count > 50 { text += "\n\nSubtitles:\n" + String(words.prefix(20000)) }
+        } else { text += "\n\n(No subtitles available for this video.)" }
+        return ReachItem(title: title, url: "https://www.youtube.com/watch?v=\(id)", text: text, via: "YouTube")
+    }
+    static func youtubeSearch(_ q: String, limit: Int = 6) async -> [ReachItem] {
+        guard let (d, _) = await get("https://www.youtube.com/results?search_query=\(enc(q))&hl=en"), let h = String(data: d, encoding: .utf8) else { return [] }
+        var out: [ReachItem] = [], seen = Set<String>()
+        for part in h.components(separatedBy: "\"videoRenderer\":{\"videoId\":\"").dropFirst() {
+            let id = String(part.prefix(11)); guard !seen.contains(id) else { continue }; seen.insert(id)
+            let title = part.range(of: #""title":\{"runs":\[\{"text":"(.*?)""#, options: .regularExpression).map { String(part[$0]).components(separatedBy: "\"text\":\"").last?.dropLast().description ?? "" } ?? ""
+            let ch = part.range(of: #""ownerText":\{"runs":\[\{"text":"(.*?)""#, options: .regularExpression).map { String(part[$0]).components(separatedBy: "\"text\":\"").last?.dropLast().description ?? "" } ?? ""
+            out.append(ReachItem(title: title, url: "https://www.youtube.com/watch?v=\(id)", text: ch.isEmpty ? "" : "Channel: \(ch)", via: "YouTube"))
+            if out.count >= limit { break }
+        }
+        return out
+    }
+    // GitHub (public API)
+    static func githubRepo(_ owner: String, _ repo: String, issue: Int? = nil) async -> ReachItem? {
+        let base = "https://api.github.com/repos/\(owner)/\(repo)"
+        if let n = issue, let j = await json("\(base)/issues/\(n)") as? [String: Any] {
+            var text = "#\(n) \(j["title"] as? String ?? "") — \(j["state"] as? String ?? "")\n\n\(j["body"] as? String ?? "")"
+            if let cs = await json("\(base)/issues/\(n)/comments?per_page=20") as? [[String: Any]] {
+                text += "\n\nComments:\n" + cs.map { "- \(($0["user"] as? [String: Any])?["login"] as? String ?? ""): \(($0["body"] as? String ?? "").prefix(600))" }.joined(separator: "\n")
+            }
+            return ReachItem(title: "\(owner)/\(repo)#\(n)", url: "https://github.com/\(owner)/\(repo)/issues/\(n)", text: text, via: "GitHub")
+        }
+        guard let j = await json(base) as? [String: Any] else { return nil }
+        var text = "\(j["description"] as? String ?? "")\nStars: \(j["stargazers_count"] ?? 0) · Forks: \(j["forks_count"] ?? 0) · Language: \(j["language"] as? String ?? "") · Updated: \(j["pushed_at"] as? String ?? "")"
+        if let (d, c) = await get("\(base)/readme", headers: ["Accept": "application/vnd.github.raw"]), c < 400, let rd = String(data: d, encoding: .utf8) { text += "\n\nREADME:\n" + String(rd.prefix(12000)) }
+        return ReachItem(title: "\(owner)/\(repo)", url: "https://github.com/\(owner)/\(repo)", text: text, via: "GitHub")
+    }
+    static func githubSearch(_ q: String) async -> [ReachItem] {
+        guard let j = await json("https://api.github.com/search/repositories?q=\(enc(q))&per_page=6") as? [String: Any], let items = j["items"] as? [[String: Any]] else { return [] }
+        return items.map { ReachItem(title: $0["full_name"] as? String ?? "", url: $0["html_url"] as? String ?? "", text: "\($0["description"] as? String ?? "") · ★\($0["stargazers_count"] ?? 0)", via: "GitHub") }
+    }
+    // Reddit (public JSON; falls back to the agent browser with your sign-in)
+    static func redditSearch(_ q: String, agent: TeamAgent, runID: String?) async -> [ReachItem] {
+        if let j = await json("https://www.reddit.com/search.json?q=\(enc(q))&limit=8&sort=relevance") as? [String: Any],
+           let kids = (j["data"] as? [String: Any])?["children"] as? [[String: Any]], !kids.isEmpty {
+            return kids.compactMap { $0["data"] as? [String: Any] }.map { d in
+                ReachItem(title: d["title"] as? String ?? "", url: "https://www.reddit.com" + (d["permalink"] as? String ?? ""), text: "r/\(d["subreddit"] as? String ?? "") · ▲\(d["score"] ?? 0) · \(d["num_comments"] ?? 0) comments\n\((d["selftext"] as? String ?? "").prefix(800))", via: "Reddit")
+            }
+        }
+        if let u = URL(string: "https://old.reddit.com/search?q=\(enc(q))"), let r = await browserRead(u, agent: agent, runID: runID) { return [r] }
+        return []
+    }
+    static func redditPost(_ url: URL) async -> ReachItem? {
+        let base = url.absoluteString.components(separatedBy: "?").first ?? url.absoluteString
+        guard let arr = await json((base.hasSuffix("/") ? String(base.dropLast()) : base) + ".json?limit=40") as? [[String: Any]], arr.count >= 2 else { return nil }
+        let post = (((arr[0]["data"] as? [String: Any])?["children"] as? [[String: Any]])?.first?["data"] as? [String: Any]) ?? [:]
+        let comments = ((arr[1]["data"] as? [String: Any])?["children"] as? [[String: Any]] ?? []).compactMap { $0["data"] as? [String: Any] }
+        let text = "\(post["selftext"] as? String ?? "")\n\nTop comments:\n" + comments.prefix(25).compactMap { c in (c["body"] as? String).map { "- \(c["author"] as? String ?? ""): \($0.prefix(500))" } }.joined(separator: "\n")
+        return ReachItem(title: post["title"] as? String ?? "Reddit post", url: base, text: text, via: "Reddit")
+    }
+    // LinkedIn jobs (public guest pages)
+    static func linkedinJobs(_ q: String, location: String) async -> [ReachItem] {
+        guard let (d, _) = await get("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=\(enc(q))&location=\(enc(location))&start=0"),
+              let h = String(data: d, encoding: .utf8) else { return [] }
+        return h.components(separatedBy: "<li").dropFirst().prefix(10).compactMap { li in
+            func pick(_ cls: String) -> String { li.range(of: "class=\"\(cls)[^\"]*\"[^>]*>([\\s\\S]*?)</", options: .regularExpression).map { stripHTML(String(li[$0]).components(separatedBy: ">").dropFirst().joined(separator: ">").replacingOccurrences(of: "</", with: "")) } ?? "" }
+            guard let lr = li.range(of: #"href="(https://[a-z.]*linkedin\.com/jobs/view/[^"?]+)"#, options: .regularExpression) else { return nil }
+            let link = String(li[lr]).replacingOccurrences(of: "href=\"", with: "")
+            return ReachItem(title: pick("base-search-card__title"), url: link, text: "\(pick("base-search-card__subtitle")) · \(pick("job-search-card__location"))", via: "LinkedIn")
+        }
+    }
+    static func linkedinJob(_ id: String) async -> ReachItem? {
+        guard !id.isEmpty, let (d, c) = await get("https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/\(id)"), c < 400, let h = String(data: d, encoding: .utf8) else { return nil }
+        let t = stripHTML(h)
+        return t.count > 200 ? ReachItem(title: "LinkedIn job \(id)", url: "https://www.linkedin.com/jobs/view/\(id)", text: String(t.prefix(12000)), via: "LinkedIn") : nil
+    }
+    // V2EX (public API)
+    static func v2exHot() async -> [ReachItem] {
+        guard let arr = await json("https://www.v2ex.com/api/topics/hot.json") as? [[String: Any]] else { return [] }
+        return arr.prefix(10).map { ReachItem(title: $0["title"] as? String ?? "", url: $0["url"] as? String ?? "", text: String(($0["content"] as? String ?? "").prefix(500)), via: "V2EX") }
+    }
+    static func v2exTopic(_ id: Int) async -> ReachItem? {
+        guard let t = (await json("https://www.v2ex.com/api/topics/show.json?id=\(id)") as? [[String: Any]])?.first else { return nil }
+        let replies = (await json("https://www.v2ex.com/api/replies/show.json?topic_id=\(id)") as? [[String: Any]] ?? []).prefix(40)
+        let text = "\(t["content"] as? String ?? "")\n\nReplies:\n" + replies.map { "- \(($0["member"] as? [String: Any])?["username"] as? String ?? ""): \(($0["content"] as? String ?? "").prefix(300))" }.joined(separator: "\n")
+        return ReachItem(title: t["title"] as? String ?? "V2EX topic", url: "https://www.v2ex.com/t/\(id)", text: text, via: "V2EX")
+    }
+    // Bilibili (public API)
+    static func bilibiliVideo(_ bvid: String) async -> ReachItem? {
+        guard let j = await json("https://api.bilibili.com/x/web-interface/view?bvid=\(bvid)", headers: ["Referer": "https://www.bilibili.com/"]) as? [String: Any],
+              (j["code"] as? Int) == 0, let v = j["data"] as? [String: Any] else { return nil }
+        let stat = v["stat"] as? [String: Any] ?? [:]
+        return ReachItem(title: v["title"] as? String ?? bvid, url: "https://www.bilibili.com/video/\(bvid)",
+                         text: "UP: \((v["owner"] as? [String: Any])?["name"] as? String ?? "") · views \(stat["view"] ?? 0) · likes \(stat["like"] ?? 0)\n\n\(v["desc"] as? String ?? "")", via: "Bilibili")
+    }
+    static func bilibiliSearch(_ q: String) async -> [ReachItem] {
+        _ = await get("https://www.bilibili.com/")       // gets the normal visitor cookie, like any browser
+        guard let j = await json("https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=\(enc(q))", headers: ["Referer": "https://search.bilibili.com/"]) as? [String: Any],
+              let res = (j["data"] as? [String: Any])?["result"] as? [[String: Any]] else { return [] }
+        return res.prefix(8).map { ReachItem(title: stripHTML($0["title"] as? String ?? ""), url: "https://www.bilibili.com/video/\($0["bvid"] as? String ?? "")", text: "UP: \($0["author"] as? String ?? "") · plays \($0["play"] ?? 0)", via: "Bilibili") }
+    }
+    static func bilibiliPopular() async -> [ReachItem] {
+        guard let j = await json("https://api.bilibili.com/x/web-interface/popular?ps=10&pn=1", headers: ["Referer": "https://www.bilibili.com/"]) as? [String: Any],
+              let list = (j["data"] as? [String: Any])?["list"] as? [[String: Any]] else { return [] }
+        return list.map { ReachItem(title: $0["title"] as? String ?? "", url: "https://www.bilibili.com/video/\($0["bvid"] as? String ?? "")", text: String(($0["desc"] as? String ?? "").prefix(300)), via: "Bilibili") }
+    }
+    // Stock quotes (China / HK / US) — Tencent's public quote line, the same numbers Xueqiu shows
+    static func stockQuote(_ symbol: String) async -> ReachItem? {
+        var s = symbol.uppercased().replacingOccurrences(of: ".", with: "")
+        if s.hasPrefix("SH") || s.hasPrefix("SZ") || s.hasPrefix("HK") { s = s.prefix(2).lowercased() + String(s.dropFirst(2)) }
+        else if s.allSatisfy(\.isNumber) { s = (s.count == 5 ? "hk" : s.hasPrefix("6") ? "sh" : "sz") + s }
+        else { s = "us" + s }
+        guard let (d, _) = await get("https://qt.gtimg.cn/q=\(s)") else { return nil }
+        let gbk = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+        guard let body = String(data: d, encoding: gbk) ?? String(data: d, encoding: .utf8),
+              let r = body.range(of: #"="([^"]*)""#, options: .regularExpression) else { return nil }
+        let f = String(body[r]).dropFirst(2).dropLast().split(separator: "~", omittingEmptySubsequences: false).map(String.init)
+        guard f.count > 34 else { return nil }
+        return ReachItem(title: "\(f[1]) (\(s.uppercased()))", url: "https://xueqiu.com/S/\(s.uppercased())",
+                         text: "Price \(f[3]) · change \(f[31]) (\(f[32])%) · open \(f[5]) · high \(f[33]) · low \(f[34]) · last close \(f[4]) · time \(f[30])", via: "Stock quote")
+    }
+    static func stockSearch(_ q: String) async -> [ReachItem] {
+        guard let (d, _) = await get("https://smartbox.gtimg.cn/s3/?v=2&q=\(enc(q))&t=all"), let body = String(data: d, encoding: .utf8),
+              let r = body.range(of: #"="([^"]*)""#, options: .regularExpression) else { return [] }
+        let raw = String(body[r]).dropFirst(2).dropLast()
+        let decoded = (try? JSONSerialization.jsonObject(with: Data("\"\(raw)\"".utf8), options: .fragmentsAllowed) as? String) ?? String(raw)
+        var out: [ReachItem] = []
+        for e in decoded.split(separator: "^").prefix(5) {
+            let p = e.split(separator: "~").map(String.init); guard p.count >= 3 else { continue }
+            if let q = await stockQuote(p[0] + p[1]) { out.append(q) }
+        }
+        return out
+    }
+    // Signed-in sites: search inside the agent browser with your own sign-in
+    static func siteSearch(_ site: Site, _ q: String, agent: TeamAgent, runID: String?) async -> [ReachItem] {
+        guard let u = URL(string: site.search.replacingOccurrences(of: "%@", with: enc(q))) else { return [] }
+        guard await AgentBrowser.shared.isSignedIn(site.domain, cookie: site.cookie) || site.id == "reddit" || site.id == "bilibili" || site.id == "xueqiu" else {
+            return [ReachItem(title: site.name, url: site.login, text: "(\(site.name) needs you to sign in once, inside Zuffi: Settings → Agents → Sign in to sites. Agents then read it with your sign-in — read only.)", via: "Needs sign-in")]
+        }
+        if let r = await browserRead(u, agent: agent, runID: runID) { return [r] }
+        return []
+    }
+
+    // MARK: The research a senior would do: the right places for the question, several sources, then read the best ones
+
+    static func research(_ task: String, agent: TeamAgent, runID: String?, step: (String) -> Void) async -> (notes: String, links: [WebLink]) {
+        let q = String(task.components(separatedBy: "\n").first ?? task)
+            .replacingOccurrences(of: #"(?i)^(ok(ay)?,? |please |zuffi,? |hey,? )*(can you |could you )?(research|search( for)?|look up|find( out| me)?|i('m| am)? looking for|i want(ed)? to know)( about| on| the)?[: ]*"#, with: "", options: .regularExpression)
+            .prefix(180).description
+        let l = task.lowercased()
+        var found: [ReachItem] = []
+        func add(_ items: [ReachItem]) { for i in items where !i.url.isEmpty && !found.contains(where: { $0.url == i.url }) { found.append(i) } }
+        // Links in the task: read them directly
+        let urls = (try? NSRegularExpression(pattern: #"https?://\S+"#)).map { re in re.matches(in: task, range: NSRange(task.startIndex..., in: task)).compactMap { Range($0.range, in: task).map { String(task[$0]) } } } ?? []
+        // Platform places when the question asks for them
+        if l.contains("youtube") || l.contains("video") { step("Searching YouTube"); add(await youtubeSearch(q)) }
+        if l.contains("reddit") || l.range(of: #"\b(opinions?|experiences?|what do people think|real reviews)\b"#, options: .regularExpression) != nil { step("Reading Reddit"); add(await redditSearch(q, agent: agent, runID: runID)) }
+        if l.contains("github") || l.range(of: #"\b(open.?source|repo|library|sdk)\b"#, options: .regularExpression) != nil { step("Searching GitHub"); add(await githubSearch(q)) }
+        if l.range(of: #"\b(jobs?|vacanc|hiring|career)\b"#, options: .regularExpression) != nil {
+            let loc = l.range(of: #"\bin ([a-z ]{3,30})"#, options: .regularExpression).map { String(l[$0].dropFirst(3)) } ?? ""
+            step("Searching LinkedIn jobs"); add(await linkedinJobs(q, location: loc))
+        }
+        if l.contains("bilibili") || l.contains("b站") { step("Searching Bilibili"); add(await bilibiliSearch(q)) }
+        if l.contains("v2ex") { step("Reading V2EX"); add(await v2exHot()) }
+        if l.range(of: #"\b(stock|share price|xueqiu|雪球|股票|nasdaq|quote)\b"#, options: .regularExpression) != nil { step("Checking stock quotes"); add(await stockSearch(q)) }
+        for s in ZuffiReach.Site.all where ["x", "instagram", "facebook", "xiaohongshu", "linkedin"].contains(s.id) && (l.contains(s.id) || l.contains(s.name.lowercased()) || (s.id == "x" && l.contains("twitter")) || (s.id == "xiaohongshu" && (l.contains("rednote") || l.contains("小红书")))) {
+            step("Looking on \(s.name)"); add(await siteSearch(s, q, agent: agent, runID: runID))
+        }
+        // The web: Google (watch it in the agent browser), then backups
+        step("Searching Google for “\(q.prefix(70))”")
+        add(await search(q, agent: agent, runID: runID))
+        // Read the pages themselves (links you gave first, then the best results)
+        var notes: [String] = []
+        let toRead = urls + found.filter { $0.via != "Needs sign-in" && $0.via != "Stock quote" }.map(\.url).filter { !urls.contains($0) }
+        var readCount = 0
+        for u in toRead where readCount < 4 {
+            guard let host = URL(string: u)?.host else { continue }
+            step("Reading \(host)")
+            if let page = await read(u, agent: agent, runID: runID), page.text.count > 150 {
+                readCount += 1
+                notes.append("SOURCE \(notes.count + 1): \(page.title) — \(page.url) (via \(page.via))\n\(page.text.prefix(4500))")
+            }
+        }
+        // Short results (snippets, quotes, sign-in notes) also count as sources
+        let shorts = found.prefix(10).map { "• \($0.title) — \($0.url)\($0.text.isEmpty ? "" : ": " + String($0.text.prefix(300))) (\($0.via))" }
+        if !shorts.isEmpty { notes.append("SEARCH RESULTS:\n" + shorts.joined(separator: "\n")) }
+        // Latest news (free)
+        let news = await AIService.webSearch(q)
+        if !news.notes.isEmpty { notes.append("NEWS AND REFERENCE:\n" + news.notes) }
+        step(readCount > 0 ? "Read \(readCount) page\(readCount == 1 ? "" : "s") — comparing them" : "Couldn't open the pages — working from the search results")
+        var links = found.map { WebLink(title: $0.title.isEmpty ? (URL(string: $0.url)?.host ?? $0.url) : $0.title, url: $0.url) }
+        for l in news.links where !links.contains(where: { $0.url == l.url }) { links.append(l) }
+        return (notes.joined(separator: "\n\n"), links)
+    }
+}
+
+/// Settings → Agents: sign in to sites inside Zuffi's own agent browser, so agents can read them (read only).
+struct ReachSitesView: View {
+    var light = false
+    @State private var signed: Set<String> = []
+    init(light: Bool = false) { self.light = light }
+    private var T: HubTheme { HubTheme(light: light) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Sign in to sites").font(HubFont.p(17, .semibold)).padding(.bottom, 4)
+            Text("Sign in once inside Zuffi's agent browser — you type your own password there; Zuffi never sees it. Agents then read these sites with your sign-in. They only read: never post, like, follow or send.")
+                .font(HubFont.p(13, .regular)).foregroundColor(T.inactive).fixedSize(horizontal: false, vertical: true).padding(.bottom, 12)
+            VStack(spacing: 0) {
+                ForEach(Array(ZuffiReach.Site.all.enumerated()), id: \.element.id) { i, site in
+                    HStack(spacing: 14) {
+                        Circle().fill(signed.contains(site.id) ? Color(hex: "#3DBE7E") : T.inactive.opacity(0.5)).frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(site.name).font(HubFont.p(14))
+                            Text(signed.contains(site.id) ? "Signed in — agents can read it" : "Not signed in").font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+                        }
+                        Spacer()
+                        Button { if let u = URL(string: site.login) { AgentBrowser.shared.signIn(site.name, url: u) } } label: {
+                            Text(signed.contains(site.id) ? "Open" : "Sign in").font(HubFont.p(13)).foregroundColor(.white).padding(.horizontal, 14).frame(height: 30).background(Capsule().fill(HubTheme.blue))
+                        }.buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+        }
+        .task { await refresh() }
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in Task { await refresh() } }
+    }
+    private func refresh() async {
+        var s: Set<String> = []
+        for site in ZuffiReach.Site.all { if await AgentBrowser.shared.isSignedIn(site.domain, cookie: site.cookie) { s.insert(site.id) } }
+        signed = s
+    }
+}
+
+// MARK: - Business research: name + link → the team reads about the business and its competitors, then makes a growth plan
+
+@MainActor
+final class BusinessResearch: ObservableObject {
+    static let shared = BusinessResearch()
+    @Published var running = false
+    @Published var report: String = UserDefaults.standard.string(forKey: "bizResearchReport") ?? ""
+    @Published var at: Date? = UserDefaults.standard.object(forKey: "bizResearchAt") as? Date
+    @Published var stage = ""
+
+    private var form: [String: String] { (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:] }
+
+    func start() {
+        guard !running else { return }
+        running = true; stage = "Starting"
+        Task { @MainActor in await self.run(); self.running = false }
+    }
+
+    private func run() async {
+        let team = ZuffiTeam.shared
+        let name = ZuffiBusiness.shared.businessName.trimmingCharacters(in: .whitespaces)
+        let link = (form["website"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let area = (form["address"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let researcher = team.agent("zuffi-competitors") ?? team.agent("research-synthesist") ?? ZuffiTeam.manager
+        let task = "Research \(name) and its competitors, then make a growth plan"
+        MissionControl.shared.begin(task, agents: [researcher.id])
+        let id = team.begin(researcher, task)
+        func say(_ t: String) { stage = t; team.step(id, t, source: "Web") }
+        var sources: [String] = [], links: [WebLink] = []
+        func keep(_ i: ReachItem?) { guard let i, i.text.count > 120 else { return }; sources.append("SOURCE \(sources.count + 1): \(i.title) — \(i.url) (via \(i.via))\n\(i.text.prefix(5000))"); links.append(WebLink(title: i.title, url: i.url)) }
+
+        // 1) The business's own page
+        var site = link
+        if !site.isEmpty, !site.hasPrefix("http") { site = "https://" + site }
+        if !site.isEmpty { say("Reading your page: \(URL(string: site)?.host ?? site)"); keep(await ZuffiReach.read(site, agent: researcher, runID: id)) }
+        // 2) Google: the business, its reviews
+        let local = [name, area.components(separatedBy: ",").last?.trimmingCharacters(in: .whitespaces) ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+        say("Searching Google for \(local)")
+        let mine = await ZuffiReach.search(local, agent: researcher, runID: id, limit: 8)
+        say("Searching for reviews of \(name)")
+        let reviews = await ZuffiReach.search("\(local) reviews", agent: researcher, runID: id, limit: 6)
+        for r in (mine + reviews).prefix(4) where !links.contains(where: { $0.url == r.url }) && r.url != site { say("Reading \(URL(string: r.url)?.host ?? r.url)"); keep(await ZuffiReach.read(r.url, agent: researcher, runID: id)) }
+        let snippets = (mine + reviews).map { "• \($0.title) — \($0.url): \($0.text.prefix(250))" }.joined(separator: "\n")
+        // 3) What kind of business is it? → find competitors nearby
+        say("Working out your type of business")
+        let kind = (await AIService.shared.oneShot("From this, what kind of business is \(name)? Reply with 2-4 words only, like \"hair salon\" or \"estate agent\".\n\n" + String((sources.joined(separator: "\n") + "\n" + snippets).prefix(8000)), system: "Reply with the type of business in 2-4 words only.") ?? "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " .\"\n"))
+        let place = area.isEmpty ? (ZuffiCRM.shared.country == "PK" ? "Pakistan" : "UK") : (area.components(separatedBy: ",").last ?? area).trimmingCharacters(in: .whitespaces)
+        var competitors: [ReachItem] = []
+        if !kind.isEmpty, kind.count < 40 {
+            say("Finding \(kind) competitors in \(place)")
+            competitors = (await ZuffiReach.search("best \(kind) in \(place)", agent: researcher, runID: id, limit: 8))
+                .filter { c in !c.title.lowercased().contains(name.lowercased()) && !links.contains { $0.url == c.url } }
+            for c in competitors.prefix(3) { say("Reading competitor: \(URL(string: c.url)?.host ?? c.url)"); keep(await ZuffiReach.read(c.url, agent: researcher, runID: id)) }
+        }
+        let compSnips = competitors.map { "• \($0.title) — \($0.url): \($0.text.prefix(250))" }.joined(separator: "\n")
+        guard !sources.isEmpty || !snippets.isEmpty else {
+            team.finish(id, "I couldn't find \(name) online yet. Add your website or Instagram/Facebook link in Business → Settings and I'll try again.", "Needs input")
+            stage = "Couldn't find the business online"; return
+        }
+        // 4) Fill in empty form details from what was found (never overwrite yours)
+        say("Filling in the details I found")
+        if let raw = await AIService.shared.oneShot("""
+            From these pages about \(name), copy ONLY facts that are written there. JSON only:
+            {"address":"","phone":"","hours":"","services":"one per line with prices if shown","payment":"","booking":""}
+            Leave a field empty if it isn't written in the pages.
+            \(String(sources.joined(separator: "\n\n").prefix(16000)))
+            """), let a = raw.firstIndex(of: "{"), let b = raw.lastIndex(of: "}"),
+           let j = try? JSONSerialization.jsonObject(with: Data(String(raw[a...b]).utf8)) as? [String: String] {
+            var f = form; var filled: [String] = []
+            for (k, v) in j where !v.trimmingCharacters(in: .whitespaces).isEmpty && (f[k] ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
+                let all = sources.joined(separator: " ").lowercased()
+                // keep only what really appears in the pages (first words check)
+                let probe = v.lowercased().split(separator: " ").prefix(3).joined(separator: " ")
+                if all.contains(probe) { f[k] = v; filled.append(k) }
+            }
+            if !filled.isEmpty { UserDefaults.standard.set(f, forKey: "bizForm"); BizDetailsForm.rebuildInfo(); say("Filled in: " + filled.joined(separator: ", ")) }
+        }
+        // 5) The report and plan
+        say("Comparing you with your competitors and writing the plan")
+        let ids = ZuffiTeam.businessTeam + ["finance-financial-analyst", "zuffi-bookings", "zuffi-crm"]
+        let menu = ids.compactMap { team.agent($0) }.map { "\($0.id): \($0.name)" }.joined(separator: "\n")
+        let prompt = """
+        You are Nik, a senior business growth manager. Write a report for the owner of \(name)\(kind.isEmpty ? "" : " (\(kind))") in \(place).
+        Use ONLY facts from the sources below; when something isn't known, say so. Every competitor fact needs its source link.
+        Sections (plain text, short lines, use "- " bullets):
+        ## What I found about you
+        ## What customers say
+        ## Your competitors (3-5: name, what they do better, prices if shown, link)
+        ## What you're missing
+        ## Your 30-day growth plan (week 1–4, concrete actions)
+        ## Agents to hire (2-4 from this list, each with one line why)
+        At the very end add one line: HIRE: id1, id2, id3 (ids from this list only)
+        \(menu)
+        THE BUSINESS'S DETAILS:
+        \(ZuffiTeam.businessContext.prefix(2500))
+        SEARCH RESULTS:
+        \(snippets.prefix(3000))
+        COMPETITOR RESULTS:
+        \(compSnips.prefix(3000))
+        PAGES READ:
+        \(String(sources.joined(separator: "\n\n").prefix(26000)))
+        """
+        guard let text = await AIService.shared.oneShot(prompt, system: "You are a careful senior business consultant. Facts only from the sources, with links. Plain text."), text.count > 200 else {
+            team.finish(id, "I read about your business but couldn't write the plan — check that an AI is set up in Settings.", "Failed"); stage = "Couldn't write the plan"; return
+        }
+        var body = text
+        if let r = text.range(of: #"(?m)^HIRE:.*$"#, options: .regularExpression) {
+            let hire = text[r].dropFirst(5).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { ids.contains($0) }
+            body.removeSubrange(r)
+            team.suggestions = hire.compactMap { h in team.agent(h).map { AgentSuggestion(agent: $0.id, reason: "Suggested by Nik after researching your business") } }
+        }
+        body = body.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\nSources:\n" + links.prefix(10).map { "• \($0.title.prefix(70)) — \($0.url)" }.joined(separator: "\n")
+        report = body; at = Date()
+        UserDefaults.standard.set(body, forKey: "bizResearchReport"); UserDefaults.standard.set(Date(), forKey: "bizResearchAt")
+        if let i = team.runs.firstIndex(where: { $0.id == id }) { team.runs[i].links = Array(links.prefix(12)) }
+        team.finish(id, body, "Done")
+        MissionControl.shared.result = body
+        stage = "Done"
+        NotchInbox.shared.add("Your business plan is ready", "Nik researched \(name) and \(competitors.count) competitors", icon: "chart.line.uptrend.xyaxis", action: "dashboard")
+        BizNav.shared.say("Nik's business plan is ready — see Home")
+    }
+}
+
+struct BusinessReportCard: View {
+    var light = false
+    @ObservedObject private var br = BusinessResearch.shared
+    @ObservedObject private var nav = BizNav.shared
+    @State private var open = false
+    init(light: Bool = false) { self.light = light }
+    private var T: HubTheme { HubTheme(light: light) }
+    var body: some View {
+        if nav.formDone && !ZuffiPlan.shared.isPersonal {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 16, weight: .semibold)).foregroundColor(.white).frame(width: 34, height: 34).background(RoundedRectangle(cornerRadius: 9).fill(HubTheme.blue))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your business & competitors").font(HubFont.p(17, .semibold))
+                        Text(br.running ? br.stage : br.at.map { "Researched " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "Not researched yet")
+                            .font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(1)
+                    }
+                    Spacer()
+                    if br.running { ProgressView().controlSize(.small); Button("Watch") { ZuffiHub.shared.show(.office) }.buttonStyle(.plain).font(HubFont.p(13)) }
+                    else {
+                        if !br.report.isEmpty { Button { open.toggle() } label: { Text(open ? "Hide" : "Read the plan").font(HubFont.p(13)).foregroundColor(T.text).padding(.horizontal, 14).frame(height: 32).overlay(Capsule().stroke(T.border)) }.buttonStyle(.plain) }
+                        Button { br.start() } label: { Text(br.report.isEmpty ? "Research now" : "Research again").font(HubFont.p(13)).foregroundColor(.white).padding(.horizontal, 14).frame(height: 32).background(Capsule().fill(HubTheme.blue)) }.buttonStyle(.plain)
+                    }
+                }
+                if open, !br.report.isEmpty {
+                    ChatRichText(text: br.report).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(20)
+            .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+            .padding(.bottom, 24)
+        }
+    }
+}
+
+// MARK: - Edit an agent: its name, colour, your own instructions and its daily jobs
+
+struct AgentEdit: Codable { var name = ""; var color: String? = nil; var notes = "" }
+
+enum AgentEdits {
+    static func all() -> [String: AgentEdit] {
+        guard let d = UserDefaults.standard.data(forKey: "agentEdits"), let m = try? JSONDecoder().decode([String: AgentEdit].self, from: d) else { return [:] }
+        return m
+    }
+    static func get(_ id: String) -> AgentEdit { all()[id] ?? AgentEdit() }
+    static func set(_ id: String, _ e: AgentEdit) {
+        var m = all(); m[id] = e
+        if let d = try? JSONEncoder().encode(m) { UserDefaults.standard.set(d, forKey: "agentEdits") }
+    }
+    static func name(_ a: TeamAgent) -> String { let n = get(a.id).name.trimmingCharacters(in: .whitespaces); return n.isEmpty ? a.name : n }
+}
+
+@MainActor
+enum AgentEditor {
+    private static var window: NSWindow?
+    static func open(_ a: TeamAgent) {
+        window?.close()
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 620), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+        w.title = "Edit \(AgentEdits.name(a))"; w.titlebarAppearsTransparent = true; w.isReleasedWhenClosed = false
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.contentView = NSHostingView(rootView: AgentEditView(agent: a) { w.close() })
+        w.center(); window = w
+        w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+struct AgentEditView: View {
+    let agent: TeamAgent
+    var done: () -> Void
+    @ObservedObject private var team = ZuffiTeam.shared
+    @State private var name = ""
+    @State private var color = Color.blue
+    @State private var useColor = false
+    @State private var notes = ""
+    private let swatches = ["#3A6DF0", "#33C3A4", "#F07FAA", "#F5B963", "#9B7BFF", "#E5534B", "#3DBE7E", "#E1306C", "#1877F2", "#25D366"]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 14) {
+                    RobotFace(agent: agent, size: 54).id(useColor ? color.description : "default")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(agent.name).font(HubFont.p(18, .semibold))
+                        Text(agent.description).font(HubFont.p(12, .regular)).foregroundColor(.white.opacity(0.6)).lineLimit(3)
+                    }
+                }
+                field("Name") { TextField(agent.name, text: $name).textFieldStyle(.roundedBorder) }
+                field("Colour") {
+                    HStack(spacing: 8) {
+                        ForEach(swatches, id: \.self) { h in
+                            Circle().fill(Color(hex: h)).frame(width: 24, height: 24)
+                                .overlay(Circle().stroke(Color.white, lineWidth: useColor && color.description == Color(hex: h).description ? 2 : 0))
+                                .onTapGesture { color = Color(hex: h); useColor = true }
+                        }
+                        ColorPicker("", selection: Binding(get: { color }, set: { color = $0; useColor = true })).labelsHidden()
+                        Button("Default") { useColor = false }.buttonStyle(.plain).font(HubFont.p(12)).foregroundColor(.white.opacity(0.7))
+                    }
+                }
+                field("Your instructions") {
+                    TextEditor(text: $notes).font(HubFont.p(13, .regular)).frame(height: 110)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.2)))
+                    Text("For example: “Always give prices in PKR”, “Our budget is under £500”, “Write in a friendly, short style”.").font(HubFont.p(11, .regular)).foregroundColor(.white.opacity(0.5))
+                }
+                field("Daily jobs") {
+                    let jobs = team.jobs.filter { $0.agent == agent.id }
+                    if jobs.isEmpty { Text("No daily job. Ask Nik for new tasks on Home.").font(HubFont.p(12, .regular)).foregroundColor(.white.opacity(0.6)) }
+                    ForEach(jobs) { j in
+                        HStack {
+                            Toggle("", isOn: Binding(get: { j.enabled }, set: { v in if let i = team.jobs.firstIndex(where: { $0.id == j.id }) { team.jobs[i].enabled = v } })).labelsHidden()
+                            Text(j.title).font(HubFont.p(13))
+                            Spacer()
+                            DatePicker("", selection: Binding(get: {
+                                Calendar.current.date(bySettingHour: j.hour, minute: j.minute, second: 0, of: Date()) ?? Date()
+                            }, set: { d in
+                                if let i = team.jobs.firstIndex(where: { $0.id == j.id }) { let c = Calendar.current.dateComponents([.hour, .minute], from: d); team.jobs[i].hour = c.hour ?? j.hour; team.jobs[i].minute = c.minute ?? j.minute }
+                            }), displayedComponents: .hourAndMinute).labelsHidden().frame(width: 90)
+                            Button { team.jobs.removeAll { $0.id == j.id } } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundColor(.white.opacity(0.6))
+                        }
+                    }
+                }
+                HStack {
+                    Spacer()
+                    Button("Cancel", action: done).keyboardShortcut(.cancelAction)
+                    Button("Save") { save(); done() }.keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(24).padding(.top, 14)
+        }
+        .foregroundColor(.white)
+        .background(Color(hex: "#14161F"))
+        .onAppear {
+            let e = AgentEdits.get(agent.id)
+            name = e.name; notes = e.notes
+            if let c = e.color, !c.isEmpty { color = Color(hex: c); useColor = true }
+        }
+    }
+    @ViewBuilder private func field<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 6) { Text(title).font(HubFont.p(12, .semibold)).foregroundColor(.white.opacity(0.7)); c() }
+    }
+    private func save() {
+        var hex: String? = nil
+        if useColor, let n = NSColor(color).usingColorSpace(.deviceRGB) {
+            hex = String(format: "#%02X%02X%02X", Int(n.redComponent * 255), Int(n.greenComponent * 255), Int(n.blueComponent * 255))
+        }
+        AgentEdits.set(agent.id, AgentEdit(name: name.trimmingCharacters(in: .whitespaces), color: hex, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)))
+        team.objectWillChange.send()
+        OfficeModel.shared.rebuild()
     }
 }

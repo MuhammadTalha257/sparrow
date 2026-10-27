@@ -1150,7 +1150,7 @@ struct NotchHomeView: View {
                         RobotFace(agent: a, size: 26, working: st == .working)
                             .overlay(alignment: .bottomTrailing) { Circle().fill(st == .working ? Color(hex: "#F5B963") : ZuffiTeam.color(st)).frame(width: 7, height: 7).overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 1)) }
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(a.name).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                            Text(AgentEdits.name(a)).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
                             Text(st == .working ? (run?.steps.last?.text ?? "Working…") : a.id == ZuffiTeam.manager.id ? "Your manager" : st == .active ? "Ready" : st.rawValue)
                                 .font(.system(size: 10.5)).foregroundColor(.white.opacity(0.74)).lineLimit(1)
                         }
@@ -1208,7 +1208,7 @@ struct CompactWings: View {
                 if !working.isEmpty {
                     HStack(spacing: -5) {
                         ForEach(working.prefix(3)) { r in
-                            if let a = team.agent(r.agent) { AgentAvatar(agent: a, size: 16).clipShape(Circle()).overlay(Circle().stroke(Color.black, lineWidth: 1.5)) }
+                            if let a = team.agent(r.agent) { RobotFace(agent: a, size: 15, working: true) }
                         }
                     }
                     Text("\(working.count)").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.85))

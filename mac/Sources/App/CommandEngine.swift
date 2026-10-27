@@ -342,7 +342,7 @@ final class CommandEngine {
             openURL("https://www.youtube.com/results?search_query=" + enc(q))
             return "Searching YouTube for \(q)."
         }
-        for p in ["search for ", "search the web for ", "search ", "google ", "look up ", "find online "] where t.hasPrefix(p) {
+        for p in ["google ", "search google for ", "search on google for ", "open google and search "] where t.hasPrefix(p) {
             let q = String(t.dropFirst(p.count))
             guard !q.isEmpty else { return nil }
             openURL("https://www.google.com/search?q=" + enc(q))

@@ -2072,6 +2072,7 @@ struct BizDetailsForm: View {
     @State private var saved = false
 
     static let fields: [(key: String, label: String, hint: String, tall: Bool)] = [
+        ("website", "Website or social page link", "https://yourbusiness.co.uk or your Instagram / Facebook page", false),
         ("address", "Address / area", "Shop 4, High Street, Maidstone ME14", false),
         ("phone", "Phone / WhatsApp", "Customers message this number", false),
         ("hours", "Opening hours", "Mon–Sat 9am–6pm, closed Sunday", false),
@@ -2083,15 +2084,17 @@ struct BizDetailsForm: View {
     ]
 
     /// Must be filled before the Business page opens.
-    static let required: Set<String> = ["address", "phone", "hours", "services"]
+    /// Just the name plus a website link or the area — your agents research the rest (and fill in what they find).
+    static let required: Set<String> = []
     static var isComplete: Bool {
         let f = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
         let name = (UserDefaults.standard.string(forKey: "zuffiBusinessName") ?? "").trimmingCharacters(in: .whitespaces)
-        return !name.isEmpty && required.allSatisfy { !(f[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let link = (f["website"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines), area = (f["address"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && (!link.isEmpty || !area.isEmpty)
     }
     var missing: [String] {
         var m = biz.businessName.trimmingCharacters(in: .whitespaces).isEmpty ? ["Business name"] : []
-        m += Self.fields.filter { Self.required.contains($0.key) && (f[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.map(\.label)
+        if (f["website"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (f["address"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { m.append("Website link or area") }
         return m
     }
 
@@ -2158,7 +2161,14 @@ struct BizDetailsForm: View {
         UserDefaults.standard.set(f, forKey: "bizForm")
         Self.rebuildInfo()
         saved = true
+        let wasDone = BizNav.shared.formDone
         BizNav.shared.formDone = Self.isComplete
+        // First time (or a new link): the team researches the business by itself.
+        let link = (f["website"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if Self.isComplete, !wasDone || link != (UserDefaults.standard.string(forKey: "bizResearchedLink") ?? "") {
+            UserDefaults.standard.set(link, forKey: "bizResearchedLink")
+            BusinessResearch.shared.start()
+        }
         BizNav.shared.say(missing.isEmpty ? "Saved — Zuffi and your AI team will use these details." : "Saved. Still needed: " + missing.joined(separator: ", "))
     }
 
@@ -2193,7 +2203,7 @@ struct BizSetupGate: View {
                     ZuffiMini(state: AppState.shared, height: 46).frame(width: 52, height: 52).background(Circle().fill(Ink.accent.opacity(0.12)))
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Welcome to Zuffi Business").font(zf(24, .bold))
-                        Text("Tell Zuffi about your business once. Zuffi, your WhatsApp replies and your AI team all use these details — and ask you when something is missing. Fields with * are needed.")
+                        Text("Just give your business name and a link (website, Instagram or Facebook) or your area. Your agents search Google, read your pages and your competitors', fill in what they find, and make a plan to grow. Add more details any time.")
                             .font(zf(12.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -2657,7 +2667,7 @@ struct ZuffiHubView: View {
                 switch subFor(.home) {
                 case "Routines": NikPlanView(light: light); routinesSection
                 case "Activity": activitySection
-                default: NikPlanView(light: light); teamSection("Your team", agents)
+                default: BusinessReportCard(light: light); NikPlanView(light: light); teamSection("Your team", agents)
                 }
             }
         case .team:
@@ -2725,7 +2735,7 @@ struct ZuffiHubView: View {
         return HStack(spacing: 0) {
             HStack(spacing: 16) {
                 RobotFace(agent: a, size: 28).overlay(RoundedRectangle(cornerRadius: 8).stroke(f.color, lineWidth: 1))
-                Text(a.name).font(HubFont.p(16)).lineLimit(1)
+                Text(AgentEdits.name(a)).font(HubFont.p(16)).lineLimit(1)
             }.frame(width: 230, alignment: .leading)
             Text(working ? (run?.steps.last?.text ?? run?.task ?? "Working…") : a.description)
                 .font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 16)
@@ -2740,6 +2750,7 @@ struct ZuffiHubView: View {
                 Menu {
                     Button("Give a task") { task = "\(a.name), "; hub.asking = true }
                     Button("Chat with \(a.name)") { team.use(a); ZuffiChat.shared.open() }
+                    Button("Edit agent…") { AgentEditor.open(a) }
                     Button(team.paused.contains(a.id) ? "Resume" : "Pause") { if team.paused.contains(a.id) { team.paused.remove(a.id) } else { team.paused.insert(a.id) } }
                     if team.hired.contains(a.id) { Button("Remove from team") { team.fire(a) } }
                 } label: { dots }
@@ -2852,7 +2863,7 @@ struct ZuffiHubView: View {
                     HStack(spacing: 16) {
                         RobotFace(agent: a, size: 28)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(a.name).font(HubFont.p(16))
+                            Text(AgentEdits.name(a)).font(HubFont.p(16))
                             Text(a.description).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).lineLimit(2)
                         }
                         Spacer()
@@ -2880,7 +2891,9 @@ struct ZuffiHubView: View {
                 fixedRow("person.3.sequence.fill", "Agents work in the Agent Office", "They never cover your screen — watch them in their tab"),
                 fixedRow("checkmark.shield.fill", "Ask me before paying, sending or posting", "Always on, for your safety"),
                 fixedRow("globe", "Agents use websites in their own window", "Your mouse and browser stay free"),
+                toggleRow("arrow.triangle.2.circlepath", "Backup page readers", "When a page won't open, agents may read it through Jina Reader or Exa (they see the page address or search words)", key: "reachBackup", def: true),
             ])
+            ReachSitesView(light: light).padding(.top, 24)
         case "Privacy":
             settingsList("Privacy & voice", [
                 fixedRow("lock.fill", "Your chats stay on this Mac", "Zuffi doesn't keep what you ask on its servers"),
