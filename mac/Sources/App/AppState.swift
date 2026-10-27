@@ -522,6 +522,7 @@ struct ChatMessage: Identifiable {
     let id = UUID()
     let role: ChatRole
     let content: String
+    var at = Date()
 }
 
 

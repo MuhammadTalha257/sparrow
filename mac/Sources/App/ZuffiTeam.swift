@@ -587,7 +587,7 @@ final class ZuffiTeam: ObservableObject {
         let owner = AssistantPrefs.displayName.isEmpty ? "the owner" : AssistantPrefs.displayName
         let team = others.isEmpty ? "" : "\nYou're working together with: " + others.map(\.name).joined(separator: ", ") + ". Do only your own part; don't repeat theirs."
         return """
-        You are \(AgentEdits.name(a)) \(a.emoji), a senior \(a.name) (\(field.label)) with 15+ years of experience, working for \(owner) inside Zuffi. You are one of the team members, led by Nik, the manager.\(team)
+        You are \(AgentEdits.name(a)) \(a.emoji), a senior \(a.name) (\(field.label)) with 20+ years of experience at the top of your field, working for \(owner) inside Zuffi. You are one of the team members, led by Nik, the manager.\(team)
         WHO YOU ARE
         - Speak as yourself, in the first person. If asked who you are, say “I'm your \(a.name)” and in one line how you help this business. Never call yourself Zuffi or “an AI model”.
         - Your expertise: \(a.description)
@@ -2800,7 +2800,7 @@ struct AgentRobot: View {
 // Passwords and card numbers are never typed by an agent — it hands that part to you. Sign-ins stay in Zuffi's own browser.
 
 @MainActor
-final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate {
+final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     let id = UUID().uuidString
     let agent: TeamAgent
     let task: String
@@ -2815,6 +2815,18 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDe
     var answer: CheckedContinuation<Bool, Never>?
     var stopped = false
     var runID: String?
+    /// Channels in "reply by itself" mode: posting and replying go ahead without asking (never paying, deleting or passwords).
+    var autoOK = false
+    /// A picture the owner chose to post: the site's "choose file" gets this file.
+    var uploadFile: URL?
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        if let f = uploadFile { say("Attached your picture"); completionHandler([f]) }
+        else {
+            let p = NSOpenPanel(); p.allowsMultipleSelection = parameters.allowsMultipleSelection
+            p.begin { r in completionHandler(r == .OK ? p.urls : nil) }
+        }
+    }
 
     init(agent: TeamAgent, task: String, store: WKWebsiteDataStore) {
         self.agent = agent; self.task = task
@@ -2825,6 +2837,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDe
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
         super.init()
         web.navigationDelegate = self
+        web.uiDelegate = self
     }
 
     func say(_ s: String) {
@@ -2990,13 +3003,13 @@ final class AgentBrowser: ObservableObject {
     """
 
     /// Runs one agent's task in a new tab. Returns its answer (or why it stopped).
-    func run(_ task: String, agent: TeamAgent, runID: String?) async -> String {
+    func run(_ task: String, agent: TeamAgent, runID: String?, autoOK: Bool = false, upload: URL? = nil, start startAt: URL? = nil) async -> String {
         let t = BrowserTab(agent: agent, task: task, store: store)
-        t.runID = runID
+        t.runID = runID; t.autoOK = autoOK; t.uploadFile = upload
         tabs.append(t)
         if selected == nil || tabs.count == 1 { selected = t.id }
         t.status = "Working"
-        let start = Self.startURL(task)
+        let start = startAt ?? Self.startURL(task)
         t.say("Opening \(start.host ?? start.absoluteString)")
         t.web.load(URLRequest(url: start))
         await waitLoaded(t)
@@ -3039,7 +3052,9 @@ final class AgentBrowser: ObservableObject {
                 history.append("Asked the user to type private details")
                 continue
             }
-            if ((a["risky"] as? Bool) == true || ((action == "click" || action == "type") && riskyWords)) {
+            let money = itemText.range(of: #"\b(buy|pay|place order|checkout|purchase|delete|remove|transfer|subscribe)\b"#, options: .regularExpression) != nil
+            if t.autoOK && !money { /* the owner set this channel to reply and post by itself */ }
+            else if ((a["risky"] as? Bool) == true || ((action == "click" || action == "type") && riskyWords)) {
                 let ok = await approve(t, "\(say) — on \(t.web.url?.host ?? "this site")")
                 if !ok { history.append("User said NO to: \(say)"); t.say("You said no — skipping that"); continue }
             }
@@ -3702,7 +3717,7 @@ final class MissionControl: ObservableObject {
     /// Give Nik a task: the window opens and the team gets to work (the answer shows here, not in the chat).
     func assign(_ q: String) {
         question = q; agents = []; result = nil; started = Date().addingTimeInterval(-1)
-        ZuffiHub.shared.show(.office)
+        ZuffiHub.shared.show(.home)
         Task { @MainActor in
             let r = await ZuffiTeam.shared.assignTask(q)
             // an agent that asked a question shows it in the office; otherwise the answer
@@ -3712,7 +3727,9 @@ final class MissionControl: ObservableObject {
     private var window: NSWindow?
     var enabled: Bool { UserDefaults.standard.object(forKey: "missionWindow") as? Bool ?? true }
 
-    func begin(_ q: String, agents ids: [String]) {
+    func begin(_ q: String, agents ids: [String], show: Bool = true) {
+        // You see your agents at work: the dashboard (with the Agent Office) comes up when a task starts.
+        if show, UserDefaults.standard.object(forKey: "officeOnTask") as? Bool ?? true, !ZuffiHub.shared.isOpen { ZuffiHub.shared.show(.home) }
         if Date().timeIntervalSince(started) > 5 || question != q { started = Date().addingTimeInterval(-1); result = nil }
         question = q; agents = ids
         BunnyFaceCenter.shared.show(.thinking, for: 3)
@@ -4089,6 +4106,8 @@ final class OfficeRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
     private var prevBusy: Set<String> = []
     private var hops: [String: CGFloat] = [:]
     private var trips: [String: (phase: Int, wait: CGFloat)] = [:]
+    // a working agent gets up and goes desk to desk (to check with others, fetch something), then comes back to type
+    private var wander: [String: (target: SCNVector3?, going: Bool, clock: CGFloat)] = [:]
 
     @MainActor init(agents: [TeamAgent]) {
         super.init()
@@ -4239,6 +4258,30 @@ final class OfficeRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
                 if k >= 1 { hops[id] = nil; root.position.y = 0; root.eulerAngles.y = s.rest } else { hops[id] = k }
                 continue
             }
+            if isBusy {
+                var w = wander[id] ?? (nil, false, 0)
+                w.clock += dt
+                if let tg = w.target {
+                    if walk(root, to: tg, dt: dt) {
+                        if w.going { w.going = false; w.clock = 0; w.target = nil }          // arrived: stay a moment
+                        else { w.target = nil; w.clock = 0; root.position = s.home }          // back at the desk
+                    }
+                    root.position.y = abs(sin(t * 9)) * 0.08
+                    wander[id] = w; continue
+                }
+                if !w.going, w.clock > 2.4, root.position.x != s.home.x || root.position.z != s.home.z {
+                    w.target = s.home; wander[id] = w; continue                               // walk back to the desk
+                }
+                if w.clock > 6 {
+                    let others = seats.values.filter { $0.id != id }.map { SCNVector3($0.home.x - 0.9, 0, $0.home.z + 0.9) }
+                    let spots = others + [SCNVector3(9.5, 0, -7.4), SCNVector3(-2, 0, -7.6)]
+                    w.target = spots[Int(t * 7) % spots.count]; w.going = true; w.clock = 0
+                    wander[id] = w; continue
+                }
+                wander[id] = w
+            } else if wander[id] != nil {
+                if walk(root, to: s.home, dt: dt) { wander[id] = nil; root.position = s.home } else { continue }
+            }
             // a working agent turns to its screen and bobs while it types; then back to face you
             let want: CGFloat = isBusy ? -0.95 : s.rest
             root.eulerAngles.y += (want - root.eulerAngles.y) * min(1, dt * 3)
@@ -4275,7 +4318,10 @@ final class OfficeModel: ObservableObject {
     var officeAgents: [TeamAgent] {
         let team = ZuffiTeam.shared
         let biz = !ZuffiPlan.shared.isPersonal && BizNav.shared.formDone
-        let list = team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id && (ZuffiTeam.isPersonal($0) || biz) }
+        var list = team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id && (ZuffiTeam.isPersonal($0) || biz) }
+        // whoever is working on a job right now gets a desk too (Zuffi's own helpers, channel agents…)
+        let busy = team.runs.filter { $0.status == "Working" }.map(\.agent) + MissionControl.shared.agents
+        for id in busy where id != ZuffiTeam.manager.id { if let a = team.agent(id), !list.contains(a) { list.insert(a, at: 0) } }
         var out: [TeamAgent] = []; for a in list where !out.contains(a) { out.append(a) }
         return Array(out.prefix(8))
     }
@@ -4293,6 +4339,7 @@ final class OfficeModel: ObservableObject {
     }
 
     func sync() {
+        if officeAgents.map(\.id) != agentIDs { ensure(); return }
         guard let rig else { return }
         let mc = MissionControl.shared
         if mc.started > Date.distantPast { rig.startMission(mc.started, agents: mc.agents) }
@@ -4330,7 +4377,8 @@ struct AgentOfficeView: View {
     @ObservedObject private var team = ZuffiTeam.shared
     @State private var task = ""
     var light = false
-    init(light: Bool = false) { self.light = light }
+    var showTaskBar = true
+    init(light: Bool = false, showTaskBar: Bool = true) { self.light = light; self.showTaskBar = showTaskBar }
 
     private var runs: [AgentRun] { team.runs.filter { $0.started >= mc.started.addingTimeInterval(-1) && (mc.agents.isEmpty || mc.agents.contains($0.agent)) } }
     private var asking: AgentRun? { runs.first { $0.status == "Needs input" } }
@@ -4339,6 +4387,7 @@ struct AgentOfficeView: View {
         ZStack(alignment: .top) {
             if let rig = model.rig { OfficeSceneView(rig: rig) } else { Color.clear }
             VStack(spacing: 0) {
+                if showTaskBar {
                 HStack(spacing: 8) {
                     Image(systemName: "person.badge.clock").foregroundColor(.white.opacity(0.7))
                     TextField("Give Nik a task — e.g. cheapest flight London to Lahore in December", text: $task)
@@ -4357,6 +4406,7 @@ struct AgentOfficeView: View {
                 .background(RoundedRectangle(cornerRadius: 14).fill(Color(red: 16 / 255, green: 18 / 255, blue: 27 / 255).opacity(0.7)))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.15)))
                 .padding(16)
+                }
                 Spacer()
                 HStack(alignment: .bottom, spacing: 16) {
                     stepsPanel
@@ -5615,5 +5665,295 @@ struct LibraryView: View {
             Text(t).font(HubFont.p(13)).foregroundColor(filled ? .white : T.text).padding(.horizontal, 14).frame(height: 32)
                 .background(Capsule().fill(filled ? HubTheme.blue : Color.clear)).overlay(Capsule().stroke(filled ? Color.clear : T.border))
         }.buttonStyle(.plain)
+    }
+}
+
+// =====================================================================
+// MARK: - Channels: your social apps handed to agents (read, reply, post) — and one inbox for all of them
+// =====================================================================
+
+struct SocialMessage: Codable, Identifiable, Hashable {
+    var id = UUID().uuidString
+    var channel: String          // instagram · facebook · whatsapp · x · linkedin
+    var from: String
+    var text: String
+    var kind = "message"         // comment · message · mention
+    var at = Date()
+    var reply = ""
+    var status = "new"           // new · drafted · sent · failed · skipped
+    var chatId = ""
+}
+
+struct SocialChannel: Identifiable { let id: String; let name: String; let icon: String; let color: String; let domain: String; let cookie: String; let login: String; let home: String; let inbox: String; let activity: String; let agent: String
+    static let all: [SocialChannel] = [
+        SocialChannel(id: "instagram", name: "Instagram", icon: "camera.fill", color: "#E1306C", domain: "instagram.com", cookie: "sessionid", login: "https://www.instagram.com/accounts/login/", home: "https://www.instagram.com/", inbox: "https://www.instagram.com/direct/inbox/", activity: "https://www.instagram.com/notifications/", agent: "zuffi-instagram"),
+        SocialChannel(id: "facebook", name: "Facebook", icon: "f.square.fill", color: "#1877F2", domain: "facebook.com", cookie: "c_user", login: "https://www.facebook.com/login", home: "https://www.facebook.com/", inbox: "https://www.facebook.com/messages/t/", activity: "https://www.facebook.com/notifications", agent: "zuffi-facebook"),
+        SocialChannel(id: "whatsapp", name: "WhatsApp", icon: "message.fill", color: "#25D366", domain: "", cookie: "", login: "", home: "", inbox: "", activity: "", agent: "zuffi-whatsapp"),
+        SocialChannel(id: "x", name: "X (Twitter)", icon: "xmark", color: "#111111", domain: "x.com", cookie: "auth_token", login: "https://x.com/i/flow/login", home: "https://x.com/home", inbox: "https://x.com/messages", activity: "https://x.com/notifications", agent: "zuffi-social"),
+        SocialChannel(id: "linkedin", name: "LinkedIn", icon: "briefcase.fill", color: "#0A66C2", domain: "linkedin.com", cookie: "li_at", login: "https://www.linkedin.com/login", home: "https://www.linkedin.com/feed/", inbox: "https://www.linkedin.com/messaging/", activity: "https://www.linkedin.com/notifications/", agent: "zuffi-social"),
+    ]
+    static func of(_ id: String) -> SocialChannel? { all.first { $0.id == id } }
+}
+
+@MainActor
+final class SocialHub: ObservableObject {
+    static let shared = SocialHub()
+    @Published var inbox: [SocialMessage] = TeamStore.load("social-inbox", [SocialMessage]()) { didSet { TeamStore.save("social-inbox", inbox) } }
+    @Published var connected: Set<String> = []
+    @Published var busy: Set<String> = []
+    @Published var note = ""
+    private var timer: Timer?
+    private var waWatch: AnyCancellable?
+
+    /// off · ask (agents write the reply, you press Send) · auto (agents reply by themselves)
+    func mode(_ ch: String) -> String { UserDefaults.standard.string(forKey: "ch_mode_" + ch) ?? "ask" }
+    func setMode(_ ch: String, _ m: String) {
+        objectWillChange.send(); UserDefaults.standard.set(m, forKey: "ch_mode_" + ch)
+        if ch == "whatsapp" {
+            ZuffiCRM.shared.set(.watchWhatsApp, m != "off")
+            ZuffiCRM.shared.set(.draftReplies, m != "off")
+            ZuffiCRM.shared.set(.autoReply, m == "auto")
+        }
+    }
+    func agentFor(_ ch: String) -> TeamAgent {
+        let id = UserDefaults.standard.string(forKey: "ch_agent_" + ch) ?? SocialChannel.of(ch)?.agent ?? "zuffi-social"
+        return ZuffiTeam.shared.agent(id) ?? ZuffiTeam.manager
+    }
+    func setAgent(_ ch: String, _ id: String) { objectWillChange.send(); UserDefaults.standard.set(id, forKey: "ch_agent_" + ch) }
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { _ in Task { @MainActor in await SocialHub.shared.checkAll() } }
+        waWatch = WhatsAppLink.shared.$recent.receive(on: RunLoop.main).sink { list in MainActor.assumeIsolated { SocialHub.shared.takeWhatsApp(list) } }
+        Task { await refresh() }
+    }
+    func refresh() async {
+        var c: Set<String> = []
+        for ch in SocialChannel.all {
+            if ch.id == "whatsapp" { if WhatsAppLink.shared.ready { c.insert(ch.id) } }
+            else if await AgentBrowser.shared.isSignedIn(ch.domain, cookie: ch.cookie) { c.insert(ch.id) }
+        }
+        connected = c
+    }
+    func connect(_ ch: SocialChannel) {
+        if ch.id == "whatsapp" { WhatsAppLink.shared.showWindow(); return }
+        if let u = URL(string: ch.login) { AgentBrowser.shared.signIn(ch.name, url: u) }
+    }
+
+    // WhatsApp messages arrive through the linked WhatsApp
+    private func takeWhatsApp(_ list: [WhatsAppLink.Incoming]) {
+        for m in list.prefix(10) where !inbox.contains(where: { $0.channel == "whatsapp" && $0.chatId == m.chatId && $0.text == m.body }) {
+            let msg = SocialMessage(channel: "whatsapp", from: m.name, text: m.body, kind: "message", at: m.at, chatId: m.chatId.isEmpty ? m.phone : m.chatId)
+            inbox.insert(msg, at: 0)
+            // With "reply by itself", Zuffi's WhatsApp autopilot answers (from your business details); with "ask", the agent writes a draft here.
+            if mode("whatsapp") == "ask" { Task { await draft(msg.id) } }
+            if mode("whatsapp") == "auto" { if let i = inbox.firstIndex(where: { $0.id == msg.id }) { inbox[i].status = "sent"; inbox[i].reply = "(answered by Zuffi's WhatsApp autopilot)" } }
+        }
+        trim()
+    }
+    private func trim() { if inbox.count > 500 { inbox.removeLast(inbox.count - 500) } }
+
+    func checkAll() async {
+        await refresh()
+        for ch in SocialChannel.all where ch.id != "whatsapp" && connected.contains(ch.id) && mode(ch.id) != "off" { await check(ch) }
+    }
+
+    /// The channel's agent opens your notifications and messages (in its own tab), reads what's new and writes replies.
+    func check(_ ch: SocialChannel) async {
+        guard !busy.contains(ch.id) else { return }
+        busy.insert(ch.id); defer { busy.remove(ch.id) }
+        let a = agentFor(ch.id)
+        let team = ZuffiTeam.shared
+        MissionControl.shared.begin("Check \(ch.name) for new comments and messages", agents: [a.id], show: false)
+        let run = team.begin(a, "Check \(ch.name): new comments and messages")
+        var pages = ""
+        for (label, url) in [("NOTIFICATIONS", ch.activity), ("MESSAGES", ch.inbox)] {
+            guard let u = URL(string: url) else { continue }
+            team.step(run, "Opening your \(ch.name) \(label.lowercased())", source: ch.name)
+            if let r = await ZuffiReach.browserRead(u, agent: a, runID: run) { pages += "\n\(label):\n" + String(r.text.prefix(7000)) }
+        }
+        guard pages.count > 200, !pages.contains("needs you to sign in") else {
+            team.finish(run, "I couldn't read \(ch.name) — please connect it on the Channels page.", "Needs input"); return
+        }
+        team.step(run, "Picking out what people wrote")
+        guard let raw = await AIService.shared.oneShot("""
+            From this \(ch.name) page text, list NEW comments, messages and mentions written TO the business by other people (not the business's own posts, not ads, not "liked your post").
+            JSON only: [{"from":"name or @handle","text":"exactly what they wrote","kind":"comment|message|mention"}]. Empty list if none.
+            \(pages)
+            """), let arr = AIService.jsonIn(raw) as? [[String: Any]] else {
+            team.finish(run, "I read \(ch.name) but couldn't pick out the messages this time.", "Failed"); return
+        }
+        var found = 0
+        for d in arr {
+            guard let from = d["from"] as? String, let text = d["text"] as? String, !text.isEmpty,
+                  !inbox.contains(where: { $0.channel == ch.id && $0.from == from && $0.text == text }) else { continue }
+            let m = SocialMessage(channel: ch.id, from: from, text: text, kind: (d["kind"] as? String) ?? "message")
+            inbox.insert(m, at: 0); found += 1
+            await draft(m.id)
+            if mode(ch.id) == "auto" { await send(m.id) }
+        }
+        trim()
+        team.finish(run, found == 0 ? "Nothing new on \(ch.name)." : "\(found) new on \(ch.name) — replies are \(mode(ch.id) == "auto" ? "sent" : "ready in your inbox for you to send").", "Done")
+        if found > 0 { NotchInbox.shared.add("\(ch.name): \(found) new", "Your \(a.name) wrote the replies", icon: ch.icon, action: "dashboard") }
+    }
+
+    /// The agent writes the reply like a senior community manager — using only your business details.
+    func draft(_ id: String) async {
+        guard let i = inbox.firstIndex(where: { $0.id == id }) else { return }
+        let m = inbox[i], a = agentFor(m.channel)
+        let sys = ZuffiTeam.shared.systemPrompt(for: a, business: true)
+        let r = await AIService.shared.oneShot("""
+            \(m.from) wrote this \(m.kind) on \(SocialChannel.of(m.channel)?.name ?? m.channel): “\(m.text)”
+            Write the reply the business should send. Short, warm, helpful, in their language. Use only facts from the business details (prices, hours, address, services). \
+            If you don't know something, invite them to message or call. Reply with the message text only.
+            """, system: sys)
+        guard let j = inbox.firstIndex(where: { $0.id == id }) else { return }
+        if let r, !r.isEmpty { inbox[j].reply = zClean(r).trimmingCharacters(in: CharacterSet(charactersIn: "\"“” \n")); inbox[j].status = "drafted" }
+    }
+
+    /// Sends the reply (WhatsApp through the linked WhatsApp; other apps by the agent in its own browser tab).
+    func send(_ id: String) async {
+        guard let i = inbox.firstIndex(where: { $0.id == id }), !inbox[i].reply.isEmpty else { return }
+        let m = inbox[i], a = agentFor(m.channel)
+        var ok = false
+        if m.channel == "whatsapp" {
+            ok = await WhatsAppLink.shared.send(to: m.chatId.isEmpty ? m.from : m.chatId, text: m.reply)
+        } else if let ch = SocialChannel.of(m.channel) {
+            let run = ZuffiTeam.shared.begin(a, "Reply to \(m.from) on \(ch.name)")
+            MissionControl.shared.begin("Reply to \(m.from) on \(ch.name)", agents: [a.id])
+            let where0 = m.kind == "comment" || m.kind == "mention" ? ch.activity : ch.inbox
+            let r = await AgentBrowser.shared.run("On \(ch.name), find the \(m.kind) from \(m.from) that says “\(m.text.prefix(120))” and reply to it with exactly this text: “\(m.reply)”. Send it, check it was sent, then stop.",
+                                                  agent: a, runID: run, autoOK: true, start: URL(string: where0))
+            ok = !(r.hasPrefix("I couldn't") || r.hasPrefix("I stopped") || r == "Stopped.")
+            ZuffiTeam.shared.finish(run, ok ? "Replied to \(m.from) on \(ch.name)." : "Couldn't reply on \(ch.name): \(r)", ok ? "Done" : "Failed")
+        }
+        if let j = inbox.firstIndex(where: { $0.id == id }) { inbox[j].status = ok ? "sent" : "failed" }
+    }
+
+    // MARK: Posting — you give a picture and a line; the agent looks at the picture and writes the caption
+
+    func writeCaption(image: URL, about: String, channel: String) async -> String {
+        let a = agentFor(channel)
+        guard let data = try? Data(contentsOf: image) else { return "" }
+        let mime = image.pathExtension.lowercased() == "png" ? "image/png" : "image/jpeg"
+        let small = Self.shrink(data) ?? data
+        let r = await AIService.shared.oneShot("""
+            Look at this picture for a \(SocialChannel.of(channel)?.name ?? channel) post. \(about.isEmpty ? "" : "The owner says: \(about).")
+            Write the post: a scroll-stopping first line, a short description of what's in the picture tied to the business, a clear call to action, then 8-12 relevant hashtags (local + niche). \
+            Use only facts from the business details. Reply with the post text only.
+            """, system: ZuffiTeam.shared.systemPrompt(for: a, business: true), image: (mime: Self.shrink(data) == nil ? mime : "image/jpeg", base64: small.base64EncodedString()))
+        return zClean(r ?? "")
+    }
+    static func shrink(_ data: Data) -> Data? {
+        guard let img = NSImage(data: data), let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        let maxSide: CGFloat = 1280, w = CGFloat(rep.pixelsWide), h = CGFloat(rep.pixelsHigh)
+        let k = min(1, maxSide / max(w, h))
+        guard let out = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(w * k), pixelsHigh: Int(h * k), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: out)
+        img.draw(in: NSRect(x: 0, y: 0, width: w * k, height: h * k))
+        NSGraphicsContext.restoreGraphicsState()
+        return out.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
+    }
+
+    func post(image: URL, caption: String, channel: String) async -> Bool {
+        let a = agentFor(channel)
+        if channel == "whatsapp" {
+            note = "WhatsApp has no public posts — send it to people from the inbox instead."; return false
+        }
+        guard let ch = SocialChannel.of(channel) else { return false }
+        let run = ZuffiTeam.shared.begin(a, "Post on \(ch.name)")
+        MissionControl.shared.begin("Post on \(ch.name)", agents: [a.id])
+        let r = await AgentBrowser.shared.run("On \(ch.name), create a new post: add the attached picture (use the site's upload / choose file button — the file is attached for you) and this caption exactly: “\(caption)”. Publish it, check it's live, then stop.",
+                                              agent: a, runID: run, autoOK: true, upload: image, start: URL(string: ch.home))
+        let ok = !(r.hasPrefix("I couldn't") || r.hasPrefix("I stopped") || r == "Stopped.")
+        ZuffiTeam.shared.finish(run, ok ? "Posted on \(ch.name)." : "Couldn't post on \(ch.name): \(r)", ok ? "Done" : "Failed")
+        return ok
+    }
+}
+
+// =====================================================================
+// MARK: - End-of-day report: what happened today, what each agent did, what failed (PDF or text, in Downloads › Zuffi › Reports)
+// =====================================================================
+
+@MainActor
+final class DailyReport: ObservableObject {
+    static let shared = DailyReport()
+    @Published var files: [URL] = []
+    private var timer: Timer?
+    var on: Bool { UserDefaults.standard.object(forKey: "eodOn") as? Bool ?? true }
+    var hour: Int { UserDefaults.standard.object(forKey: "eodHour") as? Int ?? 18 }
+    var pdf: Bool { UserDefaults.standard.object(forKey: "eodPDF") as? Bool ?? true }
+
+    static var folder: URL { let f = DocsAgent.folder().appendingPathComponent("Reports", isDirectory: true); try? FileManager.default.createDirectory(at: f, withIntermediateDirectories: true); return f }
+
+    func start() {
+        guard timer == nil else { return }
+        list()
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in DailyReport.shared.tick() } }
+    }
+    private func tick() {
+        guard on else { return }
+        let now = Date(), cal = Calendar.current
+        guard cal.component(.hour, from: now) >= hour else { return }
+        let key = "eodDone-" + ZuffiBusiness.iso(now)
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        _ = make()
+    }
+    func list() {
+        files = ((try? FileManager.default.contentsOfDirectory(at: Self.folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
+            .filter { ["pdf", "txt"].contains($0.pathExtension) }
+            .sorted { Self.modified($0) > Self.modified($1) }
+    }
+
+    static func modified(_ u: URL) -> Date {
+        let v = try? u.resourceValues(forKeys: [.contentModificationDateKey])
+        return v?.contentModificationDate ?? .distantPast
+    }
+
+    @discardableResult
+    func make() -> URL? {
+        let team = ZuffiTeam.shared, cal = Calendar.current
+        let today = team.runs.filter { cal.isDateInToday($0.started) }
+        let done = today.filter { $0.status == "Done" }, failed = today.filter { $0.status == "Failed" }, asked = today.filter { $0.status == "Needs input" }
+        let missed = team.jobs.filter { j in j.lastRun.map { cal.isDateInToday($0) } == true && (j.lastStatus == "Missed" || j.lastStatus.lowercased().contains("fail")) }
+        var lines: [String] = []
+        lines.append("Date: \(Date().formatted(date: .complete, time: .omitted))")
+        lines.append("Jobs today: \(today.count) · done \(done.count) · failed \(failed.count) · waiting for you \(asked.count)")
+        lines.append("")
+        let byAgent = Dictionary(grouping: today, by: \.agent)
+        for (id, runs) in byAgent.sorted(by: { $0.key < $1.key }) {
+            let name = team.agent(id).map(AgentEdits.name) ?? id
+            lines.append("\(name)")
+            for r in runs.sorted(by: { $0.started < $1.started }) {
+                let first = r.result.components(separatedBy: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
+                lines.append("- \(r.started.formatted(date: .omitted, time: .shortened)) · \(r.status) · \(r.task.prefix(90))\(first.isEmpty ? "" : " → " + String(first.prefix(140)))")
+            }
+            lines.append("")
+        }
+        if !failed.isEmpty || !missed.isEmpty {
+            lines.append("What failed and why")
+            for r in failed { lines.append("- \(team.agent(r.agent).map(AgentEdits.name) ?? r.agent): \(r.task.prefix(80)) — \(r.result.prefix(160))") }
+            for j in missed { lines.append("- \(j.title): \(j.history.first?.summary ?? j.lastStatus)") }
+            lines.append("")
+        }
+        if !asked.isEmpty {
+            lines.append("Waiting for your answer")
+            for r in asked { lines.append("- \(team.agent(r.agent).map(AgentEdits.name) ?? r.agent): \(r.result.prefix(160))") }
+            lines.append("")
+        }
+        let social = SocialHub.shared.inbox.filter { cal.isDateInToday($0.at) }
+        if !social.isEmpty {
+            lines.append("Channels: \(social.count) messages · \(social.filter { $0.status == "sent" }.count) replied")
+        }
+        if today.isEmpty { lines.append("No agent work today.") }
+        let title = "Zuffi daily report — \(ZuffiBusiness.iso(Date()))"
+        let body = lines.joined(separator: "\n")
+        let url = Self.folder.appendingPathComponent(title.replacingOccurrences(of: "—", with: "-") + (pdf ? ".pdf" : ".txt"))
+        if pdf { _ = DocsAgent.writePDF(title: title, body: body, to: url) } else { try? (title + "\n\n" + body).write(to: url, atomically: true, encoding: .utf8) }
+        list()
+        NotchInbox.shared.add("Today's report is ready", "\(done.count) done · \(failed.count) failed", icon: "doc.text.fill", action: "dashboard")
+        return url
     }
 }

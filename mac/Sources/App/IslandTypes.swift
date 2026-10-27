@@ -110,7 +110,14 @@ enum IslandConst {
     static let dockedCompact = CGSize(width: 50, height: 58)
     static let expandedCorner: CGFloat = 22
 
-    static let viewLayouts: [IslandView: ViewLayout] = [
+    /// The small glass home (new notch) is 156 tall; everything else as before.
+    static var viewLayouts: [IslandView: ViewLayout] {
+        guard NotchDesign.on else { return baseLayouts }
+        var l = baseLayouts
+        l[.overview] = ViewLayout(height: 156, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
+        return l
+    }
+    static let baseLayouts: [IslandView: ViewLayout] = [
         // Home is the reference: height 150
         .overview:  ViewLayout(height: 300, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills),
         // All non-chat views match home height (150) — law

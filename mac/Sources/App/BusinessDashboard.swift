@@ -2311,13 +2311,17 @@ struct BizFAQEditor: View {
 // =====================================================================
 
 enum HubSection: Hashable {
-    case home, team, office, library, missions, routines, settings, biz(BizTab)
+    case home, team, office, library, missions, routines, settings, channels, look, automations, business, biz(BizTab)
     var title: String {
         switch self {
         case .home: return "Home"
         case .team: return "Team"
         case .office: return "Office"
         case .library: return "Results"
+        case .channels: return "Channels"
+        case .look: return "Pet & look"
+        case .automations: return "Automations"
+        case .business: return "Business"
         case .missions: return "Missions"
         case .routines: return "Routines"
         case .settings: return "Settings"
@@ -2351,7 +2355,7 @@ final class ZuffiHub: ObservableObject {
         w.isOpaque = false
         w.backgroundColor = .clear
         w.contentMinSize = NSSize(width: 980, height: 640)
-        w.contentView = NSHostingView(rootView: ZuffiHubView())
+        w.contentView = NSHostingView(rootView: ZuffiDashboard())
         w.center()
         w.setFrameAutosaveName("ZuffiHubWindow")
         window = w
@@ -2359,6 +2363,8 @@ final class ZuffiHub: ObservableObject {
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    var isOpen: Bool { window?.isVisible == true }
 
     /// Settings and Business open in this one window (Settings can switch back to the old separate windows).
     static var oneWindow: Bool { UserDefaults.standard.object(forKey: "hubOneWindow") as? Bool ?? true }
@@ -2456,6 +2462,7 @@ struct ZuffiHubView: View {
         case .team: return .team
         case .office: return .office
         case .library: return .library
+        case .channels, .look, .automations, .business: return .settings
         case .missions: return .missions
         case .routines: return .routines
         case .settings: return .settings
@@ -2637,6 +2644,7 @@ struct ZuffiHubView: View {
         case .team: return "Your team"
         case .office: return "Agent Office"
         case .library: return "Results & chats"
+        case .channels, .look, .automations, .business: return hub.section.title
         case .missions: return "Missions"
         case .routines: return "Routines"
         case .settings: return "Settings"
@@ -2685,6 +2693,7 @@ struct ZuffiHubView: View {
             }
         case .office: EmptyView()
         case .library: LibraryView(light: light, chats: subFor(.library) == "Chats")
+        case .channels, .look, .automations, .business: EmptyView()
         case .missions: activitySection
         case .routines: routinesSection
         case .settings: settingsPage
@@ -3018,5 +3027,877 @@ struct ZuffiHubView: View {
                 .frame(width: 40, height: 40).background(Circle().fill(T.dropdown))
                 .shadow(color: .black.opacity(0.2), radius: 8, x: -1, y: 3)
         }.buttonStyle(.plain).help("Light or dark")
+    }
+}
+
+// =====================================================================
+// MARK: - The new dashboard: seven simple pages
+//   Dashboard · Routines · Channels · Business · Pet & look · Automations · Settings
+// =====================================================================
+
+enum DashTab: String, CaseIterable, Identifiable {
+    case dashboard = "Dashboard", routines = "Routines", channels = "Channels", business = "Business", look = "Pet & look", automations = "Automations", settings = "Settings"
+    var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .dashboard: return "square.grid.2x2.fill"
+        case .routines: return "clock.arrow.circlepath"
+        case .channels: return "bubble.left.and.text.bubble.right.fill"
+        case .business: return "storefront.fill"
+        case .look: return "hare.fill"
+        case .automations: return "bolt.fill"
+        case .settings: return "gearshape.fill"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .dashboard: return "Talk to your agents, watch them work and see everything they did"
+        case .routines: return "Your agents' daily pipeline and the end-of-day report"
+        case .channels: return "Hand your social apps to agents — one inbox for every message"
+        case .business: return "Your agents use these details for everything they do"
+        case .look: return "Aurora, the notch and how Zuffi looks"
+        case .automations: return "Switch on what your agents run for you"
+        case .settings: return "Agents, privacy and everything else"
+        }
+    }
+    var section: HubSection {
+        switch self {
+        case .dashboard: return .home
+        case .routines: return .routines
+        case .channels: return .channels
+        case .business: return .business
+        case .look: return .look
+        case .automations: return .automations
+        case .settings: return .settings
+        }
+    }
+    static func of(_ s: HubSection) -> DashTab {
+        switch s {
+        case .routines: return .routines
+        case .channels: return .channels
+        case .business, .biz: return .business
+        case .look: return .look
+        case .automations: return .automations
+        case .settings: return .settings
+        default: return .dashboard
+        }
+    }
+}
+
+/// Card used across the dashboard pages.
+struct DashCard<C: View>: View {
+    var title: String = ""
+    var sub: String = ""
+    var light: Bool
+    @ViewBuilder var content: () -> C
+    var body: some View {
+        let T = HubTheme(light: light)
+        VStack(alignment: .leading, spacing: 14) {
+            if !title.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(HubFont.p(17, .semibold)).foregroundColor(T.text)
+                    if !sub.isEmpty { Text(sub).font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive).fixedSize(horizontal: false, vertical: true) }
+                }
+            }
+            content()
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(light ? Color.white.opacity(0.62) : Color(hex: "#151823").opacity(0.78)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(T.border))
+        .shadow(color: .black.opacity(light ? 0.06 : 0.25), radius: 18, y: 8)
+    }
+}
+
+struct DashButton: View {
+    let title: String
+    var icon: String? = nil
+    var filled = true
+    var light = false
+    let go: () -> Void
+    var body: some View {
+        Button(action: go) {
+            HStack(spacing: 6) {
+                if let icon { Image(systemName: icon).font(.system(size: 11, weight: .semibold)) }
+                Text(title).font(HubFont.p(13))
+            }
+            .foregroundColor(filled ? .white : HubTheme(light: light).text)
+            .padding(.horizontal, 16).frame(height: 34)
+            .background(Capsule().fill(filled ? HubTheme.blue : Color.clear))
+            .overlay(Capsule().stroke(filled ? Color.clear : HubTheme(light: light).border))
+            .contentShape(Capsule())
+        }.buttonStyle(.plain)
+    }
+}
+
+struct ZuffiDashboard: View {
+    @ObservedObject private var hub = ZuffiHub.shared
+    @ObservedObject private var plan = ZuffiPlan.shared
+    @AppStorage("hubLight") private var light = false
+    private var tab: DashTab { DashTab.of(hub.section) }
+    private var T: HubTheme { HubTheme(light: light) }
+
+    var body: some View {
+        ZStack {
+            VisualEffectBlur(material: .fullScreenUI).ignoresSafeArea()
+            LinearGradient(colors: light ? [Color(hex: "#EEF1F8").opacity(0.9), Color(hex: "#E4E8F3").opacity(0.85)] : [Color(hex: "#0B0D16").opacity(0.82), Color(hex: "#111526").opacity(0.78)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
+            HStack(spacing: 0) {
+                sidebar
+                VStack(spacing: 0) {
+                    topbar
+                    if tab == .dashboard {
+                        ScrollView { DashHomePage(light: light).padding(.horizontal, 32).padding(.vertical, 24) }
+                    } else {
+                        ScrollView { page.padding(.horizontal, 32).padding(.vertical, 24).frame(maxWidth: 1100, alignment: .leading) }
+                    }
+                }
+            }
+        }
+        .foregroundColor(T.text)
+        .font(HubFont.p(14, .regular))
+        .onAppear {
+            HubFont.register()
+            SocialHub.shared.start()
+            DailyReport.shared.start()
+            OfficeModel.shared.ensure()
+        }
+    }
+
+    @ViewBuilder private var page: some View {
+        switch tab {
+        case .dashboard: DashHomePage(light: light)
+        case .routines: DashRoutinesPage(light: light)
+        case .channels: DashChannelsPage(light: light)
+        case .business: DashBusinessPage(light: light)
+        case .look: DashLookPage(light: light)
+        case .automations: DashAutomationsPage(light: light)
+        case .settings: DashSettingsPage(light: light)
+        }
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                LiveBunnyFace(size: 34)
+                Text("Zuffi").font(HubFont.p(20, .semibold))
+            }
+            .padding(.leading, 18).padding(.top, 46).padding(.bottom, 26)
+            ForEach(DashTab.allCases) { t in
+                Button { withAnimation(.easeOut(duration: 0.15)) { hub.section = t.section } } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: t.icon).font(.system(size: 14, weight: .semibold)).frame(width: 22)
+                        Text(t.rawValue).font(HubFont.p(14, tab == t ? .semibold : .medium))
+                        Spacer()
+                    }
+                    .foregroundColor(tab == t ? .white : T.text.opacity(0.78))
+                    .padding(.horizontal, 14).frame(height: 42)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tab == t ? HubTheme.blue : Color.clear))
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain).padding(.horizontal, 12)
+            }
+            Spacer()
+            Button { light.toggle() } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: light ? "moon.fill" : "sun.max.fill")
+                    Text(light ? "Dark look" : "Light look").font(HubFont.p(13))
+                    Spacer()
+                }.foregroundColor(T.inactive).padding(.horizontal, 26).frame(height: 40).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            Text(plan.isPersonal ? "Zuffi for you" : "Zuffi Business").font(HubFont.p(11, .regular)).foregroundColor(T.inactive).padding(.leading, 26).padding(.bottom, 18)
+        }
+        .frame(width: 230)
+        .background(light ? Color.white.opacity(0.45) : Color.black.opacity(0.28))
+        .overlay(alignment: .trailing) { Rectangle().fill(T.border).frame(width: 1) }
+    }
+
+    private var topbar: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(tab.rawValue).font(HubFont.p(24, .semibold))
+                Text(tab.subtitle).font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+            }
+            Spacer()
+            DashButton(title: "Give Nik a task", icon: "plus", light: light) { hub.section = .home; ZuffiChat.shared.who = .nik }
+        }
+        .padding(.horizontal, 32).padding(.top, 40).padding(.bottom, 14)
+        .overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
+    }
+}
+
+// MARK: 1 · Dashboard — chat with an agent, the live office, activity, the team
+
+struct DashHomePage: View {
+    var light: Bool
+    @ObservedObject private var app = AppState.shared
+    @ObservedObject private var chat = ZuffiChat.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var mc = MissionControl.shared
+    @State private var text = ""
+    @State private var showLibrary = false
+    @State private var libraryChats = false
+    @State private var showHire = false
+    private var T: HubTheme { HubTheme(light: light) }
+
+    private var people: [TeamAgent] {
+        var l = ZuffiTeam.personalTeam.compactMap { team.agent($0) }
+        for a in team.hiredAgents where !l.contains(a) { l.append(a) }
+        return l
+    }
+    private var whoAgent: TeamAgent? {
+        switch chat.who { case .zuffi: return nil; case .nik: return ZuffiTeam.manager; case .agent(let id): return team.agent(id) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            chatCard
+            DashCard(title: "Agent Office", sub: mc.question.isEmpty ? "Your agents at their desks. When they work, they get up, go desk to desk and bring the result to Nik." : "Working on: \(mc.question)", light: light) {
+                AgentOfficeView(light: light, showTaskBar: false)
+                    .frame(height: 440)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            HStack(alignment: .top, spacing: 22) {
+                activityCard
+                teamCard.frame(width: 360)
+            }
+        }
+        .sheet(isPresented: $showLibrary) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack { Text(libraryChats ? "Chats" : "Agent results").font(HubFont.p(18, .semibold)); Spacer(); Button("Done") { showLibrary = false }.keyboardShortcut(.cancelAction) }
+                Picker("", selection: $libraryChats) { Text("Agent results").tag(false); Text("Chats").tag(true) }.pickerStyle(.segmented).frame(width: 260)
+                ScrollView { LibraryView(light: light, chats: libraryChats) }
+            }
+            .padding(24).frame(width: 1000, height: 700)
+        }
+        .sheet(isPresented: $showHire) { DashHireSheet(light: light) { showHire = false } }
+    }
+
+    private var chatCard: some View {
+        DashCard(light: light) {
+            HStack(spacing: 10) {
+                Menu {
+                    Button("Zuffi — everyday help") { chat.who = .zuffi }
+                    Button("Nik — your manager") { chat.who = .nik }
+                    Divider()
+                    ForEach(people, id: \.id) { a in Button(AgentEdits.name(a)) { chat.who = .agent(a.id) } }
+                } label: {
+                    HStack(spacing: 8) {
+                        if let a = whoAgent { RobotFace(agent: a, size: 22) } else { LiveBunnyFace(size: 24) }
+                        Text(chat.who == .zuffi ? "Zuffi" : whoAgent.map(AgentEdits.name) ?? "Agent").font(HubFont.p(13))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                    }
+                    .padding(.horizontal, 12).frame(height: 42)
+                    .background(Capsule().fill(T.content))
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                HStack(spacing: 8) {
+                    Image(systemName: "text.bubble").foregroundColor(T.inactive)
+                    TextField("Ask or give a task — e.g. find the 3 best cheap hotels in Dubai for March", text: $text)
+                        .textFieldStyle(.plain).font(HubFont.p(14, .regular)).onSubmit(send)
+                }
+                .padding(.horizontal, 14).frame(height: 42)
+                .background(Capsule().fill(T.content))
+                DashButton(title: "Send", icon: "paperplane.fill", light: light, go: send)
+            }
+            let recent = Array(app.chatHistory.suffix(6))
+            if !recent.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(recent) { m in
+                        let mine = m.role == .user
+                        HStack(alignment: .top, spacing: 10) {
+                            if mine { Spacer(minLength: 80) }
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(mine ? "You" : chat.whoTitle).font(HubFont.p(11, .semibold)).foregroundColor(T.inactive)
+                                    Text(m.at.formatted(date: .abbreviated, time: .shortened)).font(HubFont.p(10.5, .regular)).foregroundColor(T.inactive.opacity(0.8))
+                                    if !mine {
+                                        Button { ResultExport.copy(m.content) } label: { Image(systemName: "doc.on.doc").font(.system(size: 10)) }.buttonStyle(.plain).foregroundColor(T.inactive).help("Copy")
+                                        Button { ResultExport.save("Zuffi answer", m.content, pdf: false) } label: { Image(systemName: "arrow.down.circle").font(.system(size: 10)) }.buttonStyle(.plain).foregroundColor(T.inactive).help("Download")
+                                    }
+                                }
+                                if mine { Text(m.content).font(HubFont.p(14, .regular)).textSelection(.enabled) } else { ChatRichText(text: m.content) }
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(mine ? HubTheme.blue.opacity(0.22) : T.content))
+                            if !mine { Spacer(minLength: 80) }
+                        }
+                    }
+                    if app.stateOverride == .thinking {
+                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text("\(chat.whoTitle) is working on it…").font(HubFont.p(12, .regular)).foregroundColor(T.inactive) }
+                    }
+                }
+            }
+            HStack(spacing: 14) {
+                Button { libraryChats = true; showLibrary = true } label: { Label("Chat history", systemImage: "clock").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(HubTheme.blue)
+                Button { libraryChats = false; showLibrary = true } label: { Label("All agent results", systemImage: "tray.full").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(HubTheme.blue)
+                Spacer()
+                if !app.chatHistory.isEmpty { Button { app.newChat() } label: { Label("New chat", systemImage: "square.and.pencil").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(T.inactive) }
+            }
+        }
+    }
+
+    private func send() {
+        let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        text = ""
+        chat.askInline(q)
+    }
+
+    private var activityCard: some View {
+        DashCard(title: "Activity", sub: "Everything your agents did, newest first", light: light) {
+            let runs = Array(team.runs.sorted { $0.started > $1.started }.prefix(12))
+            if runs.isEmpty { Text("Nothing yet. Ask something above or give Nik a task.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
+            VStack(spacing: 0) {
+                ForEach(Array(runs.enumerated()), id: \.element.id) { i, r in
+                    Button { libraryChats = false; showLibrary = true } label: {
+                        HStack(spacing: 12) {
+                            if let a = team.agent(r.agent) { RobotFace(agent: a, size: 24, working: r.status == "Working") }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(r.task).font(HubFont.p(13)).lineLimit(1)
+                                Text("\(team.agent(r.agent).map(AgentEdits.name) ?? r.agent) · \(r.started.formatted(date: .abbreviated, time: .shortened))").font(HubFont.p(11, .regular)).foregroundColor(T.inactive)
+                            }
+                            Spacer()
+                            DashStatus(status: r.status)
+                        }
+                        .padding(.vertical, 9).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
+                }
+            }
+        }
+    }
+
+    private var teamCard: some View {
+        DashCard(title: "Your team", sub: "Nik leads. Hire more or edit any agent.", light: light) {
+            let list = [ZuffiTeam.manager] + team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id }
+            VStack(spacing: 8) {
+                ForEach(list, id: \.id) { a in
+                    HStack(spacing: 12) {
+                        RobotFace(agent: a, size: 28, working: team.status(a) == .working)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(AgentEdits.name(a)).font(HubFont.p(13.5))
+                            Text(team.status(a) == .working ? (team.runs.first { $0.agent == a.id }?.steps.last?.text ?? "Working…") : a.id == ZuffiTeam.manager.id ? "Your manager" : "Ready")
+                                .font(HubFont.p(11, .regular)).foregroundColor(T.inactive).lineLimit(1)
+                        }
+                        Spacer()
+                        Button { AgentEditor.open(a) } label: { Image(systemName: "slider.horizontal.3") }.buttonStyle(.plain).foregroundColor(T.inactive).help("Edit")
+                        Button { chat.who = a.id == ZuffiTeam.manager.id ? .nik : .agent(a.id) } label: { Image(systemName: "bubble.left") }.buttonStyle(.plain).foregroundColor(T.inactive).help("Chat")
+                    }
+                }
+            }
+            DashButton(title: "Hire agents", icon: "person.badge.plus", light: light) { showHire = true }
+        }
+    }
+}
+
+struct DashStatus: View {
+    let status: String
+    var body: some View {
+        let c: Color = status == "Done" ? Color(hex: "#3DBE7E") : status == "Working" ? Color(hex: "#F5B963") : status == "Needs input" ? HubTheme.blue : Color(hex: "#EF6B6B")
+        Text(status == "Needs input" ? "Asks you" : status).font(HubFont.p(11)).foregroundColor(c)
+            .padding(.horizontal, 9).frame(height: 22).background(Capsule().fill(c.opacity(0.15)))
+    }
+}
+
+struct DashHireSheet: View {
+    var light: Bool
+    var done: () -> Void
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var nav = BizNav.shared
+    var body: some View {
+        let T = HubTheme(light: light)
+        let biz = !ZuffiPlan.shared.isPersonal && nav.formDone
+        let options = ZuffiTeam.builtins.filter { $0.id != ZuffiTeam.manager.id && (biz || ZuffiTeam.personalTeam.contains($0.id)) }
+        let picks = Set(team.suggestions.map(\.agent))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("Hire agents").font(HubFont.p(18, .semibold)); Spacer(); Button("Done", action: done).keyboardShortcut(.cancelAction) }
+            if !biz && !ZuffiPlan.shared.isPersonal { Text("Fill in the Business page first — then business agents (Instagram, Facebook, WhatsApp…) appear here.").font(HubFont.p(12, .regular)).foregroundColor(T.inactive) }
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(options.sorted { picks.contains($0.id) && !picks.contains($1.id) }, id: \.id) { a in
+                        HStack(spacing: 12) {
+                            RobotFace(agent: a, size: 30)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack { Text(a.name).font(HubFont.p(14)); if picks.contains(a.id) { Text("Nik suggests").font(HubFont.p(10.5)).foregroundColor(HubTheme.blue) } }
+                                Text(a.description).font(HubFont.p(12, .regular)).foregroundColor(T.inactive).lineLimit(2)
+                            }
+                            Spacer()
+                            if team.hired.contains(a.id) { DashButton(title: "Remove", filled: false, light: light) { team.fire(a) } }
+                            else { DashButton(title: "Hire", light: light) { team.hire(a, why: picks.contains(a.id) ? "Suggested by Nik" : "") } }
+                        }
+                        .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(T.content))
+                    }
+                }
+            }
+        }
+        .padding(24).frame(width: 640, height: 620)
+    }
+}
+
+// MARK: 2 · Routines — the daily pipeline and the end-of-day report
+
+struct DashRoutinesPage: View {
+    var light: Bool
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var report = DailyReport.shared
+    @State private var agentID = ""
+    @State private var task = ""
+    @State private var time = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+    @State private var day = 0
+    @AppStorage("eodOn") private var eodOn = true
+    @AppStorage("eodHour") private var eodHour = 18
+    @AppStorage("eodPDF") private var eodPDF = true
+    private var T: HubTheme { HubTheme(light: light) }
+    private var people: [TeamAgent] { var l = team.hiredAgents; for id in ZuffiTeam.personalTeam { if let a = team.agent(id), !l.contains(a) { l.append(a) } }; return l }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            NikPlanView(light: light)
+            DashCard(title: "Your pipeline", sub: "Every day, these agents do these tasks in this order. Add a step, set the time, switch any off.", light: light) {
+                let jobs = team.jobs.sorted { ($0.hour, $0.minute) < ($1.hour, $1.minute) }
+                if jobs.isEmpty { Text("No steps yet — add the first one below.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
+                VStack(spacing: 0) {
+                    ForEach(Array(jobs.enumerated()), id: \.element.id) { i, j in
+                        HStack(spacing: 14) {
+                            Text("\(i + 1)").font(HubFont.p(12, .semibold)).foregroundColor(.white).frame(width: 24, height: 24).background(Circle().fill(HubTheme.blue))
+                            Text(String(format: "%02d:%02d", j.hour, j.minute)).font(HubFont.p(13)).frame(width: 46, alignment: .leading)
+                            if let a = team.agent(j.agent) { RobotFace(agent: a, size: 24) }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(j.title).font(HubFont.p(13.5))
+                                Text("\(team.agent(j.agent).map(AgentEdits.name) ?? "") · \(j.weekday == nil ? "every day" : Calendar.current.weekdaySymbols[(j.weekday! - 1) % 7]) · \(j.lastStatus.isEmpty ? "not run yet" : j.lastStatus)")
+                                    .font(HubFont.p(11, .regular)).foregroundColor(T.inactive)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(get: { j.enabled }, set: { v in if let k = team.jobs.firstIndex(where: { $0.id == j.id }) { team.jobs[k].enabled = v } })).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                            Button { Task { await team.runJob(j.id) } } label: { Image(systemName: "play.fill") }.buttonStyle(.plain).foregroundColor(T.inactive).help("Run now")
+                            Button { team.jobs.removeAll { $0.id == j.id } } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundColor(T.inactive).help("Remove")
+                        }
+                        .padding(.vertical, 10)
+                        .overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
+                    }
+                }
+                // add a step
+                HStack(spacing: 10) {
+                    Picker("", selection: $agentID) {
+                        Text("Pick an agent").tag("")
+                        ForEach(people, id: \.id) { a in Text(AgentEdits.name(a)).tag(a.id) }
+                    }.labelsHidden().frame(width: 180)
+                    TextField("What should it do? e.g. Check new reviews and draft replies", text: $task).textFieldStyle(.roundedBorder)
+                    DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden().frame(width: 90)
+                    Picker("", selection: $day) {
+                        Text("Every day").tag(0)
+                        ForEach(1...7, id: \.self) { d in Text(Calendar.current.weekdaySymbols[d - 1]).tag(d) }
+                    }.labelsHidden().frame(width: 120)
+                    DashButton(title: "Add step", icon: "plus", light: light) {
+                        let t = task.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !agentID.isEmpty, !t.isEmpty else { return }
+                        let c = Calendar.current.dateComponents([.hour, .minute], from: time)
+                        var j = TeamJob(agent: agentID, title: String(t.prefix(40)), task: t, hour: c.hour ?? 9, minute: c.minute ?? 0)
+                        j.weekday = day == 0 ? nil : day
+                        if !team.hired.contains(agentID), let a = team.agent(agentID), !ZuffiTeam.isPersonal(a) { team.hire(a, why: "Added to the pipeline") }
+                        team.jobs.append(j); task = ""
+                    }
+                }
+            }
+            DashCard(title: "End-of-day report", sub: "Every evening your agents write what happened today, what each one did and what failed — saved in Downloads › Zuffi › Reports.", light: light) {
+                HStack(spacing: 18) {
+                    Toggle("Make it every day", isOn: $eodOn).toggleStyle(.switch)
+                    Stepper("At \(String(format: "%02d:00", eodHour))", value: $eodHour, in: 12...23).frame(width: 140)
+                    Picker("", selection: $eodPDF) { Text("PDF").tag(true); Text("Text file").tag(false) }.pickerStyle(.segmented).frame(width: 180)
+                    Spacer()
+                    DashButton(title: "Make today's report now", icon: "doc.text", light: light) { if let u = report.make() { NSWorkspace.shared.open(u) } }
+                }
+                if !report.files.isEmpty {
+                    VStack(spacing: 6) {
+                        ForEach(report.files.prefix(10), id: \.self) { f in
+                            HStack {
+                                Image(systemName: f.pathExtension == "pdf" ? "doc.richtext" : "doc.text").foregroundColor(HubTheme.blue)
+                                Text(f.deletingPathExtension().lastPathComponent).font(HubFont.p(13))
+                                Spacer()
+                                Button("Open") { NSWorkspace.shared.open(f) }.buttonStyle(.plain).foregroundColor(HubTheme.blue).font(HubFont.p(12))
+                                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([f]) }.buttonStyle(.plain).foregroundColor(T.inactive).font(HubFont.p(12))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { report.list(); if agentID.isEmpty { agentID = people.first?.id ?? "" } }
+    }
+}
+
+// MARK: 3 · Channels — connect your apps, hand them to agents, one inbox, posting
+
+struct DashChannelsPage: View {
+    var light: Bool
+    @ObservedObject private var hub = SocialHub.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var wa = WhatsAppLink.shared
+    @State private var filter = "all"
+    @State private var image: URL?
+    @State private var about = ""
+    @State private var caption = ""
+    @State private var postTo = "instagram"
+    @State private var writing = false
+    @State private var posting = false
+    @State private var postNote = ""
+    private var T: HubTheme { HubTheme(light: light) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            DashCard(title: "Your channels", sub: "Connect each app once inside Zuffi (you sign in yourself — Zuffi never sees your password), then choose which agent looks after it.", light: light) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
+                    ForEach(SocialChannel.all) { ch in channelCard(ch) }
+                }
+                Text("“Reply by itself” lets the agent answer and post without asking you. Apps like Instagram and Facebook don't allow automated accounts, so they may limit an account that replies too fast — Zuffi replies at a human pace, but the choice is yours.")
+                    .font(HubFont.p(11.5, .regular)).foregroundColor(T.inactive).fixedSize(horizontal: false, vertical: true)
+            }
+            inboxCard
+            postCard
+            ReachSitesView(light: light)
+        }
+        .task { await hub.refresh() }
+    }
+
+    private func channelCard(_ ch: SocialChannel) -> some View {
+        let on = hub.connected.contains(ch.id)
+        let agents = team.hiredAgents + ZuffiTeam.builtins.filter { ["zuffi-instagram", "zuffi-facebook", "zuffi-whatsapp", "zuffi-social"].contains($0.id) && !team.hired.contains($0.id) }
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: ch.icon).font(.system(size: 17, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: ch.color)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(ch.name).font(HubFont.p(15, .semibold))
+                    HStack(spacing: 5) {
+                        Circle().fill(on ? Color(hex: "#3DBE7E") : T.inactive.opacity(0.5)).frame(width: 7, height: 7)
+                        Text(on ? "Connected" : ch.id == "whatsapp" && wa.state == "qr" ? "Scan the code on your phone" : "Not connected").font(HubFont.p(11.5, .regular)).foregroundColor(T.inactive)
+                    }
+                }
+                Spacer()
+                DashButton(title: on ? "Open" : "Connect", filled: !on, light: light) { hub.connect(ch) }
+            }
+            HStack(spacing: 8) {
+                Text("Agent").font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+                Picker("", selection: Binding(get: { hub.agentFor(ch.id).id }, set: { id in
+                    hub.setAgent(ch.id, id)
+                    if let a = team.agent(id), !team.hired.contains(id) { team.hire(a, why: "Looks after \(ch.name)") }
+                })) {
+                    ForEach(agents, id: \.id) { a in Text(AgentEdits.name(a)).tag(a.id) }
+                }.labelsHidden().frame(width: 170)
+                Spacer()
+                if ch.id != "whatsapp" {
+                    Button { Task { await hub.check(ch) } } label: {
+                        if hub.busy.contains(ch.id) { ProgressView().controlSize(.small) } else { Label("Check now", systemImage: "arrow.clockwise").font(HubFont.p(12)) }
+                    }.buttonStyle(.plain).foregroundColor(HubTheme.blue).disabled(!on)
+                }
+            }
+            Picker("", selection: Binding(get: { hub.mode(ch.id) }, set: { hub.setMode(ch.id, $0) })) {
+                Text("Off").tag("off"); Text("Ask me first").tag("ask"); Text("Reply by itself").tag("auto")
+            }.pickerStyle(.segmented).labelsHidden()
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+    }
+
+    private var inboxCard: some View {
+        DashCard(title: "Inbox", sub: "Every comment and message from your channels, with your agent's reply. Edit a reply before sending, or let agents reply by themselves.", light: light) {
+            HStack(spacing: 8) {
+                ForEach(["all"] + SocialChannel.all.map(\.id), id: \.self) { id in
+                    let name = id == "all" ? "All" : SocialChannel.of(id)?.name ?? id
+                    Button { filter = id } label: {
+                        Text(name).font(HubFont.p(12)).foregroundColor(filter == id ? .white : T.text).padding(.horizontal, 12).frame(height: 28)
+                            .background(Capsule().fill(filter == id ? HubTheme.blue : T.content))
+                    }.buttonStyle(.plain)
+                }
+                Spacer()
+                Button { Task { await hub.checkAll() } } label: { Label("Check all", systemImage: "arrow.clockwise").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(HubTheme.blue)
+            }
+            let list = hub.inbox.filter { filter == "all" || $0.channel == filter }.prefix(40)
+            if list.isEmpty { Text("No messages yet. Connect a channel and press “Check now”.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
+            VStack(spacing: 10) { ForEach(Array(list)) { m in DashInboxRow(message: m, light: light) } }
+        }
+    }
+
+    private var postCard: some View {
+        DashCard(title: "Create a post", sub: "Add a picture and say what it's about. The agent looks at the picture, writes the caption and hashtags, then posts it for you.", light: light) {
+            HStack(alignment: .top, spacing: 18) {
+                Button {
+                    let p = NSOpenPanel(); p.allowedContentTypes = [.image]; p.allowsMultipleSelection = false
+                    if p.runModal() == .OK { image = p.url; caption = "" }
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14).fill(T.content).frame(width: 180, height: 180)
+                        if let image, let img = NSImage(contentsOf: image) { Image(nsImage: img).resizable().scaledToFill().frame(width: 180, height: 180).clipShape(RoundedRectangle(cornerRadius: 14)) }
+                        else { VStack(spacing: 6) { Image(systemName: "photo.badge.plus").font(.system(size: 26)); Text("Choose picture").font(HubFont.p(12)) }.foregroundColor(T.inactive) }
+                    }
+                }.buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Picker("", selection: $postTo) { ForEach(SocialChannel.all.filter { $0.id != "whatsapp" }) { ch in Text(ch.name).tag(ch.id) } }.labelsHidden().frame(width: 160)
+                        TextField("What's it about? e.g. new summer menu, 20% off this week", text: $about).textFieldStyle(.roundedBorder)
+                    }
+                    TextEditor(text: $caption).font(HubFont.p(13, .regular)).frame(height: 110)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(T.border))
+                        .overlay(alignment: .topLeading) { if caption.isEmpty { Text("The caption appears here — you can edit it").font(HubFont.p(12, .regular)).foregroundColor(T.inactive).padding(8).allowsHitTesting(false) } }
+                    HStack(spacing: 10) {
+                        DashButton(title: writing ? "Writing…" : "Write caption", icon: "sparkles", filled: false, light: light) {
+                            guard let image, !writing else { postNote = "Choose a picture first."; return }
+                            writing = true; postNote = ""
+                            Task { caption = await hub.writeCaption(image: image, about: about, channel: postTo); writing = false; if caption.isEmpty { postNote = "Couldn't write it — check an AI is set up in Settings." } }
+                        }
+                        DashButton(title: posting ? "Posting…" : "Post now", icon: "paperplane.fill", light: light) {
+                            guard let image, !caption.isEmpty, !posting else { postNote = "Add a picture and a caption first."; return }
+                            guard hub.connected.contains(postTo) else { postNote = "Connect \(SocialChannel.of(postTo)?.name ?? postTo) first."; return }
+                            posting = true; postNote = "Your agent is posting — watch it in the Agent Office."
+                            Task { let ok = await hub.post(image: image, caption: caption, channel: postTo); posting = false; postNote = ok ? "Posted ✓" : "Couldn't post this time — see Activity on the Dashboard." }
+                        }
+                        Text(postNote).font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct DashInboxRow: View {
+    let message: SocialMessage
+    var light: Bool
+    @ObservedObject private var hub = SocialHub.shared
+    @State private var sending = false
+    var body: some View {
+        let T = HubTheme(light: light)
+        let ch = SocialChannel.of(message.channel)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: ch?.icon ?? "bubble.left").font(.system(size: 12, weight: .bold)).foregroundColor(.white).frame(width: 26, height: 26)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color(hex: ch?.color ?? "#3A6DF0")))
+                Text(message.from).font(HubFont.p(13.5, .semibold))
+                Text("· \(message.kind) · \(message.at.formatted(date: .abbreviated, time: .shortened))").font(HubFont.p(11, .regular)).foregroundColor(T.inactive)
+                Spacer()
+                DashStatus(status: message.status == "sent" ? "Done" : message.status == "failed" ? "Failed" : message.status == "drafted" ? "Needs input" : "Working")
+            }
+            Text(message.text).font(HubFont.p(13.5, .regular)).textSelection(.enabled)
+            if message.status != "skipped" {
+                HStack(alignment: .top, spacing: 10) {
+                    RobotFace(agent: hub.agentFor(message.channel), size: 22)
+                    TextEditor(text: Binding(get: { hub.inbox.first { $0.id == message.id }?.reply ?? "" },
+                                             set: { v in if let i = hub.inbox.firstIndex(where: { $0.id == message.id }) { hub.inbox[i].reply = v } }))
+                        .font(HubFont.p(13, .regular)).frame(height: 64)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(T.border))
+                        .disabled(message.status == "sent")
+                }
+                if message.status != "sent" {
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Button("Skip") { if let i = hub.inbox.firstIndex(where: { $0.id == message.id }) { hub.inbox[i].status = "skipped" } }.buttonStyle(.plain).foregroundColor(T.inactive).font(HubFont.p(12))
+                        Button("Rewrite") { Task { await hub.draft(message.id) } }.buttonStyle(.plain).foregroundColor(HubTheme.blue).font(HubFont.p(12))
+                        DashButton(title: sending ? "Sending…" : "Send reply", icon: "paperplane.fill", light: light) {
+                            guard !sending else { return }
+                            sending = true
+                            Task { await hub.send(message.id); sending = false }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+    }
+}
+
+// MARK: 4 · Business — one clear form; agents use it for everything
+
+struct DashBusinessPage: View {
+    var light: Bool
+    @ObservedObject private var biz = ZuffiBusiness.shared
+    @ObservedObject private var research = BusinessResearch.shared
+    @State private var f: [String: String] = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+    @State private var name = UserDefaults.standard.string(forKey: "zuffiBusinessName") ?? ""
+    @State private var saved = ""
+    private var T: HubTheme { HubTheme(light: light) }
+
+    private let groups: [(String, String, [(key: String, label: String, hint: String, tall: Bool)])] = [
+        ("About your business", "building.2.fill", [
+            ("type", "Type of business", "Hair salon, estate agent, restaurant, online shop…", false),
+            ("about", "What you do", "Two or three lines in your own words", true),
+            ("goals", "Your goals right now", "More bookings on weekdays, more Instagram followers…", true)]),
+        ("Links agents read", "link", [
+            ("website", "Website", "https://yourbusiness.co.uk", false),
+            ("instagram", "Instagram", "https://instagram.com/yourbusiness", false),
+            ("facebook", "Facebook page", "https://facebook.com/yourbusiness", false),
+            ("tiktok", "TikTok", "https://tiktok.com/@yourbusiness", false),
+            ("google", "Google Maps / Business profile", "Paste the link to your Google listing", false)]),
+        ("Contact & hours", "phone.fill", [
+            ("phone", "Phone / WhatsApp", "+44 7…", false),
+            ("address", "Address / area", "Shop 4, High Street, Maidstone ME14", false),
+            ("hours", "Opening hours", "Mon–Sat 9am–6pm, closed Sunday", false)]),
+        ("What you sell", "tag.fill", [
+            ("services", "Services or products & prices", "One per line, e.g.\nHaircut £25\nColour from £85", true),
+            ("payment", "Payment", "Cash, card, bank transfer…", false),
+            ("booking", "How to book or buy", "Message us the service and a day", false),
+            ("extra", "Anything else customers should know", "Free parking behind the shop", false)]),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            DashCard(light: light) {
+                HStack(spacing: 18) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Business name").font(HubFont.p(12, .semibold)).foregroundColor(T.inactive)
+                        TextField("e.g. Bella Hair Studio", text: $name).textFieldStyle(.plain).font(HubFont.p(22, .semibold))
+                            .padding(.horizontal, 14).frame(height: 50).background(RoundedRectangle(cornerRadius: 12).fill(T.content))
+                    }
+                    VStack(alignment: .trailing, spacing: 8) {
+                        DashButton(title: "Save", icon: "checkmark", light: light, go: save)
+                        if !saved.isEmpty { Text(saved).font(HubFont.p(11.5, .regular)).foregroundColor(T.inactive) }
+                    }
+                }
+                Text("Only the name and one link (or your area) are needed — your agents search Google, read your pages and your competitors', and fill in what they find.")
+                    .font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+            }
+            ForEach(groups, id: \.0) { g in
+                DashCard(title: g.0, light: light) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], alignment: .leading, spacing: 14) {
+                        ForEach(g.2, id: \.key) { fd in field(fd) }
+                    }
+                }
+            }
+            BusinessReportCard(light: light)
+        }
+    }
+
+    private func field(_ fd: (key: String, label: String, hint: String, tall: Bool)) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(fd.label).font(HubFont.p(12, .semibold)).foregroundColor(T.inactive)
+            if fd.tall {
+                TextEditor(text: bind(fd.key)).font(HubFont.p(13, .regular)).frame(height: 84).padding(6)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(T.content))
+                    .overlay(alignment: .topLeading) { if (f[fd.key] ?? "").isEmpty { Text(fd.hint).font(HubFont.p(12, .regular)).foregroundColor(T.inactive.opacity(0.7)).padding(11).allowsHitTesting(false) } }
+            } else {
+                TextField(fd.hint, text: bind(fd.key)).textFieldStyle(.plain).font(HubFont.p(13, .regular))
+                    .padding(.horizontal, 12).frame(height: 38).background(RoundedRectangle(cornerRadius: 10).fill(T.content))
+            }
+        }
+    }
+    private func bind(_ k: String) -> Binding<String> { Binding(get: { f[k] ?? "" }, set: { f[k] = $0; saved = "" }) }
+
+    private func save() {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        UserDefaults.standard.set(n, forKey: "zuffiBusinessName"); biz.businessName = n
+        var all = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+        for (k, v) in f { all[k] = v }
+        UserDefaults.standard.set(all, forKey: "bizForm")
+        BizDetailsForm.rebuildInfo()
+        let wasDone = BizNav.shared.formDone
+        BizNav.shared.formDone = BizDetailsForm.isComplete
+        let link = [all["website"], all["instagram"], all["facebook"]].compactMap { $0 }.joined(separator: " ")
+        if BizDetailsForm.isComplete, !wasDone || link != (UserDefaults.standard.string(forKey: "bizResearchedLink") ?? "") {
+            UserDefaults.standard.set(link, forKey: "bizResearchedLink")
+            BusinessResearch.shared.start()
+            saved = "Saved — your agents are researching your business now."
+        } else {
+            saved = BizDetailsForm.isComplete ? "Saved ✓" : "Saved. Add a link or your area so agents can research you."
+        }
+    }
+}
+
+// MARK: 5 · Pet & look
+
+struct DashLookPage: View {
+    var light: Bool
+    @AppStorage("hubLight") private var hubLight = false
+    @AppStorage("petReminders") private var petReminders = true
+    @AppStorage("petNever") private var petNever = false
+    @AppStorage("notchWide") private var notchWide = true
+    @AppStorage("helloOnOpen") private var hello = true
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            DashCard(title: "Aurora", sub: "Your pet — pick her colour", light: light) {
+                AuroraColorPicker()
+                HStack(spacing: 12) {
+                    DashButton(title: PetController.shared.isShown ? "Hide Aurora" : "Show Aurora", icon: "hare.fill", light: light) { PetController.shared.toggle() }
+                }
+                Toggle("She brings reminders to the front", isOn: $petReminders).toggleStyle(.switch)
+                Toggle("Never show the pet (reminders go to the notch)", isOn: $petNever).toggleStyle(.switch)
+            }
+            DashCard(title: "Notch", light: light) {
+                Toggle("Small glass notch", isOn: $notchWide).toggleStyle(.switch)
+                Toggle("Say hi when Zuffi starts", isOn: $hello).toggleStyle(.switch)
+            }
+            DashCard(title: "Dashboard look", light: light) {
+                Picker("", selection: $hubLight) { Text("Dark").tag(false); Text("Light").tag(true) }.pickerStyle(.segmented).frame(width: 220)
+            }
+        }
+        .font(HubFont.p(13.5, .regular))
+    }
+}
+
+// MARK: 6 · Automations — one switch per thing, per app
+
+struct DashAutomationsPage: View {
+    var light: Bool
+    @ObservedObject private var crm = ZuffiCRM.shared
+    @ObservedObject private var hub = SocialHub.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    private var T: HubTheme { HubTheme(light: light) }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)], alignment: .leading, spacing: 20) {
+            ForEach(SocialChannel.all) { ch in
+                DashCard(light: light) {
+                    HStack(spacing: 12) {
+                        Image(systemName: ch.icon).font(.system(size: 16, weight: .bold)).foregroundColor(.white).frame(width: 36, height: 36).background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: ch.color)))
+                        Text("Automate \(ch.name)").font(HubFont.p(16, .semibold))
+                        Spacer()
+                        if !hub.connected.contains(ch.id) { DashButton(title: "Connect", filled: false, light: light) { hub.connect(ch) } }
+                    }
+                    switchRow("Read new comments and messages", on: hub.mode(ch.id) != "off") { hub.setMode(ch.id, $0 ? "ask" : "off") }
+                    switchRow("Reply by itself (no asking)", on: hub.mode(ch.id) == "auto") { hub.setMode(ch.id, $0 ? "auto" : "ask") }
+                    if ch.id == "whatsapp" {
+                        switchRow("Autopilot — chat with customers", on: crm.isOn(.autopilot)) { crm.set(.autopilot, $0) }
+                        switchRow("Follow up people who go quiet", on: crm.isOn(.quietFollowUp)) { crm.set(.quietFollowUp, $0) }
+                        switchRow("Out-of-hours reply", on: crm.isOn(.afterHours)) { crm.set(.afterHours, $0) }
+                        switchRow("Thank customers and ask for a review", on: crm.isOn(.thankAndReview)) { crm.set(.thankAndReview, $0) }
+                        switchRow("Polite reminders for late payments", on: crm.isOn(.paymentReminders)) { crm.set(.paymentReminders, $0) }
+                    } else {
+                        let title = "Daily \(ch.name) post idea"
+                        switchRow("A post idea every morning", on: team.jobs.contains { $0.title == title }) { on in
+                            if on {
+                                let a = hub.agentFor(ch.id)
+                                if !team.hired.contains(a.id) { team.hire(a, why: "Daily \(ch.name) posts") }
+                                team.jobs.append(TeamJob(agent: a.id, title: title, task: "Look at my \(ch.name) and my competitors, then give me today's \(ch.name) post: the idea, the caption and hashtags, and the best time to post.", hour: 9, minute: 30))
+                            } else { team.jobs.removeAll { $0.title == title } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    private func switchRow(_ t: String, on: Bool, _ set: @escaping (Bool) -> Void) -> some View {
+        Toggle(isOn: Binding(get: { on }, set: set)) { Text(t).font(HubFont.p(13.5, .regular)) }.toggleStyle(.switch)
+    }
+}
+
+// MARK: 7 · Settings
+
+struct DashSettingsPage: View {
+    var light: Bool
+    @AppStorage("reachBackup") private var backup = true
+    @AppStorage("officeOnTask") private var officeOnTask = true
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            DashCard(title: "Agents", light: light) {
+                Toggle("Open the dashboard and Agent Office when I give a task", isOn: $officeOnTask).toggleStyle(.switch)
+                Toggle("Backup page readers (Jina Reader, Exa) when a page won't open", isOn: $backup).toggleStyle(.switch)
+                Text("Agents never type your passwords or card numbers, and never pay, buy or delete anything.").font(HubFont.p(12, .regular)).foregroundColor(HubTheme(light: light).inactive)
+            }
+            DashCard(title: "Privacy", light: light) {
+                Text("Your chats, results and channel messages stay on this Mac. You can delete any chat in Dashboard → Chat history.").font(HubFont.p(13, .regular))
+            }
+            DashCard(title: "Everything else", light: light) {
+                SettingsView().frame(minHeight: 620).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .font(HubFont.p(13.5, .regular))
     }
 }

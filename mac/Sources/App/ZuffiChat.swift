@@ -73,6 +73,15 @@ final class ZuffiChat: ObservableObject {
         Task { await AIService.shared.chat(query: q, context: nil, state: st) }
     }
 
+    /// Ask from the dashboard's chat bar (the answer shows there, no chat window).
+    func askInline(_ q: String) {
+        if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
+        let st = AppState.shared
+        st.chatHistory.append(ChatMessage(role: .user, content: q))
+        st.stateOverride = .thinking
+        Task { await AIService.shared.chat(query: q, context: nil, state: st) }
+    }
+
     func open(prefill: String = "") {
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }   // trial over: choose a plan first
         if !prefill.isEmpty { draft = prefill }

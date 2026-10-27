@@ -560,18 +560,19 @@ final class AIService {
 
     /// Asks whichever AI is set up, without touching the chat. Returns nil when no AI is available.
     private var oneShotBusy = false
-    func oneShot(_ prompt: String, system: String = "You turn the user's words into exactly the JSON asked for. Reply with JSON only.") async -> String? {
+    func oneShot(_ prompt: String, system: String = "You turn the user's words into exactly the JSON asked for. Reply with JSON only.", image: (mime: String, base64: String)? = nil) async -> String? {
         // One at a time: it borrows the chat's state, so two at once (team members working together) would mix up their instructions.
         while oneShotBusy { try? await Task.sleep(nanoseconds: 60_000_000) }
         oneShotBusy = true
         defer { oneShotBusy = false }
         let savedHistory = history, savedDoc = document, savedImage = pendingImage
-        history = [(role: "user", text: prompt)]; document = nil; pendingImage = nil; oneShotSystem = system
+        history = [(role: "user", text: prompt)]; document = nil; pendingImage = image; oneShotSystem = system
         defer { history = savedHistory; document = savedDoc; pendingImage = savedImage; oneShotSystem = nil }
         if let k = KeychainStore.shared.get("anthropic-api-key"), !k.isEmpty,
            let j = try? await postJSON(URL(string: "https://api.anthropic.com/v1/messages")!,
                                        body: ["model": AppState.shared.claudeModel.isEmpty ? AppState.defaultClaudeModel : AppState.shared.claudeModel,
-                                              "max_tokens": 4000, "system": system, "messages": [["role": "user", "content": prompt]]],
+                                              "max_tokens": 4000, "system": system,
+                                              "messages": [["role": "user", "content": image.map { img -> Any in [["type": "image", "source": ["type": "base64", "media_type": img.mime, "data": img.base64]], ["type": "text", "text": prompt]] } ?? prompt]]],
                                        headers: ["x-api-key": k, "anthropic-version": "2023-06-01"], timeout: 60),
            let parts = j["content"] as? [[String: Any]] {
             let t = parts.compactMap { $0["text"] as? String }.joined()
