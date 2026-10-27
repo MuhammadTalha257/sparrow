@@ -1037,7 +1037,7 @@ final class ZuffiTeam: ObservableObject {
                 Do exactly what the owner asked, step by step, like a careful senior \(a.name). Open the real pages, scroll, click "more" / "all reviews" / next pages \
                 until you have everything needed. Don't stop at the first screen. When finished, use "done" and put EVERYTHING you found in the answer: \
                 names, dates, ratings, the exact text, whether it was replied to, numbers and links.
-                """, agent: a, runID: id, start: Self.actionStart(job))
+                """, agent: a, runID: id, start: AgentBrowser.actionStart(job))
             let failed = raw.hasPrefix("I couldn't") || raw.hasPrefix("I stopped") || raw == "Stopped."
             if failed { finish(id, raw, "Failed"); return runs.first { $0.id == id }! }
             step(id, "Writing your report")
