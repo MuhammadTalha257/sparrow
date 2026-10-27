@@ -3785,6 +3785,19 @@ final class MissionControl: ObservableObject {
         OfficeModel.shared.sync()
     }
 
+    /// "Ask more": a follow-up to the agent that just finished, with its earlier work.
+    func followUp(_ q: String) {
+        let team = ZuffiTeam.shared
+        guard let last = team.runs.first(where: { $0.started >= started.addingTimeInterval(-1) && $0.status != "Working" && $0.agent != ZuffiTeam.manager.id }),
+              let a = team.agent(last.agent) else { assign(q); return }
+        result = nil
+        BunnyFaceCenter.shared.show(.thinking, for: 3)
+        Task { @MainActor in
+            let run = await team.work(a, "Earlier task: \(last.task)\nYour earlier answer:\n\(last.result.prefix(3000))\n\nFollow-up from the owner: \(q)\nAnswer the follow-up using your earlier work; look things up again if you need more.")
+            MissionControl.shared.result = run.status == "Needs input" ? nil : zClean(run.result)
+        }
+    }
+
     /// You answered an agent's question in the office: it carries on with the original task.
     func reply(_ text: String) {
         let team = ZuffiTeam.shared
@@ -4521,6 +4534,15 @@ struct AgentOfficeView: View {
                     }.buttonStyle(.plain)
                 }
                 HStack(spacing: 8) {
+                    TextField("Ask \(runs.first.flatMap { team.agent($0.agent) }.map(AgentEdits.name) ?? "the agent") more…", text: $model.reply)
+                        .textFieldStyle(.plain).font(HubFont.p(13, .regular))
+                        .padding(.horizontal, 10).frame(height: 34).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                        .onSubmit { askMore() }
+                    Button(action: askMore) {
+                        Text("Ask").font(HubFont.p(13)).foregroundColor(.white).padding(.horizontal, 14).frame(height: 34).background(Capsule().fill(HubTheme.blue))
+                    }.buttonStyle(.plain)
+                }
+                HStack(spacing: 8) {
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(r, forType: .string) } label: {
                         Text("Copy").font(HubFont.p(13)).foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 36).background(Capsule().fill(HubTheme.blue))
                     }.buttonStyle(.plain)
@@ -4533,6 +4555,13 @@ struct AgentOfficeView: View {
             .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 16 / 255, green: 18 / 255, blue: 27 / 255).opacity(0.82)))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.14)))
         }
+    }
+
+    private func askMore() {
+        let q = model.reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        model.reply = ""
+        mc.followUp(q)
     }
 
     private func answer() {
