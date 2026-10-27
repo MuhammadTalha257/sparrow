@@ -1089,7 +1089,8 @@ final class ZuffiTeam: ObservableObject {
         for s in data.sources { step(id, "Looked at \(s)", source: s) }
         // Research like a person: search, open the pages, read them — each step shows on the agent's card.
         var webNotes = "", links: [WebLink] = []
-        if field.tools.contains(.web), NetStatus.shared.online {
+        let writingOnly = task.lowercased().range(of: #"^(please )?(write|draft|rewrite|proofread|translate|reply to|make (me )?(an? )?(email|letter|caption|bio|post))\b"#, options: .regularExpression) != nil
+        if field.tools.contains(.web), NetStatus.shared.online, !writingOnly {
             let r = await ZuffiReach.research(task, agent: a, runID: id, step: { self.step(id, $0, source: "Web") })
             webNotes = r.notes; links = r.links
             if links.isEmpty { step(id, "The searches found nothing — asking the AI with Google Search if it's available") }
@@ -1169,6 +1170,7 @@ final class ZuffiTeam: ObservableObject {
         if l.range(of: #"^(please |ok(ay)? |nik,? |zuffi,? )*(go( to| on)?|open|visit|browse|log ?in to)\b"#, options: .regularExpression) != nil { return true }
         if l.range(of: #"\b(go|open|visit) (to )?(google|chrome|safari|the browser|[a-z0-9-]+\.(com|co\.uk|org|net|io|pk))\b"#, options: .regularExpression) != nil { return true }
         if l.range(of: #"\b(check|read|get|collect|find|list)\b.*\b(reviews?|ratings?|comments?)\b.*\b(on|from|in) (google|google maps|facebook|tripadvisor|trustpilot|yelp|booking\.com|amazon)\b"#, options: .regularExpression) != nil { return true }
+        if l.range(of: #"\b(check|read|get|collect|find|list|show)\b.*\b(google|facebook|tripadvisor|trustpilot|yelp)\b.*\b(reviews?|ratings?)\b"#, options: .regularExpression) != nil { return true }
         return false
     }
 
@@ -1330,6 +1332,10 @@ final class ZuffiTeam: ObservableObject {
     func personalRoute(_ q: String) -> TeamAgent? {
         let t = q.lowercased()
         func m(_ p: String) -> Bool { t.range(of: p, options: .regularExpression) != nil }
+        // things to DO on a site or on your own accounts go to the Web Helper (it works in the browser you can watch)
+        if ChannelAgent.channelTask(q) != nil || (Self.isActionTask(q) && !Self.isFlightQuestion(q)) { return agent("zuffi-web") }
+        // a link or a video to read and sum up
+        if m(#"https?://|\b(summari[sz]e|sum up|tl;?dr)\b.*\b(video|youtube|article|page|link|repo|thread|post)\b"#) { return agent("research-synthesist") }
         if m(#"\b(spreadsheet|excel|csv|pdf|sheet|clean (this|the|my) data|fix (this|the|my) data|make a table)\b"#) { return agent("zuffi-docs") }
         if m(#"\b(write|draft|rewrite|proofread|reply to)\b.*\b(email|letter|message|post|caption|bio|cv|resume|cover letter|essay|speech|toast|story|poem)\b"#) { return agent("zuffi-writer") }
         if m(#"\b(flights?|fly to|airline|hotels?|holiday|vacation|trip|travel|travell?ing|itinerary|visit (germany|france|spain|italy|turkey|dubai|japan|[a-z]+)|places to (go|visit|see)|where (should|can) i go|tour|backpack)\b"#) { return agent("zuffi-travel") }
@@ -6281,11 +6287,12 @@ enum ChannelAgent {
     static func channelTask(_ task: String) -> SocialChannel? {
         let l = task.lowercased()
         guard let ch = SocialChannel.all.first(where: { l.contains($0.id == "x" ? "twitter" : $0.id) || (l.contains(" x ") && $0.id == "x") || l.contains($0.name.lowercased()) || ($0.id == "instagram" && (l.contains(" insta ") || l.hasPrefix("insta "))) }) else { return nil }
-        let act = l.range(of: #"\b(go( to)?|open|check|see|show|look at|read|list|count|reply|answer|post|upload|send)\b|\bwho (follows?|followed|liked|commented|messaged)\b"#, options: .regularExpression) != nil
-        let mine = l.range(of: #"\b(us|our|my|me|we|mine|i)\b"#, options: .regularExpression) != nil
+        let look = l.range(of: #"\b(go( to)?|open|check|see|show|look at|read|list|count)\b|\bwho (follows?|followed|liked|commented|messaged)\b"#, options: .regularExpression) != nil
+        let doIt = l.range(of: #"\b(reply|answer|upload|send|publish)\b|\bpost (this|it|that)\b"#, options: .regularExpression) != nil
         let about = l.range(of: #"\b(follow(s|ers?|ing|ed)?|comments?|messages?|dms?|inbox|posts?|likes?|views?|insights|notifications?|profile|stories|reels?|page)\b"#, options: .regularExpression) != nil
-        let advice = l.range(of: #"\b(how (can|do|to|should)|tips|ideas?|strategy|advice|plan|grow|increase|improve|best time)\b"#, options: .regularExpression) != nil
-        return act && about && (mine || !advice) && !(advice && !act) ? ch : nil
+        let advice = l.range(of: #"\b(how (can|do|to|should)|tips|ideas?|strategy|advice|plan|grow|increase|improve|best time|write|make me|suggest)\b"#, options: .regularExpression) != nil
+        // "check who follows us", "read our comments", "reply to this DM" → on the account; "post ideas", "tips to grow" → advice, not the account
+        return about && (look || (doIt && !advice)) && !(advice && !look) ? ch : nil
     }
 
     static func handle(for ch: SocialChannel) -> String? {
