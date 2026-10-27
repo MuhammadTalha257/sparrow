@@ -1104,10 +1104,18 @@ final class ZuffiTeam: ObservableObject {
                 \(String((data.text + "\n" + webNotes).prefix(14000)))
                 Improve the draft so the owner is fully satisfied: answer exactly what they need, best option first with the reason, concrete details (names, prices, dates, steps) \
                 from the sources, what to watch out for, and the next step. Remove anything vague or not backed by the sources. Keep it easy to read (short lines, "- " bullets). \
-                Reply with the improved answer only.
+                IMPORTANT: if the draft does not actually do or answer what the owner asked (for example it describes other websites or tools instead of doing the task), \
+                reply with exactly NOT_ANSWERED: followed by one line saying what's needed.
+                Otherwise reply with the improved answer only.
                 """, system: systemPrompt(for: a, data: "")) {
                 let b = Self.plain(better)
-                if b.count > 150, Self.badAnswer(b, agent: a, data: data.text + webNotes, question: task) == nil { answerText = b }
+                if b.hasPrefix("NOT_ANSWERED") {
+                    // Wrong kind of answer: do it in the agent browser instead (like a person would), or say honestly that it couldn't.
+                    step(id, "That didn't answer you — doing it in the browser instead")
+                    let done = await AgentBrowser.shared.run(task + "\nDo exactly this and report what you found (names, numbers, links). Don't describe other websites.", agent: a, runID: id)
+                    let failed = done.hasPrefix("I couldn't") || done.hasPrefix("I stopped") || done == "Stopped."
+                    answerText = failed ? "I couldn't do this properly yet: \(b.dropFirst(13).trimmingCharacters(in: .whitespaces)). \(done)" : Self.plain(done)
+                } else if b.count > 150, Self.badAnswer(b, agent: a, data: data.text + webNotes, question: task) == nil { answerText = b }
             }
         }
         let shownLinks = runs.first { $0.id == id }?.links ?? []
