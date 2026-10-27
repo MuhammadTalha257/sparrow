@@ -62,8 +62,8 @@ struct BizCountrySheet: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Where is your business?").font(.system(size: 18, weight: .semibold))
-                Text("Zuffi switches on the right currency, payment apps, property portals and local rules.").font(.system(size: 12)).foregroundColor(Ink.muted)
+                Text("Where is your business?").font(zf(18, .semibold))
+                Text("Zuffi switches on the right currency, payment apps, property portals and local rules.").font(zf(12)).foregroundColor(Ink.muted)
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundColor(Ink.faint)
                     TextField("Search country", text: $q).textFieldStyle(.plain)
@@ -73,7 +73,7 @@ struct BizCountrySheet: View {
                         ForEach(ZuffiCRM.allCountries.filter { q.isEmpty || $0.name.localizedCaseInsensitiveContains(q) || $0.code.caseInsensitiveCompare(q) == .orderedSame }) { c in
                             Button { sel = c.code } label: {
                                 HStack { Text(c.flag); Text(c.name).foregroundColor(Ink.text); Spacer(); if sel == c.code { Image(systemName: "checkmark").foregroundColor(Ink.accent) } }
-                                    .font(.system(size: 13)).padding(.horizontal, 10).frame(height: 30)
+                                    .font(zf(13)).padding(.horizontal, 10).frame(height: 30)
                                     .background(RoundedRectangle(cornerRadius: 7).fill(sel == c.code ? Ink.ink.opacity(0.07) : .clear))
                                     .contentShape(Rectangle())
                             }.buttonStyle(.plain)
@@ -85,13 +85,13 @@ struct BizCountrySheet: View {
             Rectangle().fill(Ink.line).frame(width: 1)
             VStack(alignment: .leading, spacing: 12) {
                 let name = ZuffiCRM.allCountries.first { $0.code == sel }
-                Text("\(name?.flag ?? "🌍") What you get in \(name?.name ?? "your country")").font(.system(size: 15, weight: .semibold))
+                Text("\(name?.flag ?? "🌍") What you get in \(name?.name ?? "your country")").font(zf(15, .semibold))
                 ForEach(Array(CountryFeatures.list(sel).enumerated()), id: \.offset) { _, f in
                     HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: f.0).font(.system(size: 13)).foregroundColor(Ink.accent).frame(width: 22)
+                        Image(systemName: f.0).font(zf(13)).foregroundColor(Ink.accent).frame(width: 22)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(f.1).font(.system(size: 13, weight: .medium))
-                            Text(f.2).font(.system(size: 11.5)).foregroundColor(Ink.muted)
+                            Text(f.1).font(zf(13, .medium))
+                            Text(f.2).font(zf(11.5)).foregroundColor(Ink.muted)
                         }
                     }
                 }
@@ -123,13 +123,13 @@ struct BizCountryRow: View {
         let c = ZuffiCRM.allCountries.first { $0.code == crm.country }
         Button { open = true } label: {
             HStack(spacing: 10) {
-                Text(c?.flag ?? "🌍").font(.system(size: 20))
+                Text(c?.flag ?? "🌍").font(zf(20))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(c?.name ?? "Another country").font(.system(size: 13, weight: .medium))
-                    Text("Country · \(CountryFeatures.list(crm.country).count) features on").font(.system(size: 11)).foregroundColor(Ink.muted)
+                    Text(c?.name ?? "Another country").font(zf(13, .medium))
+                    Text("Country · \(CountryFeatures.list(crm.country).count) features on").font(zf(11)).foregroundColor(Ink.muted)
                 }
                 Spacer()
-                Text("Change").font(.system(size: 12, weight: .medium)).foregroundColor(Ink.accent)
+                Text("Change").font(zf(12, .medium)).foregroundColor(Ink.accent)
             }
             .padding(.horizontal, 12).frame(height: 46).inkPanel(RoundedRectangle(cornerRadius: 10), interactive: true)
         }.buttonStyle(.plain)
@@ -155,8 +155,8 @@ struct BizLearnView: View {
                             HStack(spacing: 10) {
                                 Text(g.icon).frame(width: 28, height: 28).background(RoundedRectangle(cornerRadius: 7).fill(Ink.ink.opacity(0.05)))
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(g.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                    Text(g.summary).font(.system(size: 11)).foregroundColor(Ink.muted).lineLimit(1)
+                                    Text(g.title).font(zf(13, .medium)).lineLimit(1)
+                                    Text(g.summary).font(zf(11)).foregroundColor(Ink.muted).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -170,15 +170,15 @@ struct BizLearnView: View {
             ScrollView {
                 if let g = guides.first(where: { $0.id == sel }) ?? guides.first {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("\(g.icon)  \(g.title)").font(.system(size: 20, weight: .semibold))
-                        Text(g.summary).font(.system(size: 13)).foregroundColor(Ink.muted)
+                        Text("\(g.icon)  \(g.title)").font(zf(20, .semibold))
+                        Text(g.summary).font(zf(13)).foregroundColor(Ink.muted)
                         ForEach(Array(g.steps.enumerated()), id: \.offset) { i, st in
                             HStack(alignment: .top, spacing: 12) {
-                                Text("\(i + 1)").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#1A1206"))
+                                Text("\(i + 1)").font(zf(12, .bold)).foregroundColor(Color(hex: "#1A1206"))
                                     .frame(width: 24, height: 24).background(Circle().fill(Ink.accent))
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(st.first ?? "").font(.system(size: 14, weight: .semibold))
-                                    Text(st.count > 1 ? st[1] : "").font(.system(size: 13)).foregroundColor(Ink.muted)
+                                    Text(st.first ?? "").font(zf(14, .semibold))
+                                    Text(st.count > 1 ? st[1] : "").font(zf(13)).foregroundColor(Ink.muted)
                                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                                 }
                             }
@@ -255,14 +255,14 @@ struct BizLockScreen: View {
     @ObservedObject private var lock = BizLock.shared
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "lock.fill").font(.system(size: 30)).foregroundColor(Ink.accent)
-            Text("Zuffi Business is locked").font(.system(size: 20, weight: .semibold))
-            Text("Your clients and money are hidden until you unlock.").font(.system(size: 12.5)).foregroundColor(Ink.muted)
+            Image(systemName: "lock.fill").font(zf(30)).foregroundColor(Ink.accent)
+            Text("Zuffi Business is locked").font(zf(20, .semibold))
+            Text("Your clients and money are hidden until you unlock.").font(zf(12.5)).foregroundColor(Ink.muted)
             Button { lock.unlock() } label: {
-                Label("Unlock with Touch ID or password", systemImage: "touchid").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#1A1206"))
+                Label("Unlock with Touch ID or password", systemImage: "touchid").font(zf(13, .semibold)).foregroundColor(Color(hex: "#1A1206"))
                     .padding(.horizontal, 16).frame(height: 34).background(Capsule().fill(Ink.accent))
             }.buttonStyle(.plain).keyboardShortcut(.defaultAction)
-            if !lock.message.isEmpty { Text(lock.message).font(.system(size: 11.5)).foregroundColor(Color(hex: "#EF6B6B")) }
+            if !lock.message.isEmpty { Text(lock.message).font(zf(11.5)).foregroundColor(Color(hex: "#EF6B6B")) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Ink.bg)
@@ -279,13 +279,13 @@ struct BizSecurityBox: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.shield.fill").foregroundColor(Color(hex: "#3FC48C"))
-                Text("Security & privacy").font(.system(size: 14, weight: .semibold))
+                Text("Security & privacy").font(zf(14, .semibold))
             }
             row("internaldrive", "Your data stays on your devices", "Leads, money and staff are files on this Mac (Documents → Zuffi). Sync between devices is end-to-end encrypted.")
             Toggle(isOn: Binding(get: { lock.enabled }, set: { lock.setEnabled($0) })) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Lock Business with Touch ID / password").font(.system(size: 12.5, weight: .medium))
-                    Text("Asks when the dashboard opens and after you've been away.").font(.system(size: 10.5)).foregroundColor(Ink.muted)
+                    Text("Lock Business with Touch ID / password").font(zf(12.5, .medium))
+                    Text("Asks when the dashboard opens and after you've been away.").font(zf(10.5)).foregroundColor(Ink.muted)
                 }
             }.toggleStyle(.switch)
             if lock.enabled {
@@ -296,25 +296,25 @@ struct BizSecurityBox: View {
             }
             Toggle(isOn: $lock.hideAmounts) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Hide amounts").font(.system(size: 12.5, weight: .medium))
-                    Text("Blurs money on screen — useful with clients or staff around.").font(.system(size: 10.5)).foregroundColor(Ink.muted)
+                    Text("Hide amounts").font(zf(12.5, .medium))
+                    Text("Blurs money on screen — useful with clients or staff around.").font(zf(10.5)).foregroundColor(Ink.muted)
                 }
             }.toggleStyle(.switch)
             if sync.linked {
                 HStack {
-                    Text("Lost a phone or someone left?").font(.system(size: 11.5)).foregroundColor(Ink.muted)
+                    Text("Lost a phone or someone left?").font(zf(11.5)).foregroundColor(Ink.muted)
                     Button("Make a new link code") { sync.create() }.help("Every device with the old code is unlinked.")
                 }
             }
-            if !lock.message.isEmpty { Text(lock.message).font(.system(size: 10.5)).foregroundColor(Ink.accent) }
+            if !lock.message.isEmpty { Text(lock.message).font(zf(10.5)).foregroundColor(Ink.accent) }
         }
     }
     private func row(_ icon: String, _ t: String, _ d: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon).foregroundColor(Ink.muted).frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
-                Text(t).font(.system(size: 12.5, weight: .medium))
-                Text(d).font(.system(size: 10.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                Text(t).font(zf(12.5, .medium))
+                Text(d).font(zf(10.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
             }
         }
     }

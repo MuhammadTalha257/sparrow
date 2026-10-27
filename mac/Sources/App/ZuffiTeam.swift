@@ -644,6 +644,12 @@ final class ZuffiTeam: ObservableObject {
     /// The everyday job each field does.
     func defaultJob(for a: TeamAgent) -> TeamJob? {
         let dash = !sources.isEmpty
+        switch a.id {
+        case "zuffi-reviews": return TeamJob(agent: a.id, title: "Reviews check", task: "Check my business's newest reviews. Summarise what people liked and didn't, and draft polite replies for me to approve.", hour: 11, minute: 0)
+        case "zuffi-reports": return TeamJob(agent: a.id, title: "End-of-day report", task: "Write today's short business report: what happened, numbers you can see, and 3 things to do tomorrow.", hour: 17, minute: 30, readsDashboard: dash)
+        case "research-synthesist": return TeamJob(agent: a.id, title: "Morning brief", task: "Give me a short morning brief: the most important news today in my area of work, with links.", hour: 8, minute: 0)
+        default: break
+        }
         switch AgentField.of(a) {
         case .finance: return TeamJob(agent: a.id, title: "Today's money", task: "What are today's revenue, costs, tax and profit?", hour: 18, minute: 0, readsDashboard: dash)
         case .bookings: return TeamJob(agent: a.id, title: "Bookings check", task: "How many bookings do we have today and tomorrow, and any cancellations or no-shows?", hour: 8, minute: 30, readsDashboard: dash)
@@ -963,6 +969,14 @@ final class ZuffiTeam: ObservableObject {
             let ans = await AgentBrowser.shared.run(task, agent: a, runID: id)
             let failed = ans.hasPrefix("I couldn't") || ans.hasPrefix("I stopped") || ans == "Stopped."
             finish(id, Self.plain(ans), failed ? "Failed" : "Done")
+            return runs.first { $0.id == id }!
+        }
+
+        // Documents & Data: makes a real spreadsheet file (CSV, opens in Excel or Numbers) or a new PDF from the owner's data.
+        if a.id == "zuffi-docs" {
+            let (text, ok) = await DocsAgent.run(task, step: { self.step(id, $0) })
+            finish(id, text, ok ? "Done" : "Needs input")
+            if !ok { awaiting = (a, task, Date()) } else { lastWork = (a, task, text, "", Date()) }
             return runs.first { $0.id == id }!
         }
 
@@ -4302,5 +4316,290 @@ struct RobotFace: View {
             .rotationEffect(.degrees(sin(t * 0.9) * 4))
         }
         .frame(width: size, height: size * 1.2)
+    }
+}
+
+
+// MARK: - Nik's plan for today: every hired agent's job on a timeline, with progress, plus new ideas from Nik
+
+struct NikPlanItem: Identifiable { let id = UUID(); let agent: String; let hour: Int; let minute: Int; let title: String; let task: String }
+
+@MainActor
+final class NikPlan: ObservableObject {
+    static let shared = NikPlan()
+    @Published var ideas: [NikPlanItem] = []
+    @Published var thinking = false
+    @Published var note = ""
+
+    enum State: String { case done = "Done", running = "Working", upcoming = "Coming up", missed = "Missed", failed = "Didn't finish" }
+
+    /// Today's jobs in time order (weekly ones only on their day).
+    var today: [TeamJob] {
+        let cal = Calendar.current, wd = cal.component(.weekday, from: Date())
+        return ZuffiTeam.shared.jobs.filter { $0.enabled && ($0.weekday == nil || $0.weekday == wd) }.sorted { ($0.hour, $0.minute) < ($1.hour, $1.minute) }
+    }
+    func state(_ j: TeamJob) -> State {
+        let team = ZuffiTeam.shared, cal = Calendar.current
+        if team.runs.contains(where: { $0.job == j.title && $0.agent == j.agent && $0.status == "Working" }) { return .running }
+        if let last = j.lastRun, cal.isDateInToday(last) {
+            switch j.lastStatus { case "Missed": return .missed; case "Done", "": return .done; default: return j.lastStatus.lowercased().contains("fail") ? .failed : .done }
+        }
+        return .upcoming
+    }
+    var progress: (Int, Int) { let t = today; return (t.filter { state($0) == .done }.count, t.count) }
+
+    /// Nik looks at who you hired and suggests new everyday tasks for them (you choose which to add).
+    func askNik() {
+        let team = ZuffiTeam.shared
+        let people = team.hiredAgents
+        guard !people.isEmpty else { note = "Hire an agent first — then I'll plan their day."; return }
+        thinking = true; note = ""
+        let biz = ZuffiPlan.shared.isPersonal ? "" : String(ZuffiTeam.businessContext.prefix(3000))
+        let list = people.map { "\($0.id): \($0.name) — \($0.description)" }.joined(separator: "\n")
+        let have = team.jobs.map { "\($0.agent): \($0.title)" }.joined(separator: "\n")
+        let prompt = """
+        You are Nik, the team manager. Suggest up to 5 NEW useful everyday tasks for these agents. Only tasks they can really do (reading websites, researching, writing, making summaries). No buying, paying, posting or sending.
+        AGENTS:
+        \(list)
+        TASKS THEY ALREADY HAVE:
+        \(have.isEmpty ? "none" : have)
+        \(biz.isEmpty ? "" : "THE BUSINESS:\n" + biz)
+        Reply with JSON only: [{"agent":"<agent id>","time":"HH:MM","title":"<3-5 words>","task":"<one clear instruction>"}]
+        """
+        Task { @MainActor in
+            defer { self.thinking = false }
+            guard let raw = await AIService.shared.oneShot(prompt),
+                  let start = raw.firstIndex(of: "["), let end = raw.lastIndex(of: "]"),
+                  let data = String(raw[start...end]).data(using: .utf8),
+                  let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                self.note = "I couldn't plan right now — check that an AI is set up in Settings."; return
+            }
+            let ids = Set(people.map(\.id))
+            self.ideas = arr.compactMap { d in
+                guard let ag = d["agent"] as? String, ids.contains(ag), let title = d["title"] as? String, let task = d["task"] as? String else { return nil }
+                let parts = ((d["time"] as? String) ?? "09:00").split(separator: ":").compactMap { Int($0) }
+                return NikPlanItem(agent: ag, hour: min(23, max(0, parts.first ?? 9)), minute: min(59, max(0, parts.count > 1 ? parts[1] : 0)), title: title, task: task)
+            }
+            if self.ideas.isEmpty { self.note = "Nothing new to add today — your team's day looks complete." }
+        }
+    }
+    func add(_ i: NikPlanItem) {
+        let team = ZuffiTeam.shared
+        team.jobs.append(TeamJob(agent: i.agent, title: i.title, task: i.task, hour: i.hour, minute: i.minute))
+        team.log("Nik", "Added to the daily plan", "\(i.title) at \(String(format: "%02d:%02d", i.hour, i.minute))")
+        ideas.removeAll { $0.id == i.id }
+    }
+}
+
+struct NikPlanView: View {
+    var light = false
+    @ObservedObject private var plan = NikPlan.shared
+    @ObservedObject private var team = ZuffiTeam.shared
+    init(light: Bool = false) { self.light = light }
+    private var T: HubTheme { HubTheme(light: light) }
+
+    var body: some View {
+        let (done, total) = plan.progress
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                RobotFace(agent: ZuffiTeam.manager, size: 30, working: plan.thinking)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Nik's plan for today").font(HubFont.p(17, .semibold))
+                    Text(total == 0 ? "No jobs yet — hire an agent and I'll give them a daily job." : "\(done) of \(total) done").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                }
+                Spacer()
+                Button { plan.askNik() } label: {
+                    Text(plan.thinking ? "Nik is planning…" : "Ask Nik for new tasks").font(HubFont.p(13)).foregroundColor(.white)
+                        .padding(.horizontal, 16).frame(height: 34).background(Capsule().fill(HubTheme.blue))
+                }.buttonStyle(.plain).disabled(plan.thinking)
+            }
+            if total > 0 {
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(T.content)
+                        Capsule().fill(LinearGradient(colors: [HubTheme.blue, HubTheme.green], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(8, g.size.width * CGFloat(done) / CGFloat(max(1, total))))
+                    }
+                }.frame(height: 8)
+                VStack(spacing: 0) {
+                    ForEach(Array(plan.today.enumerated()), id: \.element.id) { i, j in
+                        let st = plan.state(j)
+                        HStack(spacing: 14) {
+                            Text(String(format: "%02d:%02d", j.hour, j.minute)).font(HubFont.p(13)).foregroundColor(T.inactive).frame(width: 46, alignment: .leading)
+                            if let a = team.agent(j.agent) { RobotFace(agent: a, size: 24, working: st == .running) }
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(j.title).font(HubFont.p(14))
+                                Text(team.agent(j.agent)?.name ?? "").font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+                            }
+                            Spacer()
+                            Text(st.rawValue).font(HubFont.p(12)).foregroundColor(color(st))
+                                .padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(color(st).opacity(0.14)))
+                            if st == .upcoming || st == .missed {
+                                Button { Task { await ZuffiTeam.shared.runJob(j.id) } } label: { Image(systemName: "play.fill").font(.system(size: 11)).foregroundColor(T.text).frame(width: 26, height: 26).background(Circle().fill(T.content)) }
+                                    .buttonStyle(.plain).help("Run now")
+                            }
+                        }
+                        .padding(.vertical, 9)
+                        .overlay(alignment: .top) { if i > 0 { Rectangle().fill(T.border).frame(height: 1) } }
+                    }
+                }
+            }
+            if !plan.note.isEmpty { Text(plan.note).font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
+            if !plan.ideas.isEmpty {
+                Text("Nik suggests adding").font(HubFont.p(14, .semibold)).padding(.top, 4)
+                ForEach(plan.ideas) { i in
+                    HStack(spacing: 12) {
+                        if let a = team.agent(i.agent) { RobotFace(agent: a, size: 24) }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\(String(format: "%02d:%02d", i.hour, i.minute)) · \(i.title)").font(HubFont.p(14))
+                            Text(i.task).font(HubFont.p(12, .regular)).foregroundColor(T.inactive).lineLimit(2)
+                        }
+                        Spacer()
+                        Button { plan.add(i) } label: { Text("Add").font(HubFont.p(13)).foregroundColor(.white).padding(.horizontal, 14).frame(height: 30).background(Capsule().fill(HubTheme.blue)) }.buttonStyle(.plain)
+                        Button { plan.ideas.removeAll { $0.id == i.id } } label: { Image(systemName: "xmark").font(.system(size: 11)).foregroundColor(T.inactive) }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 14).fill(T.content))
+        .padding(.bottom, 24)
+    }
+    private func color(_ s: NikPlan.State) -> Color {
+        switch s { case .done: return Color(hex: "#3DBE7E"); case .running: return Color(hex: "#F5B963"); case .upcoming: return HubTheme.blue; case .missed, .failed: return Color(hex: "#EF6B6B") }
+    }
+}
+
+
+// MARK: - Documents & Data agent: real files, nothing invented
+
+@MainActor
+enum DocsAgent {
+    static func folder() -> URL {
+        let base = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let f = base.appendingPathComponent("Zuffi", isDirectory: true)
+        try? FileManager.default.createDirectory(at: f, withIntermediateDirectories: true)
+        return f
+    }
+    static func safeName(_ t: String) -> String {
+        let n = t.components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted).joined().trimmingCharacters(in: .whitespaces)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"; let stamp = f.string(from: Date())
+        return (n.isEmpty ? "Zuffi file" : String(n.prefix(50))) + " " + stamp
+    }
+    static func wantsPDF(_ t: String) -> Bool { let l = t.lowercased(); return l.contains("pdf") && ["make", "create", "edit", "change", "fix", "turn", "convert", "rewrite", "save", "new"].contains { l.contains($0) } }
+    static func hasData(_ t: String) -> Bool {
+        t.contains("THE FILE THE OWNER GAVE YOU") || t.components(separatedBy: "\n").filter { $0.contains(",") || $0.contains("\t") || $0.contains("|") }.count >= 2
+    }
+
+    /// Returns the answer and whether it finished (false = it asked for the data).
+    static func run(_ task: String, step: (String) -> Void) async -> (String, Bool) {
+        guard hasData(task) || task.count > 400 else {
+            step("Asked you for the data")
+            return ("I can do that — please give me the data first. You can attach a file (CSV, Excel saved as CSV, PDF, Word or text) with the + button in chat, or paste the rows here. Tell me what you want too: a clean spreadsheet, fixed data, a summary, or a new PDF.", false)
+        }
+        if wantsPDF(task) { return await makePDF(task, step: step) }
+        return await makeSheet(task, step: step)
+    }
+
+    static func makeSheet(_ task: String, step: (String) -> Void) async -> (String, Bool) {
+        step("Reading your data")
+        let prompt = """
+        Turn the owner's data into one clean table and do exactly what they asked (tidy, fix, sort, total, pick out rows…).
+        Rules: use ONLY values that are in the data. Never invent rows, names, numbers or totals. Fix formats (dates as YYYY-MM-DD,         trimmed names, numbers without stray symbols), remove exact duplicate rows, and leave a cell empty if the value is missing.
+        Reply with JSON only: {"title":"<short name>","columns":["..."],"rows":[["..."]],"changes":["<what you changed and why, one line each>"],"missing":["<anything missing or unclear>"]}
+        THE OWNER'S REQUEST AND DATA:
+        \(task.prefix(60_000))
+        """
+        step("Tidying and laying out the table")
+        guard let raw = await AIService.shared.oneShot(prompt),
+              let s = raw.firstIndex(of: "{"), let e = raw.lastIndex(of: "}"),
+              let d = String(raw[s...e]).data(using: .utf8),
+              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let cols = j["columns"] as? [Any], let rowsAny = j["rows"] as? [[Any]] else {
+            step("Couldn't make the table")
+            return ("I couldn't turn that into a table this time. Check that an AI is set up in Settings, or send the data as plain rows (one line per row, values separated by commas).", false)
+        }
+        let columns = cols.map { "\($0)" }
+        let rows = rowsAny.map { r in r.map { v -> String in v is NSNull ? "" : "\(v)" } }
+        // honesty check: every value in the table must appear in what you gave (ignoring case/spaces), except reformatted dates/numbers
+        let source = task.lowercased()
+        let unknown = rows.flatMap { $0 }.filter { v in
+            let t = v.trimmingCharacters(in: .whitespaces).lowercased()
+            return t.count > 3 && t.rangeOfCharacter(from: .letters) != nil && !source.contains(t)
+        }
+        let title = (j["title"] as? String) ?? "Table"
+        func cell(_ v: String) -> String { v.contains(",") || v.contains("\"") || v.contains("\n") ? "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : v }
+        let csv = "\u{FEFF}" + ([columns] + rows).map { $0.map(cell).joined(separator: ",") }.joined(separator: "\r\n")
+        let url = folder().appendingPathComponent(safeName(title) + ".csv")
+        do { try csv.write(to: url, atomically: true, encoding: .utf8) } catch {
+            return ("I made the table but couldn't save the file: \(error.localizedDescription)", false)
+        }
+        step("Saved \(url.lastPathComponent) in Downloads › Zuffi")
+        var out = ["## \(title)", "\(rows.count) row\(rows.count == 1 ? "" : "s") · \(columns.count) column\(columns.count == 1 ? "" : "s"). Saved as a spreadsheet you can open in Excel or Numbers.", "• Open the spreadsheet — \(url.absoluteString)"]
+        let preview = rows.prefix(8).map { $0.joined(separator: " · ") }
+        if !preview.isEmpty { out.append("### First rows"); out.append(([columns.joined(separator: " · ")] + preview).map { "- " + $0 }.joined(separator: "\n")) }
+        if let ch = j["changes"] as? [String], !ch.isEmpty { out.append("### What I changed"); out.append(ch.prefix(12).map { "- " + $0 }.joined(separator: "\n")) }
+        if let m = j["missing"] as? [String], !m.isEmpty { out.append("### Missing or unclear"); out.append(m.prefix(8).map { "- " + $0 }.joined(separator: "\n")) }
+        if !unknown.isEmpty { out.append("⚠️ Please check: \(unknown.prefix(5).joined(separator: ", ")) — I couldn't find \(unknown.count == 1 ? "this value" : "these values") word-for-word in your data.") }
+        return (out.joined(separator: "\n\n"), true)
+    }
+
+    static func makePDF(_ task: String, step: (String) -> Void) async -> (String, Bool) {
+        step("Reading your document")
+        let prompt = """
+        The owner wants a PDF made or changed. Write the FULL final text of the document with their changes applied.         Keep everything they didn't ask to change exactly as it is. Don't invent facts, names, prices or dates.         Plain text only: a title on the first line, then paragraphs separated by blank lines; lines starting with "- " are bullets.
+        THE OWNER'S REQUEST AND DOCUMENT:
+        \(task.prefix(60_000))
+        """
+        step("Writing the new text")
+        guard let text = await AIService.shared.oneShot(prompt, system: "You edit documents exactly as asked. Reply with the document text only."), text.count > 20 else {
+            return ("I couldn't write the document this time. Check that an AI is set up in Settings.", false)
+        }
+        let lines = text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+        let title = lines.first?.trimmingCharacters(in: CharacterSet(charactersIn: "# ")) ?? "Document"
+        let url = folder().appendingPathComponent(safeName(title) + ".pdf")
+        step("Making the PDF")
+        guard writePDF(title: title, body: lines.dropFirst().joined(separator: "\n"), to: url) else { return ("I couldn't save the PDF.", false) }
+        step("Saved \(url.lastPathComponent) in Downloads › Zuffi")
+        return ("""
+        ## \(title)
+        I made a new PDF with your changes.
+        • Open the PDF — \(url.absoluteString)
+        Note: I rebuild PDFs from their text, so the original's exact layout, pictures and signatures aren't kept. For forms or signed papers, keep the original and use this as the updated text.
+        """, true)
+    }
+
+    /// A clean A4 PDF from text (title, paragraphs, bullets), with page breaks.
+    static func writePDF(title: String, body: String, to url: URL) -> Bool {
+        var box = CGRect(x: 0, y: 0, width: 595, height: 842)
+        guard let ctx = CGContext(url as CFURL, mediaBox: &box, nil) else { return false }
+        let doc = NSMutableAttributedString()
+        let tp = NSMutableParagraphStyle(); tp.paragraphSpacing = 14
+        doc.append(NSAttributedString(string: title + "\n", attributes: [.font: NSFont.systemFont(ofSize: 20, weight: .semibold), .foregroundColor: NSColor.black, .paragraphStyle: tp]))
+        let bp = NSMutableParagraphStyle(); bp.paragraphSpacing = 8; bp.lineSpacing = 2
+        let lp = NSMutableParagraphStyle(); lp.paragraphSpacing = 4; lp.headIndent = 14; lp.firstLineHeadIndent = 0
+        for line in body.components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("- ") || t.hasPrefix("• ") {
+                doc.append(NSAttributedString(string: "•  " + String(t.dropFirst(2)) + "\n", attributes: [.font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: NSColor.black, .paragraphStyle: lp]))
+            } else {
+                doc.append(NSAttributedString(string: t + "\n", attributes: [.font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: NSColor.black, .paragraphStyle: bp]))
+            }
+        }
+        let framesetter = CTFramesetterCreateWithAttributedString(doc)
+        var start = 0
+        let frameRect = CGRect(x: 56, y: 56, width: 595 - 112, height: 842 - 112)
+        repeat {
+            ctx.beginPDFPage(nil)
+            let path = CGPath(rect: frameRect, transform: nil)
+            let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: start, length: 0), path, nil)
+            CTFrameDraw(frame, ctx)
+            let r = CTFrameGetVisibleStringRange(frame)
+            ctx.endPDFPage()
+            if r.length == 0 { break }
+            start += r.length
+        } while start < doc.length
+        ctx.closePDF()
+        return true
     }
 }

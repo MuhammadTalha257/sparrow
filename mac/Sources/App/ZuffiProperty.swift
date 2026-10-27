@@ -291,12 +291,12 @@ struct BizPropertiesView: View {
                                 HStack(spacing: 10) {
                                     thumb(p).frame(width: 52, height: 52)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text("\(p.id) · \(p.headline)").font(.system(size: 12.5, weight: .bold)).lineLimit(1)
-                                        Text([p.price, p.purpose == "Rent" ? "Rent" : "", p.agent.isEmpty ? p.owner : "👤 \(p.agent)"].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11)).foregroundColor(.white.opacity(0.6)).lineLimit(1)
+                                        Text("\(p.id) · \(p.headline)").font(zf(12.5, .bold)).lineLimit(1)
+                                        Text([p.price, p.purpose == "Rent" ? "Rent" : "", p.agent.isEmpty ? p.owner : "👤 \(p.agent)"].filter { !$0.isEmpty }.joined(separator: " · ")).font(zf(11)).foregroundColor(.white.opacity(0.6)).lineLimit(1)
                                         HStack(spacing: 4) {
                                             statusPill(p.status)
                                             let n = props.buyers(for: p).count
-                                            if n > 0 { Text("\(n) buyer\(n == 1 ? "" : "s")").font(.system(size: 10, weight: .bold)).foregroundColor(Color(hex: "#34D399")) }
+                                            if n > 0 { Text("\(n) buyer\(n == 1 ? "" : "s")").font(zf(10, .bold)).foregroundColor(Color(hex: "#34D399")) }
                                         }
                                     }
                                     Spacer()
@@ -310,7 +310,7 @@ struct BizPropertiesView: View {
                                 .contentShape(Rectangle())
                             }.buttonStyle(.plain)
                         }
-                        if shown.isEmpty { Text("No properties here yet. Type one in Quick add, or import your Excel list.").font(.system(size: 11.5)).foregroundColor(.white.opacity(0.5)).padding(.top, 30) }
+                        if shown.isEmpty { Text("No properties here yet. Type one in Quick add, or import your Excel list.").font(zf(11.5)).foregroundColor(.white.opacity(0.5)).padding(.top, 30) }
                     }
                 }
             }
@@ -320,9 +320,9 @@ struct BizPropertiesView: View {
                 PropertyDetail(property: p, edit: { editing = p }).id(p.id)
             } else {
                 VStack(spacing: 10) {
-                    Image(systemName: "house.lodge.fill").font(.system(size: 40)).foregroundColor(.white.opacity(0.3))
-                    Text("\(props.list.filter(\.isAvailable).count) available · \(props.list.count) total").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.white.opacity(0.7))
-                    Text("Pick a property to see matching buyers, photos and papers.").font(.system(size: 11.5)).foregroundColor(.white.opacity(0.5))
+                    Image(systemName: "house.lodge.fill").font(zf(40)).foregroundColor(.white.opacity(0.3))
+                    Text("\(props.list.filter(\.isAvailable).count) available · \(props.list.count) total").font(zf(15, .bold)).foregroundColor(.white.opacity(0.7))
+                    Text("Pick a property to see matching buyers, photos and papers.").font(zf(11.5)).foregroundColor(.white.opacity(0.5))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -375,7 +375,7 @@ struct BizPropertiesView: View {
 
 func statusPill(_ s: String) -> some View {
     let c: Color = s.lowercased().hasPrefix("avail") ? Color(hex: "#34D399") : s.lowercased().contains("sold") || s.lowercased().contains("rented") ? Color.white.opacity(0.5) : Color(hex: "#FBC56A")
-    return Text(s).font(.system(size: 10, weight: .bold, design: .rounded)).foregroundColor(c).padding(.horizontal, 7).frame(height: 18).background(Capsule().fill(c.opacity(0.16)))
+    return Text(s).font(zf(10, .bold)).foregroundColor(c).padding(.horizontal, 7).frame(height: 18).background(Capsule().fill(c.opacity(0.16)))
 }
 
 extension String { fileprivate func ifEmpty(_ s: String) -> String { isEmpty ? s : self } }
@@ -396,8 +396,8 @@ struct PropertyDetail: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(p.headline).font(.system(size: 19, weight: .heavy, design: .rounded))
-                        Text("\(p.id) · \(p.purpose)\(p.price.isEmpty ? "" : " · \(p.price)")").font(.system(size: 12)).foregroundColor(.white.opacity(0.65))
+                        Text(p.headline).font(zf(19, .heavy))
+                        Text("\(p.id) · \(p.purpose)\(p.price.isEmpty ? "" : " · \(p.price)")").font(zf(12)).foregroundColor(.white.opacity(0.65))
                     }
                     Spacer()
                     Menu { ForEach(ZuffiProperties.statuses, id: \.self) { s in Button(s) { var x = p; x.status = s; props.save(x) } } } label: { statusPill(p.status) }
@@ -409,18 +409,18 @@ struct PropertyDetail: View {
                     fact("Owner", p.owner); fact("Owner phone", p.ownerPhone); fact("Agent", p.agent)
                 }
                 if !p.features.isEmpty || !p.notes.isEmpty {
-                    Text([p.features, p.notes].filter { !$0.isEmpty }.joined(separator: "\n")).font(.system(size: 12)).foregroundColor(.white.opacity(0.8)).textSelection(.enabled)
+                    Text([p.features, p.notes].filter { !$0.isEmpty }.joined(separator: "\n")).font(zf(12)).foregroundColor(.white.opacity(0.8)).textSelection(.enabled)
                 }
                 // Photos & papers
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Label("Photos & papers", systemImage: "photo.on.rectangle").font(.system(size: 13, weight: .heavy, design: .rounded))
+                        Label("Photos & papers", systemImage: "photo.on.rectangle").font(zf(13, .heavy))
                         Spacer()
                         Button("Add files…") { addFiles(p) }
                         Button("Open folder") { NSWorkspace.shared.open(ZuffiProperties.folder(p.id)) }
                     }.controlSize(.small)
                     let files = ZuffiProperties.files(p.id)
-                    if files.isEmpty { Text("Add photos, the allotment letter, NOC, map or anything else. Drag files here or press Add files.").font(.system(size: 11)).foregroundColor(.white.opacity(0.5)) }
+                    if files.isEmpty { Text("Add photos, the allotment letter, NOC, map or anything else. Drag files here or press Add files.").font(zf(11)).foregroundColor(.white.opacity(0.5)) }
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
                             ForEach(files, id: \.self) { u in
@@ -429,7 +429,7 @@ struct PropertyDetail: View {
                                         if let img = NSImage(contentsOf: u), ["jpg", "jpeg", "png", "heic", "webp"].contains(u.pathExtension.lowercased()) {
                                             Image(nsImage: img).resizable().scaledToFill()
                                         } else {
-                                            VStack { Image(systemName: "doc.fill").font(.system(size: 20)); Text(u.lastPathComponent).font(.system(size: 9)).lineLimit(2) }.padding(6)
+                                            VStack { Image(systemName: "doc.fill").font(zf(20)); Text(u.lastPathComponent).font(zf(9)).lineLimit(2) }.padding(6)
                                         }
                                     }
                                     .frame(width: 90, height: 70).clipShape(RoundedRectangle(cornerRadius: 10))
@@ -449,7 +449,7 @@ struct PropertyDetail: View {
                 // Matching buyers
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Label("Clients who may want it", systemImage: "person.2.fill").font(.system(size: 13, weight: .heavy, design: .rounded))
+                        Label("Clients who may want it", systemImage: "person.2.fill").font(zf(13, .heavy))
                         Spacer()
                         let b = props.buyers(for: p)
                         if !b.isEmpty {
@@ -457,12 +457,12 @@ struct PropertyDetail: View {
                         }
                     }.controlSize(.small)
                     let b = props.buyers(for: p)
-                    if b.isEmpty { Text("No matching clients yet — Zuffi checks area, size, type and budget.").font(.system(size: 11)).foregroundColor(.white.opacity(0.5)) }
+                    if b.isEmpty { Text("No matching clients yet — Zuffi checks area, size, type and budget.").font(zf(11)).foregroundColor(.white.opacity(0.5)) }
                     ForEach(b.prefix(12)) { l in
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(l.display).font(.system(size: 12.5, weight: .semibold))
-                                Text([l.interest, l.area, l.budget].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 10.5)).foregroundColor(.white.opacity(0.55))
+                                Text(l.display).font(zf(12.5, .semibold))
+                                Text([l.interest, l.area, l.budget].filter { !$0.isEmpty }.joined(separator: " · ")).font(zf(10.5)).foregroundColor(.white.opacity(0.55))
                             }
                             Spacer()
                             Button("Send") { Task { nav.say(await crm.send(l.key, props.shareText(p))) } }
@@ -476,10 +476,10 @@ struct PropertyDetail: View {
                 let vs = props.visits.filter { $0.property == p.id }.sorted { $0.date + $0.time > $1.date + $1.time }
                 if !vs.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Label("Site visits", systemImage: "figure.walk").font(.system(size: 13, weight: .heavy, design: .rounded))
+                        Label("Site visits", systemImage: "figure.walk").font(zf(13, .heavy))
                         ForEach(vs) { v in
                             HStack {
-                                Text("\(v.date) \(v.time) · \(v.client)").font(.system(size: 12))
+                                Text("\(v.date) \(v.time) · \(v.client)").font(zf(12))
                                 Spacer()
                                 Menu(v.status) { ForEach(["Booked", "Done", "No-show", "Cancelled"], id: \.self) { s in Button(s) { props.setVisitStatus(v, s) } } }.fixedSize()
                             }
@@ -496,7 +496,7 @@ struct PropertyDetail: View {
         }
         .sheet(item: $visitFor) { l in
             VStack(alignment: .leading, spacing: 12) {
-                Text("Site visit: \(l.display) · \(p.id)").font(.system(size: 15, weight: .bold))
+                Text("Site visit: \(l.display) · \(p.id)").font(zf(15, .bold))
                 DatePicker("When", selection: $visitDate).datePickerStyle(.compact)
                 HStack {
                     Spacer()
@@ -533,8 +533,8 @@ struct PropertyDetail: View {
 
     private func fact(_ t: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(t).font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.5))
-            Text(v.isEmpty ? "—" : v).font(.system(size: 12.5, weight: .semibold)).lineLimit(2)
+            Text(t).font(zf(10, .bold)).foregroundColor(.white.opacity(0.5))
+            Text(v.isEmpty ? "—" : v).font(zf(12.5, .semibold)).lineLimit(2)
         }
     }
 }
@@ -545,7 +545,7 @@ struct PropertyEditor: View {
     @State private var p = Property(id: "")
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Property \(p.id)").font(.system(size: 17, weight: .heavy, design: .rounded))
+            Text("Property \(p.id)").font(zf(17, .heavy))
             Form {
                 TextField("Title", text: $p.title)
                 Picker("For", selection: $p.purpose) { Text("Sale").tag("Sale"); Text("Rent").tag("Rent") }.pickerStyle(.segmented)
@@ -582,16 +582,16 @@ struct PropertyCompare: View {
         let rows: [(String, (Property) -> String)] = [("Type", \.type), ("Area", { [$0.block, $0.area].filter { !$0.isEmpty }.joined(separator: ", ") }), ("Size", \.size),
                                                        ("Beds", \.beds), ("Baths", \.baths), ("Price", \.price), ("For", \.purpose), ("Status", \.status), ("Features", \.features)]
         VStack(alignment: .leading, spacing: 12) {
-            Text("Compare properties").font(.system(size: 17, weight: .heavy, design: .rounded))
+            Text("Compare properties").font(zf(17, .heavy))
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
                 GridRow {
                     Text("")
-                    ForEach(ps) { p in Text(p.id).font(.system(size: 13, weight: .bold)) }
+                    ForEach(ps) { p in Text(p.id).font(zf(13, .bold)) }
                 }
                 ForEach(rows, id: \.0) { r in
                     GridRow {
-                        Text(r.0).font(.system(size: 11, weight: .bold)).foregroundColor(.secondary)
-                        ForEach(ps) { p in Text(r.1(p).isEmpty ? "—" : r.1(p)).font(.system(size: 12)).frame(width: 170, alignment: .leading) }
+                        Text(r.0).font(zf(11, .bold)).foregroundColor(.secondary)
+                        ForEach(ps) { p in Text(r.1(p).isEmpty ? "—" : r.1(p)).font(zf(12)).frame(width: 170, alignment: .leading) }
                     }
                 }
             }
@@ -766,7 +766,7 @@ struct PKDealDesk: View {
         let p = property
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Deal desk", systemImage: "doc.text.magnifyingglass").font(.system(size: 13, weight: .heavy, design: .rounded))
+                Label("Deal desk", systemImage: "doc.text.magnifyingglass").font(zf(13, .heavy))
                 Spacer()
                 Picker("1 marla =", selection: $sqft) { Text("225 sq ft").tag(225.0); Text("250 sq ft").tag(250.0); Text("272.25 sq ft").tag(272.25) }
                     .frame(width: 190).controlSize(.small).onChange(of: sqft) { _, v in PKTools.marlaSqft = v }
@@ -774,28 +774,28 @@ struct PKDealDesk: View {
             Group {
                 if let s = PKTools.sizes(p.size) { Text("📐 " + s) }
                 if let pm = PKTools.perMarla(p) { Text("💰 " + pm) }
-            }.font(.system(size: 11.5)).foregroundColor(Ink.muted).textSelection(.enabled)
+            }.font(zf(11.5)).foregroundColor(Ink.muted).textSelection(.enabled)
             // Instalments
             HStack(spacing: 10) {
-                Text("Instalments").font(.system(size: 11.5, weight: .semibold))
+                Text("Instalments").font(zf(11.5, .semibold))
                 Stepper("Down \(Int(down))%", value: $down, in: 0...90, step: 5).fixedSize()
                 Stepper("\(months) months", value: $months, in: 3...120, step: 3).fixedSize()
                 Toggle("Quarterly", isOn: $quarterly).toggleStyle(.checkbox)
-            }.font(.system(size: 11.5)).controlSize(.small)
+            }.font(zf(11.5)).controlSize(.small)
             Text(PKTools.installments(price: p.priceNumber, downPct: down, months: months, every: quarterly ? 3 : 1))
-                .font(.system(size: 11.5)).foregroundColor(Ink.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                .font(zf(11.5)).foregroundColor(Ink.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Divider()
             // Token & commission
             HStack(spacing: 8) {
                 TextField("Buyer", text: $deal.buyer); TextField("Deal price", text: $deal.price); TextField("Token (bayana)", text: $deal.token)
-            }.textFieldStyle(.roundedBorder).font(.system(size: 11.5))
+            }.textFieldStyle(.roundedBorder).font(zf(11.5))
             HStack(spacing: 8) {
                 TextField("Token date (yyyy-mm-dd)", text: $deal.tokenDate); TextField("Full payment due (yyyy-mm-dd)", text: $deal.dueDate)
                 TextField("Commission %", text: $deal.commissionPct).frame(width: 100); TextField("Dealer share", text: $deal.dealerShare)
-            }.textFieldStyle(.roundedBorder).font(.system(size: 11.5))
+            }.textFieldStyle(.roundedBorder).font(zf(11.5))
             HStack {
                 Picker("Stage", selection: $deal.stage) { ForEach(PKDeal.stages, id: \.self) { Text($0).tag($0) } }.frame(width: 240).controlSize(.small)
-                Text("Commission: \(PKTools.rs(PKTools.commission(deal)))").font(.system(size: 11.5, weight: .semibold))
+                Text("Commission: \(PKTools.rs(PKTools.commission(deal)))").font(zf(11.5, .semibold))
                 Spacer()
                 Button("Save deal") {
                     var all = PKTools.deals; all[p.id] = deal; PKTools.deals = all
@@ -805,13 +805,13 @@ struct PKDealDesk: View {
             }
             Divider()
             // Papers checklist
-            Text("Transfer papers").font(.system(size: 11.5, weight: .semibold))
+            Text("Transfer papers").font(zf(11.5, .semibold))
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 4) {
                 ForEach(PKTools.papers(p), id: \.self) { d in
                     Toggle(d, isOn: Binding(get: { deal.docs.contains(d) }, set: { on in
                         if on { deal.docs.append(d) } else { deal.docs.removeAll { $0 == d } }
                         var all = PKTools.deals; all[p.id] = deal; PKTools.deals = all
-                    })).toggleStyle(.checkbox).font(.system(size: 11))
+                    })).toggleStyle(.checkbox).font(zf(11))
                 }
             }
         }

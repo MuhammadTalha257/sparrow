@@ -443,7 +443,7 @@ struct ChatRichText: View {
 
     static func parse(_ raw: String) -> [Block] {
         var out: [Block] = []
-        let urlRE = try? NSRegularExpression(pattern: #"https?://\S+"#)
+        let urlRE = try? NSRegularExpression(pattern: #"(?:https?|file)://\S+"#)
         for line0 in raw.components(separatedBy: .newlines) {
             var line = line0.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { continue }

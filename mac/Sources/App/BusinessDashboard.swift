@@ -169,25 +169,35 @@ final class BizNav: ObservableObject {
 /// Business colours. Two looks — Porcelain (light, the default) and Night — and an accent the owner picks.
 /// Every page also has its own colour (its icon tile), so you always know where you are.
 enum Ink {
+    /// Inside the one dashboard window, the business pages wear the dashboard's look (frosted glass, Poppins, blue).
+    static var hub: Bool { UserDefaults.standard.object(forKey: "hubOneWindow") as? Bool ?? true }
+    static var hubTheme: HubTheme { HubTheme(light: UserDefaults.standard.bool(forKey: "hubLight")) }
     /// Night (like the notch: dark glass, warm amber) is the default; Porcelain (light) is a choice.
-    static var dark: Bool { UserDefaults.standard.object(forKey: "bizDarkLook") as? Bool ?? true }
-    static var accentHex: String { UserDefaults.standard.string(forKey: "bizAccentHex") ?? "#F59E3B" }
+    static var dark: Bool { hub ? !UserDefaults.standard.bool(forKey: "hubLight") : UserDefaults.standard.object(forKey: "bizDarkLook") as? Bool ?? true }
+    static var accentHex: String { hub ? "#3A6DF0" : UserDefaults.standard.string(forKey: "bizAccentHex") ?? "#F59E3B" }
     /// The colour text and hairlines are made from.
     static var ink: Color { dark ? .white : Color(hex: "#141A26") }
-    static var bg: Color { dark ? Color(hex: "#07080C") : Color(hex: "#EEF1F7") }
-    static var bgTop: Color { dark ? Color(hex: "#12131B") : Color(hex: "#F6F8FC") }
+    static var bg: Color { hub ? .clear : dark ? Color(hex: "#07080C") : Color(hex: "#EEF1F7") }
+    static var bgTop: Color { hub ? .clear : dark ? Color(hex: "#12131B") : Color(hex: "#F6F8FC") }
     static var sidebar: Color { dark ? Color(hex: "#0B0C11") : Color(hex: "#FFFFFF") }
-    static var panel: Color { dark ? Color(hex: "#13151C") : Color(hex: "#FFFFFF") }
-    static var panelHi: Color { dark ? Color(hex: "#1A1D26") : Color(hex: "#F4F7FD") }
-    static var line: Color { ink.opacity(dark ? 0.10 : 0.08) }
-    static var text: Color { dark ? Color(hex: "#ECEEF3") : Color(hex: "#141A26") }
-    static var muted: Color { dark ? Color(hex: "#9AA1B1") : Color(hex: "#596173") }
-    static var faint: Color { dark ? Color(hex: "#6C7385") : Color(hex: "#8A92A4") }
+    static var panel: Color { hub ? hubTheme.content : dark ? Color(hex: "#13151C") : Color(hex: "#FFFFFF") }
+    static var panelHi: Color { hub ? (dark ? Color.white.opacity(0.07) : Color.white.opacity(0.55)) : dark ? Color(hex: "#1A1D26") : Color(hex: "#F4F7FD") }
+    static var line: Color { hub ? hubTheme.border : ink.opacity(dark ? 0.10 : 0.08) }
+    static var text: Color { hub ? hubTheme.text : dark ? Color(hex: "#ECEEF3") : Color(hex: "#141A26") }
+    static var muted: Color { hub ? (dark ? Color(hex: "#A3A8BD") : Color(hex: "#4A4A52")) : dark ? Color(hex: "#9AA1B1") : Color(hex: "#596173") }
+    static var faint: Color { hub ? (dark ? Color(hex: "#717790") : Color(hex: "#7A7A84")) : dark ? Color(hex: "#6C7385") : Color(hex: "#8A92A4") }
     static var accent: Color { Color(hex: accentHex) }
     static let onAccent = Color.white
-    static var shadow: Color { .black.opacity(dark ? 0.28 : 0.06) }
+    static var shadow: Color { hub ? .clear : .black.opacity(dark ? 0.28 : 0.06) }
     /// Accents to choose from (named so they're easy to talk about).
     static let accents: [(String, String)] = [("Zuffi amber", "#F59E3B"), ("Ocean", "#3B6EF5"), ("Mint", "#0F9F76"), ("Berry", "#D2457A"), ("Marigold", "#DE8E12"), ("Violet", "#7357E8"), ("Coral", "#EA5A3D"), ("Teal", "#0E8FA3"), ("Graphite", "#3D4555")]
+}
+
+/// The dashboard's font (Poppins) on business pages inside the dashboard; the system font elsewhere.
+func zf(_ size: CGFloat, _ w: Font.Weight = .regular) -> Font {
+    guard Ink.hub else { return .system(size: size, weight: w) }
+    let name = [.semibold, .bold, .heavy, .black].contains(w) ? "Poppins-SemiBold" : w == .medium ? "Poppins-Medium" : "Poppins-Regular"
+    return NSFont(name: name, size: size) != nil ? .custom(name, size: size) : .system(size: size, weight: w)
 }
 
 /// Re-draws the Business window when the look changes.
@@ -265,7 +275,7 @@ private struct GlassBox<C: View>: View {
 private struct Pill: View {
     let text: String; var color: Color = Biz.pink; var filled = false
     var body: some View {
-        Text(text).font(.system(size: 10.5, weight: .bold))
+        Text(text).font(zf(10.5, .bold))
             .foregroundColor(filled ? Ink.onAccent : color)
             .padding(.horizontal, 8).frame(height: 20)
             .background(Capsule().fill(filled ? color : color.opacity(0.16)))
@@ -277,7 +287,7 @@ private struct BizMainButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) { if let icon { Image(systemName: icon) }; Text(title) }
-                .font(.system(size: 12, weight: .bold)).foregroundColor(Ink.onAccent)
+                .font(zf(12, .bold)).foregroundColor(Ink.onAccent)
                 .padding(.horizontal, 13).frame(height: 31)
                 .background(Capsule().fill(Biz.accent))
                 .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
@@ -290,7 +300,7 @@ private struct BizSoftButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) { if let icon { Image(systemName: icon) }; Text(title) }
-                .font(.system(size: 12, weight: .semibold)).foregroundColor(Ink.text)
+                .font(zf(12, .semibold)).foregroundColor(Ink.text)
                 .padding(.horizontal, 12).frame(height: 31)
                 .zGlass(16, interactive: true)
         }.buttonStyle(.plain)
@@ -357,7 +367,7 @@ struct BusinessDashboardView: View {
         .foregroundStyle(Ink.text)
         .overlay(alignment: .bottom) {
             if !nav.toast.isEmpty || !crm.busy.isEmpty {
-                Text(crm.busy.isEmpty ? nav.toast : crm.busy).font(.system(size: 12, weight: .semibold))
+                Text(crm.busy.isEmpty ? nav.toast : crm.busy).font(zf(12, .semibold))
                     .padding(.horizontal, 14).frame(height: 32)
                     .foregroundColor(.white).background(Capsule().fill(Color(hex: "#1B2130").opacity(0.94))).overlay(Capsule().stroke(Biz.stroke))
                     .padding(.bottom, 16).transition(.move(edge: .bottom).combined(with: .opacity))
@@ -366,7 +376,7 @@ struct BusinessDashboardView: View {
         .overlay {
             if dropping {
                 RoundedRectangle(cornerRadius: 18).stroke(Biz.pink, style: StrokeStyle(lineWidth: 3, dash: [8, 6])).padding(8)
-                    .overlay(Text("Drop a voice note or a leads file").font(.system(size: 18, weight: .bold)))
+                    .overlay(Text("Drop a voice note or a leads file").font(zf(18, .bold)))
                     .background(Color.black.opacity(0.35))
             }
         }
@@ -393,8 +403,8 @@ struct BusinessDashboardView: View {
                 ZuffiMini(state: AppState.shared, height: 38).frame(width: 42, height: 42)
                     .background(Circle().fill(Ink.accent.opacity(0.12)))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(biz.businessName.isEmpty ? "My business" : biz.businessName).font(.system(size: 14.5, weight: .bold, design: .rounded)).lineLimit(1)
-                    Text(biz.pack?.label ?? "Choose your type of business").font(.system(size: 10.5)).foregroundColor(Ink.faint).lineLimit(1)
+                    Text(biz.businessName.isEmpty ? "My business" : biz.businessName).font(zf(14.5, .bold)).lineLimit(1)
+                    Text(biz.pack?.label ?? "Choose your type of business").font(zf(10.5)).foregroundColor(Ink.faint).lineLimit(1)
                 }
             }
             .padding(.top, 36).padding(.bottom, 16).padding(.horizontal, 8)
@@ -412,27 +422,27 @@ struct BusinessDashboardView: View {
             }
             Spacer(minLength: 8)
             if biz.pack == nil {
-                Text("Choose your type of business").font(.system(size: 10.5, weight: .semibold)).foregroundColor(Ink.muted)
+                Text("Choose your type of business").font(zf(10.5, .semibold)).foregroundColor(Ink.muted)
                 BizTypeMenu().padding(.bottom, 8)
             }
             HStack(spacing: 8) {
                 Button { VoiceEngine.shared.listenOnce() } label: {
-                    Image(systemName: voice.isListening ? "waveform" : "mic.fill").font(.system(size: 13, weight: .bold)).foregroundColor(Ink.onAccent)
+                    Image(systemName: voice.isListening ? "waveform" : "mic.fill").font(zf(13, .bold)).foregroundColor(Ink.onAccent)
                         .frame(width: 34, height: 34).background(Circle().fill(Ink.accent))
                 }.buttonStyle(.plain).help("Talk to Zuffi: add a lead, ask who needs a follow-up")
                 Button { ZuffiChat.shared.open() } label: {
-                    Label("Ask Zuffi", systemImage: "bubble.left.fill").font(.system(size: 12, weight: .semibold))
+                    Label("Ask Zuffi", systemImage: "bubble.left.fill").font(zf(12, .semibold))
                         .padding(.horizontal, 12).frame(height: 34).inkPanel(Capsule(), interactive: true)
                 }.buttonStyle(.plain)
                 Spacer()
                 Button { showLook.toggle() } label: {
-                    Image(systemName: "paintpalette.fill").font(.system(size: 13)).foregroundStyle(Ink.accent)
+                    Image(systemName: "paintpalette.fill").font(zf(13)).foregroundStyle(Ink.accent)
                         .frame(width: 34, height: 34).inkPanel(Circle(), interactive: true)
                 }.buttonStyle(.plain).help("Colours and light or dark")
                 .popover(isPresented: $showLook, arrowEdge: .top) { BizLookPicker() }
             }
             Text(voice.isListening ? (voice.heard.isEmpty ? "Listening…" : voice.heard) : "Say “new lead…” or “who needs a follow-up?”")
-                .font(.system(size: 10)).foregroundColor(Ink.faint).lineLimit(2).padding(.top, 6).padding(.bottom, 14)
+                .font(zf(10)).foregroundColor(Ink.faint).lineLimit(2).padding(.top, 6).padding(.bottom, 14)
         }
         .padding(.horizontal, 12)
     }
@@ -441,7 +451,7 @@ struct BusinessDashboardView: View {
         let on = nav.tab == t
         return Button { nav.tab = t } label: {
             HStack(spacing: 10) {
-                Image(systemName: t.icon).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white)
+                Image(systemName: t.icon).font(zf(11.5, .semibold)).foregroundColor(.white)
                     .frame(width: 24, height: 24)
                     .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color(hex: t.tint).gradient))
                 Text(t.rawValue).font(.system(size: 13, weight: on ? .semibold : .regular)).foregroundColor(Ink.text)
@@ -462,18 +472,18 @@ struct BusinessDashboardView: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 10) {
-                Image(systemName: nav.tab.icon).font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                Image(systemName: nav.tab.icon).font(zf(15, .semibold)).foregroundColor(.white)
                     .frame(width: 36, height: 36)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: nav.tab.tint).gradient))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 8) {
-                        Text(nav.tab.rawValue).font(.system(size: 22, weight: .bold, design: .rounded)).lineLimit(1)
+                        Text(nav.tab.rawValue).font(zf(22, .bold)).lineLimit(1)
                         Button { showTips.toggle() } label: {
-                            Image(systemName: "questionmark").font(.system(size: 10, weight: .bold)).foregroundColor(Ink.muted).frame(width: 20, height: 20).inkPanel(Circle(), interactive: true)
+                            Image(systemName: "questionmark").font(zf(10, .bold)).foregroundColor(Ink.muted).frame(width: 20, height: 20).inkPanel(Circle(), interactive: true)
                         }.buttonStyle(.plain).help("What is this page?")
                         .popover(isPresented: $showTips, arrowEdge: .bottom) { BizTipsView(tab: nav.tab) }
                     }
-                    Text(nav.tab.subtitle).font(.system(size: 12)).foregroundColor(Ink.muted).lineLimit(1)
+                    Text(nav.tab.subtitle).font(zf(12)).foregroundColor(Ink.muted).lineLimit(1)
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 12)
@@ -567,7 +577,7 @@ struct BizTodayView: View {
                 }
                 if !sales.isEmpty {
                     Text("Money from sales in the last 30 days: \(crm.currency) \(Int(sales.reduce(0) { $0 + $1.valueNumber }).formatted())")
-                        .font(.system(size: 12)).foregroundColor(Ink.muted)
+                        .font(zf(12)).foregroundColor(Ink.muted)
                 }
                 BizTodayExtras()
                 HStack(alignment: .top, spacing: 14) {
@@ -580,7 +590,7 @@ struct BizTodayView: View {
                                 HStack {
                                     header("Needs you today", "person.crop.circle.badge.exclamationmark")
                                     Spacer()
-                                    Text("\(due.count + hot.count)").font(.system(size: 12, weight: .semibold)).foregroundColor(Ink.muted)
+                                    Text("\(due.count + hot.count)").font(zf(12, .semibold)).foregroundColor(Ink.muted)
                                 }
                                 if due.isEmpty && hot.isEmpty { empty("Nobody to chase today 🎉 New chats will show up here.") }
                                 ForEach(due.prefix(10)) { l in BizLeadRow(lead: l, showDue: true) }
@@ -594,7 +604,7 @@ struct BizTodayView: View {
                                 header("Who isn't following up", "person.fill.questionmark")
                                 ForEach(crm.reports()) { r in
                                     HStack {
-                                        Text(r.name).font(.system(size: 12.5, weight: .semibold))
+                                        Text(r.name).font(zf(12.5, .semibold))
                                         Spacer()
                                         if r.overdue > 0 { Pill(text: "\(r.overdue) overdue", color: Biz.red) } else { Pill(text: "on track", color: Biz.green) }
                                     }
@@ -604,7 +614,7 @@ struct BizTodayView: View {
                         GlassBox {
                             VStack(alignment: .leading, spacing: 8) {
                                 header("Your daily summary", "doc.text.fill")
-                                Text(crm.summary()).font(.system(size: 11.5)).foregroundColor(Ink.ink.opacity(0.85))
+                                Text(crm.summary()).font(zf(11.5)).foregroundColor(Ink.ink.opacity(0.85))
                                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                                 HStack {
                                     BizMainButton(title: sending ? "Sending…" : "Send to my WhatsApp", icon: "paperplane.fill") {
@@ -616,7 +626,7 @@ struct BizTodayView: View {
                                     }
                                 }
                                 Text(crm.isOn(.ownerSummary) ? "Sent by itself every day at \(crm.summaryHour):00." : "Turn on the daily send in Automations.")
-                                    .font(.system(size: 10)).foregroundColor(Ink.faint)
+                                    .font(zf(10)).foregroundColor(Ink.faint)
                             }
                         }
                     }
@@ -633,10 +643,10 @@ struct BizTodayView: View {
 }
 
 private func header(_ t: String, _ icon: String) -> some View {
-    Label(t, systemImage: icon).font(.system(size: 13, weight: .heavy))
+    Label(t, systemImage: icon).font(zf(13, .heavy))
 }
 private func empty(_ t: String) -> some View {
-    Text(t).font(.system(size: 11.5)).foregroundColor(Ink.faint)
+    Text(t).font(zf(11.5)).foregroundColor(Ink.faint)
 }
 
 struct BizLeadRow: View {
@@ -648,13 +658,13 @@ struct BizLeadRow: View {
             HStack(spacing: 10) {
                 Avatar(lead: lead, size: 30)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(lead.display).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                    Text(lead.display).font(zf(12.5, .semibold)).lineLimit(1)
                     Text([lead.interest, lead.area, lead.budget].filter { !$0.isEmpty }.joined(separator: " · ").ifEmpty(lead.lastMessage))
-                        .font(.system(size: 10.5)).foregroundColor(Ink.faint).lineLimit(1)
+                        .font(zf(10.5)).foregroundColor(Ink.faint).lineLimit(1)
                 }
                 Spacer()
                 if showDue && lead.overdue { Pill(text: "overdue", color: Biz.red) }
-                if !lead.assigned.isEmpty { Text(lead.assigned).font(.system(size: 10)).foregroundColor(Ink.faint) }
+                if !lead.assigned.isEmpty { Text(lead.assigned).font(zf(10)).foregroundColor(Ink.faint) }
                 StatusDot(text: lead.stage, color: Biz.stageColor(lead.stage))
             }
             .contentShape(Rectangle())
@@ -712,11 +722,11 @@ struct BizInboxView: View {
                 // WhatsApp status + the auto-reply switch, always in view
                 HStack(spacing: 8) {
                     Circle().fill(wa.ready ? Biz.green : Ink.faint).frame(width: 8, height: 8)
-                    Text(wa.ready ? "WhatsApp linked" : wa.enabled ? "WhatsApp connecting…" : "WhatsApp not linked").font(.system(size: 11.5, weight: .semibold))
-                    if !wa.ready { Button(wa.enabled ? "Show code" : "Link") { wa.showWindow() }.buttonStyle(.link).font(.system(size: 11.5, weight: .semibold)) }
+                    Text(wa.ready ? "WhatsApp linked" : wa.enabled ? "WhatsApp connecting…" : "WhatsApp not linked").font(zf(11.5, .semibold))
+                    if !wa.ready { Button(wa.enabled ? "Show code" : "Link") { wa.showWindow() }.buttonStyle(.link).font(zf(11.5, .semibold)) }
                     Spacer()
                     Toggle("Auto-reply", isOn: Binding(get: { crm.isOn(.autopilot) }, set: { crm.set(.autopilot, $0) }))
-                        .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11.5, weight: .semibold))
+                        .toggleStyle(.switch).controlSize(.mini).font(zf(11.5, .semibold))
                         .help("Zuffi answers customers by itself from your business info, in their language — and hands over to you for bargaining, complaints or anything it doesn't know.")
                 }
                 .padding(.horizontal, 10).frame(height: 34)
@@ -731,12 +741,12 @@ struct BizInboxView: View {
                                     Avatar(lead: l)
                                     VStack(alignment: .leading, spacing: 2) {
                                         HStack {
-                                            Text(l.display).font(.system(size: 12.5, weight: .bold)).lineLimit(1)
+                                            Text(l.display).font(zf(12.5, .bold)).lineLimit(1)
                                             Spacer()
-                                            Text(shortTime(l.lastMessageAt.isEmpty ? l.added : l.lastMessageAt)).font(.system(size: 9.5)).foregroundColor(Ink.ink.opacity(0.45))
+                                            Text(shortTime(l.lastMessageAt.isEmpty ? l.added : l.lastMessageAt)).font(zf(9.5)).foregroundColor(Ink.ink.opacity(0.45))
                                         }
                                         Text(l.lastMessage.isEmpty ? (l.interest.isEmpty ? l.source : l.interest) : l.lastMessage)
-                                            .font(.system(size: 11)).foregroundColor(Ink.muted).lineLimit(1)
+                                            .font(zf(11)).foregroundColor(Ink.muted).lineLimit(1)
                                         HStack(spacing: 4) {
                                             if crm.drafts[l.key] != nil { Pill(text: "reply ready", color: Biz.pink, filled: true) }
                                             Pill(text: l.stage, color: Biz.stageColor(l.stage))
@@ -769,9 +779,9 @@ struct BizInboxView: View {
                 BizLeadDetail(lead: l).id(l.key)
             } else {
                 VStack(spacing: 10) {
-                    Image(systemName: "bubble.left.and.text.bubble.right.fill").font(.system(size: 40)).foregroundColor(Ink.ink.opacity(0.3))
-                    Text("Pick a chat").font(.system(size: 15, weight: .bold)).foregroundColor(Ink.muted)
-                    Text(crm.whatsAppStatus).font(.system(size: 11)).foregroundColor(Ink.ink.opacity(0.45))
+                    Image(systemName: "bubble.left.and.text.bubble.right.fill").font(zf(40)).foregroundColor(Ink.ink.opacity(0.3))
+                    Text("Pick a chat").font(zf(15, .bold)).foregroundColor(Ink.muted)
+                    Text(crm.whatsAppStatus).font(zf(11)).foregroundColor(Ink.ink.opacity(0.45))
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -799,8 +809,8 @@ struct BizLeadDetail: View {
                 HStack(spacing: 12) {
                     Avatar(lead: lead, size: 48)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(lead.display).font(.system(size: 19, weight: .heavy))
-                        Text([lead.phone, lead.source].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11.5)).foregroundColor(Ink.muted).textSelection(.enabled)
+                        Text(lead.display).font(zf(19, .heavy))
+                        Text([lead.phone, lead.source].filter { !$0.isEmpty }.joined(separator: " · ")).font(zf(11.5)).foregroundColor(Ink.muted).textSelection(.enabled)
                     }
                     Spacer()
                     BizSoftButton(title: "Edit", icon: "pencil") { editing = true }
@@ -828,7 +838,7 @@ struct BizLeadDetail: View {
                         fact(crm.labels.interest, lead.interest); fact(crm.labels.area, lead.area); fact(crm.labels.budget, lead.budget); fact(crm.labels.value, lead.value.isEmpty ? "" : crm.currency + " " + lead.value)
                         fact("Added", String(lead.added.prefix(10))); fact("Last contact", String(lead.lastContact.prefix(10)))
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Follow up").font(.system(size: 10, weight: .bold)).foregroundColor(Ink.faint)
+                            Text("Follow up").font(zf(10, .bold)).foregroundColor(Ink.faint)
                             DatePicker("", selection: $follow, displayedComponents: .date).labelsHidden().datePickerStyle(.compact)
                                 .onChange(of: follow) { _, d in
                                     let iso = ZuffiBusiness.iso(d)
@@ -846,7 +856,7 @@ struct BizLeadDetail: View {
                         header("Conversation", "bubble.left.and.bubble.right.fill")
                         if !lead.lastMessage.isEmpty {
                             HStack(alignment: .top) {
-                                Text(lead.lastMessage).font(.system(size: 12.5)).padding(10)
+                                Text(lead.lastMessage).font(zf(12.5)).padding(10)
                                     .background(RoundedRectangle(cornerRadius: 12).fill(Ink.ink.opacity(0.1)))
                                 Spacer(minLength: 60)
                             }
@@ -854,7 +864,7 @@ struct BizLeadDetail: View {
                         if lead.lastMessage.hasPrefix("🎤") || lead.notes.contains("voice note") {
                             BizSoftButton(title: "Write out a voice note from \(lead.display.split(separator: " ").first.map(String.init) ?? "them")", icon: "waveform") { BusinessFiles.pickVoiceNote(for: lead.key) }
                         }
-                        TextEditor(text: $reply).font(.system(size: 12.5)).scrollContentBackground(.hidden)
+                        TextEditor(text: $reply).font(zf(12.5)).scrollContentBackground(.hidden)
                             .frame(minHeight: 70).padding(8)
                             .foregroundColor(Ink.text)
                             .background(RoundedRectangle(cornerRadius: 12).fill(Ink.panelHi))
@@ -880,7 +890,7 @@ struct BizLeadDetail: View {
                         header("Notes", "note.text")
                         if !lead.notes.isEmpty {
                             ForEach(lead.notes.components(separatedBy: " | "), id: \.self) { n in
-                                Text("• " + n).font(.system(size: 11.5)).foregroundColor(Ink.ink.opacity(0.8)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                                Text("• " + n).font(zf(11.5)).foregroundColor(Ink.ink.opacity(0.8)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         HStack {
@@ -897,7 +907,7 @@ struct BizLeadDetail: View {
                         VStack(alignment: .leading, spacing: 5) {
                             header("History", "clock.arrow.circlepath")
                             ForEach(Array(hist)) { a in
-                                Text("\(a.date) \(a.time) · \(a.staff) · \(a.kind) \(a.detail)").font(.system(size: 10.5)).foregroundColor(Ink.muted)
+                                Text("\(a.date) \(a.time) · \(a.staff) · \(a.kind) \(a.detail)").font(zf(10.5)).foregroundColor(Ink.muted)
                             }
                         }
                     }
@@ -930,8 +940,8 @@ struct BizLeadDetail: View {
 
     private func fact(_ t: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(t).font(.system(size: 10, weight: .bold)).foregroundColor(Ink.faint)
-            Text(v.isEmpty ? "—" : v).font(.system(size: 12.5, weight: .semibold)).lineLimit(2)
+            Text(t).font(zf(10, .bold)).foregroundColor(Ink.faint)
+            Text(v.isEmpty ? "—" : v).font(zf(12.5, .semibold)).lineLimit(2)
         }
     }
 }
@@ -943,7 +953,7 @@ struct BizLeadEditor: View {
     @State private var l = CRMLead(key: "")
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(lead == nil ? "New lead" : "Edit \(lead!.display)").font(.system(size: 17, weight: .heavy))
+            Text(lead == nil ? "New lead" : "Edit \(lead!.display)").font(zf(17, .heavy))
             Form {
                 TextField("Name", text: $l.name)
                 TextField("Phone (WhatsApp)", text: $l.phone)
@@ -991,7 +1001,7 @@ struct BizPipelineView: View {
                     ForEach(crm.team) { Text($0.name).tag($0.name) }
                 }.frame(width: 240)
                 Spacer()
-                Text("Drag a card to move it.").font(.system(size: 11)).foregroundColor(Ink.faint)
+                Text("Drag a card to move it.").font(zf(11)).foregroundColor(Ink.faint)
             }.padding(.horizontal, 22)
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
@@ -1000,9 +1010,9 @@ struct BizPipelineView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Circle().fill(Biz.stageColor(stage)).frame(width: 8, height: 8)
-                                Text(stage).font(.system(size: 13, weight: .heavy))
+                                Text(stage).font(zf(13, .heavy))
                                 Spacer()
-                                Text("\(cards.count)").font(.system(size: 11, weight: .bold)).foregroundColor(Ink.faint)
+                                Text("\(cards.count)").font(zf(11, .bold)).foregroundColor(Ink.faint)
                             }
                             ScrollView {
                                 VStack(spacing: 8) {
@@ -1033,16 +1043,16 @@ struct BizPipelineView: View {
         Button { nav.selected = l.key; nav.tab = .inbox } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
-                    Text(l.display).font(.system(size: 12.5, weight: .bold)).lineLimit(1)
+                    Text(l.display).font(zf(12.5, .bold)).lineLimit(1)
                     Spacer()
                     if l.priority.lowercased() == "hot" { Text("🔥") }
                 }
-                if !l.interest.isEmpty || !l.area.isEmpty { Text([l.interest, l.area].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 10.5)).foregroundColor(Ink.muted).lineLimit(2) }
+                if !l.interest.isEmpty || !l.area.isEmpty { Text([l.interest, l.area].filter { !$0.isEmpty }.joined(separator: " · ")).font(zf(10.5)).foregroundColor(Ink.muted).lineLimit(2) }
                 HStack(spacing: 4) {
                     if !l.budget.isEmpty { Pill(text: l.budget, color: Biz.green) }
                     if l.overdue { Pill(text: "overdue", color: Biz.red) }
                     Spacer()
-                    if !l.assigned.isEmpty { Text(l.assigned).font(.system(size: 9.5)).foregroundColor(Ink.faint) }
+                    if !l.assigned.isEmpty { Text(l.assigned).font(zf(9.5)).foregroundColor(Ink.faint) }
                 }
             }
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
@@ -1086,7 +1096,7 @@ struct BizTeamView: View {
                         }
                         Toggle("Share new leads among the team (round robin)", isOn: Binding(get: { crm.isOn(.roundRobin) }, set: { crm.set(.roundRobin, $0) }))
                         Text("Each person gets a PIN. With the always-on server they open the team page on their phone, see only their leads and update them.")
-                            .font(.system(size: 10.5)).foregroundColor(Ink.faint)
+                            .font(zf(10.5)).foregroundColor(Ink.faint)
                     }
                 }
                 GlassBox {
@@ -1109,13 +1119,13 @@ struct BizTeamView: View {
                                 Text("Name").frame(width: 150, alignment: .leading)
                                 ForEach(["Leads", "Open", "New today", "Contacts · 7d", "Won", "Overdue"], id: \.self) { Text($0).frame(width: 80) }
                                 Spacer()
-                            }.font(.system(size: 10.5, weight: .bold)).foregroundColor(Ink.faint)
+                            }.font(zf(10.5, .bold)).foregroundColor(Ink.faint)
                             ForEach(crm.reports()) { r in
                                 let s = crm.team.first { $0.name == r.name }
                                 HStack {
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text(r.name).font(.system(size: 12.5, weight: .bold))
-                                        Text("\(s?.role ?? "") · PIN \(s?.pin ?? "")").font(.system(size: 9.5)).foregroundColor(Ink.ink.opacity(0.45))
+                                        Text(r.name).font(zf(12.5, .bold))
+                                        Text("\(s?.role ?? "") · PIN \(s?.pin ?? "")").font(zf(9.5)).foregroundColor(Ink.ink.opacity(0.45))
                                     }.frame(width: 150, alignment: .leading)
                                     ForEach(Array([r.assigned, r.open, r.newToday, r.contacted7, r.won].enumerated()), id: \.offset) { _, v in Text("\(v)").frame(width: 80) }
                                     Group { if r.overdue > 0 { Pill(text: "\(r.overdue)", color: Biz.red, filled: true) } else { Pill(text: "0", color: Biz.green) } }.frame(width: 80)
@@ -1126,9 +1136,9 @@ struct BizTeamView: View {
                                         if let s { Button("Remove \(s.name)", role: .destructive) { crm.removeStaff(s) } }
                                     } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
                                 }
-                                .font(.system(size: 12.5))
+                                .font(zf(12.5))
                                 if !r.overdueNames.isEmpty {
-                                    Text("Overdue: " + r.overdueNames.joined(separator: ", ")).font(.system(size: 10.5)).foregroundColor(Biz.red.opacity(0.85)).padding(.leading, 4)
+                                    Text("Overdue: " + r.overdueNames.joined(separator: ", ")).font(zf(10.5)).foregroundColor(Biz.red.opacity(0.85)).padding(.leading, 4)
                                 }
                                 Divider().overlay(Biz.stroke)
                             }
@@ -1162,7 +1172,7 @@ struct BizAutomationsView: View {
                             Stepper("until \(closeHour):00", value: $closeHour, in: 1...24)
                             Spacer()
                             Toggle("Closed on Sundays", isOn: $closedSunday)
-                        }.font(.system(size: 12))
+                        }.font(zf(12))
                         TextField("Your review link (Google, Facebook…) — used in thank-you messages", text: $reviewLink).textFieldStyle(.roundedBorder)
                     }
                 }
@@ -1177,16 +1187,16 @@ struct BizAutomationsView: View {
                             Stepper("Daily summary at \(crm.summaryHour):00", value: $crm.summaryHour, in: 5...22)
                             Spacer()
                             Stepper("Follow up after \(crm.quietDays) quiet day\(crm.quietDays == 1 ? "" : "s")", value: $crm.quietDays, in: 1...14)
-                        }.font(.system(size: 12))
+                        }.font(zf(12))
                     }
                 }
                 ForEach(ZuffiCRM.Auto.allCases) { a in
                     GlassBox(padding: 12) {
                         HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: icon(a)).font(.system(size: 16)).foregroundColor(Ink.accent).frame(width: 24)
+                            Image(systemName: icon(a)).font(zf(16)).foregroundColor(Ink.accent).frame(width: 24)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(a.title).font(.system(size: 13, weight: .bold))
-                                Text(a.detail).font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                                Text(a.title).font(zf(13, .bold))
+                                Text(a.detail).font(zf(11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                                 if a == .autoReply {
                                     TextField("Welcome message (optional — use {name}). Empty = Zuffi writes one for each client.", text: $crm.welcomeText).textFieldStyle(.roundedBorder).padding(.top, 4)
                                 }
@@ -1198,7 +1208,7 @@ struct BizAutomationsView: View {
                     }
                 }
                 Text("Every message Zuffi sends is logged in the lead's history. Marketing messages in the UK need the client's OK first.")
-                    .font(.system(size: 10.5)).foregroundColor(Ink.ink.opacity(0.45))
+                    .font(zf(10.5)).foregroundColor(Ink.ink.opacity(0.45))
             }.padding(.horizontal, 22).padding(.bottom, 22)
         }
     }
@@ -1242,7 +1252,7 @@ struct BizConnectView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { header("1 · WhatsApp on this Mac", "laptopcomputer"); Spacer(); Pill(text: "works now", color: Biz.green) }
                         Text("Zuffi reads new chats in the WhatsApp app on this Mac, makes them leads and writes replies. Nothing extra to set up — but it only works while the Mac is awake and WhatsApp is open.")
-                            .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                            .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                         TimelineView(.periodic(from: .now, by: 2)) { _ in
                             let running = NSWorkspace.shared.runningApplications.contains(where: WhatsAppAgent.isWhatsApp)
                             VStack(alignment: .leading, spacing: 8) {
@@ -1258,12 +1268,12 @@ struct BizConnectView: View {
                                 check("Autopilot replies (Business → My business)", crm.isOn(.autopilot))
                                 if !running {
                                     Text(WhatsAppAgent.installed ? "Open WhatsApp and keep it open (you can minimise it)." : "Messages you see from your iPhone (notifications) are saved as leads, but to send replies Zuffi needs the WhatsApp app on this Mac: install it, open it, and link it to your phone (WhatsApp on the phone → Settings → Linked devices → Link a device).")
-                                        .font(.system(size: 11)).foregroundColor(Ink.accent).fixedSize(horizontal: false, vertical: true)
+                                        .font(zf(11)).foregroundColor(Ink.accent).fixedSize(horizontal: false, vertical: true)
                                 }
                             }
                         }
                         HStack {
-                            Text(crm.whatsAppStatus + (crm.lastWhatsAppCheck.map { " · \(ZuffiPA.hm($0))" } ?? "")).font(.system(size: 11)).foregroundColor(Ink.muted)
+                            Text(crm.whatsAppStatus + (crm.lastWhatsAppCheck.map { " · \(ZuffiPA.hm($0))" } ?? "")).font(zf(11)).foregroundColor(Ink.muted)
                             Spacer()
                             BizSoftButton(title: "Check now", icon: "arrow.clockwise") { Task { await crm.watchWhatsApp() } }
                             if !AXIsProcessTrusted() { BizSoftButton(title: "Allow Accessibility") { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) } }
@@ -1274,7 +1284,7 @@ struct BizConnectView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { header("2 · Always-on (WhatsApp Business API + Coexistence)", "antenna.radiowaves.left.and.right"); Spacer(); Pill(text: "best for a business", color: Ink.accent) }
                         Text("Replies within seconds even when the Mac is off. The business keeps using the WhatsApp Business app on the phone with the same number — chats show in both. Voice notes are written out automatically, Facebook / Instagram lead forms arrive instantly, and each team member gets their own page.")
-                            .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                            .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                         VStack(alignment: .leading, spacing: 4) {
                             step("1", "Set up the Zuffi server (one time) — see server/README.md: Cloudflare, free plan is enough.")
                             step("2", "Create a Meta business app and add WhatsApp. To keep the WhatsApp Business app on the phone (Coexistence), connect through a Meta partner (or Zuffi as a Tech Provider) and scan the QR code. Or use a number that isn't on WhatsApp yet — that one you can add directly.")
@@ -1289,28 +1299,28 @@ struct BizConnectView: View {
                                 Task { await crm.testServer(); if crm.serverStatus.hasPrefix("Connected") { await crm.pushTeam(); await crm.pushLeads() } }
                             }
                         }
-                        if !crm.serverStatus.isEmpty { Text(crm.serverStatus).font(.system(size: 11.5, weight: .semibold)).foregroundColor(crm.serverStatus.hasPrefix("Connected") ? Biz.green : Ink.accent) }
+                        if !crm.serverStatus.isEmpty { Text(crm.serverStatus).font(zf(11.5, .semibold)).foregroundColor(crm.serverStatus.hasPrefix("Connected") ? Biz.green : Ink.accent) }
                         Text("Costs from Meta: replies within 24 hours of a client's message are free; messages you start (reminders, offers) are charged per message.")
-                            .font(.system(size: 10.5)).foregroundColor(Ink.ink.opacity(0.45))
+                            .font(zf(10.5)).foregroundColor(Ink.ink.opacity(0.45))
                     }
                 }
                 GlassBox {
                     VStack(alignment: .leading, spacing: 6) {
                         header("Leads from ads and portals", "megaphone.fill")
                         Text("Facebook / Instagram lead forms: with the server they arrive instantly. Without it, download them from Meta Leads Center into Downloads (or drop the file here) — Zuffi adds them within a minute. Zameen, Graana, OLX and Google Forms files work the same way.")
-                            .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                            .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }.padding(.horizontal, 22).padding(.bottom, 22)
         }
     }
     private func check(_ t: String, _ ok: Bool) -> some View {
-        Label(t, systemImage: ok ? "checkmark.circle.fill" : "xmark.circle").font(.system(size: 12)).foregroundColor(ok ? Biz.green : Biz.red)
+        Label(t, systemImage: ok ? "checkmark.circle.fill" : "xmark.circle").font(zf(12)).foregroundColor(ok ? Biz.green : Biz.red)
     }
     private func step(_ n: String, _ t: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(n).font(.system(size: 11, weight: .heavy)).frame(width: 20, height: 20).background(Circle().fill(Ink.ink.opacity(0.12)))
-            Text(t).font(.system(size: 11.5)).foregroundColor(Ink.ink.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
+            Text(n).font(zf(11, .heavy)).frame(width: 20, height: 20).background(Circle().fill(Ink.ink.opacity(0.12)))
+            Text(t).font(zf(11.5)).foregroundColor(Ink.ink.opacity(0.8)).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -1334,9 +1344,9 @@ struct BizTypeMenu: View {
             HStack(spacing: 6) {
                 Image(systemName: biz.pack?.icon ?? "briefcase.fill")
                 Text(biz.pack?.label ?? "Pick your business").lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                Image(systemName: "chevron.down").font(zf(9, .bold))
             }
-            .font(.system(size: 12, weight: .bold)).foregroundColor(Ink.text)
+            .font(zf(12, .bold)).foregroundColor(Ink.text)
             .padding(.horizontal, 11).frame(height: 30)
             .background(Capsule().fill(Ink.ink.opacity(0.1))).overlay(Capsule().stroke(Biz.stroke, lineWidth: 0.7))
         }
@@ -1356,15 +1366,15 @@ struct BizBusinessView: View {
                 // Autopilot
                 GlassBox {
                     HStack(alignment: .top, spacing: 14) {
-                        Image(systemName: "airplane").font(.system(size: 22)).foregroundColor(crm.isOn(.autopilot) ? Biz.green : Ink.ink.opacity(0.5))
+                        Image(systemName: "airplane").font(zf(22)).foregroundColor(crm.isOn(.autopilot) ? Biz.green : Ink.ink.opacity(0.5))
                         VStack(alignment: .leading, spacing: 4) {
                             Text(crm.isOn(.autopilot) ? "Autopilot is ON — Zuffi is chatting with your clients" : "Autopilot is off — Zuffi only writes drafts")
-                                .font(.system(size: 15, weight: .heavy))
+                                .font(zf(15, .heavy))
                             Text("Zuffi answers WhatsApp messages by itself using what you write below and today's update. When someone wants to bargain, complains, asks for a person or asks something you haven't told Zuffi, it doesn't guess: it says the team will reply, marks the chat 🔥 and tells you.")
-                                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                                .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                             if crm.businessInfo.trimmingCharacters(in: .whitespacesAndNewlines).count < 40 {
                                 Label("Write about your business below first, so Zuffi answers correctly.", systemImage: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.accent)
+                                    .font(zf(11, .semibold)).foregroundColor(Ink.accent)
                             }
                         }
                         Spacer()
@@ -1374,11 +1384,11 @@ struct BizBusinessView: View {
                 }
                 GlassBox {
                     HStack(alignment: .top, spacing: 14) {
-                        Image(systemName: "checklist.checked").font(.system(size: 20)).foregroundColor(Biz.green)
+                        Image(systemName: "checklist.checked").font(zf(20)).foregroundColor(Biz.green)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Reply only with my answers (recommended)").font(.system(size: 13.5, weight: .bold))
+                            Text("Reply only with my answers (recommended)").font(zf(13.5, .bold))
                             Text("Zuffi answers customers only from your details and the questions & answers you write below. Anything else gets “thanks, we'll reply shortly” and you're told what they asked — so you can answer and add it to your FAQ. Turn off to let the AI write replies from your details.")
-                                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                                .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                         Toggle("", isOn: $crm.faqOnly).toggleStyle(.switch).labelsHidden()
@@ -1391,13 +1401,13 @@ struct BizBusinessView: View {
                             HStack {
                                 header("Today's update", "sunrise.fill")
                                 Spacer()
-                                Text(Date().formatted(date: .abbreviated, time: .omitted)).font(.system(size: 10.5)).foregroundColor(Ink.faint)
+                                Text(Date().formatted(date: .abbreviated, time: .omitted)).font(zf(10.5)).foregroundColor(Ink.faint)
                             }
                             Text("Offers, new items, who's in, what's available — Zuffi mentions it in replies today only.")
-                                .font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                                .font(zf(11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                             editor(Binding(get: { crm.todaysUpdate }, set: { crm.todayUpdate = $0 }), minHeight: 110)
-                            Text(example(for: "today")).font(.system(size: 10.5)).foregroundColor(Ink.ink.opacity(0.45)).fixedSize(horizontal: false, vertical: true)
-                            Text("Tip: in the morning just say or type “today's update: …” to Zuffi.").font(.system(size: 10.5)).foregroundColor(Biz.pink)
+                            Text(example(for: "today")).font(zf(10.5)).foregroundColor(Ink.ink.opacity(0.45)).fixedSize(horizontal: false, vertical: true)
+                            Text("Tip: in the morning just say or type “today's update: …” to Zuffi.").font(zf(10.5)).foregroundColor(Biz.pink)
                         }
                     }
                     // Recently sent by autopilot
@@ -1406,7 +1416,7 @@ struct BizBusinessView: View {
                             header("Sent by Zuffi", "paperplane.fill")
                             if crm.autoSent.isEmpty { empty("Nothing yet. Replies Zuffi sends by itself show here (and in each client's history).") }
                             ForEach(crm.autoSent.prefix(10), id: \.self) { t in
-                                Text(t).font(.system(size: 11)).foregroundColor(Ink.ink.opacity(0.8)).lineLimit(2)
+                                Text(t).font(zf(11)).foregroundColor(Ink.ink.opacity(0.8)).lineLimit(2)
                             }
                         }
                     }
@@ -1428,20 +1438,20 @@ struct BizBusinessView: View {
                             // The country comes from your Zuffi details (set when you joined) — not chosen here.
                             let c = ZuffiCRM.allCountries.first { $0.code == crm.country }
                             Label("\(c?.flag ?? "🌍") \(c?.name ?? "Your country") · \(crm.currency)", systemImage: "mappin.and.ellipse")
-                                .font(.system(size: 12, weight: .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
+                                .font(zf(12, .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
                                 .help("From your details. To change it: Zuffi → Settings → You → Edit my details.")
                         }
                         Text(crm.country == "PK" ? "Pakistan: set up for estate agencies — properties, agents on commission, installments, Zameen / Facebook leads, Urdu replies."
                              : crm.country == "GB" ? "United Kingdom: set up for small businesses — bookings, staff hours and wages, deposits, expenses and VAT categories."
                              : "Pick the business type that fits you.")
-                            .font(.system(size: 10.5)).foregroundColor(Biz.pink)
+                            .font(zf(10.5)).foregroundColor(Biz.pink)
                         Text("Everything Zuffi knows about your business (the form above fills this in). Add anything else clients ask about. Zuffi only uses what's written here.")
-                            .font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                            .font(zf(11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                         editor($crm.businessInfo, minHeight: 220)
                         HStack {
                             BizSoftButton(title: "Open as a file", icon: "doc.text") { NSWorkspace.shared.open(ZuffiCRM.infoURL) }
                             Spacer()
-                            Text("Saved automatically").font(.system(size: 10)).foregroundColor(Ink.ink.opacity(0.4))
+                            Text("Saved automatically").font(zf(10)).foregroundColor(Ink.ink.opacity(0.4))
                         }
                     }
                 }
@@ -1451,7 +1461,7 @@ struct BizBusinessView: View {
     }
 
     private func editor(_ text: Binding<String>, minHeight: CGFloat) -> some View {
-        TextEditor(text: text).font(.system(size: 12.5)).scrollContentBackground(.hidden)
+        TextEditor(text: text).font(zf(12.5)).scrollContentBackground(.hidden)
             .frame(minHeight: minHeight).padding(8)
             .foregroundColor(Ink.text)
             .background(RoundedRectangle(cornerRadius: 12).fill(Ink.panelHi))
@@ -1503,7 +1513,7 @@ struct BizRecordsView: View {
                     Text("All stages").tag("All")
                     ForEach(crm.stages, id: \.self) { Text($0).tag($0) }
                 }.labelsHidden().frame(width: 160)
-                Text("\(rows.count) record\(rows.count == 1 ? "" : "s")").font(.system(size: 11.5)).foregroundColor(Ink.muted)
+                Text("\(rows.count) record\(rows.count == 1 ? "" : "s")").font(zf(11.5)).foregroundColor(Ink.muted)
                 Spacer()
                 BizSoftButton(title: "Open in Excel / Numbers", icon: "tablecells") { NSWorkspace.shared.open(ZuffiPA.url("Leads")) }
                 BizSoftButton(title: "Save a copy", icon: "square.and.arrow.down") { saveCopy() }
@@ -1576,7 +1586,7 @@ struct BizTodayExtras: View {
                         VStack(alignment: .leading, spacing: 6) {
                             header("Site visits", "figure.walk")
                             ForEach(Array(visits)) { v in
-                                Text("\(v.date == ZuffiBusiness.iso(Date()) ? "Today" : v.date) \(v.time) · \(v.client) · \(v.property)").font(.system(size: 12))
+                                Text("\(v.date == ZuffiBusiness.iso(Date()) ? "Today" : v.date) \(v.time) · \(v.client) · \(v.property)").font(zf(12))
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -1587,9 +1597,9 @@ struct BizTodayExtras: View {
                             header("Money to collect", "banknote.fill")
                             ForEach(Array(dues)) { d in
                                 HStack {
-                                    Text("\(d.client) · \(d.what) · \(crm.currency) \(ZuffiMoney.pretty(d.amount))").font(.system(size: 12))
+                                    Text("\(d.client) · \(d.what) · \(crm.currency) \(ZuffiMoney.pretty(d.amount))").font(zf(12))
                                     Spacer()
-                                    Text(d.overdue ? "overdue" : d.due).font(.system(size: 10.5, weight: .bold)).foregroundColor(d.overdue ? Biz.red : Ink.accent)
+                                    Text(d.overdue ? "overdue" : d.due).font(zf(10.5, .bold)).foregroundColor(d.overdue ? Biz.red : Ink.accent)
                                 }
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -1628,10 +1638,10 @@ struct BizPayrollBox: View {
                     HStack {
                         Text("Name").frame(width: 150, alignment: .leading)
                         ForEach(["Paid by", "Rate", "Hours", "Commission", "Advances", "To pay", ""], id: \.self) { Text($0).frame(width: 88, alignment: .leading) }
-                    }.font(.system(size: 10.5, weight: .bold)).foregroundColor(Ink.faint)
+                    }.font(zf(10.5, .bold)).foregroundColor(Ink.faint)
                     ForEach(money.payLines(money.month)) { p in
                         HStack {
-                            Text(p.name).font(.system(size: 12.5, weight: .bold)).frame(width: 150, alignment: .leading)
+                            Text(p.name).font(zf(12.5, .bold)).frame(width: 150, alignment: .leading)
                             Text(p.payType).frame(width: 88, alignment: .leading)
                             Text(p.rate == 0 ? "—" : p.payType == "Commission" ? "\(ZuffiMoney.plain(p.rate))%" : "\(crm.currency) \(ZuffiMoney.pretty(p.rate))").frame(width: 88, alignment: .leading)
                             Button { hoursFor = p.name; hoursText = "" } label: { Text("\(ZuffiMoney.plain(p.hours)) h ＋").underline() }.buttonStyle(.plain).frame(width: 88, alignment: .leading)
@@ -1645,16 +1655,16 @@ struct BizPayrollBox: View {
                                     Button("Set pay") { editing = crm.team.first { $0.name == p.name } }.controlSize(.small)
                                 }
                             }.frame(width: 88, alignment: .leading)
-                        }.font(.system(size: 12))
+                        }.font(zf(12))
                     }
                     Text("Commission is worked out from the value of deals each agent won this month (set the deal value on the client). Advances you give (expense “Advance to staff”) are taken off. Paying adds a salaries expense in Money.")
-                        .font(.system(size: 10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
+                        .font(zf(10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .sheet(item: Binding(get: { hoursFor.map { HoursTarget(name: $0) } }, set: { hoursFor = $0?.name })) { t in
             VStack(alignment: .leading, spacing: 12) {
-                Text("Hours for \(t.name) today").font(.system(size: 15, weight: .bold))
+                Text("Hours for \(t.name) today").font(zf(15, .bold))
                 TextField("e.g. 7.5", text: $hoursText).textFieldStyle(.roundedBorder)
                 HStack {
                     Spacer()
@@ -1674,7 +1684,7 @@ struct StaffEditor: View {
     @State private var s = CRMStaff(name: "", phone: "", role: "", pin: "")
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(s.name).font(.system(size: 17, weight: .heavy))
+            Text(s.name).font(zf(17, .heavy))
             Form {
                 TextField("WhatsApp number", text: $s.phone)
                 TextField("Role", text: $s.role)
@@ -1760,7 +1770,7 @@ struct BizMoneyView: View {
                                     nav.say(money.add(type: type, category: category.isEmpty ? (type == "Income" ? money.incomeCategories[0] : "Other") : category, amount: a, party: party, method: method, note: note))
                                     amount = ""; party = ""; note = ""
                                 }
-                                Text(crm.country == "PK" ? "Or just tell Zuffi: “expense 5000 petrol”, “income 2 lakh commission”." : "Or just tell Zuffi: “expense 60 supplies”, “income 450 haircuts”.").font(.system(size: 10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
+                                Text(crm.country == "PK" ? "Or just tell Zuffi: “expense 5000 petrol”, “income 2 lakh commission”." : "Or just tell Zuffi: “expense 60 supplies”, “income 450 haircuts”.").font(zf(10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
                             }
                         }
                     }
@@ -1774,7 +1784,7 @@ struct BizMoneyView: View {
                             let top = cats.first?.1 ?? 1
                             ForEach(cats.prefix(8), id: \.0) { c in
                                 VStack(alignment: .leading, spacing: 2) {
-                                    HStack { Text(c.0).font(.system(size: 11.5)); Spacer(); Text("\(crm.currency) \(ZuffiMoney.pretty(c.1))").font(.system(size: 11.5, weight: .semibold)) }
+                                    HStack { Text(c.0).font(zf(11.5)); Spacer(); Text("\(crm.currency) \(ZuffiMoney.pretty(c.1))").font(zf(11.5, .semibold)) }
                                     GeometryReader { g in Capsule().fill(Biz.red.opacity(0.7)).frame(width: max(4, g.size.width * c.1 / top)) }.frame(height: 5)
                                 }
                             }
@@ -1804,7 +1814,7 @@ struct BizMoneyView: View {
                         if open.isEmpty { empty("Nothing to collect. Zuffi reminds you the day before each payment is due.") }
                         ForEach(open) { d in
                             HStack {
-                                Text(d.client).font(.system(size: 12.5, weight: .semibold)).frame(width: 150, alignment: .leading)
+                                Text(d.client).font(zf(12.5, .semibold)).frame(width: 150, alignment: .leading)
                                 Text(d.what).frame(width: 100, alignment: .leading)
                                 Text("\(crm.currency) \(ZuffiMoney.pretty(d.amount))").frame(width: 130, alignment: .leading)
                                 Text(d.due).foregroundColor(d.overdue ? Biz.red : Ink.text).frame(width: 100, alignment: .leading)
@@ -1818,7 +1828,7 @@ struct BizMoneyView: View {
                                     }.controlSize(.small)
                                 }
                                 Button("Mark paid") { money.markPaid(d); nav.say("Marked paid and added to income ✅") }.controlSize(.small)
-                            }.font(.system(size: 12))
+                            }.font(zf(12))
                         }
                     }
                 }
@@ -1837,7 +1847,7 @@ struct BizMoneyView: View {
                                 Spacer()
                                 Text("\(e.type == "Income" ? "+" : "−")\(crm.currency) \(ZuffiMoney.pretty(e.amount))").fontWeight(.bold).foregroundColor(e.type == "Income" ? Biz.green : Biz.red)
                                 Button { money.delete(e) } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundColor(Ink.ink.opacity(0.4))
-                            }.font(.system(size: 12))
+                            }.font(zf(12))
                         }
                     }
                 }
@@ -1861,13 +1871,13 @@ private struct BizTile: View {
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(title.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.4).foregroundColor(Ink.faint)
+                Text(title.uppercased()).font(zf(10, .semibold)).tracking(0.4).foregroundColor(Ink.faint)
                     .lineLimit(1).minimumScaleFactor(0.8)
-                Text(value).font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.55).foregroundColor(Ink.text)
+                Text(value).font(zf(24, .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.55).foregroundColor(Ink.text)
                     .blur(radius: lock.hideAmounts && value.contains(ZuffiCRM.shared.currency) ? 8 : 0)
             }
             Spacer(minLength: 4)
-            Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+            Image(systemName: icon).font(zf(14, .semibold)).foregroundColor(.white)
                 .frame(width: 40, height: 40).background(Circle().fill(color.gradient))
                 .shadow(color: color.opacity(0.35), radius: 6, y: 2)
         }
@@ -1883,7 +1893,7 @@ struct StatusDot: View {
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 7, height: 7)
-            Text(text).font(.system(size: 11, weight: .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
+            Text(text).font(zf(11, .medium)).foregroundColor(Ink.muted).lineLimit(1).fixedSize()
         }
     }
 }
@@ -1892,16 +1902,16 @@ struct BizTipsView: View {
     let tab: BizTab
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(tab.rawValue, systemImage: tab.icon).font(.system(size: 15, weight: .heavy))
-            Text(tab.subtitle).font(.system(size: 12)).foregroundColor(.secondary)
+            Label(tab.rawValue, systemImage: tab.icon).font(zf(15, .heavy))
+            Text(tab.subtitle).font(zf(12)).foregroundColor(.secondary)
             ForEach(Array(tab.tips.enumerated()), id: \.offset) { i, t in
                 HStack(alignment: .top, spacing: 8) {
-                    Text("\(i + 1)").font(.system(size: 11, weight: .heavy)).foregroundColor(.white)
+                    Text("\(i + 1)").font(zf(11, .heavy)).foregroundColor(.white)
                         .frame(width: 20, height: 20).background(Circle().fill(Color(hex: "#E2648A")))
-                    Text(t).font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
+                    Text(t).font(zf(12.5)).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Text("Tip: you can also just tell Zuffi — tap the mic and say it.").font(.system(size: 11)).foregroundColor(.secondary)
+            Text("Tip: you can also just tell Zuffi — tap the mic and say it.").font(zf(11)).foregroundColor(.secondary)
         }
         .padding(16).frame(width: 320)
     }
@@ -1937,17 +1947,17 @@ struct BizStartGuide: View {
                     Circle().stroke(Ink.ink.opacity(0.12), lineWidth: 4)
                     Circle().trim(from: 0, to: CGFloat(done) / CGFloat(s.count))
                         .stroke(Ink.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round)).rotationEffect(.degrees(-90))
-                    Text("\(done)/\(s.count)").font(.system(size: 10.5, weight: .bold)).monospacedDigit()
+                    Text("\(done)/\(s.count)").font(zf(10.5, .bold)).monospacedDigit()
                 }.frame(width: 38, height: 38)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Next step: \(next.title)").font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
-                    Text(next.detail).font(.system(size: 11.5)).foregroundColor(Ink.muted).lineLimit(1)
+                    Text("Next step: \(next.title)").font(zf(13.5, .semibold)).lineLimit(1)
+                    Text(next.detail).font(zf(11.5)).foregroundColor(Ink.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Button(next.button, action: next.go).buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold)).foregroundColor(Ink.onAccent)
+                    .font(zf(12, .semibold)).foregroundColor(Ink.onAccent)
                     .padding(.horizontal, 14).frame(height: 30).background(Capsule().fill(Ink.accent))
-                Button { hidden = true } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundColor(Ink.faint) }
+                Button { hidden = true } label: { Image(systemName: "xmark").font(zf(10, .bold)).foregroundColor(Ink.faint) }
                     .buttonStyle(.plain).help("Hide")
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
@@ -1963,9 +1973,9 @@ struct BizEraseBox: View {
     @State private var done = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) { Image(systemName: "trash.circle.fill").foregroundColor(Biz.red); Text("Disconnect & erase").font(.system(size: 13, weight: .bold)) }
+            HStack(spacing: 8) { Image(systemName: "trash.circle.fill").foregroundColor(Biz.red); Text("Disconnect & erase").font(zf(13, .bold)) }
             Text("Stop Zuffi reading WhatsApp and remove what it saved from WhatsApp, or wipe all business data on this Mac. Your WhatsApp app and chats on your phone are not touched.")
-                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 BizSoftButton(title: "Disconnect WhatsApp", icon: "bolt.slash") {
                     guard confirm("Disconnect WhatsApp?", "Zuffi stops reading WhatsApp and stops Autopilot replies. Clients that came from WhatsApp, and their messages, are removed from this Mac.") else { return }
@@ -1984,7 +1994,7 @@ struct BizEraseBox: View {
                     done = "All business data erased from this Mac"
                 }
             }
-            if !done.isEmpty { Text("✓ " + done).font(.system(size: 11)).foregroundColor(Biz.green) }
+            if !done.isEmpty { Text("✓ " + done).font(zf(11)).foregroundColor(Biz.green) }
         }
     }
     private func confirm(_ title: String, _ text: String) -> Bool {
@@ -2000,23 +2010,23 @@ struct BizLookPicker: View {
     @ObservedObject private var look = BizLook.shared
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Look").font(.system(size: 13, weight: .bold))
+            Text("Look").font(zf(13, .bold))
             Picker("", selection: Binding(get: { Ink.dark }, set: { look.set(dark: $0) })) {
                 Text("Light").tag(false); Text("Dark").tag(true)
             }.pickerStyle(.segmented).labelsHidden().frame(width: 220)
-            Text("Colour").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary)
+            Text("Colour").font(zf(11, .semibold)).foregroundColor(.secondary)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: 8), count: 4), spacing: 10) {
                 ForEach(Ink.accents, id: \.1) { a in
                     Button { look.set(accent: a.1); UserDefaults.standard.set(a.1, forKey: "zuffiAccentHex") } label: {
                         VStack(spacing: 3) {
                             Circle().fill(Color(hex: a.1)).frame(width: 26, height: 26)
                                 .overlay(Circle().stroke(Color.primary.opacity(Ink.accentHex == a.1 ? 0.8 : 0), lineWidth: 2).padding(-3))
-                            Text(a.0).font(.system(size: 9.5)).foregroundColor(.secondary)
+                            Text(a.0).font(zf(9.5)).foregroundColor(.secondary)
                         }
                     }.buttonStyle(.plain)
                 }
             }
-            Text("The notch uses the same colour.").font(.system(size: 10)).foregroundColor(.secondary)
+            Text("The notch uses the same colour.").font(zf(10)).foregroundColor(.secondary)
         }
         .padding(16)
     }
@@ -2032,12 +2042,12 @@ struct BizWALinkBox: View {
             HStack(spacing: 8) {
                 Image(systemName: "message.fill").foregroundColor(.white).frame(width: 26, height: 26)
                     .background(RoundedRectangle(cornerRadius: 7).fill(Color(hex: "#1FAF5F")))
-                Text("Link WhatsApp to Zuffi").font(.system(size: 14, weight: .bold))
+                Text("Link WhatsApp to Zuffi").font(zf(14, .bold))
                 Spacer()
                 Pill(text: wa.ready ? "Linked" : wa.state == "qr" ? "Scan the code" : wa.enabled ? "Connecting…" : "Off", color: wa.ready ? Biz.green : Ink.accent)
             }
             Text("Like WhatsApp Web, inside Zuffi. New messages arrive the moment they’re sent, become leads, and with Autopilot Zuffi replies in a second or two — in the customer’s language — without using your screen.")
-                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 if wa.ready {
                     BizSoftButton(title: "Show WhatsApp", icon: "macwindow") { wa.showWindow() }
@@ -2048,7 +2058,7 @@ struct BizWALinkBox: View {
                 Toggle("Autopilot replies", isOn: Binding(get: { crm.isOn(.autopilot) }, set: { crm.set(.autopilot, $0) })).toggleStyle(.switch).controlSize(.small)
             }
             Text("Phone: WhatsApp → Settings → Linked devices → Link a device. This uses WhatsApp Web, which isn’t an official business API — WhatsApp can limit numbers that send a lot of automatic messages, so keep Autopilot for replies to people who wrote to you.")
-                .font(.system(size: 10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
+                .font(zf(10.5)).foregroundColor(Ink.faint).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -2090,30 +2100,30 @@ struct BizDetailsForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("Your business details", systemImage: "list.clipboard.fill").font(.system(size: 13, weight: .heavy))
+                Label("Your business details", systemImage: "list.clipboard.fill").font(zf(13, .heavy))
                 Spacer()
-                Text("\(filled) of \(Self.fields.count) filled").font(.system(size: 11, weight: .semibold)).foregroundColor(filled >= 4 ? Biz.green : Ink.accent)
+                Text("\(filled) of \(Self.fields.count) filled").font(zf(11, .semibold)).foregroundColor(filled >= 4 ? Biz.green : Ink.accent)
             }
             Text("Zuffi answers WhatsApp customers only from these details. The more you fill in, the better she answers.")
-                .font(.system(size: 11.5)).foregroundColor(Ink.muted)
+                .font(zf(11.5)).foregroundColor(Ink.muted)
             TextField("Business name *", text: Binding(get: { biz.businessName }, set: { biz.businessName = $0; UserDefaults.standard.set($0, forKey: "zuffiBusinessName") }))
                 .textFieldStyle(.roundedBorder)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], alignment: .leading, spacing: 10) {
                 ForEach(Self.fields.filter { !$0.tall }, id: \.key) { fd in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(fd.label + (Self.required.contains(fd.key) ? " *" : "")).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+                        Text(fd.label + (Self.required.contains(fd.key) ? " *" : "")).font(zf(11, .semibold)).foregroundColor(Ink.muted)
                         TextField(fd.hint, text: binding(fd.key)).textFieldStyle(.roundedBorder)
                     }
                 }
             }
             ForEach(Self.fields.filter { $0.tall && $0.key != "faq" }, id: \.key) { fd in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(fd.label + (Self.required.contains(fd.key) ? " *" : "")).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
-                    TextEditor(text: binding(fd.key)).font(.system(size: 12.5)).scrollContentBackground(.hidden)
+                    Text(fd.label + (Self.required.contains(fd.key) ? " *" : "")).font(zf(11, .semibold)).foregroundColor(Ink.muted)
+                    TextEditor(text: binding(fd.key)).font(zf(12.5)).scrollContentBackground(.hidden)
                         .frame(minHeight: 70).padding(6).foregroundColor(Ink.text)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Ink.panelHi))
                         .overlay(alignment: .topLeading) {
-                            if (f[fd.key] ?? "").isEmpty { Text(fd.hint).font(.system(size: 12)).foregroundColor(Ink.faint).padding(.horizontal, 11).padding(.vertical, 8).allowsHitTesting(false) }
+                            if (f[fd.key] ?? "").isEmpty { Text(fd.hint).font(zf(12)).foregroundColor(Ink.faint).padding(.horizontal, 11).padding(.vertical, 8).allowsHitTesting(false) }
                         }
                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Biz.stroke))
                 }
@@ -2128,7 +2138,7 @@ struct BizDetailsForm: View {
                 Image(systemName: "bolt.fill").foregroundColor(Ink.accent)
                 Text(cloud ? "Questions about hours, address, prices, payment, booking and your own Q&As get an instant answer from these details. Anything else goes to your AI."
                            : "Questions about hours, address, prices, payment, booking and your own Q&As get an instant answer from these details — no AI needed. For other questions, add a free Groq key: it runs online, so it's fast even on a slow Mac.")
-                    .font(.system(size: 11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                    .font(zf(11)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                 if !cloud {
                     Spacer(minLength: 6)
                     BizSoftButton(title: "Add Groq key", icon: "key.fill") { NotificationCenter.default.post(name: .openFullSettings, object: nil) }
@@ -2182,9 +2192,9 @@ struct BizSetupGate: View {
                 HStack(spacing: 14) {
                     ZuffiMini(state: AppState.shared, height: 46).frame(width: 52, height: 52).background(Circle().fill(Ink.accent.opacity(0.12)))
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Welcome to Zuffi Business").font(.system(size: 24, weight: .bold, design: .rounded))
+                        Text("Welcome to Zuffi Business").font(zf(24, .bold))
                         Text("Tell Zuffi about your business once. Zuffi, your WhatsApp replies and your AI team all use these details — and ask you when something is missing. Fields with * are needed.")
-                            .font(.system(size: 12.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                            .font(zf(12.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 HStack(spacing: 10) {
@@ -2195,7 +2205,7 @@ struct BizSetupGate: View {
                     Spacer()
                     BizTypeMenu()
                 }
-                .font(.system(size: 12, weight: .medium)).padding(12).zGlass(14)
+                .font(zf(12, .medium)).padding(12).zGlass(14)
                 BizDetailsForm().padding(16).zGlass(18)
             }
             .padding(28).frame(maxWidth: 860)
@@ -2240,12 +2250,12 @@ struct BizFAQEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("WhatsApp FAQ — your questions & answers", systemImage: "questionmark.bubble.fill").font(.system(size: 13, weight: .heavy))
+                Label("WhatsApp FAQ — your questions & answers", systemImage: "questionmark.bubble.fill").font(zf(13, .heavy))
                 Spacer()
-                Text("\(items.count) answer\(items.count == 1 ? "" : "s")").font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.muted)
+                Text("\(items.count) answer\(items.count == 1 ? "" : "s")").font(zf(11, .semibold)).foregroundColor(Ink.muted)
             }
             Text("Customers who ask one of these get your answer straight away, in their language style. Questions you haven't answered here are passed to you.")
-                .font(.system(size: 11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
+                .font(zf(11.5)).foregroundColor(Ink.muted).fixedSize(horizontal: false, vertical: true)
             ForEach($items) { $it in
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -2253,14 +2263,14 @@ struct BizFAQEditor: View {
                             TextField("Question", text: $it.q).textFieldStyle(.roundedBorder)
                             TextField("Your answer", text: $it.a, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(1...4)
                         } else {
-                            Text(it.q).font(.system(size: 12.5, weight: .semibold))
-                            Text(it.a.isEmpty ? "No answer yet — add one" : it.a).font(.system(size: 12)).foregroundColor(it.a.isEmpty ? Color(hex: "#EF6B6B") : Ink.muted).fixedSize(horizontal: false, vertical: true)
+                            Text(it.q).font(zf(12.5, .semibold))
+                            Text(it.a.isEmpty ? "No answer yet — add one" : it.a).font(zf(12)).foregroundColor(it.a.isEmpty ? Color(hex: "#EF6B6B") : Ink.muted).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     Spacer()
                     Button(editing == it.id ? "Done" : "Edit") { if editing == it.id { editing = nil; persist() } else { editing = it.id } }
-                        .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundColor(Ink.accent)
-                    Button { items.removeAll { $0.id == it.id }; persist() } label: { Image(systemName: "trash").font(.system(size: 11)) }
+                        .buttonStyle(.plain).font(zf(11, .semibold)).foregroundColor(Ink.accent)
+                    Button { items.removeAll { $0.id == it.id }; persist() } label: { Image(systemName: "trash").font(zf(11)) }
                         .buttonStyle(.plain).foregroundColor(Ink.faint).help("Delete")
                 }
                 .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Ink.panelHi))
@@ -2645,9 +2655,9 @@ struct ZuffiHubView: View {
             VStack(alignment: .leading, spacing: 0) {
                 banner
                 switch subFor(.home) {
-                case "Routines": routinesSection
+                case "Routines": NikPlanView(light: light); routinesSection
                 case "Activity": activitySection
-                default: teamSection("Your team", agents); routinesSection
+                default: NikPlanView(light: light); teamSection("Your team", agents)
                 }
             }
         case .team:
@@ -2663,7 +2673,7 @@ struct ZuffiHubView: View {
         case .routines: routinesSection
         case .settings: settingsPage
         case .biz(let t):
-            if !nav.formDone { BizSetupGate().foregroundColor(Ink.text) } else { BizPageView(tab: t).foregroundColor(Ink.text).frame(minHeight: 600) }
+            Group { if !nav.formDone { BizSetupGate().foregroundColor(Ink.text) } else { BizPageView(tab: t).foregroundColor(Ink.text).frame(minHeight: 600) } }.id("\(light)")
         }
     }
 
