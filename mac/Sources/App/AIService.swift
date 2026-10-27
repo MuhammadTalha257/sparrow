@@ -209,7 +209,8 @@ final class AIService {
         // Talking to Nik: business questions — he gives each to the right business agent and sums up.
         if context == nil, who == .nik, !ZuffiTeam.looksLikeCommand(query) {
             state.stateOverride = .thinking
-            let r = await team.dispatch(query) ?? (await team.answer(query, people: [ZuffiTeam.manager], routeOnly: false))
+            var r = await team.dispatch(query) ?? ""
+            if r.isEmpty { r = await team.answer(query, people: [ZuffiTeam.manager], routeOnly: false) }
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
