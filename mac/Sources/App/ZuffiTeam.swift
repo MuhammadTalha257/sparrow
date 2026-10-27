@@ -623,6 +623,7 @@ final class ZuffiTeam: ObservableObject {
         - Don't paste search results. Compare at least three real options from the sources you read, then pick the best one FOR THIS PERSON and say why in one line.
         - Point out what they didn't think of: hidden costs, a better time or place, a cheaper or safer alternative, risks.
         - End with the clear next step (and the link to act on). Every option and price must come from a source you read, with its link.
+        - If the pages you read don't answer the request, say so in one line and say what you'll do instead. Never summarise pages that are about something else.
         - If the question belongs to another field, say who on the team should take it.
         - You think, read and write. You can't send messages, post, pay, book or delete — suggest it and ask the owner to OK it.
         - Reply in the owner's language. Plain text with line breaks: no ** bold and no tables. Use short paragraphs, numbered steps or lines starting with \"- \".
@@ -1018,6 +1019,14 @@ final class ZuffiTeam: ObservableObject {
             let ans = await AgentBrowser.shared.run(task, agent: a, runID: id)
             let failed = ans.hasPrefix("I couldn't") || ans.hasPrefix("I stopped") || ans == "Stopped."
             finish(id, Self.plain(ans), failed ? "Failed" : "Done")
+            return runs.first { $0.id == id }!
+        }
+
+        // Your own accounts ("go to Instagram and check who follows us"): done on the account itself, never a web search about it.
+        if let ch = ChannelAgent.channelTask(task) {
+            let (text, ok) = await ChannelAgent.run(task, channel: ch, agent: a, runID: id, step: { self.step(id, $0, source: ch.name) })
+            finish(id, text, ok ? "Done" : "Needs input")
+            if ok { lastWork = (a, task, text, "", Date()) }
             return runs.first { $0.id == id }!
         }
 
@@ -2998,6 +3007,45 @@ final class AgentBrowser: ObservableObject {
         guard let d = raw.data(using: .utf8), let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: String]] else { return [] }
         t.say("Found \(arr.count) results")
         return arr.map { (title: $0["t"] ?? "", url: $0["u"] ?? "", snippet: $0["s"] ?? "") }
+    }
+
+    /// Your own Instagram: who follows you (or who you follow) — read from your signed-in account, in a tab you can watch.
+    func instagramList(_ kind: String, handle: String?, agent: TeamAgent, runID: String?) async -> (handle: String, total: String, names: [String])? {
+        let t = BrowserTab(agent: agent, task: "Instagram \(kind)", store: store)
+        t.runID = runID; tabs.append(t); selected = t.id
+        t.status = "Working"; t.say("Opening your Instagram")
+        var me = handle ?? ""
+        if me.isEmpty {
+            t.web.load(URLRequest(url: URL(string: "https://www.instagram.com/")!)); await waitLoaded(t)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            me = await js(t, """
+            (() => { const a = [...document.querySelectorAll('a[href]')].find(x => /profile/i.test(x.innerText || x.getAttribute('aria-label') || '') && /^\\/[A-Za-z0-9._]+\\/$/.test(x.getAttribute('href')));
+              return a ? a.getAttribute('href').replace(/\\//g, '') : ''; })()
+            """)
+        }
+        guard !me.isEmpty else { t.say("Couldn't find your profile — are you signed in?"); t.status = "Done"; return nil }
+        t.say("Opening @\(me)")
+        t.web.load(URLRequest(url: URL(string: "https://www.instagram.com/\(me)/")!)); await waitLoaded(t)
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        let total = await js(t, "(() => { const a = document.querySelector('a[href$=\"/\(kind)/\"]'); return a ? a.innerText : ''; })()")
+        _ = await js(t, "(() => { const a = document.querySelector('a[href$=\"/\(kind)/\"]'); if (a) { a.click(); return 'ok'; } return 'none'; })()")
+        t.say("Opening the \(kind) list")
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        var names: [String] = []
+        for i in 0..<12 {
+            let raw = await js(t, """
+            (() => { const d = document.querySelector('div[role="dialog"]'); if (!d) return '[]';
+              const out = [...d.querySelectorAll('a[href]')].map(a => a.getAttribute('href')).filter(h => /^\\/[A-Za-z0-9._]+\\/$/.test(h)).map(h => h.replace(/\\//g, ''));
+              const box = [...d.querySelectorAll('div')].find(x => x.scrollHeight > x.clientHeight + 20 && getComputedStyle(x).overflowY !== 'visible');
+              if (box) box.scrollTop = box.scrollHeight;
+              return JSON.stringify([...new Set(out)]); })()
+            """)
+            if let arr = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String] { for n in arr where n != me && !names.contains(n) { names.append(n) } }
+            if i % 3 == 2 { t.say("Read \(names.count) so far") }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+        }
+        t.say("Read \(names.count) accounts"); t.status = "Done"
+        return (me, total, names)
     }
 
     /// Opens a site's sign-in page in Zuffi's own agent browser — you sign in yourself (Zuffi never sees or types your password).
@@ -6160,5 +6208,74 @@ enum SEOAgent {
             return "I couldn't write the SEO report this time — check that an AI is set up in Settings."
         }
         return zClean(report)
+    }
+}
+
+
+// MARK: - Doing things on your own accounts (Instagram, Facebook, X, LinkedIn, WhatsApp) — signed in inside Zuffi
+
+@MainActor
+enum ChannelAgent {
+    static func channelTask(_ task: String) -> SocialChannel? {
+        let l = task.lowercased()
+        guard let ch = SocialChannel.all.first(where: { l.contains($0.id == "x" ? "twitter" : $0.id) || (l.contains(" x ") && $0.id == "x") || l.contains($0.name.lowercased()) || ($0.id == "instagram" && (l.contains(" insta ") || l.hasPrefix("insta "))) }) else { return nil }
+        let act = l.range(of: #"\b(go( to)?|open|check|see|show|look at|read|list|count|reply|answer|post|upload|send)\b|\bwho (follows?|followed|liked|commented|messaged)\b"#, options: .regularExpression) != nil
+        let mine = l.range(of: #"\b(us|our|my|me|we|mine|i)\b"#, options: .regularExpression) != nil
+        let about = l.range(of: #"\b(follow(s|ers?|ing|ed)?|comments?|messages?|dms?|inbox|posts?|likes?|views?|insights|notifications?|profile|stories|reels?|page)\b"#, options: .regularExpression) != nil
+        let advice = l.range(of: #"\b(how (can|do|to|should)|tips|ideas?|strategy|advice|plan|grow|increase|improve|best time)\b"#, options: .regularExpression) != nil
+        return act && about && (mine || !advice) && !(advice && !act) ? ch : nil
+    }
+
+    static func handle(for ch: SocialChannel) -> String? {
+        let f = (UserDefaults.standard.dictionary(forKey: "bizForm") as? [String: String]) ?? [:]
+        guard let link = f[ch.id], let u = URL(string: link.hasPrefix("http") ? link : "https://" + link) else { return nil }
+        let h = u.path.split(separator: "/").first.map(String.init) ?? ""
+        return h.isEmpty ? nil : h.replacingOccurrences(of: "@", with: "")
+    }
+
+    static func run(_ task: String, channel ch: SocialChannel, agent: TeamAgent, runID: String?, step: (String) -> Void) async -> (String, Bool) {
+        let l = task.lowercased()
+        // WhatsApp: the linked WhatsApp
+        if ch.id == "whatsapp" {
+            guard WhatsAppLink.shared.ready else {
+                WhatsAppLink.shared.showWindow()
+                return ("WhatsApp isn't linked yet. I've opened it — scan the code with WhatsApp on your phone (Settings → Linked devices), then ask me again.", false)
+            }
+            let recent = WhatsAppLink.shared.recent.prefix(15)
+            step("Read your latest WhatsApp messages")
+            if recent.isEmpty { return ("No new WhatsApp messages since Zuffi started.", true) }
+            return ("Your latest WhatsApp messages:\n" + recent.map { "- \($0.name) · \($0.at.formatted(date: .omitted, time: .shortened)): \($0.body.prefix(140))" }.joined(separator: "\n"), true)
+        }
+        // Signed in?
+        guard await AgentBrowser.shared.isSignedIn(ch.domain, cookie: ch.cookie) else {
+            SocialHub.shared.connect(ch)
+            return ("I need you to sign in to \(ch.name) once, inside Zuffi — I've opened the sign-in page (you type your password yourself; I never see it). Then ask me again, or connect it on Dashboard → Channels.", false)
+        }
+        // Instagram followers / following: read the real list from your account
+        if ch.id == "instagram", l.range(of: #"\b(follow(s|ers|ed)?|following)\b"#, options: .regularExpression) != nil {
+            let kind = l.range(of: #"\b(who (do )?(we|i) follow|following)\b"#, options: .regularExpression) != nil ? "following" : "followers"
+            step("Opening your Instagram \(kind)")
+            guard let r = await AgentBrowser.shared.instagramList(kind, handle: handle(for: ch), agent: agent, runID: runID) else {
+                return ("I couldn't open your Instagram profile — please check you're signed in on Dashboard → Channels → Instagram.", false)
+            }
+            step("Read \(r.names.count) accounts")
+            var out = "## Your Instagram \(kind) — @\(r.handle)\n"
+            if !r.total.isEmpty { out += "Instagram shows: \(r.total.replacingOccurrences(of: "\n", with: " "))\n" }
+            if r.names.isEmpty { out += "Instagram didn't show the list this time (it sometimes limits it). Open it yourself: https://www.instagram.com/\(r.handle)/\(kind)/" }
+            else {
+                out += "I read \(r.names.count) of them (newest first):\n" + r.names.prefix(200).map { "- @\($0) — https://www.instagram.com/\($0)/" }.joined(separator: "\n")
+                if r.names.count >= 50 { out += "\n\nInstagram only loads part of a long list at a time — this is what it showed me." }
+            }
+            return (out, true)
+        }
+        // Everything else (comments, messages, likes, a page, posting…): the agent does it on the site, like a person, and reports what it found
+        step("Working on your \(ch.name)")
+        let r = await AgentBrowser.shared.run("""
+            \(task)
+            You are on the owner's OWN \(ch.name) account (already signed in). Do this on their account — don't search the web about it. \
+            When finished, use "done" with exactly what you found: names, numbers, the text of comments or messages, with links.
+            """, agent: agent, runID: runID, start: URL(string: l.range(of: #"\b(messages?|dms?|inbox)\b"#, options: .regularExpression) != nil ? ch.inbox : l.range(of: #"\b(comments?|notifications?|likes?|mentions?)\b"#, options: .regularExpression) != nil ? ch.activity : ch.home))
+        let failed = r.hasPrefix("I couldn't") || r.hasPrefix("I stopped") || r == "Stopped."
+        return (ZuffiTeam.plain(r), !failed)
     }
 }
