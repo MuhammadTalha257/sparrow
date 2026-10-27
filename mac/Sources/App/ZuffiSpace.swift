@@ -330,7 +330,7 @@ struct ZuffiHomePanel: View {
     @State private var entered = false
 
     private let W = IslandConst.width(for: .overview)
-    private let H = IslandConst.viewLayouts[.overview]!.height
+    private let H: CGFloat = 156
     private let side: CGFloat = 46
 
     private var listening: Bool { voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) }
@@ -1024,15 +1024,12 @@ struct NotchHomeView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color.clear.frame(width: W, height: H).contentShape(Rectangle()).movesIsland()
-            VStack(spacing: 12) {
-                topRow
-                noteBar
-                agentTiles
-                footer
-            }
-            .padding(.horizontal, 22)
-            .padding(.top, 44)
+            // Small and simple: Aurora with the mic switch · ask + shortcuts · your agents + Give a task
+            topRow
+            .padding(.horizontal, 20)
+            .padding(.top, 42)
             .frame(width: W, height: H, alignment: .top)
+            .background(Color.black.opacity(0.35))
         }
         .frame(width: W, height: H)
         .onAppear { NowPlaying.shared.start() }
@@ -1040,60 +1037,81 @@ struct NotchHomeView: View {
 
     // MARK: row 1
     private var topRow: some View {
-        HStack(spacing: 16) {
-            // Aurora in a colour ring, with the mic badge
+        HStack(spacing: 14) {
+            // Aurora in a colour ring; the badge turns the mic on or off
             ZStack(alignment: .bottomTrailing) {
                 Circle().fill(AngularGradient(colors: [Color(hex: "#F5B963"), Color(hex: "#F58FA8"), Color(hex: "#B79CFF"), Color(hex: "#F5B963")], center: .center))
-                    .frame(width: 66, height: 66)
-                Circle().fill(RadialGradient(colors: [Color(hex: "#FFF6F7"), Color(hex: "#F3DDE2")], center: .center, startRadius: 2, endRadius: 34))
-                    .frame(width: 60, height: 60).offset(x: -3, y: -3)
-                LiveBunnyFace(size: 54).offset(x: -6, y: -6)
-                Button { VoiceEngine.shared.listenOnce() } label: {
-                    Image(systemName: voice.isListening ? "waveform" : "mic.fill").font(.system(size: 9.5, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Circle().fill(Color(red: 0.12, green: 0.12, blue: 0.14).opacity(0.9)))
-                        .overlay(Circle().stroke(Color.white.opacity(0.18)))
-                }.buttonStyle(.plain).help("Talk to Zuffi")
+                    .frame(width: 76, height: 76)
+                Circle().fill(RadialGradient(colors: [Color(hex: "#FFF6F7"), Color(hex: "#F3DDE2")], center: .center, startRadius: 2, endRadius: 36))
+                    .frame(width: 70, height: 70).offset(x: -3, y: -3)
+                LiveBunnyFace(size: 62).offset(x: -7, y: -7)
+                Button { VoiceEngine.shared.setMic(!voice.micEnabled) } label: {
+                    Image(systemName: voice.isListening ? "waveform" : voice.micEnabled ? "mic.fill" : "mic.slash.fill")
+                        .font(.system(size: 10, weight: .bold)).foregroundColor(voice.micEnabled ? .white : Color(hex: "#FF8A80"))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color(red: 0.1, green: 0.1, blue: 0.12)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.22)))
+                }.buttonStyle(.plain).help(voice.micEnabled ? "Mic on — click to turn off" : "Mic off — click to turn on")
             }
-            .frame(width: 66, height: 66)
+            .frame(width: 76, height: 76)
 
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "text.bubble").font(.system(size: 12)).foregroundColor(.white.opacity(0.75))
                     TextField("Ask Zuffi anything…", text: $ask)
-                        .textFieldStyle(.plain).font(.system(size: 14)).foregroundColor(.white)
+                        .textFieldStyle(.plain).font(.system(size: 13)).foregroundColor(.white)
                         .focused($askFocus)
                         .onSubmit { send() }
                 }
-                .padding(.horizontal, 14).frame(height: 66)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(pillFill))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(pillLine))
+                .padding(.horizontal, 14).frame(height: 36)
+                .background(Capsule().fill(Color.white.opacity(0.12)))
+                HStack(spacing: 0) {
+                    chip("square.grid.2x2.fill", "Dashboard") { ZuffiHub.shared.show(.home) }
+                    chip("sparkles", "Features") { ZuffiNav.go(.features) }
+                    chip("hare.fill", "Pet") { PetController.shared.toggle() }
+                    chip("gearshape.fill", "Settings") { ZuffiHub.shared.show(.settings) }
+                }
+                .frame(height: 36)
+                .background(Capsule().fill(Color.white.opacity(0.12)))
             }
 
             VStack(spacing: 10) {
-                HStack(spacing: -7) {
+                HStack(spacing: -6) {
                     ForEach(Array(agents.prefix(4))) { a in
-                        AgentAvatar(agent: a, size: 28).clipShape(Circle())
-                            .overlay(Circle().stroke(Color(hex: "#121318"), lineWidth: 2))
-                            .help(a.name)
+                        RobotFace(agent: a, size: 24, working: team.status(a) == .working)
+                            .frame(width: 30, height: 32)
+                            .background(Circle().fill(Color(hex: "#1B1D26")).frame(width: 30, height: 30))
+                            .overlay(Circle().stroke(Color.black, lineWidth: 2).frame(width: 30, height: 30))
+                            .help(AgentEdits.name(a))
                     }
                     if agents.count > 4 {
                         Text("+\(agents.count - 4)").font(.system(size: 11, weight: .semibold)).foregroundColor(Color(hex: "#2A2140"))
-                            .frame(width: 28, height: 28).background(Circle().fill(Color(hex: "#D9CCF5")))
-                            .overlay(Circle().stroke(Color(hex: "#121318"), lineWidth: 2))
+                            .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#D9CCF5")))
+                            .overlay(Circle().stroke(Color.black, lineWidth: 2))
                     }
                 }
+                .onTapGesture { ZuffiHub.shared.show(.office) }
                 Button {
                     let q = ask.trimmingCharacters(in: .whitespacesAndNewlines)
                     if q.isEmpty { askFocus = true } else { ask = ""; MissionControl.shared.assign(q) }
                 } label: {
                     Text("Give a task").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#111111"))
-                        .frame(maxWidth: .infinity).frame(height: 34)
+                        .frame(maxWidth: .infinity).frame(height: 36)
                         .background(Capsule().fill(Color.white))
                 }.buttonStyle(.plain)
             }
-            .frame(width: 150)
+            .frame(width: 136)
         }
+    }
+
+    private func chip(_ icon: String, _ label: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                Text(label).font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+            }
+            .foregroundColor(.white.opacity(0.85)).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 
     private func send() {

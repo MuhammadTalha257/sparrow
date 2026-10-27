@@ -2311,12 +2311,13 @@ struct BizFAQEditor: View {
 // =====================================================================
 
 enum HubSection: Hashable {
-    case home, team, office, missions, routines, settings, biz(BizTab)
+    case home, team, office, library, missions, routines, settings, biz(BizTab)
     var title: String {
         switch self {
         case .home: return "Home"
         case .team: return "Team"
         case .office: return "Office"
+        case .library: return "Results"
         case .missions: return "Missions"
         case .routines: return "Routines"
         case .settings: return "Settings"
@@ -2424,7 +2425,7 @@ struct HubTheme {
 }
 
 enum HubPage: Hashable {
-    case home, team, office, missions, routines, settings, biz(BizTab)
+    case home, team, office, library, missions, routines, settings, biz(BizTab)
 }
 
 struct ZuffiHubView: View {
@@ -2454,6 +2455,7 @@ struct ZuffiHubView: View {
         case .home: return .home
         case .team: return .team
         case .office: return .office
+        case .library: return .library
         case .missions: return .missions
         case .routines: return .routines
         case .settings: return .settings
@@ -2538,7 +2540,7 @@ struct ZuffiHubView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
     }
     private var topLinks: [(String, HubSection, Bool)] {
-        var l: [(String, HubSection, Bool)] = [("Home", .home, false), ("Team", .team, team.runs.contains { $0.status == "Working" }), ("Office", .office, false), ("Missions", .missions, false)]
+        var l: [(String, HubSection, Bool)] = [("Home", .home, false), ("Team", .team, team.runs.contains { $0.status == "Working" }), ("Office", .office, false), ("Results", .library, false), ("Missions", .missions, false)]
         if hub.showsBusiness { l.append(("Business", .biz(bizTabs.first ?? .today), !NotchInbox.shared.notes.isEmpty)) }
         l.append(("Settings", .settings, false))
         return l
@@ -2555,6 +2557,7 @@ struct ZuffiHubView: View {
                 side("Zuffi") {
                     sideLink("square.grid.2x2.fill", "Home", .home)
                     sideLink("building.2.fill", "Agent Office", .office)
+                    sideLink("tray.full.fill", "Results & chats", .library)
                     sideLink("flag.fill", "Missions", .missions, badge: team.runs.filter { $0.status == "Working" }.count)
                     sideLink("clock.fill", "Routines", .routines)
                     Button { ZuffiChat.shared.open() } label: { sideLabel("bubble.left.fill", "Chat", active: false) }.buttonStyle(.plain)
@@ -2622,6 +2625,7 @@ struct ZuffiHubView: View {
         case .home: return ["Overview", "Routines", "Activity"]
         case .team: return ["All", "Working", "Hire"]
         case .missions: return ["Running", "Done"]
+        case .library: return ["Agent results", "Chats"]
         case .settings: return ["Pet", "Notch", "Agents", "Privacy", "More"]
         default: return []
         }
@@ -2632,6 +2636,7 @@ struct ZuffiHubView: View {
         case .home: return "Home"
         case .team: return "Your team"
         case .office: return "Agent Office"
+        case .library: return "Results & chats"
         case .missions: return "Missions"
         case .routines: return "Routines"
         case .settings: return "Settings"
@@ -2679,6 +2684,7 @@ struct ZuffiHubView: View {
                 }
             }
         case .office: EmptyView()
+        case .library: LibraryView(light: light, chats: subFor(.library) == "Chats")
         case .missions: activitySection
         case .routines: routinesSection
         case .settings: settingsPage

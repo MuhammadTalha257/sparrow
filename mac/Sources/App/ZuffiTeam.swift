@@ -5452,3 +5452,168 @@ struct AgentEditView: View {
         OfficeModel.shared.rebuild()
     }
 }
+
+// MARK: - Results & chats: every agent result and every chat, to read again, copy or download
+
+@MainActor
+enum ResultExport {
+    static func copy(_ text: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+    static func save(_ title: String, _ text: String, pdf: Bool) {
+        let p = NSSavePanel()
+        p.nameFieldStringValue = DocsAgent.safeName(title) + (pdf ? ".pdf" : ".md")
+        p.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        guard p.runModal() == .OK, let url = p.url else { return }
+        if pdf { _ = DocsAgent.writePDF(title: title, body: text, to: url) }
+        else { try? ("# " + title + "\n\n" + text).write(to: url, atomically: true, encoding: .utf8) }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+}
+
+struct LibraryView: View {
+    var light = false
+    var chats = false
+    @ObservedObject private var team = ZuffiTeam.shared
+    @ObservedObject private var archive = ChatArchive.shared
+    @ObservedObject private var app = AppState.shared
+    @State private var search = ""
+    @State private var who = "all"
+    @State private var pick: String?
+    init(light: Bool = false, chats: Bool = false) { self.light = light; self.chats = chats }
+    private var T: HubTheme { HubTheme(light: light) }
+
+    private var runs: [AgentRun] {
+        team.runs.filter { $0.status != "Working" && (who == "all" || $0.agent == who) &&
+            (search.isEmpty || $0.task.localizedCaseInsensitiveContains(search) || $0.result.localizedCaseInsensitiveContains(search)) }
+            .sorted { $0.started > $1.started }
+    }
+    private var chatList: [ChatArchive.Chat] {
+        var list = archive.chats
+        if !app.chatHistory.isEmpty {
+            let first = app.chatHistory.first { $0.role == .user }?.content ?? "Current chat"
+            list.insert(ChatArchive.Chat(id: "live", title: "Now: " + String(first.prefix(50)), date: Date(),
+                                         messages: app.chatHistory.map { ["role": $0.role == .user ? "user" : "assistant", "content": $0.content] }, with: ZuffiChat.shared.whoTitle), at: 0)
+        }
+        return list.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.messages.contains { ($0["content"] ?? "").localizedCaseInsensitiveContains(search) } }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 20) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundColor(T.inactive)
+                    TextField(chats ? "Search chats" : "Search results", text: $search).textFieldStyle(.plain).font(HubFont.p(13, .regular))
+                }
+                .padding(.horizontal, 12).frame(height: 36).background(RoundedRectangle(cornerRadius: 10).fill(T.content))
+                if !chats {
+                    Picker("", selection: $who) {
+                        Text("All agents").tag("all")
+                        ForEach(Array(Set(team.runs.map(\.agent))).sorted(), id: \.self) { id in Text(team.agent(id).map(AgentEdits.name) ?? id).tag(id) }
+                    }.labelsHidden()
+                }
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        if chats {
+                            if chatList.isEmpty { empty("No chats yet.") }
+                            ForEach(chatList) { c in row(c.id, icon: "bubble.left.and.bubble.right.fill", agent: nil, title: c.title, sub: "\(c.with ?? "Zuffi") · \(c.date.formatted(date: .abbreviated, time: .shortened))") }
+                        } else {
+                            if runs.isEmpty { empty("No results yet. Give Nik a task.") }
+                            ForEach(runs.prefix(200)) { r in row(r.id, icon: "", agent: team.agent(r.agent), title: r.task, sub: "\(team.agent(r.agent).map(AgentEdits.name) ?? r.agent) · \(r.status) · \(r.started.formatted(date: .abbreviated, time: .shortened))") }
+                        }
+                    }
+                }
+            }
+            .frame(width: 320).frame(minHeight: 560, maxHeight: 640)
+
+            detail.frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private func empty(_ t: String) -> some View { Text(t).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
+
+    private func row(_ id: String, icon: String, agent: TeamAgent?, title: String, sub: String) -> some View {
+        Button { pick = id } label: {
+            HStack(spacing: 10) {
+                if let agent { RobotFace(agent: agent, size: 24) } else { Image(systemName: icon).font(.system(size: 13)).foregroundColor(HubTheme.blue).frame(width: 24) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(HubFont.p(13)).lineLimit(2).multilineTextAlignment(.leading)
+                    Text(sub).font(HubFont.p(11, .regular)).foregroundColor(T.inactive).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(pick == id ? HubTheme.blue.opacity(0.22) : T.content))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
+    @ViewBuilder private var detail: some View {
+        if chats, let c = chatList.first(where: { $0.id == pick }) ?? (pick == nil ? chatList.first : nil) {
+            let text = c.messages.map { ($0["role"] == "user" ? "You" : (c.with ?? "Zuffi")) + ":\n" + ($0["content"] ?? "") }.joined(separator: "\n\n")
+            VStack(alignment: .leading, spacing: 14) {
+                header(c.title, sub: "With \(c.with ?? "Zuffi") · \(c.date.formatted(date: .abbreviated, time: .shortened))", text: text)
+                HStack(spacing: 8) {
+                    if c.id != "live" {
+                        pill("Continue this chat", filled: false) { ChatArchive.shared.open(c); ZuffiChat.shared.open() }
+                        pill("Delete", filled: false) { ChatArchive.shared.delete(c); pick = nil }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(c.messages.enumerated()), id: \.offset) { _, m in
+                        let mine = m["role"] == "user"
+                        HStack {
+                            if mine { Spacer(minLength: 60) }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(mine ? "You" : (c.with ?? "Zuffi")).font(HubFont.p(11, .semibold)).foregroundColor(T.inactive)
+                                if mine { Text(m["content"] ?? "").font(HubFont.p(14, .regular)).textSelection(.enabled) }
+                                else { ChatRichText(text: m["content"] ?? "") }
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(mine ? HubTheme.blue.opacity(0.25) : T.content))
+                            if !mine { Spacer(minLength: 60) }
+                        }
+                    }
+                }
+            }
+        } else if !chats, let r = runs.first(where: { $0.id == pick }) ?? (pick == nil ? runs.first : nil) {
+            let name = team.agent(r.agent).map(AgentEdits.name) ?? r.agent
+            VStack(alignment: .leading, spacing: 14) {
+                header(r.task, sub: "\(name) · \(r.status) · \(r.started.formatted(date: .abbreviated, time: .shortened))", text: "Task: \(r.task)\n\n\(r.result)")
+                DisclosureGroup("How \(name) worked (\(r.steps.count) steps)") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(r.steps.enumerated()), id: \.offset) { i, s in Text("\(i + 1). \(s.text)").font(HubFont.p(12, .regular)).foregroundColor(T.inactive) }
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                }.font(HubFont.p(13))
+                ChatRichText(text: r.result).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(T.content))
+                if let links = r.links, !links.isEmpty {
+                    Text("Sources").font(HubFont.p(14, .semibold))
+                    ForEach(links.prefix(12), id: \.url) { l in
+                        Button { if let u = URL(string: l.url) { NSWorkspace.shared.open(u) } } label: {
+                            HStack { Image(systemName: "link"); Text(l.title).lineLimit(1); Spacer() }.font(HubFont.p(12, .regular)).foregroundColor(HubTheme.blue)
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        } else {
+            Text(chats ? "Pick a chat to read it." : "Pick a result to read it.").font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(20)
+        }
+    }
+
+    private func header(_ title: String, sub: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(HubFont.p(18, .semibold)).lineLimit(3).textSelection(.enabled)
+            Text(sub).font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+            HStack(spacing: 8) {
+                pill("Copy", filled: true) { ResultExport.copy(text) }
+                pill("Download (.md)", filled: false) { ResultExport.save(title, text, pdf: false) }
+                pill("Download PDF", filled: false) { ResultExport.save(title, text, pdf: true) }
+            }
+        }
+    }
+    private func pill(_ t: String, filled: Bool, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            Text(t).font(HubFont.p(13)).foregroundColor(filled ? .white : T.text).padding(.horizontal, 14).frame(height: 32)
+                .background(Capsule().fill(filled ? HubTheme.blue : Color.clear)).overlay(Capsule().stroke(filled ? Color.clear : T.border))
+        }.buttonStyle(.plain)
+    }
+}

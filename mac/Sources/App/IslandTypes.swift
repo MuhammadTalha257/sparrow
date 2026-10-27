@@ -93,7 +93,7 @@ enum IslandConst {
         .note: 480, .result: 500, .searching: 460, .finished: 460, .error: 480, .confused: 440,
     ]
     static func width(for v: IslandView) -> CGFloat {
-        if v == .overview && NotchDesign.on { return 640 }
+        if v == .overview && NotchDesign.on { return 560 }
         return viewWidths[v] ?? cardWidths[v] ?? expandedWidth
     }
     static func isWideHome(_ v: IslandView) -> Bool { v == .overview && NotchDesign.on }

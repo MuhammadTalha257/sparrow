@@ -373,7 +373,7 @@ struct TalkCard: View {
 @MainActor
 final class ChatArchive: ObservableObject {
     static let shared = ChatArchive()
-    struct Chat: Codable, Identifiable { let id: String; let title: String; let date: Date; let messages: [[String: String]] }
+    struct Chat: Codable, Identifiable { let id: String; let title: String; let date: Date; let messages: [[String: String]]; var with: String? = nil }
     @Published private(set) var chats: [Chat] = []
     private var url: URL {
         let d = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Zuffi")
@@ -388,7 +388,7 @@ final class ChatArchive: ObservableObject {
         let first = msgs.first { $0.role == .user }?.content ?? msgs[0].content
         let title = String(first.prefix(60))
         chats.insert(Chat(id: UUID().uuidString, title: title, date: Date(),
-                          messages: msgs.map { ["role": $0.role == .user ? "user" : "assistant", "content": $0.content] }), at: 0)
+                          messages: msgs.map { ["role": $0.role == .user ? "user" : "assistant", "content": $0.content] }, with: ZuffiChat.shared.whoTitle), at: 0)
         if chats.count > 200 { chats.removeLast(chats.count - 200) }
         save()
     }
