@@ -1049,7 +1049,8 @@ struct NotchHomeView: View {
             .padding(.top, 42)
             .frame(width: W, height: H, alignment: .top)
             .opacity(shown ? 1 : 0).offset(y: shown ? 0 : -8).scaleEffect(shown ? 1 : 0.98, anchor: .top)
-            .background(Color.black.opacity(0.35))
+            // the whole panel behind the buttons moves the notch: hold anywhere empty and drag
+            .background(NotchSeasonBackground().contentShape(Rectangle()).movesIsland())
         }
         .frame(width: W, height: H)
         .onAppear {
@@ -1087,6 +1088,7 @@ struct NotchHomeView: View {
                         .textFieldStyle(.plain).font(.system(size: 13)).foregroundColor(.white)
                         .focused($askFocus)
                         .onSubmit { send() }
+                    ProviderMenu(state: state)
                 }
                 .padding(.horizontal, 14).frame(height: 36)
                 .background(Capsule().fill(Color.white.opacity(0.12)))
@@ -1319,5 +1321,78 @@ struct AuroraColorPicker: View {
     private func set(_ h: String) {
         hex = h; AuroraColor.hex = h
         if PetController.shared.isShown { PetController.shared.hide(remember: false); PetController.shared.show(greeting: false) }
+    }
+}
+
+// MARK: - The open notch's living background: follows today's outfit (snow at Christmas, embers at Halloween, confetti for Eid…)
+
+struct NotchSeasonBackground: View {
+    private let season = ZuffiSeasons.find(ZuffiSeasons.activeId())
+    private var sky: [Color] {
+        season.sky.isEmpty ? [Color(hex: "#120F22"), Color(hex: "#0B0C14")] : season.sky.map { Color(hex: $0) }
+    }
+    private var glow: [Color] {
+        switch season.fx {
+        case "snow": return [Color(hex: "#8EC5FF"), Color(hex: "#C9E2FF")]
+        case "embers": return [Color(hex: "#F28A3C"), Color(hex: "#9B5CF6")]
+        case "hearts": return [Color(hex: "#F27BA1"), Color(hex: "#FFB3C7")]
+        case "confetti": return [Color(hex: season.accent ?? "#B79CFF"), Color(hex: "#FFD27A")]
+        case "sun": return [Color(hex: "#FFC857"), Color(hex: "#5AD1E6")]
+        case "stars": return [Color(hex: "#E9C46A"), Color(hex: "#6E8BFF")]
+        default: return [Color(hex: "#F58FA8"), Color(hex: "#6E8BFF")]
+        }
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            Canvas { ctx, size in
+                // sky
+                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(Gradient(colors: sky), startPoint: .zero, endPoint: CGPoint(x: size.width, y: size.height)))
+                // two soft glows drifting slowly
+                for (i, c) in glow.enumerated() {
+                    let x = size.width * (0.25 + 0.5 * Double(i)) + 40 * sin(t * 0.21 + Double(i) * 2.1)
+                    let y = size.height * 0.6 + 18 * cos(t * 0.17 + Double(i))
+                    var g = ctx; g.addFilter(.blur(radius: 38)); g.opacity = 0.42
+                    g.fill(Path(ellipseIn: CGRect(x: x - 110, y: y - 60, width: 220, height: 120)), with: .color(c))
+                }
+                // the season's little effect
+                let n = 26
+                for k in 0..<n {
+                    let seed = Double(k) * 12.9898
+                    let px = (sin(seed) * 43758.5453).truncatingRemainder(dividingBy: 1)
+                    let fx = abs(px) * size.width
+                    let speed = 6 + abs(sin(seed * 3)) * 10
+                    let phase = (t * speed / size.height + abs(cos(seed))).truncatingRemainder(dividingBy: 1)
+                    switch season.fx {
+                    case "snow":
+                        let y = phase * size.height, x = fx + 6 * sin(t + seed)
+                        ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 3, height: 3)), with: .color(.white.opacity(0.75)))
+                    case "embers":
+                        let y = size.height * (1 - phase), x = fx + 5 * sin(t * 1.3 + seed)
+                        ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2.6, height: 2.6)), with: .color(Color(hex: "#FFB066").opacity(0.5 + 0.4 * (1 - phase))))
+                    case "confetti":
+                        let y = phase * size.height, x = fx + 8 * sin(t * 0.9 + seed)
+                        let cols = [Color(hex: "#FFD27A"), Color(hex: "#F58FA8"), Color(hex: "#7CDBF2"), Color(hex: season.accent ?? "#B79CFF")]
+                        var p = Path(CGRect(x: -2.5, y: -1.2, width: 5, height: 2.4))
+                        p = p.applying(CGAffineTransform(rotationAngle: t * 2 + seed)).applying(CGAffineTransform(translationX: x, y: y))
+                        ctx.fill(p, with: .color(cols[k % cols.count].opacity(0.8)))
+                    case "hearts":
+                        let y = size.height * (1 - phase), x = fx
+                        ctx.draw(Text("♥").font(.system(size: 8)).foregroundColor(Color(hex: "#FF8FB1").opacity(0.7)), at: CGPoint(x: x, y: y))
+                    case "stars", "sun", nil:
+                        // gentle twinkling stars
+                        let y = abs(cos(seed * 1.7)).truncatingRemainder(dividingBy: 1) * size.height
+                        let a = 0.25 + 0.55 * (0.5 + 0.5 * sin(t * 1.6 + seed))
+                        ctx.fill(Path(ellipseIn: CGRect(x: fx, y: y, width: 1.8, height: 1.8)), with: .color(.white.opacity(a)))
+                    default:
+                        break
+                    }
+                }
+                // keep it dark enough to read white text on
+                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.black.opacity(0.28)))
+            }
+        }
+        .allowsHitTesting(true)
     }
 }

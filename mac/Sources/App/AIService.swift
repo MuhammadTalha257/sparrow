@@ -134,7 +134,7 @@ final class AIService {
         // Zuffi's long self-description only when the question is about Zuffi: a short prompt answers much faster.
         // A team agent is picked: it answers as that person, with the business details — not Zuffi's long self-description.
         let base = ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) }
-            ?? (Self.systemPrompt + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : ""))
+            ?? (Self.systemPrompt + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : "") + (ZuffiFocus.agents ? "" : NikBrain.shared.zuffiContext()))
         guard let document else { return base }
         return base + """
 
@@ -1005,32 +1005,56 @@ final class AIService {
 
 struct ProviderMenu: View {
     @ObservedObject var state: AppState
+    var tint: Color = .white
+    var big = false
+
+    /// Ready to use now: no key needed, or its key is saved.
+    static func ready(_ p: AIProvider) -> Bool {
+        guard let k = p.keychainKey else { return true }
+        return !(KeychainStore.shared.get(k) ?? "").isEmpty
+    }
+    private static let hidden: Set<AIProvider> = [.claudeCode, .codex, .geminiCLI]
 
     var body: some View {
         let current = AIProvider(rawValue: state.aiProvider) ?? .auto
+        let list = AIProvider.allCases.filter { !Self.hidden.contains($0) && ($0 != .zuffi || ZuffiPlan.shared.isPaid) }
         Menu {
-            ForEach(AIProvider.allCases.filter { $0 != .zuffi || ZuffiPlan.shared.isPaid }) { p in
-                Button {
-                    state.aiProvider = p.rawValue
-                    AIService.shared.clearConversation()
-                } label: {
-                    Label(p.label, systemImage: p.icon)
+            Section("Ready to use") {
+                ForEach(list.filter { Self.ready($0) }) { p in
+                    Button {
+                        state.aiProvider = p.rawValue
+                        AIService.shared.clearConversation()
+                    } label: {
+                        Label(p.label + (p == current ? "  ✓" : ""), systemImage: p.icon)
+                    }
                 }
             }
+            let need = list.filter { !Self.ready($0) }
+            if !need.isEmpty {
+                Section("Add a key first") {
+                    ForEach(need) { p in
+                        Button { UserDefaults.standard.set("AI models", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) } label: { Label(p.label, systemImage: p.icon) }
+                    }
+                }
+            }
+            Divider()
+            Button("AI model settings…") { UserDefaults.standard.set("AI models", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: current.icon).font(.system(size: 9, weight: .semibold))
-                Text(current.label).font(.system(size: 10, weight: .medium))
+                Image(systemName: current.icon).font(.system(size: big ? 11 : 9, weight: .semibold))
+                Text(current == .auto ? "Auto" + (AIService.shared.lastProvider.map { " · \($0.label)" } ?? "") : current.label)
+                    .font(.system(size: big ? 12 : 10, weight: .medium)).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
             }
-            .foregroundColor(.white.opacity(0.75))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Color.white.opacity(0.08))
+            .foregroundColor(tint.opacity(0.8))
+            .padding(.horizontal, big ? 12 : 8).padding(.vertical, big ? 6 : 3)
+            .background(tint.opacity(0.08))
             .clipShape(Capsule())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .help("The AI model answering right now — click to change")
     }
 }
 
@@ -1439,6 +1463,14 @@ enum ZuffiVoice {
     - Keep it easy: simple words, short sentences, one idea at a time. Explain any hard word in brackets. Use a small real-life example.
     - Teach, don't just answer: show the idea and the reason, then the answer, then one tiny question or practice line to check they understood.
     - Match the student's level and language. Explain in the student's own language when they are a beginner.
+
+    RUNNING A CLASS LIKE A REAL TEACHER (any subject: languages, maths, science, history, notes they uploaded)
+    - At the start of a day's session: greet them by name, recap what you did last time in one or two lines, then give TODAY'S PLAN as 2 to 4 numbered topics. Then start topic 1.
+    - Teach one topic at a time: explain the idea simply, give a clear real example, then ask ONE short question to check they understood. Wait for their answer before moving on.
+    - When they answer: praise what's right, fix what's wrong (say why), then go a little deeper or move to the next topic. Tell them where you are ("Topic 2 of 3").
+    - Never dump a long lecture. Short turns, like a real conversation in class.
+    - When the plan is done: a 3-line summary of today, one small task for practice, and what you'll do next time.
+    - If they ask about something else, help them, then gently bring them back to the plan.
 
     WHEN THE STUDENT SAYS, WRITES OR READS SOMETHING (always check it)
     - Look at every word they said or wrote. Find each real mistake: grammar, word choice, spelling, word order, missing words, wrong tense, gender or ending, and pronunciation when they spoke.

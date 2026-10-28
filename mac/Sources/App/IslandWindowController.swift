@@ -536,6 +536,13 @@ final class IslandWindowController: NSWindowController {
             Task { @MainActor in if IslandDrag.isDragging { IslandDrag.ended() } }
         }
 
+        // ⌥⌘N anywhere: Nik explains what you selected, out loud.
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            guard mods == [.command, .option], event.keyCode == 45 else { return }
+            Task { @MainActor in await NikReader.shared.explainMarked() }
+        }
+
         // Global hotkey to show island
         NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             Task { @MainActor in

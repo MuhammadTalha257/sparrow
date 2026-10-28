@@ -228,6 +228,7 @@ struct StudyDeck: Codable, Identifiable, Hashable {
     var source = ""
     var summary = ""
     var keyPoints: [String] = []
+    var notes: String?                     // full notes (easy words or the student's own wording)
     var cards: [StudyCard] = []
     var quiz: [StudyQuestion] = []
     var best: Int?
@@ -292,12 +293,14 @@ final class StudyHub: ObservableObject {
         defer { busy = "" }
         let prompt = """
         \(ZuffiVoice.nik)
+        NOTES STYLE: \(noteStyle == "same" ? "SAME WORDING — the student wants their OWN notes back, tidied: keep their words and every point; only fix spelling and grammar, put it under clear headings with bullet points. Do NOT simplify or rewrite." : "EASY NOTES — rewrite it in simple, clear words a student understands at once, with short bullet points and small examples. Keep every important fact.")
+        Put these full notes in "notes".
         From the material below make study materials a student will actually understand: \
         simple words, one idea per line, real examples, and cards that test understanding (not just copying sentences).
         \(lecture ? "It is a recording of a lecture — tidy it into clear lecture notes and add the questions most likely to come up in an exam." : "")
         Use ONLY what is in the material; don't add facts that aren't there. Write in the material's language.
         JSON only:
-        {"title":"short title","summary":"clear summary in 6-10 short lines","keyPoints":["the most important points, 6-12"],
+        {"title":"short title","notes":"the full notes in the style asked, with headings and bullet points","summary":"clear summary in 6-10 short lines","keyPoints":["the most important points, 6-12"],
          "cards":[{"q":"question or term","a":"short answer"}],
          "quiz":[{"q":"question","options":["A","B","C","D"],"answer":0,"why":"one line why"}]}
         Make 12-20 cards and 8-10 quiz questions (answer = index of the right option; vary the position).
@@ -309,6 +312,7 @@ final class StudyHub: ObservableObject {
         }
         var deck = StudyDeck(title: (j["title"] as? String) ?? title, source: source)
         deck.summary = (j["summary"] as? String) ?? ""
+        deck.notes = j["notes"] as? String
         deck.keyPoints = (j["keyPoints"] as? [String]) ?? []
         deck.cards = ((j["cards"] as? [[String: Any]]) ?? []).compactMap { d in
             guard let q = d["q"] as? String, let a = d["a"] as? String else { return nil }; return StudyCard(q: q, a: a)
@@ -328,9 +332,21 @@ final class StudyHub: ObservableObject {
         _ = item.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in await StudyHub.shared.fromFile(url) } } }
     }
 
+    @Published var noteStyle: String = UserDefaults.standard.string(forKey: "noteStyle") ?? "easy" { didSet { UserDefaults.standard.set(noteStyle, forKey: "noteStyle") } }
+
     func fromFile(_ url: URL) async {
         busy = "Reading \(url.lastPathComponent)…"
-        let text = await StudyText.extract(url)
+        var text = ""
+        // Photos of handwritten notes: the AI reads handwriting far better than plain OCR; OCR is the fallback.
+        if ["png", "jpg", "jpeg", "heic", "webp", "tiff"].contains(url.pathExtension.lowercased()),
+           let img = NSImage(contentsOf: url), let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+           let jpg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+            busy = "Reading your handwriting…"
+            let r = await AIService.shared.oneShot("Copy out ALL the text in these notes exactly as written (handwritten or printed), line by line, keeping headings, lists and maths. No comments, just the text.",
+                                                   system: "You transcribe notes exactly.", image: (mime: "image/jpeg", base64: jpg.base64EncodedString())) ?? ""
+            if r.trimmingCharacters(in: .whitespacesAndNewlines).count > 40 { text = r }
+        }
+        if text.isEmpty { text = await StudyText.extract(url) }
         await makeDeck(title: url.deletingPathExtension().lastPathComponent, text: text, source: url.lastPathComponent)
     }
 
@@ -429,7 +445,7 @@ final class StudyHub: ObservableObject {
 struct StudyPage: View {
     var light: Bool
     @ObservedObject private var hub = StudyHub.shared
-    @State private var tab = "Study a file"
+    @AppStorage("studyTab") private var tab = "Chat with Nik"
     @State private var openDeck: StudyDeck?
     @State private var link = ""
     @State private var ask = ""
@@ -442,7 +458,8 @@ struct StudyPage: View {
     @State private var dlKind = "Assignment"
     @State private var dropping = false
     private var T: HubTheme { HubTheme(light: light) }
-    private let tabs = ["Study a file", "Lecture notes", "Explain my screen", "Deadlines", "Tools"]
+    // Everything else (explain the screen, tools, lecture notes) now happens by talking to Nik.
+    private let tabs = ["Chat with Nik", "Study a file"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -458,11 +475,8 @@ struct StudyPage: View {
             }
             if !hub.busy.isEmpty { HStack(spacing: 8) { ProgressView().controlSize(.small); Text(hub.busy).font(HubFont.p(13, .regular)) } }
             switch tab {
-            case "Lecture notes": lecturePane
-            case "Explain my screen": explainPane
-            case "Deadlines": deadlinesPane
-            case "Tools": toolsPane
-            default: filePane
+            case "Study a file": filePane
+            default: NikChatView(light: light)
             }
             if !hub.output.isEmpty && (tab == "Explain my screen" || tab == "Tools") {
                 DashCard(title: "Answer", light: light) {
@@ -475,7 +489,7 @@ struct StudyPage: View {
                     }
                 }
             }
-            if !hub.decks.isEmpty && (tab == "Study a file" || tab == "Lecture notes") {
+            if !hub.decks.isEmpty && tab == "Study a file" {
                 DashCard(title: "Your study sets", sub: "Open one for notes, flashcards and a quiz", light: light) {
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                         ForEach(hub.decks) { d in
@@ -499,7 +513,16 @@ struct StudyPage: View {
     }
 
     private var filePane: some View {
-        DashCard(title: "Study from any file", sub: "Drop lecture slides, a PDF, Word file, PowerPoint or a photo of your notes. Zuffi makes a summary, key points, flashcards and a practice quiz.", light: light) {
+        DashCard(title: "Study a file", sub: "Drop your notes — typed, a PDF, slides, or a photo of handwritten notes. Nik turns them into clear notes, key points, flashcards and a quiz.", light: light) {
+            HStack(spacing: 8) {
+                Text("Notes style").font(HubFont.p(13)).foregroundColor(T.inactive)
+                ForEach([("easy", "Easy notes — simple words"), ("same", "Same wording — just tidied")], id: \.0) { k, label in
+                    Button { hub.noteStyle = k } label: {
+                        Text(label).font(HubFont.p(13)).foregroundColor(hub.noteStyle == k ? .white : T.text).padding(.horizontal, 14).frame(height: 32)
+                            .background(Capsule().fill(hub.noteStyle == k ? HubTheme.blue : T.content))
+                    }.buttonStyle(.plain)
+                }
+            }
             VStack(spacing: 10) {
                 Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 30)).foregroundColor(HubTheme.blue)
                 Text("Drop a file here").font(HubFont.p(15, .semibold))
@@ -646,6 +669,10 @@ struct DeckView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             NikCard(light: light, line: "I've read your notes. Press listen and I'll explain the summary and the key points simply.", mood: "explain",
                                     listen: { TutorVoice.shared.speakAuto(d.summary + "\n" + d.keyPoints.joined(separator: ". ")) })
+                            if let n = d.notes, !n.isEmpty {
+                                Text("Notes").font(HubFont.p(15, .semibold))
+                                ChatRichText(text: n)
+                            }
                             Text("Summary").font(HubFont.p(15, .semibold))
                             Text(d.summary).font(HubFont.p(14, .regular)).textSelection(.enabled)
                             Text("Key points").font(HubFont.p(15, .semibold))
@@ -663,7 +690,7 @@ struct DeckView: View {
     }
 
     private func notesText(_ d: StudyDeck) -> String {
-        "Summary\n\(d.summary)\n\nKey points\n" + d.keyPoints.map { "- " + $0 }.joined(separator: "\n") + "\n\nFlashcards\n" + d.cards.map { "- \($0.q) — \($0.a)" }.joined(separator: "\n")
+        (d.notes.map { "Notes\n\($0)\n\n" } ?? "") + "Summary\n\(d.summary)\n\nKey points\n" + d.keyPoints.map { "- " + $0 }.joined(separator: "\n") + "\n\nFlashcards\n" + d.cards.map { "- \($0.q) — \($0.a)" }.joined(separator: "\n")
     }
 
     @ViewBuilder private func cards(_ d: StudyDeck) -> some View {

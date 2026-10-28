@@ -1062,9 +1062,65 @@ final class NikBrain: ObservableObject {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: what Nik remembers across every subject (not only languages)
+    struct Session: Codable, Hashable { var day: String; var summary: String; var plan: [String] }
+    @Published var sessions: [Session] = TeamStore.load("nik-sessions", [Session]()) { didSet { TeamStore.save("nik-sessions", sessions) } }
+    @Published var explained: [String] = (UserDefaults.standard.stringArray(forKey: "nikExplained")) ?? [] { didSet { UserDefaults.standard.set(explained, forKey: "nikExplained") } }
+    static func dayKey(_ d: Date = Date()) -> String { ZuffiBusiness.iso(d) }
+    var today: Session? { sessions.first { $0.day == Self.dayKey() } }
+    var lastSession: Session? { sessions.first { $0.day != Self.dayKey() } }
+    func logExplained(_ t: String) {
+        explained.insert(String(t.prefix(80)), at: 0)
+        if explained.count > 15 { explained.removeLast(explained.count - 15) }
+    }
+    func setToday(summaryOfLast: String?, lastDay: String?, plan: [String]) {
+        if let d = lastDay, let s = summaryOfLast, !s.isEmpty, let i = sessions.firstIndex(where: { $0.day == d }) { sessions[i].summary = s }
+        sessions.removeAll { $0.day == Self.dayKey() }
+        sessions.insert(Session(day: Self.dayKey(), summary: "", plan: plan), at: 0)
+        if sessions.count > 60 { sessions.removeLast(sessions.count - 60) }
+    }
+
+    /// Everything Nik knows about the student: profile, language courses, study sets, deadlines, recent sessions.
+    func generalMemory() -> String {
+        var l = ["WHAT YOU REMEMBER ABOUT YOUR STUDENT (use it naturally, never list it back)"]
+        for (k, v) in [("Name", profile["name"]), ("Age group", profile["age"]), ("Own language", profile["own"]), ("Why they learn", profile["goals"]), ("Time per day", profile["minutes"]), ("They told you", profile["notes"])] {
+            if let v, !v.isEmpty { l.append("- \(k): \(v)") }
+        }
+        for c in courses.prefix(4) {
+            let st = Self.step(c)
+            l.append("- Course: \(TutorLanguage.of(c.id).name), step \(st + 1)/\(Self.path.count) (\(Self.path[st])), \(c.lessonsDone) lessons done" + (c.trouble.isEmpty ? "" : ", trips on: \(c.trouble.prefix(3).joined(separator: "; "))"))
+        }
+        let decks = StudyHub.shared.decks.prefix(5).map(\.title)
+        if !decks.isEmpty { l.append("- Notes they're studying: \(decks.joined(separator: "; "))") }
+        let soon = StudyHub.shared.deadlines.filter { !$0.done && $0.date > Date() }.sorted { $0.date < $1.date }.prefix(4)
+        if !soon.isEmpty { l.append("- Coming up: " + soon.map { "\($0.title) (\($0.kind), \($0.date.formatted(date: .abbreviated, time: .omitted)))" }.joined(separator: "; ")) }
+        for s in sessions.prefix(4) where !s.summary.isEmpty { l.append("- Session \(s.day): \(s.summary)") }
+        if let t = today, !t.plan.isEmpty { l.append("- TODAY'S PLAN: " + t.plan.enumerated().map { "\($0.offset + 1)) \($0.element)" }.joined(separator: "  ")) }
+        if !explained.isEmpty { l.append("- Recently asked you to explain: \(explained.prefix(4).joined(separator: "; "))") }
+        return l.joined(separator: "\n")
+    }
+
+    /// For Zuffi: what the student is learning, so Zuffi can talk about it and send them to Nik.
+    func zuffiContext() -> String {
+        """
+
+        THE STUDENT'S LEARNING (from their Zuffi dashboard)
+        Nik is the student's teacher inside Zuffi: a senior teacher who teaches any subject and 50 languages, remembers every lesson, and talks out loud. \
+        Students reach him in Study › Chat with Nik, in Languages, by saying "Hey Nik", or by selecting text and pressing ⌥⌘N ("Nik, explain this").
+        When the student wants a lesson, revision or a language, answer briefly and suggest continuing with Nik.
+        \(generalMemory())
+        """
+    }
+
     // MARK: "Hey Nik …"
     func heard(_ said: String) {
         let low = said.lowercased()
+        if low.range(of: #"\b(explain|meaning|mean|what does|what is this|translate|samjha|samjhao)"#, options: .regularExpression) != nil {
+            // "Nik, explain this in Urdu" → that language; otherwise the student's own language
+            let lang = TutorLanguage.all.first { low.contains("in " + $0.name.lowercased()) }?.name
+            Task { await NikReader.shared.explainMarked(in: lang) }
+            return
+        }
         if low.range(of: #"\b(read|pronounce|say this|how do i (say|read)|this line|marked|highlight)"#, options: .regularExpression) != nil {
             Task { await NikReader.shared.readMarked() }
             return
@@ -1094,7 +1150,8 @@ final class NikBrain: ObservableObject {
 enum NikWake {
     static func command(_ said: String) -> String? {
         let low = said.lowercased()
-        for p in [#"\b(hey|hi|hello|ok|okay|hay)[ ,]+(nik|nick|nic|neek|nikk|nique)\b[\s,.!?]*"#, #"^\s*(nik|nick)[ ,]+(teacher|sir)\b[\s,.!?]*"#, #"\bteacher (nik|nick)\b[\s,.!?]*"#] {
+        for p in [#"\b(hey|hi|hello|ok|okay|hay)[ ,]+(nik|nick|nic|neek|nikk|nique)\b[\s,.!?]*"#, #"^\s*(nik|nick)[ ,]+(teacher|sir)\b[\s,.!?]*"#, #"\bteacher (nik|nick)\b[\s,.!?]*"#,
+                  #"^\s*(nik|nick)[ ,]+(?=(explain|read|what|how|tell|teach|pronounce|translate|meaning))"#] {
             if let r = low.range(of: p, options: .regularExpression) {
                 return String(low[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
             }
@@ -1311,18 +1368,52 @@ final class NikReader: ObservableObject {
     @Published var meaning = ""
     @Published var busy = ""
     @Published var score: Int?
+    @Published var mode = "read"            // "read" (how to say it) or "explain" (what it means)
+    @Published var explanation = ""
     private var panel: NSPanel?
 
-    func readMarked() async {
-        show()
-        busy = "Looking at the line you marked…"; words = []; tips = []; meaning = ""; score = nil
+    /// The words the student marked: the selection in the app in front, or what's highlighted on screen.
+    private func grabMarked() async -> String {
         var text = Self.selectedText() ?? ""
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let shot = await ScreenGrab.main() {
             text = await AIService.shared.oneShot("""
-                Look at this screen. Return ONLY the text of the line the person has selected, highlighted or marked. If nothing is marked, return the single line nearest the middle of the screen. No quotes, nothing else.
+                Look at this screen. Return ONLY the text the person has selected, highlighted or marked (a word, a line or a paragraph). If nothing is marked, return the single line nearest the middle of the screen. No quotes, nothing else.
                 """, system: "You read text from screenshots exactly.", image: (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString())) ?? ""
         }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// "Nik, explain this (in Urdu)" or the keyboard shortcut: Nik looks at what's marked and explains it simply, out loud.
+    func explainMarked(in language: String? = nil) async {
+        mode = "explain"; show()
+        busy = "Nik is looking at what you marked…"; words = []; tips = []; meaning = ""; explanation = ""; score = nil
+        let text = await grabMarked()
+        guard !text.isEmpty else {
+            busy = ""; line = "Select a word or a line first, then say “Nik, explain this”."
+            TutorVoice.shared.speak("Select a word or a line first, then ask me again.", locale: "en-GB")
+            return
+        }
+        line = String(text.prefix(1200))
+        let lang = language ?? NikBrain.shared.profile["own"] ?? LanguageTutor.shared.explainIn
+        busy = "Nik is explaining…"
+        let r = await AIService.shared.oneShot("""
+            The student marked this on their screen and wants you to explain it:
+            "\(line)"
+            Explain it in \(lang), simply, like a kind senior teacher talking to them: what it means, then why / how, with one small real example. \
+            If it's a single word, give its meaning, how to say it, and one example sentence. If it's a question or exercise, teach the idea step by step (don't just give the answer). \
+            Keep it short enough to be read aloud (under 120 words). Plain text, no symbols.
+            """, system: ZuffiVoice.nik + "\n" + NikBrain.shared.generalMemory()) ?? ""
+        busy = ""
+        explanation = r.trimmingCharacters(in: .whitespacesAndNewlines)
+        if explanation.isEmpty { explanation = "I couldn't explain it this time — check an AI model is set up in Settings."; return }
+        TutorVoice.shared.speak(explanation, locale: TutorVoice.locale(forName: lang))
+        NikBrain.shared.logExplained(line)
+    }
+
+    func readMarked() async {
+        mode = "read"; show()
+        busy = "Looking at the line you marked…"; words = []; tips = []; meaning = ""; explanation = ""; score = nil
+        let text = await grabMarked()
         guard !text.isEmpty else {
             busy = ""
             line = "Select a line first, then say “Hey Nik, read this”."
@@ -1376,7 +1467,7 @@ final class NikReader: ObservableObject {
     func show() {
         if let p = panel { p.orderFrontRegardless(); return }
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 470, height: 600), styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
-        p.title = "Read with Nik"; p.titlebarAppearsTransparent = true; p.isReleasedWhenClosed = false
+        p.title = "Nik"; p.titlebarAppearsTransparent = true; p.isReleasedWhenClosed = false
         p.level = .floating; p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.contentView = NSHostingView(rootView: NikReadView())
         if let s = NSScreen.main { p.setFrameOrigin(NSPoint(x: s.visibleFrame.maxX - 500, y: s.visibleFrame.maxY - 640)) }
@@ -1406,7 +1497,7 @@ struct NikReadView: View {
                 NikAvatar(mood: "explain").frame(width: 84, height: 110)
                     .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "#E3E9F2"))).clipShape(RoundedRectangle(cornerRadius: 16))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Say it like Nik").font(.system(size: 17, weight: .semibold, design: .rounded))
+                    Text(r.mode == "explain" ? "Nik explains" : "Say it like Nik").font(.system(size: 17, weight: .semibold, design: .rounded))
                     Text(r.busy.isEmpty ? (voice.speaking ? "Nik is reading…" : "Listen, then try it yourself") : r.busy).font(.system(size: 12.5)).foregroundColor(.secondary)
                 }
             }
@@ -1414,6 +1505,14 @@ struct NikReadView: View {
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: "#FFF2B8").opacity(0.55)))
             if !r.meaning.isEmpty { Text(r.meaning).font(.system(size: 13)).foregroundColor(.secondary) }
+            if r.mode == "explain" {
+                ScrollView { Text(r.explanation).font(.system(size: 15)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading) }
+                HStack(spacing: 10) {
+                    Button { TutorVoice.shared.speakAuto(r.explanation) } label: { Label("Say it again", systemImage: "speaker.wave.2.fill").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent)
+                    Button { Task { await r.readMarked() } } label: { Label("How do I say it?", systemImage: "mouth.fill").frame(maxWidth: .infinity) }.buttonStyle(.bordered)
+                }.controlSize(.large)
+                Text("Select anything and press ⌥⌘N, or say “Nik, explain this in Urdu”.").font(.system(size: 11.5)).foregroundColor(.secondary)
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     WrapRow(items: r.words.indices.map { String($0) }) { k in
@@ -1443,6 +1542,7 @@ struct NikReadView: View {
             }
             .controlSize(.large)
             Text("Select any line on screen and say “Hey Nik, read this”.").font(.system(size: 11.5)).foregroundColor(.secondary)
+            }
         }
         .padding(20).frame(width: 470, height: 600, alignment: .top)
     }
@@ -1576,5 +1676,172 @@ struct StudentHomeCards: View {
     private func item(_ a: String, _ b: String) -> some View {
         HStack { Text(a).font(HubFont.p(13.5, .regular)).lineLimit(1); Spacer(); Text(b).font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive) }
             .padding(.horizontal, 12).frame(height: 40).background(RoundedRectangle(cornerRadius: 12).fill(T.content))
+    }
+}
+
+// MARK: - Chat with Nik (Study tab): a real class — yesterday's recap, today's plan, one topic at a time
+
+struct NikChatMsg: Codable, Identifiable, Hashable { var id = UUID().uuidString; var mine: Bool; var text: String; var at = Date() }
+
+@MainActor
+final class NikTutor: ObservableObject {
+    static let shared = NikTutor()
+    @Published var messages: [NikChatMsg] = TeamStore.load("nik-chat", [NikChatMsg]()) { didSet { TeamStore.save("nik-chat", Array(messages.suffix(300))) } }
+    @Published var thinking = false
+    @Published var speakReplies: Bool = UserDefaults.standard.object(forKey: "nikSpeaks") as? Bool ?? true { didSet { UserDefaults.standard.set(speakReplies, forKey: "nikSpeaks") } }
+    var explainIn: String { NikBrain.shared.profile["own"] ?? LanguageTutor.shared.explainIn }
+
+    /// First visit of the day: Nik recaps last time and gives today's plan, like a teacher opening the class.
+    func openClass() async {
+        let brain = NikBrain.shared
+        guard brain.today == nil, !thinking else { return }
+        thinking = true; defer { thinking = false }
+        let todayKey = NikBrain.dayKey()
+        let lastDay = messages.last { NikBrain.dayKey($0.at) != todayKey }.map { NikBrain.dayKey($0.at) }
+        let lastTalk = messages.filter { lastDay != nil && NikBrain.dayKey($0.at) == lastDay! }.suffix(30)
+            .map { ($0.mine ? "Student: " : "Nik: ") + $0.text.prefix(400) }.joined(separator: "\n")
+        let r = await AIService.shared.oneShot("""
+            A new day's class is starting. \(lastTalk.isEmpty ? "This is your first class together." : "Here is what you talked about last time (\(lastDay ?? "")):\n\(lastTalk)")
+            Plan today's class for this student from what you remember (their courses, notes, deadlines, what they found hard).
+            JSON only: {"lastSummary":"one line: what you covered last time (empty if first class)","plan":["2 to 4 short topic names for today"],
+             "say":"what you say now, in \(explainIn): greet them by name, recap last time in 1-2 lines, give today's plan as a numbered list, then start topic 1 with a short explanation and ONE question"}
+            """, system: ZuffiVoice.nik + "\n" + brain.generalMemory())
+        guard let r, let j = AIService.jsonIn(r) as? [String: Any], let say = j["say"] as? String, !say.isEmpty else { return }
+        brain.setToday(summaryOfLast: j["lastSummary"] as? String, lastDay: lastDay, plan: (j["plan"] as? [String]) ?? [])
+        messages.append(NikChatMsg(mine: false, text: say))
+        if speakReplies { TutorVoice.shared.speak(say, locale: TutorVoice.locale(forName: explainIn)) }
+    }
+
+    func send(_ text: String) async {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        messages.append(NikChatMsg(mine: true, text: t))
+        thinking = true; defer { thinking = false }
+        let history = messages.suffix(16).dropLast().map { ($0.mine ? "Student: " : "Nik: ") + $0.text.prefix(600) }.joined(separator: "\n")
+        let r = await AIService.shared.oneShot("""
+            CLASS SO FAR TODAY:
+            \(history.isEmpty ? "(just started)" : history)
+
+            The student says: "\(t)"
+            Reply as Nik, in the student's language (\(explainIn)) unless they write in another language or you're teaching a language. Follow today's plan. Short turns: explain, example, one question.
+            """, system: ZuffiVoice.nik + "\n" + NikBrain.shared.generalMemory()) ?? ""
+        let reply = r.trimmingCharacters(in: .whitespacesAndNewlines)
+        messages.append(NikChatMsg(mine: false, text: reply.isEmpty ? "I couldn't answer just now — check an AI model is set up (the model button above)." : reply))
+        if speakReplies, !reply.isEmpty { TutorVoice.shared.speakAuto(reply, fallback: TutorVoice.locale(forName: explainIn)) }
+        if let i = NikBrain.shared.sessions.firstIndex(where: { $0.day == NikBrain.dayKey() }) {
+            // keep a running one-line note of today's class for tomorrow's recap
+            NikBrain.shared.sessions[i].summary = "Talked about: " + messages.filter { $0.mine && NikBrain.dayKey($0.at) == NikBrain.dayKey() }.suffix(6).map { String($0.text.prefix(40)) }.joined(separator: "; ")
+        }
+    }
+
+    func newDay() { NikBrain.shared.sessions.removeAll { $0.day == NikBrain.dayKey() }; Task { await openClass() } }
+}
+
+struct NikChatView: View {
+    var light: Bool
+    @ObservedObject private var tutor = NikTutor.shared
+    @ObservedObject private var brain = NikBrain.shared
+    @ObservedObject private var voice = TutorVoice.shared
+    @ObservedObject private var ear = TutorEar.shared
+    @ObservedObject private var state = AppState.shared
+    @State private var text = ""
+    private var T: HubTheme { HubTheme(light: light) }
+    private var explainLang: TutorLanguage { TutorLanguage.all.first { $0.name == tutor.explainIn } ?? TutorLanguage.of("en") }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 20) {
+            // Nik
+            VStack(alignment: .leading, spacing: 12) {
+                NikAvatar(mood: tutor.thinking ? "explain" : "smile").frame(width: 230, height: 300)
+                    .background(RoundedRectangle(cornerRadius: 26).fill(LinearGradient(colors: [Color(hex: "#E8EDF4"), Color(hex: "#D3DCEA")], startPoint: .top, endPoint: .bottom)))
+                    .clipShape(RoundedRectangle(cornerRadius: 26))
+                    .overlay(alignment: .bottom) {
+                        if voice.speaking || tutor.thinking {
+                            Text(voice.speaking ? "speaking…" : "thinking…").font(HubFont.p(12)).foregroundColor(.white)
+                                .padding(.horizontal, 12).frame(height: 26).background(Capsule().fill(Color.black.opacity(0.45))).padding(.bottom, 10)
+                        }
+                    }
+                Text("Nik").font(HubFont.p(20, .semibold))
+                Text("Your teacher · 20 years · every subject and 50 languages").font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive)
+                if let plan = brain.today?.plan, !plan.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("TODAY'S PLAN").font(HubFont.p(11, .semibold)).foregroundColor(HubTheme.blue)
+                        ForEach(Array(plan.enumerated()), id: \.offset) { i, p in Text("\(i + 1). \(p)").font(HubFont.p(13, .regular)).fixedSize(horizontal: false, vertical: true) }
+                    }
+                    .padding(14).frame(maxWidth: .infinity, alignment: .leading).background(RoundedRectangle(cornerRadius: 16).fill(T.content))
+                }
+                if let last = brain.lastSession, !last.summary.isEmpty {
+                    Text("Last time: \(last.summary)").font(HubFont.p(12, .regular)).foregroundColor(T.inactive).fixedSize(horizontal: false, vertical: true)
+                }
+                Toggle("Nik speaks his answers", isOn: $tutor.speakReplies).toggleStyle(.switch).font(HubFont.p(12.5))
+                ProviderMenu(state: state, tint: T.text, big: true)
+            }
+            .frame(width: 230)
+
+            // the class
+            VStack(spacing: 12) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            if tutor.messages.isEmpty && !tutor.thinking {
+                                Text("Say hi to Nik, or ask anything you're studying.").font(HubFont.p(14, .regular)).foregroundColor(T.inactive).padding(.top, 30)
+                            }
+                            ForEach(tutor.messages.suffix(80)) { m in bubble(m).id(m.id) }
+                            if tutor.thinking { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Nik is thinking…").font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive) }.id("thinking") }
+                        }
+                        .padding(18)
+                    }
+                    .onChange(of: tutor.messages.count) { _ in withAnimation { proxy.scrollTo(tutor.messages.last?.id, anchor: .bottom) } }
+                    .onAppear { proxy.scrollTo(tutor.messages.last?.id, anchor: .bottom) }
+                }
+                .frame(minHeight: 460)
+                .background(RoundedRectangle(cornerRadius: 22).fill(T.content.opacity(0.6)))
+                HStack(spacing: 10) {
+                    Button { if ear.listening { ear.stop(); text = ear.heard } else { ear.start(explainLang) } } label: {
+                        Image(systemName: ear.listening ? "stop.circle.fill" : "mic.circle.fill").font(.system(size: 34))
+                            .foregroundColor(ear.listening ? Color(hex: "#E5534B") : HubTheme.blue)
+                    }.buttonStyle(.plain).help("Talk to Nik")
+                    ZField(label: "Ask Nik or answer his question…", text: Binding(get: { ear.listening ? ear.heard : text }, set: { text = $0 }), light: light, onSubmit: send)
+                    DashButton(title: "Send", icon: "paperplane.fill", light: light, go: send)
+                }
+                HStack(spacing: 16) {
+                    Button { tutor.newDay() } label: { Label("Start today's class again", systemImage: "arrow.clockwise") }.buttonStyle(.plain)
+                    Button { brain.showIntake = true } label: { Label("About me", systemImage: "person.crop.circle") }.buttonStyle(.plain)
+                    Spacer()
+                    if voice.speaking { Button { voice.stop() } label: { Label("Stop talking", systemImage: "stop.fill") }.buttonStyle(.plain) }
+                }
+                .font(HubFont.p(12.5)).foregroundColor(HubTheme.blue)
+            }
+        }
+        .sheet(isPresented: $brain.showIntake) { NikIntakeSheet(light: light) { brain.showIntake = false; Task { await tutor.openClass() } } }
+        .task {
+            if !brain.knowsStudent { brain.showIntake = true } else { await tutor.openClass() }
+        }
+    }
+
+    private func bubble(_ m: NikChatMsg) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if m.mine { Spacer(minLength: 90) }
+            VStack(alignment: .leading, spacing: 6) {
+                if m.mine { Text(m.text).font(HubFont.p(14.5, .regular)).textSelection(.enabled) }
+                else { ChatRichText(text: m.text) }
+                if !m.mine {
+                    HStack(spacing: 12) {
+                        Button { TutorVoice.shared.speakAuto(m.text, fallback: TutorVoice.locale(forName: tutor.explainIn)) } label: { Image(systemName: "speaker.wave.2.fill") }.buttonStyle(.plain).help("Hear Nik say it")
+                        Button { ResultExport.copy(m.text) } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.plain).help("Copy")
+                        Text(m.at.formatted(date: .omitted, time: .shortened)).font(HubFont.p(10.5, .regular))
+                    }.font(.system(size: 11)).foregroundColor(T.inactive)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(m.mine ? AnyShapeStyle(HubTheme.blue.opacity(0.22)) : AnyShapeStyle(T.content)))
+            if !m.mine { Spacer(minLength: 60) }
+        }
+    }
+
+    private func send() {
+        let s = ear.listening ? ear.heard : text
+        ear.stop(); text = ""
+        Task { await tutor.send(s) }
     }
 }
