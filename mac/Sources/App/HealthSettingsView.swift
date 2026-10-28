@@ -1,6 +1,8 @@
 import SwiftUI
 import AVFoundation
 import Speech
+import WebKit
+import NaturalLanguage
 
 // =====================================================================
 // MARK: - Settings → Health: water, coffee and medicine reminders
@@ -168,18 +170,58 @@ struct TutorLesson: Codable, Hashable {
 }
 struct TutorMsg: Identifiable, Hashable { let id = UUID(); let mine: Bool; let text: String; var note = "" }
 
-/// Speaks the language you're learning with the right accent.
+/// Nik's voice: speaks the language you're learning with the right accent (a male voice when the Mac has one),
+/// and tells Nik's face when he is talking and on every word, so his lips move with the voice.
 @MainActor
-final class TutorVoice {
+final class TutorVoice: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     static let shared = TutorVoice()
     private let synth = AVSpeechSynthesizer()
-    func say(_ text: String, _ lang: TutorLanguage, slow: Bool = false) {
+    @Published var speaking = false
+    @Published var beat = 0          // goes up on every spoken word
+    override init() { super.init(); synth.delegate = self }
+
+    func say(_ text: String, _ lang: TutorLanguage, slow: Bool = false) { speak(text, locale: lang.locale, slow: slow) }
+    /// Speak in the language the text is written in (notes, explanations).
+    func speakAuto(_ text: String, fallback: String = "en-GB") {
+        let r = NLLanguageRecognizer(); r.processString(String(text.prefix(2000)))
+        speak(text, locale: r.dominantLanguage?.rawValue ?? fallback)
+    }
+    static func locale(forName name: String) -> String {
+        ["English": "en-GB", "Urdu": "ur-PK", "Arabic": "ar-SA", "Hindi": "hi-IN", "Spanish": "es-ES", "French": "fr-FR",
+         "German": "de-DE", "Turkish": "tr-TR", "Bengali": "bn-IN", "Polish": "pl-PL"][name] ?? "en-GB"
+    }
+    func speak(_ text: String, locale: String, slow: Bool = false) {
         synth.stopSpeaking(at: .immediate)
-        let u = AVSpeechUtterance(string: text)
-        u.voice = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == lang.locale }.max { $0.quality.rawValue < $1.quality.rawValue }
-            ?? AVSpeechSynthesisVoice(language: lang.locale)
+        let clean = Self.plain(text)
+        guard !clean.isEmpty else { return }
+        let u = AVSpeechUtterance(string: clean)
+        let all = AVSpeechSynthesisVoice.speechVoices()
+        var pool = all.filter { $0.language == locale }
+        if pool.isEmpty { pool = all.filter { $0.language.hasPrefix(String(locale.prefix(2))) } }
+        u.voice = pool.max { Self.score($0) < Self.score($1) } ?? AVSpeechSynthesisVoice(language: locale)
         u.rate = slow ? 0.38 : 0.47
+        u.pitchMultiplier = 0.95
         synth.speak(u)
+    }
+    func stop() { synth.stopSpeaking(at: .immediate); speaking = false }
+    private static func score(_ v: AVSpeechSynthesisVoice) -> Int { v.quality.rawValue * 10 + (v.gender == .male ? 20 : 0) }
+    private static func plain(_ t: String) -> String {
+        var s = t
+        for c in ["✗", "✓", "✏️", "💡", "→", "*", "#", "•", "`"] { s = s.replacingOccurrences(of: c, with: c == "→" ? ", " : " ") }
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        Task { @MainActor in TutorVoice.shared.speaking = true }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in TutorVoice.shared.speaking = false }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in TutorVoice.shared.speaking = false }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
+        Task { @MainActor in TutorVoice.shared.beat &+= 1 }
     }
 }
 
@@ -390,6 +432,11 @@ struct LanguagePage: View {
                 Label("\(t.streak)", systemImage: "flame.fill").foregroundColor(Color(hex: "#F5B963")).font(HubFont.p(13))
                 Label("\(t.xp) XP", systemImage: "star.fill").foregroundColor(HubTheme.blue).font(HubFont.p(13))
             }
+            NikCard(light: light,
+                    line: tab == "Speak with your teacher" ? "Talk or write to me in \(t.lang.name). I'll check every word, show you what to fix and explain why we say it that way."
+                        : "Hello! I'm Nik. We'll learn \(t.lang.name) step by step, at your level (\(t.level)). Ask me anything, any time.",
+                    hello: "Hello! I'm Nik, your teacher. Let's learn \(t.lang.name) together. Speak or write to me, and I'll gently fix your mistakes and explain why.",
+                    listen: { TutorVoice.shared.speak("Hello! I'm Nik, your teacher. Let's learn \(t.lang.name) together. Speak or write to me, and I'll gently fix your mistakes and explain why.", locale: TutorVoice.locale(forName: t.explainIn)) })
             HStack(spacing: 12) {
                 ZSelect(label: "Level", value: Binding(get: { t.level }, set: { t.levels[t.langID] = $0 }), options: ["A1", "A2", "B1", "B2", "C1", "C2"].map { ($0, $0) }, light: light).frame(width: 110)
                 Button("Not sure? Take the level test") { tab = "Level test"; Task { pIndex = 0; pScore = 0; await t.startPlacement() } }.buttonStyle(.plain).foregroundColor(HubTheme.blue).font(HubFont.p(12))
@@ -486,13 +533,19 @@ struct LanguagePage: View {
                             if m.mine { Spacer(minLength: 80) }
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 6) { if !m.mine { speaker(m.text) }; target(m.text, size: 14.5, weight: .regular) }
-                                if !m.note.isEmpty { Text(m.note).font(HubFont.p(12, .regular)).foregroundColor(Color(hex: "#F5B963")) }
+                                if !m.note.isEmpty {
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Button { TutorVoice.shared.speak(m.note, locale: TutorVoice.locale(forName: t.explainIn)) } label: { Image(systemName: "speaker.wave.2.fill") }
+                                            .buttonStyle(.plain).foregroundColor(Color(hex: "#F5B963")).help("Nik explains this")
+                                        Text(m.note).font(HubFont.p(12, .regular)).foregroundColor(Color(hex: "#F5B963")).textSelection(.enabled)
+                                    }
+                                }
                             }
                             .padding(12).background(RoundedRectangle(cornerRadius: 14).fill(m.mine ? HubTheme.blue.opacity(0.22) : T.content))
                             if !m.mine { Spacer(minLength: 80) }
                         }
                     }
-                    if t.busy == "…" { Text("Your teacher is typing…").font(HubFont.p(12, .regular)).foregroundColor(T.inactive) }
+                    if t.busy == "…" { Text("Nik is thinking…").font(HubFont.p(12, .regular)).foregroundColor(T.inactive) }
                 }
             }.frame(minHeight: 260, maxHeight: 420)
             HStack(spacing: 10) {
@@ -587,4 +640,215 @@ struct LanguagePage: View {
             }
         }
     }
+}
+
+// MARK: - Nik, the student's teacher (face with lip movement)
+
+/// Nik's face. His mouth moves while he speaks (on every word), his brows lift, he blinks and breathes.
+struct NikAvatar: NSViewRepresentable {
+    @ObservedObject var voice = TutorVoice.shared
+    var mood = "smile"            // "smile" or "explain" (calm look when quiet)
+
+    final class Web: WKWebView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }   // never steals clicks or scrolling
+    }
+    func makeNSView(context: Context) -> WKWebView {
+        let w = Web(frame: .zero)
+        w.setValue(false, forKey: "drawsBackground")
+        w.loadHTMLString(NikArt.html, baseURL: nil)
+        return w
+    }
+    func updateNSView(_ w: WKWebView, context: Context) {
+        w.evaluateJavaScript("window.nik && window.nik(\(voice.speaking ? "true" : "false"), \(voice.beat), '\(mood)')", completionHandler: nil)
+    }
+}
+
+/// Nik's card: face, name and what he's doing. Says hello the first time the student opens a lesson.
+struct NikCard: View {
+    var light: Bool
+    var line: String
+    var hello: String = ""
+    var mood = "smile"
+    var listen: (() -> Void)?
+    @ObservedObject private var voice = TutorVoice.shared
+    @MainActor static var greeted = false
+    private var T: HubTheme { HubTheme(light: light) }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            NikAvatar(mood: mood).frame(width: 118, height: 156)
+                .background(RoundedRectangle(cornerRadius: 22).fill(LinearGradient(colors: [Color(hex: "#E8EDF4"), Color(hex: "#D9E1EC")], startPoint: .top, endPoint: .bottom)))
+                .clipShape(RoundedRectangle(cornerRadius: 22))
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("Nik").font(HubFont.p(18, .semibold)).foregroundColor(T.text)
+                    Text(voice.speaking ? "speaking…" : "your teacher · 20 years").font(HubFont.p(12, .regular)).foregroundColor(voice.speaking ? HubTheme.blue : T.inactive)
+                }
+                Text(line).font(HubFont.p(13.5, .regular)).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 14) {
+                    if let listen {
+                        Button { voice.speaking ? voice.stop() : listen() } label: {
+                            Label(voice.speaking ? "Stop" : "Listen to Nik", systemImage: voice.speaking ? "stop.fill" : "speaker.wave.2.fill")
+                        }.buttonStyle(.plain).foregroundColor(HubTheme.blue).font(HubFont.p(12.5))
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14).background(RoundedRectangle(cornerRadius: 24).fill(T.content))
+        .onAppear {
+            guard !hello.isEmpty, !Self.greeted else { return }
+            Self.greeted = true
+            voice.speak(hello, locale: "en-GB")
+        }
+    }
+}
+
+enum NikArt {
+    static let html = #"""
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+svg{width:100%;height:100%;display:block}
+#bob{transform-box:fill-box;transform-origin:50% 100%;animation:idle 4.5s ease-in-out infinite}
+body.talk #bob{animation:nod 1.1s ease-in-out infinite}
+@keyframes idle{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-1.5px) rotate(.7deg)}}
+@keyframes nod{0%,100%{transform:translateY(0) rotate(-.6deg)}50%{transform:translateY(1.2px) rotate(.8deg)}}
+#brows{transition:transform .18s ease}
+body.talk #brows{transform:translateY(-3px)}
+#eyeL,#eyeR{transform-box:fill-box;transform-origin:center;transition:transform .07s}
+body.blink #eyeL,body.blink #eyeR{transform:scaleY(.08)}
+#chest{transform-box:fill-box;transform-origin:50% 100%;animation:breathe 4.5s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.008,1.012)}}
+</style></head><body>
+<svg viewBox="165 48 270 357" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<radialGradient id="sk" cx="0.42" cy="0.38" r="0.7"><stop offset="0" stop-color="#F7D3BC"/><stop offset="0.55" stop-color="#EBB596"/><stop offset="1" stop-color="#C98868"/></radialGradient>
+<linearGradient id="nk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B9785A"/><stop offset="0.45" stop-color="#D99C7C"/><stop offset="1" stop-color="#E4AC8C"/></linearGradient>
+<linearGradient id="hr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5A3C2A"/><stop offset="0.5" stop-color="#3B271B"/><stop offset="1" stop-color="#24170F"/></linearGradient>
+<linearGradient id="gy" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A3426"/><stop offset="1" stop-color="#A39C95"/></linearGradient>
+<linearGradient id="sh" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#F7FAFD"/><stop offset="0.55" stop-color="#E6EDF4"/><stop offset="1" stop-color="#C3CFDC"/></linearGradient>
+<linearGradient id="sl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#D3DCE6"/><stop offset="0.5" stop-color="#F6F9FC"/><stop offset="1" stop-color="#DCE4ED"/></linearGradient>
+<linearGradient id="sr" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#DCE4ED"/><stop offset="0.45" stop-color="#E9EFF5"/><stop offset="1" stop-color="#B8C5D3"/></linearGradient>
+<linearGradient id="ti" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3D5F93"/><stop offset="0.5" stop-color="#2D4A78"/><stop offset="1" stop-color="#1D3156"/></linearGradient>
+<radialGradient id="ir" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#9A6A3E"/><stop offset="0.7" stop-color="#5E3A1E"/><stop offset="1" stop-color="#2E1B0E"/></radialGradient>
+<radialGradient id="bl" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#E88C7A" stop-opacity="0.42"/><stop offset="1" stop-color="#E88C7A" stop-opacity="0"/></radialGradient>
+<linearGradient id="jw" x1="0" y1="0" x2="1" y2="0"><stop offset="0.55" stop-color="#B8714F" stop-opacity="0"/><stop offset="1" stop-color="#B8714F" stop-opacity="0.45"/></linearGradient>
+<linearGradient id="ln" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.38"/><stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+<clipPath id="cL"><path d="M231,207 C239,193 270,192 279,206 C270,216 241,217 231,207 Z"/></clipPath>
+<clipPath id="cR"><path d="M321,206 C330,192 361,193 369,207 C359,217 330,216 321,206 Z"/></clipPath>
+</defs>
+<g id="chest">
+<path d="M274,292 L272,380 C284,394 316,394 328,380 L326,292 Z" fill="url(#nk)"/>
+<path d="M150,430 C152,400 198,382 252,372 L348,372 C402,382 448,400 450,430 L452,560 L148,560 Z" fill="url(#sh)"/>
+<path d="M300,412 L300,560" stroke="#C3CEDA" stroke-width="2"/>
+<path d="M206,452 L252,452 L250,494 C238,500 218,500 208,494 Z" fill="none" stroke="#C7D1DC" stroke-width="2"/>
+<path d="M262,352 C280,364 320,364 338,352 L342,372 C320,384 280,384 258,372 Z" fill="#E2E9F1"/>
+<path d="M292,398 L308,398 L322,548 L300,574 L278,548 Z" fill="url(#ti)"/>
+<path d="M286,378 L314,378 L310,404 L290,404 Z" fill="#2A4470"/>
+<path d="M300,394 L262,356 L240,380 L266,418 Z" fill="#F4F8FB" stroke="#CBD5E0" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M300,394 L338,356 L360,380 L334,418 Z" fill="#E7EDF3" stroke="#C3CEDA" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M150,420 C126,440 118,500 122,566 L204,566 L202,474 C200,440 182,418 150,420 Z" fill="url(#sl)"/>
+<path d="M450,420 C474,440 482,500 478,566 L396,566 L398,474 C400,440 418,418 450,420 Z" fill="url(#sr)"/>
+</g>
+<g id="bob"><g transform="translate(300,342) scale(0.86) translate(-300,-342)">
+<ellipse cx="203" cy="226" rx="17" ry="27" fill="#E2A483"/>
+<path d="M200,212 C192,218 192,236 200,242" stroke="#B9775A" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+<ellipse cx="397" cy="226" rx="17" ry="27" fill="#D99A79"/>
+<path d="M400,212 C408,218 408,236 400,242" stroke="#A9694C" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+<path d="M300,102 C366,102 400,148 402,210 C404,262 386,296 356,320 C336,336 318,342 300,342 C282,342 264,336 244,320 C214,296 196,262 198,210 C200,148 234,102 300,102 Z" fill="url(#sk)"/>
+<path d="M300,102 C366,102 400,148 402,210 C404,262 386,296 356,320 C336,336 318,342 300,342 C282,342 264,336 244,320 C214,296 196,262 198,210 C200,148 234,102 300,102 Z" fill="url(#jw)"/>
+<ellipse cx="236" cy="262" rx="30" ry="18" fill="url(#bl)"/>
+<ellipse cx="364" cy="262" rx="30" ry="18" fill="url(#bl)"/>
+<ellipse cx="290" cy="152" rx="44" ry="13" fill="#FBE0CF" opacity="0.4"/>
+<path d="M200,204 C188,160 196,104 236,78 C270,56 334,50 372,68 C410,86 416,140 402,204 C400,212 398,218 397,222 L393,222 C393,194 391,170 384,154 C360,130 304,118 254,126 C232,132 218,146 212,164 C208,182 207,200 207,222 L203,222 C202,216 201,210 200,204 Z" fill="url(#hr)"/>
+<path d="M250,128 C244,100 266,72 314,64 C360,58 396,80 402,118 C394,124 386,134 384,146 C374,124 350,110 318,110 C292,110 268,118 250,128 Z" fill="#432C1E"/>
+<path d="M254,124 C262,98 290,80 328,76 C356,74 380,84 392,102" stroke="#7E5A41" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.85"/>
+<path d="M262,116 C276,98 302,88 334,88 C358,88 378,98 390,114" stroke="#664532" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.8"/>
+<path d="M300,70 C330,64 360,70 382,86" stroke="#9A7860" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.55"/>
+<path d="M251,127 C245,108 246,90 256,74" stroke="#20140C" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.7"/>
+<path d="M248,90 C236,100 226,118 222,140" stroke="#6B4A35" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+<path d="M203,222 C202,200 204,184 209,172 C211,192 211,208 208,222 Z" fill="url(#gy)" opacity="0.85"/>
+<path d="M397,222 C398,200 396,184 391,172 C389,192 389,208 392,222 Z" fill="url(#gy)" opacity="0.85"/>
+<g id="eyeL">
+<path d="M231,207 C239,193 270,192 279,206 C270,216 241,217 231,207 Z" fill="#FBF8F5"/>
+<g clip-path="url(#cL)"><circle cx="256" cy="205" r="10.5" fill="url(#ir)"/><circle cx="256" cy="205" r="4.6" fill="#140C07"/><circle cx="259.5" cy="201.5" r="2.4" fill="#FFFFFF"/></g>
+<path d="M229,207 C238,192 270,190 281,205" stroke="#2A1A10" stroke-width="3" fill="none" stroke-linecap="round"/>
+</g>
+<g id="eyeR">
+<path d="M321,206 C330,192 361,193 369,207 C359,217 330,216 321,206 Z" fill="#FBF8F5"/>
+<g clip-path="url(#cR)"><circle cx="344" cy="205" r="10.5" fill="url(#ir)"/><circle cx="344" cy="205" r="4.6" fill="#140C07"/><circle cx="347.5" cy="201.5" r="2.4" fill="#FFFFFF"/></g>
+<path d="M319,205 C330,190 362,192 371,207" stroke="#2A1A10" stroke-width="3" fill="none" stroke-linecap="round"/>
+</g>
+<path d="M236,212 C246,218 264,218 276,211" stroke="#C48263" stroke-width="1.5" fill="none" opacity="0.7"/>
+<path d="M324,211 C336,218 354,218 364,212" stroke="#C48263" stroke-width="1.5" fill="none" opacity="0.7"/>
+<path d="M224,206 L217,203 M225,212 L218,213" stroke="#C48263" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>
+<path d="M376,206 L383,203 M375,212 L382,213" stroke="#B9775A" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>
+<g id="brows">
+<path d="M226,176 C238,164 262,162 284,168 C285,172 284,175 282,176 C262,172 242,174 230,184 C226,183 225,179 226,176 Z" fill="#3B271B"/>
+<path d="M374,176 C362,164 338,162 316,168 C315,172 316,175 318,176 C338,172 358,174 370,184 C374,183 375,179 374,176 Z" fill="#3B271B"/>
+</g>
+<path d="M308,210 C310,228 316,242 320,254" stroke="#C98868" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.28"/>
+<path d="M282,258 C276,248 284,240 293,244 C295,234 305,234 307,244 C316,240 324,248 318,258 C310,266 290,266 282,258 Z" fill="#E7AC8C"/>
+<ellipse cx="299" cy="247" rx="8" ry="5" fill="#FBE0CF" opacity="0.8"/>
+<path d="M287,260 C291,264 295,264 296,261" stroke="#8E4F36" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+<path d="M304,261 C305,264 309,264 313,260" stroke="#8E4F36" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+<path d="M278,264 C268,270 264,278 265,286" stroke="#C07D5D" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.3"/>
+<path d="M322,264 C332,270 336,278 335,286" stroke="#B9775A" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.35"/>
+<g id="m_smile">
+<path d="M272,284 C287,292 313,292 328,284 C324,297 312,304 300,304 C288,304 276,297 272,284 Z" fill="#6A2626"/>
+<path d="M275,285 C288,292 312,292 325,285 L323,291 C311,295 289,295 277,291 Z" fill="#FFFDFB"/>
+<path d="M287,308 C294,311 306,311 313,308" stroke="#C9776A" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+</g>
+<g id="m_rest" style="display:none">
+<path d="M276,287 C288,295 310,295 326,283" stroke="#8E3F36" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+<path d="M288,303 C295,306 305,306 312,303" stroke="#C9776A" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+</g>
+<g id="m_a" style="display:none">
+<path d="M282,286 C291,283 309,283 318,286 C318,295 310,300 300,300 C290,300 282,295 282,286 Z" fill="#5E1F20"/>
+<path d="M285,287 C293,285 307,285 315,287 L314,290 C306,291 294,291 286,290 Z" fill="#FFFDFB"/>
+<path d="M289,306 C295,308 305,308 311,306" stroke="#C9776A" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+</g>
+<g id="m_b" style="display:none">
+<path d="M281,284 C290,279 310,279 319,284 C322,301 312,314 300,314 C288,314 278,301 281,284 Z" fill="#5E1F20"/>
+<path d="M284,285 C292,281 308,281 316,285 L315,291 C306,293 294,293 285,291 Z" fill="#FFFDFB"/>
+<ellipse cx="300" cy="306" rx="11" ry="5" fill="#C8615E"/>
+<path d="M289,318 C295,320 305,320 311,318" stroke="#C9776A" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+</g>
+<g id="m_o" style="display:none">
+<ellipse cx="300" cy="294" rx="9" ry="11" fill="#5E1F20"/>
+<path d="M292,289 C296,286 304,286 308,289" stroke="#FFFDFB" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+<path d="M291,309 C296,311 304,311 309,309" stroke="#C9776A" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+</g>
+<ellipse cx="255" cy="207" rx="35" ry="29" fill="url(#ln)" stroke="#1E2A44" stroke-width="5"/>
+<ellipse cx="345" cy="207" rx="35" ry="29" fill="url(#ln)" stroke="#1E2A44" stroke-width="5"/>
+<path d="M289,203 C294,196 306,196 311,203" stroke="#1E2A44" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+<path d="M221,200 L204,206" stroke="#1E2A44" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M379,200 L396,206" stroke="#1E2A44" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M232,190 C238,184 246,181 254,180" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+<path d="M322,190 C328,184 336,181 344,180" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+</g></g>
+</svg>
+<script>
+var speaking=false, lastBeat=-1, mood='smile', timer=null;
+function show(k){['smile','rest','a','b','o'].forEach(function(id){document.getElementById('m_'+id).style.display=(id===k)?'inline':'none';});}
+function idle(){show(mood==='explain'?'rest':'smile');}
+function flap(){
+  if(!speaking) return;
+  var r=Math.random();
+  show(r<0.34?'b':r<0.62?'a':r<0.8?'o':'rest');
+  timer=setTimeout(flap, 85+Math.random()*95);
+}
+window.nik=function(sp, beat, md){
+  mood=md||'smile';
+  if(sp && !speaking){ speaking=true; flap(); }
+  else if(!sp && speaking){ speaking=false; clearTimeout(timer); }
+  if(sp && beat!==lastBeat){ show(Math.random()<0.5?'b':'a'); }
+  lastBeat=beat;
+  document.body.classList.toggle('talk', sp);
+  if(!sp) idle();
+};
+function blink(){ document.body.classList.add('blink'); setTimeout(function(){document.body.classList.remove('blink');},130); setTimeout(blink, 2600+Math.random()*3000); }
+setTimeout(blink, 1500);
+</script></body></html>
+"""#
 }

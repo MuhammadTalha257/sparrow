@@ -466,6 +466,8 @@ struct StudyPage: View {
             }
             if !hub.output.isEmpty && (tab == "Explain my screen" || tab == "Tools") {
                 DashCard(title: "Answer", light: light) {
+                    NikCard(light: light, line: "Here's my explanation, step by step. Press listen and I'll talk you through it.", mood: "explain",
+                            listen: { TutorVoice.shared.speakAuto(hub.output) })
                     ChatRichText(text: hub.output)
                     HStack {
                         DashButton(title: "Copy", icon: "doc.on.doc", light: light) { ResultExport.copy(hub.output) }
@@ -642,6 +644,8 @@ struct DeckView: View {
                 default:
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
+                            NikCard(light: light, line: "I've read your notes. Press listen and I'll explain the summary and the key points simply.", mood: "explain",
+                                    listen: { TutorVoice.shared.speakAuto(d.summary + "\n" + d.keyPoints.joined(separator: ". ")) })
                             Text("Summary").font(HubFont.p(15, .semibold))
                             Text(d.summary).font(HubFont.p(14, .regular)).textSelection(.enabled)
                             Text("Key points").font(HubFont.p(15, .semibold))
