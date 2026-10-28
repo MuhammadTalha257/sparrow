@@ -250,7 +250,8 @@ final class LanguageTutor: ObservableObject {
 
     private var teacher: String {
         """
-        You are a senior \(lang.name) teacher with 20 years of experience (native speaker, CEFR expert). Your student is level \(level) and their own language is \(explainIn).
+        \(ZuffiVoice.nik)
+        Right now you teach \(lang.name) (you speak it like a native and know CEFR levels well). Your student is level \(level) and their own language is \(explainIn); explain rules in \(explainIn).
         Teach warmly and clearly, matched to level \(level): simple words and short sentences for A1–A2, richer for B1+.
         Be accurate: natural, correct, current language a native speaker really uses; never invent words or rules. Praise what's right, fix one thing at a time.
         \(lang.id == "ar" ? "Write Arabic in Arabic script, with the transliteration in brackets for A1–A2." : "")
@@ -323,13 +324,21 @@ final class LanguageTutor: ObservableObject {
         let r = await AIService.shared.oneShot("""
             \(teacher)
             Role-play: \(scenario). Keep the conversation going in \(lang.name) at level \(level) (1-3 short sentences, end with a question).
-            Then check the student's LAST message. JSON only:
-            {"reply":"your reply in \(lang.name)","correction":"the student's sentence corrected (empty if it was correct)","tip":"one short tip in \(explainIn) (or praise if perfect)","newWord":"one useful \(lang.name) word from your reply","newWordMeaning":"its meaning in \(explainIn)"}
+            Then check every word of the student's LAST message (it may come from the microphone, so also judge words that sound wrong). JSON only:
+            {"reply":"your reply in \(lang.name)","correction":"the student's whole sentence corrected (empty if it was correct)",
+             "mistakes":[{"said":"the exact wrong part","correct":"the right form","why":"why, and when we use it, in 1-2 simple sentences in \(explainIn)"}],
+             "tip":"a kind one-line note in \(explainIn): praise one thing they did well, or what to practise next","newWord":"one useful \(lang.name) word from your reply","newWordMeaning":"its meaning in \(explainIn)"}
+            At most 3 mistakes, most important first; [] if it was correct.
             CONVERSATION:
             \(history)
             """) ?? ""
         guard let j = AIService.jsonIn(r) as? [String: Any], let reply = j["reply"] as? String else { chat.append(TutorMsg(mine: false, text: "(I couldn't answer — check an AI is set up in Settings.)")); return }
         var note = ""
+        for m in (j["mistakes"] as? [[String: Any]] ?? []).prefix(3) {
+            let said = m["said"] as? String ?? "", fix = m["correct"] as? String ?? "", why = m["why"] as? String ?? ""
+            guard !fix.isEmpty else { continue }
+            note += "✗ \(said) → ✓ \(fix)" + (why.isEmpty ? "" : "\n   " + why) + "\n"
+        }
         if let c = j["correction"] as? String, !c.isEmpty { note += "✏️ " + c + "\n" }
         if let tip = j["tip"] as? String, !tip.isEmpty { note += "💡 " + tip }
         if let i = chat.indices.last { chat[i].note = note }
