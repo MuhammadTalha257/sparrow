@@ -335,14 +335,14 @@ final class LanguageTutor: ObservableObject {
         let known = words.filter { $0.lang == langID }.suffix(60).map(\.word).joined(separator: ", ")
         let r = await AIService.shared.oneShot("""
             \(teacher)
-            Make today's lesson\(topic.isEmpty ? " (pick a useful everyday topic)" : " about: \(topic)"). Don't repeat these known words: \(known.isEmpty ? "none" : known).
+            Make today's speaking lesson\(topic.isEmpty ? " (the next useful real-life situation on the speaking course path for level \(level))" : " about: \(topic)"). Build it around phrases and short sentences the student will actually say, not a list of single words. Don't repeat these known words: \(known.isEmpty ? "none" : known).
             JSON only:
             {"title":"lesson title in \(explainIn)",
              "words":[{"word":"in \(lang.name)","meaning":"in \(explainIn)","example":"short sentence in \(lang.name)","exampleMeaning":"in \(explainIn)"}],
              "grammar":"one grammar point explained simply in \(explainIn)","grammarExamples":["\(lang.name) example — \(explainIn) meaning"],
              "exercises":[{"q":"…","options":["…","…","…","…"],"answer":0,"why":"in \(explainIn)"}],
-             "phrases":["3 useful phrases in \(lang.name) to say out loud"]}
-            8 words, 6 exercises.
+             "phrases":["5 whole sentences in \(lang.name) to say out loud in this situation"]}
+            8 useful words or short chunks (each with an example sentence), 6 exercises that practise using the phrases in conversation.
             """) ?? ""
         guard let j = AIService.jsonIn(r) as? [String: Any] else { lesson = nil; busy = ""; return }
         var l = TutorLesson()
