@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AgentStage.shared.start()
         NotchHang.shared.start()                       // music bars and working agents under the notch
         // At start only the notch says hi — the "What's Zuffi for?" choice and the first-run setup wait until you open the dashboard.
-        BizSync.shared.startIfLinked()
+        if ZuffiFocus.agents { BizSync.shared.startIfLinked() }
         WebHub.shared.start()
         NativeSpeech.shared.start()
         HoldToTalk.start()

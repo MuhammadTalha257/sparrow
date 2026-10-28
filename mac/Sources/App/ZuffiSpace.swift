@@ -816,7 +816,7 @@ struct NotchFeaturesList: View {
         let biz = plan.isBusiness && !plan.isPersonal
         let words = query.lowercased().split(separator: " ").map(String.init)
         return Self.all.filter { f in
-            if !ZuffiFocus.agents, ["business", "aiteam", "agentbrowser", "agents", "jobs", "walink"].contains(f.id) { return false }
+            if !ZuffiFocus.agents, ["business", "aiteam", "agentbrowser", "agents", "jobs", "walink", "tryon-nails", "tryon-hair"].contains(f.id) { return false }
             if f.business && !biz { return false }
             if f.id == "walink" && !ZuffiFocus.whatsapp { return false }
             if f.id == "jobs" && biz { return false }

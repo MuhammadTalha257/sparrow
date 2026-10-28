@@ -422,7 +422,8 @@ final class ZuffiTeam: ObservableObject {
     /// Who you can talk to in the chat.
     /// Every specialist (the full 289), grouped by field, for the chat's "Talking to" menu.
     var agentGroups: [(String, [TeamAgent])] {
-        let all = everyone.filter { $0.id != Self.manager.id }
+        // business agents (Instagram, Facebook, WhatsApp, reviews, SEO…) are off
+        let all = everyone.filter { $0.id != Self.manager.id && (ZuffiFocus.agents || ($0.division != "business" && !Self.personalTeam.contains($0.id))) }
         let groups = Dictionary(grouping: all) { a -> String in let d = a.division.replacingOccurrences(of: "-", with: " "); return d.prefix(1).uppercased() + d.dropFirst() }
         return groups.map { ($0.key, $0.value.sorted { $0.name < $1.name }) }.sorted { $0.0 < $1.0 }
     }
@@ -1607,7 +1608,7 @@ final class ZuffiTeam: ObservableObject {
 
     /// Every half minute (from the business tick): run jobs that are due; mark missed ones honestly.
     func tickJobs() {
-        guard teamsAllowed else { return }
+        guard ZuffiFocus.agents, teamsAllowed else { return }
         let now = Date(), cal = Calendar.current
         for job in jobs where job.enabled && !jobRunning.contains(job.id) {
             // a business agent's daily job waits until the business form is done
