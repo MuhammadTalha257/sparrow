@@ -147,14 +147,61 @@ struct HealthSettingsView: View {
 // =====================================================================
 
 struct TutorLanguage: Identifiable, Hashable {
-    let id: String; let name: String; let flag: String; let locale: String; let rtl: Bool
+    let id: String; let name: String; var native: String = ""; let flag: String; let locale: String; let rtl: Bool; var hello: String = "Hello!"
+    /// 50 world languages Nik teaches (the first ten are the most learned).
     static let all: [TutorLanguage] = [
-        TutorLanguage(id: "en", name: "English", flag: "🇬🇧", locale: "en-GB", rtl: false),
-        TutorLanguage(id: "es", name: "Spanish", flag: "🇪🇸", locale: "es-ES", rtl: false),
-        TutorLanguage(id: "fr", name: "French", flag: "🇫🇷", locale: "fr-FR", rtl: false),
-        TutorLanguage(id: "de", name: "German", flag: "🇩🇪", locale: "de-DE", rtl: false),
-        TutorLanguage(id: "ar", name: "Arabic", flag: "🇸🇦", locale: "ar-SA", rtl: true),
+        TutorLanguage(id: "en", name: "English", native: "English", flag: "🇬🇧", locale: "en-GB", rtl: false, hello: "Hello!"),
+        TutorLanguage(id: "es", name: "Spanish", native: "Español", flag: "🇪🇸", locale: "es-ES", rtl: false, hello: "¡Hola!"),
+        TutorLanguage(id: "fr", name: "French", native: "Français", flag: "🇫🇷", locale: "fr-FR", rtl: false, hello: "Bonjour !"),
+        TutorLanguage(id: "de", name: "German", native: "Deutsch", flag: "🇩🇪", locale: "de-DE", rtl: false, hello: "Hallo!"),
+        TutorLanguage(id: "ar", name: "Arabic", native: "العربية", flag: "🇸🇦", locale: "ar-SA", rtl: true, hello: "مرحبا!"),
+        TutorLanguage(id: "zh", name: "Chinese", native: "中文", flag: "🇨🇳", locale: "zh-CN", rtl: false, hello: "你好！"),
+        TutorLanguage(id: "ja", name: "Japanese", native: "日本語", flag: "🇯🇵", locale: "ja-JP", rtl: false, hello: "こんにちは！"),
+        TutorLanguage(id: "ko", name: "Korean", native: "한국어", flag: "🇰🇷", locale: "ko-KR", rtl: false, hello: "안녕하세요!"),
+        TutorLanguage(id: "hi", name: "Hindi", native: "हिन्दी", flag: "🇮🇳", locale: "hi-IN", rtl: false, hello: "नमस्ते!"),
+        TutorLanguage(id: "it", name: "Italian", native: "Italiano", flag: "🇮🇹", locale: "it-IT", rtl: false, hello: "Ciao!"),
+        TutorLanguage(id: "pt", name: "Portuguese", native: "Português", flag: "🇵🇹", locale: "pt-PT", rtl: false, hello: "Olá!"),
+        TutorLanguage(id: "ru", name: "Russian", native: "Русский", flag: "🇷🇺", locale: "ru-RU", rtl: false, hello: "Привет!"),
+        TutorLanguage(id: "tr", name: "Turkish", native: "Türkçe", flag: "🇹🇷", locale: "tr-TR", rtl: false, hello: "Merhaba!"),
+        TutorLanguage(id: "ur", name: "Urdu", native: "اردو", flag: "🇵🇰", locale: "ur-PK", rtl: true, hello: "السلام علیکم!"),
+        TutorLanguage(id: "bn", name: "Bengali", native: "বাংলা", flag: "🇧🇩", locale: "bn-IN", rtl: false, hello: "নমস্কার!"),
+        TutorLanguage(id: "pa", name: "Punjabi", native: "ਪੰਜਾਬੀ", flag: "🇮🇳", locale: "pa-IN", rtl: false, hello: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ!"),
+        TutorLanguage(id: "fa", name: "Persian", native: "فارسی", flag: "🇮🇷", locale: "fa-IR", rtl: true, hello: "سلام!"),
+        TutorLanguage(id: "id", name: "Indonesian", native: "Bahasa Indonesia", flag: "🇮🇩", locale: "id-ID", rtl: false, hello: "Halo!"),
+        TutorLanguage(id: "ms", name: "Malay", native: "Bahasa Melayu", flag: "🇲🇾", locale: "ms-MY", rtl: false, hello: "Helo!"),
+        TutorLanguage(id: "vi", name: "Vietnamese", native: "Tiếng Việt", flag: "🇻🇳", locale: "vi-VN", rtl: false, hello: "Xin chào!"),
+        TutorLanguage(id: "th", name: "Thai", native: "ไทย", flag: "🇹🇭", locale: "th-TH", rtl: false, hello: "สวัสดี!"),
+        TutorLanguage(id: "fil", name: "Tagalog", native: "Tagalog", flag: "🇵🇭", locale: "fil-PH", rtl: false, hello: "Kumusta!"),
+        TutorLanguage(id: "sw", name: "Swahili", native: "Kiswahili", flag: "🇰🇪", locale: "sw-KE", rtl: false, hello: "Habari!"),
+        TutorLanguage(id: "nl", name: "Dutch", native: "Nederlands", flag: "🇳🇱", locale: "nl-NL", rtl: false, hello: "Hallo!"),
+        TutorLanguage(id: "pl", name: "Polish", native: "Polski", flag: "🇵🇱", locale: "pl-PL", rtl: false, hello: "Cześć!"),
+        TutorLanguage(id: "el", name: "Greek", native: "Ελληνικά", flag: "🇬🇷", locale: "el-GR", rtl: false, hello: "Γεια σου!"),
+        TutorLanguage(id: "he", name: "Hebrew", native: "עברית", flag: "🇮🇱", locale: "he-IL", rtl: true, hello: "שלום!"),
+        TutorLanguage(id: "sv", name: "Swedish", native: "Svenska", flag: "🇸🇪", locale: "sv-SE", rtl: false, hello: "Hej!"),
+        TutorLanguage(id: "nb", name: "Norwegian", native: "Norsk", flag: "🇳🇴", locale: "nb-NO", rtl: false, hello: "Hei!"),
+        TutorLanguage(id: "da", name: "Danish", native: "Dansk", flag: "🇩🇰", locale: "da-DK", rtl: false, hello: "Hej!"),
+        TutorLanguage(id: "fi", name: "Finnish", native: "Suomi", flag: "🇫🇮", locale: "fi-FI", rtl: false, hello: "Hei!"),
+        TutorLanguage(id: "cs", name: "Czech", native: "Čeština", flag: "🇨🇿", locale: "cs-CZ", rtl: false, hello: "Ahoj!"),
+        TutorLanguage(id: "ro", name: "Romanian", native: "Română", flag: "🇷🇴", locale: "ro-RO", rtl: false, hello: "Salut!"),
+        TutorLanguage(id: "hu", name: "Hungarian", native: "Magyar", flag: "🇭🇺", locale: "hu-HU", rtl: false, hello: "Szia!"),
+        TutorLanguage(id: "uk", name: "Ukrainian", native: "Українська", flag: "🇺🇦", locale: "uk-UA", rtl: false, hello: "Привіт!"),
+        TutorLanguage(id: "ta", name: "Tamil", native: "தமிழ்", flag: "🇮🇳", locale: "ta-IN", rtl: false, hello: "வணக்கம்!"),
+        TutorLanguage(id: "te", name: "Telugu", native: "తెలుగు", flag: "🇮🇳", locale: "te-IN", rtl: false, hello: "నమస్కారం!"),
+        TutorLanguage(id: "mr", name: "Marathi", native: "मराठी", flag: "🇮🇳", locale: "mr-IN", rtl: false, hello: "नमस्कार!"),
+        TutorLanguage(id: "gu", name: "Gujarati", native: "ગુજરાતી", flag: "🇮🇳", locale: "gu-IN", rtl: false, hello: "નમસ્તે!"),
+        TutorLanguage(id: "ps", name: "Pashto", native: "پښتو", flag: "🇦🇫", locale: "ps-AF", rtl: true, hello: "سلام!"),
+        TutorLanguage(id: "so", name: "Somali", native: "Soomaali", flag: "🇸🇴", locale: "so-SO", rtl: false, hello: "Salaan!"),
+        TutorLanguage(id: "am", name: "Amharic", native: "አማርኛ", flag: "🇪🇹", locale: "am-ET", rtl: false, hello: "ሰላም!"),
+        TutorLanguage(id: "ha", name: "Hausa", native: "Hausa", flag: "🇳🇬", locale: "ha-NG", rtl: false, hello: "Sannu!"),
+        TutorLanguage(id: "yo", name: "Yoruba", native: "Yorùbá", flag: "🇳🇬", locale: "yo-NG", rtl: false, hello: "Báwo!"),
+        TutorLanguage(id: "zu", name: "Zulu", native: "isiZulu", flag: "🇿🇦", locale: "zu-ZA", rtl: false, hello: "Sawubona!"),
+        TutorLanguage(id: "ga", name: "Irish", native: "Gaeilge", flag: "🇮🇪", locale: "ga-IE", rtl: false, hello: "Dia duit!"),
+        TutorLanguage(id: "cy", name: "Welsh", native: "Cymraeg", flag: "🏴", locale: "cy-GB", rtl: false, hello: "Helo!"),
+        TutorLanguage(id: "ca", name: "Catalan", native: "Català", flag: "🇪🇸", locale: "ca-ES", rtl: false, hello: "Hola!"),
+        TutorLanguage(id: "sr", name: "Serbian", native: "Српски", flag: "🇷🇸", locale: "sr-RS", rtl: false, hello: "Здраво!"),
+        TutorLanguage(id: "hr", name: "Croatian", native: "Hrvatski", flag: "🇭🇷", locale: "hr-HR", rtl: false, hello: "Bok!"),
     ]
+    static var top: [TutorLanguage] { Array(all.prefix(10)) }
     static func of(_ id: String) -> TutorLanguage { all.first { $0.id == id } ?? all[0] }
 }
 
@@ -178,6 +225,7 @@ final class TutorVoice: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
     private let synth = AVSpeechSynthesizer()
     @Published var speaking = false
     @Published var beat = 0          // goes up on every spoken word
+    @Published var range = NSRange(location: NSNotFound, length: 0)   // the word being spoken now
     override init() { super.init(); synth.delegate = self }
 
     func say(_ text: String, _ lang: TutorLanguage, slow: Bool = false) { speak(text, locale: lang.locale, slow: slow) }
@@ -190,21 +238,43 @@ final class TutorVoice: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
         ["English": "en-GB", "Urdu": "ur-PK", "Arabic": "ar-SA", "Hindi": "hi-IN", "Spanish": "es-ES", "French": "fr-FR",
          "German": "de-DE", "Turkish": "tr-TR", "Bengali": "bn-IN", "Polish": "pl-PL"][name] ?? "en-GB"
     }
-    func speak(_ text: String, locale: String, slow: Bool = false) {
+    func speak(_ text: String, locale: String, slow: Bool = false) { speakSequence([(text, locale)], slow: slow) }
+
+    /// Several parts one after another (e.g. "¡Hola!" in Spanish, then the rest in English), each with its own accent.
+    func speakSequence(_ parts: [(String, String)], slow: Bool = false) {
         synth.stopSpeaking(at: .immediate)
-        let clean = Self.plain(text)
-        guard !clean.isEmpty else { return }
-        let u = AVSpeechUtterance(string: clean)
-        let all = AVSpeechSynthesisVoice.speechVoices()
+        for (text, locale) in parts {
+            let clean = Self.plain(text)
+            guard !clean.isEmpty else { continue }
+            let u = AVSpeechUtterance(string: clean)
+            u.voice = Self.voice(for: locale)
+            // clear and calm: a little slower than normal speech, short pause between parts
+            u.rate = slow ? 0.36 : 0.44
+            u.pitchMultiplier = 0.96
+            u.volume = 1
+            u.postUtteranceDelay = 0.25
+            synth.speak(u)
+        }
+    }
+
+    /// The clearest voice the Mac has for this language: premium / enhanced first, a male voice when there's a choice.
+    private static var voiceCache: [String: AVSpeechSynthesisVoice] = [:]
+    static func voice(for locale: String) -> AVSpeechSynthesisVoice? {
+        if let v = voiceCache[locale] { return v }
+        let all = AVSpeechSynthesisVoice.speechVoices().filter { v in
+            if v.identifier.contains("eloquence") { return false }          // robotic voices
+            if #available(macOS 14.0, *), v.voiceTraits.contains(.isNoveltyVoice) { return false }
+            return true
+        }
         var pool = all.filter { $0.language == locale }
         if pool.isEmpty { pool = all.filter { $0.language.hasPrefix(String(locale.prefix(2))) } }
-        u.voice = pool.max { Self.score($0) < Self.score($1) } ?? AVSpeechSynthesisVoice(language: locale)
-        u.rate = slow ? 0.38 : 0.47
-        u.pitchMultiplier = 0.95
-        synth.speak(u)
+        if pool.isEmpty { pool = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(String(locale.prefix(2))) } }
+        let v = pool.max { score($0) < score($1) } ?? AVSpeechSynthesisVoice(language: locale)
+        if let v { voiceCache[locale] = v }
+        return v
     }
     func stop() { synth.stopSpeaking(at: .immediate); speaking = false }
-    private static func score(_ v: AVSpeechSynthesisVoice) -> Int { v.quality.rawValue * 10 + (v.gender == .male ? 20 : 0) }
+    private static func score(_ v: AVSpeechSynthesisVoice) -> Int { v.quality.rawValue * 20 + (v.gender == .male ? 10 : 0) }
     private static func plain(_ t: String) -> String {
         var s = t
         for c in ["✗", "✓", "✏️", "💡", "→", "*", "#", "•", "`"] { s = s.replacingOccurrences(of: c, with: c == "→" ? ", " : " ") }
@@ -215,13 +285,14 @@ final class TutorVoice: NSObject, ObservableObject, AVSpeechSynthesizerDelegate 
         Task { @MainActor in TutorVoice.shared.speaking = true }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in TutorVoice.shared.speaking = false }
+        let more = synthesizer.isSpeaking
+        Task { @MainActor in if !more { TutorVoice.shared.speaking = false; TutorVoice.shared.range = NSRange(location: NSNotFound, length: 0) } }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor in TutorVoice.shared.speaking = false }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
-        Task { @MainActor in TutorVoice.shared.beat &+= 1 }
+        Task { @MainActor in TutorVoice.shared.beat &+= 1; TutorVoice.shared.range = characterRange }
     }
 }
 
@@ -294,6 +365,7 @@ final class LanguageTutor: ObservableObject {
         """
         \(ZuffiVoice.nik)
         Right now you teach \(lang.name) (you speak it like a native and know CEFR levels well). Your student is level \(level) and their own language is \(explainIn); explain rules in \(explainIn).
+        \(NikBrain.shared.memory(for: lang))
         Teach warmly and clearly, matched to level \(level): simple words and short sentences for A1–A2, richer for B1+.
         Be accurate: natural, correct, current language a native speaker really uses; never invent words or rules. Praise what's right, fix one thing at a time.
         \(lang.id == "ar" ? "Write Arabic in Arabic script, with the transliteration in brackets for A1–A2." : "")
@@ -331,7 +403,8 @@ final class LanguageTutor: ObservableObject {
 
     // MARK: today's lesson
     func newLesson(topic: String = "") async {
-        busy = "Your teacher is preparing today's lesson…"; defer { busy = "" }
+        busy = "Nik is preparing today's lesson…"; defer { busy = "" }
+        NikBrain.shared.started(langID)
         let known = words.filter { $0.lang == langID }.suffix(60).map(\.word).joined(separator: ", ")
         let r = await AIService.shared.oneShot("""
             \(teacher)
@@ -362,6 +435,7 @@ final class LanguageTutor: ObservableObject {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !t.isEmpty else { return }
         chat.append(TutorMsg(mine: true, text: t))
         busy = "…"; defer { busy = "" }
+        NikBrain.shared.started(langID)
         let history = chat.suffix(12).map { ($0.mine ? "Student: " : "Teacher: ") + $0.text }.joined(separator: "\n")
         let r = await AIService.shared.oneShot("""
             \(teacher)
@@ -370,18 +444,34 @@ final class LanguageTutor: ObservableObject {
             {"reply":"your reply in \(lang.name)","correction":"the student's whole sentence corrected (empty if it was correct)",
              "mistakes":[{"said":"the exact wrong part","correct":"the right form","why":"why, and when we use it, in 1-2 simple sentences in \(explainIn)"}],
              "tip":"a kind one-line note in \(explainIn): praise one thing they did well, or what to practise next","newWord":"one useful \(lang.name) word from your reply","newWordMeaning":"its meaning in \(explainIn)"}
-            At most 3 mistakes, most important first; [] if it was correct.
+            At most 3 mistakes, most important first, each mistake only ONCE; [] if it was correct. "said" must be words the student really wrote.
+            If the student wrote in another language instead of \(lang.name) (e.g. "Hello"), give ONE item showing how to say it in \(lang.name).
+            "tip" is advice or praise in \(explainIn), never a question.
             CONVERSATION:
             \(history)
             """) ?? ""
         guard let j = AIService.jsonIn(r) as? [String: Any], let reply = j["reply"] as? String else { chat.append(TutorMsg(mine: false, text: "(I couldn't answer — check an AI is set up in Settings.)")); return }
         var note = ""
-        for m in (j["mistakes"] as? [[String: Any]] ?? []).prefix(3) {
-            let said = m["said"] as? String ?? "", fix = m["correct"] as? String ?? "", why = m["why"] as? String ?? ""
-            guard !fix.isEmpty else { continue }
-            note += "✗ \(said) → ✓ \(fix)" + (why.isEmpty ? "" : "\n   " + why) + "\n"
+        // Each mistake once, only if it is really in what the student wrote, and never "x → x".
+        func fold(_ x: String) -> String {
+            x.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+                .components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: " ")
         }
-        if let c = j["correction"] as? String, !c.isEmpty { note += "✏️ " + c + "\n" }
+        let mine = fold(t)
+        var seen = Set<String>(), shown = 0
+        for m in (j["mistakes"] as? [[String: Any]] ?? []) {
+            let said = (m["said"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let fix = (m["correct"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let why = (m["why"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            guard shown < 3, !fix.isEmpty, said != fix, !seen.contains(fold(fix)) else { continue }
+            if !said.isEmpty, !mine.contains(fold(said)) { continue }
+            seen.insert(fold(fix)); shown += 1
+            note += (said.isEmpty ? "✓ \(fix)" : "✗ \(said) → ✓ \(fix)") + (why.isEmpty ? "" : "\n   " + why) + "\n"
+            NikBrain.shared.trouble(langID, fix)
+        }
+        if let c = (j["correction"] as? String)?.trimmingCharacters(in: .whitespaces), !c.isEmpty, fold(c) != mine, !seen.contains(fold(c)) {
+            note += "✏️ " + c + "\n"
+        }
         if let tip = j["tip"] as? String, !tip.isEmpty { note += "💡 " + tip }
         if let i = chat.indices.last { chat[i].note = note }
         chat.append(TutorMsg(mine: false, text: reply))
@@ -405,6 +495,7 @@ struct LanguagePage: View {
     var light: Bool
     @ObservedObject private var t = LanguageTutor.shared
     @ObservedObject private var ear = TutorEar.shared
+    @ObservedObject private var brain = NikBrain.shared
     @State private var tab = "Lesson"
     @State private var typed = ""
     @State private var topic = ""
@@ -421,14 +512,20 @@ struct LanguagePage: View {
         VStack(alignment: .leading, spacing: 18) {
             // language bar
             HStack(spacing: 10) {
-                ForEach(TutorLanguage.all) { l in
-                    Button { t.langID = l.id } label: {
+                ForEach(barLanguages) { l in
+                    Button { if t.langID != l.id { t.langID = l.id; NikBrain.shared.started(l.id); NikSays.hello(l) } } label: {
                         HStack(spacing: 6) { Text(l.flag); Text(l.name).font(HubFont.p(13)) }
                             .foregroundColor(t.langID == l.id ? .white : T.text).padding(.horizontal, 14).frame(height: 34)
                             .background(Capsule().fill(t.langID == l.id ? HubTheme.blue : T.content))
                     }.buttonStyle(.plain)
                 }
+                Button { brain.showLanguages = true } label: {
+                    Label("All 50 languages", systemImage: "globe").font(HubFont.p(13)).foregroundColor(T.text)
+                        .padding(.horizontal, 14).frame(height: 34).background(Capsule().stroke(T.border))
+                }.buttonStyle(.plain)
                 Spacer()
+                Button { brain.showIntake = true } label: { Label(brain.knowsStudent ? "About me" : "Tell Nik about you", systemImage: "person.crop.circle").font(HubFont.p(12.5)) }
+                    .buttonStyle(.plain).foregroundColor(HubTheme.blue)
                 Label("\(t.streak)", systemImage: "flame.fill").foregroundColor(Color(hex: "#F5B963")).font(HubFont.p(13))
                 Label("\(t.xp) XP", systemImage: "star.fill").foregroundColor(HubTheme.blue).font(HubFont.p(13))
             }
@@ -461,6 +558,17 @@ struct LanguagePage: View {
             }
         }
         .environment(\.layoutDirection, .leftToRight)
+        .sheet(isPresented: $brain.showIntake) { NikIntakeSheet(light: light) { brain.showIntake = false } }
+        .sheet(isPresented: $brain.showLanguages) { LanguagePickerSheet(light: light) { brain.showLanguages = false } }
+        .onAppear { if !brain.knowsStudent { brain.showIntake = true } }
+    }
+
+    /// Your courses first, then the most learned languages — always including the one you're on.
+    private var barLanguages: [TutorLanguage] {
+        var l = brain.courses.prefix(4).map { TutorLanguage.of($0.id) }
+        if !l.contains(t.lang) { l.insert(t.lang, at: 0) }
+        for x in TutorLanguage.top where l.count < 5 && !l.contains(x) { l.append(x) }
+        return Array(l.prefix(5))
     }
 
     private func target(_ s: String, size: CGFloat = 15, weight: Font.Weight = .medium) -> some View {
@@ -503,7 +611,7 @@ struct LanguagePage: View {
                             target("\(i + 1). " + ex.q, size: 14, weight: .semibold)
                             HStack(spacing: 8) {
                                 ForEach(Array(ex.options.enumerated()), id: \.offset) { oi, o in
-                                    Button { if picks[i] == nil { picks[i] = oi; if oi == ex.answer { t.earned(2) } } } label: {
+                                    Button { if picks[i] == nil { picks[i] = oi; if oi == ex.answer { t.earned(2) }; if picks.count == l.exercises.count { NikBrain.shared.lessonDone(t.langID, title: l.title); TutorVoice.shared.speak("Well done! Lesson finished. I've saved your progress.", locale: TutorVoice.locale(forName: t.explainIn)) } } } label: {
                                         target(o, size: 13, weight: .regular).padding(.horizontal, 12).padding(.vertical, 7)
                                             .background(Capsule().fill(picks[i] == nil ? T.content : oi == ex.answer ? Color(hex: "#3DBE7E").opacity(0.25) : picks[i] == oi ? Color(hex: "#EF6B6B").opacity(0.25) : T.content))
                                     }.buttonStyle(.plain)
@@ -659,7 +767,7 @@ struct NikAvatar: NSViewRepresentable {
         return w
     }
     func updateNSView(_ w: WKWebView, context: Context) {
-        w.evaluateJavaScript("window.nik && window.nik(\(voice.speaking ? "true" : "false"), \(voice.beat), '\(mood)')", completionHandler: nil)
+        w.evaluateJavaScript("window.nik && window.nik(\(voice.speaking ? "true" : "false"), \(voice.beat), '\(mood)', '\(ZuffiSeasons.activeId())')", completionHandler: nil)
     }
 }
 
@@ -717,10 +825,11 @@ body.talk #bob{animation:nod 1.1s ease-in-out infinite}
 body.talk #brows{transform:translateY(-3px)}
 #eyeL,#eyeR{transform-box:fill-box;transform-origin:center;transition:transform .07s}
 body.blink #eyeL,body.blink #eyeR{transform:scaleY(.08)}
+.o{display:none}
 #chest{transform-box:fill-box;transform-origin:50% 100%;animation:breathe 4.5s ease-in-out infinite}
 @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.008,1.012)}}
 </style></head><body>
-<svg viewBox="165 48 270 357" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="160 26 280 380" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <radialGradient id="sk" cx="0.42" cy="0.38" r="0.7"><stop offset="0" stop-color="#F7D3BC"/><stop offset="0.55" stop-color="#EBB596"/><stop offset="1" stop-color="#C98868"/></radialGradient>
 <linearGradient id="nk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B9785A"/><stop offset="0.45" stop-color="#D99C7C"/><stop offset="1" stop-color="#E4AC8C"/></linearGradient>
@@ -749,6 +858,12 @@ body.blink #eyeL,body.blink #eyeR{transform:scaleY(.08)}
 <path d="M300,394 L338,356 L360,380 L334,418 Z" fill="#E7EDF3" stroke="#C3CEDA" stroke-width="1.5" stroke-linejoin="round"/>
 <path d="M150,420 C126,440 118,500 122,566 L204,566 L202,474 C200,440 182,418 150,420 Z" fill="url(#sl)"/>
 <path d="M450,420 C474,440 482,500 478,566 L396,566 L398,474 C400,440 418,418 450,420 Z" fill="url(#sr)"/>
+<g id="o_winter" class="o"><path d="M256,350 C280,372 320,372 344,350 L352,378 C324,402 276,402 248,378 Z" fill="#4F7FD1"/><path d="M314,384 L334,452 L312,458 L298,390 Z" fill="#3E6BB8"/><path d="M262,362 L338,362 M256,374 L344,374" stroke="#E8F0FF" stroke-width="4" opacity="0.7"/></g>
+<g id="o_christmas" class="o"><path d="M256,350 C280,372 320,372 344,350 L352,378 C324,402 276,402 248,378 Z" fill="#D2353F"/><path d="M314,384 L334,452 L312,458 L298,390 Z" fill="#B82A33"/><path d="M262,362 L338,362 M256,374 L344,374" stroke="#FFFFFF" stroke-width="4" opacity="0.85"/></g>
+<g id="o_halloween" class="o"><path d="M256,350 C280,372 320,372 344,350 L352,378 C324,402 276,402 248,378 Z" fill="#F28A3C"/><path d="M314,384 L334,452 L312,458 L298,390 Z" fill="#D9742B"/><path d="M262,362 L338,362 M256,374 L344,374" stroke="#3B2A4A" stroke-width="4" opacity="0.8"/><circle cx="222" cy="470" r="13" fill="#F28A3C"/><path d="M222,456 L224,449" stroke="#3E7A3A" stroke-width="3" stroke-linecap="round"/><path d="M216,468 L219,465 L221,468 M224,468 L227,465 L229,468 M215,475 C220,479 225,479 230,475" stroke="#3B2A10" stroke-width="1.6" fill="none"/></g>
+<g id="o_independence" class="o"><path d="M256,350 C280,372 320,372 344,350 L352,378 C324,402 276,402 248,378 Z" fill="#1F8A4C"/><path d="M314,384 L334,452 L312,458 L298,390 Z" fill="#F4F7F2"/><path d="M262,362 L338,362" stroke="#FFFFFF" stroke-width="5" opacity="0.8"/></g>
+<g id="o_ramadan" class="o" transform="translate(4,-74)"><path d="M232,462 A14,14 0 1,0 244,486 A11,11 0 1,1 232,462 Z" fill="#E9C46A"/></g>
+<g id="o_valentine" class="o" transform="translate(6,-74)"><path d="M224,476 C214,468 212,458 220,456 C224,455 226,458 227,460 C228,458 230,455 234,456 C242,458 240,468 230,476 L227,479 Z" fill="#F27BA1"/></g>
 </g>
 <g id="bob"><g transform="translate(300,342) scale(0.86) translate(-300,-342)">
 <ellipse cx="203" cy="226" rx="17" ry="27" fill="#E2A483"/>
@@ -826,6 +941,10 @@ body.blink #eyeL,body.blink #eyeR{transform:scaleY(.08)}
 <path d="M379,200 L396,206" stroke="#1E2A44" stroke-width="4.5" stroke-linecap="round"/>
 <path d="M232,190 C238,184 246,181 254,180" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.7"/>
 <path d="M322,190 C328,184 336,181 344,180" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+<g id="h_christmas" class="o"><path d="M236,84 C246,22 326,4 372,34 C384,44 390,58 386,70 L366,84 Z" fill="#D2353F"/><rect x="226" y="72" width="152" height="24" rx="12" fill="#FFFFFF"/><circle cx="388" cy="70" r="14" fill="#FFFFFF"/></g>
+<g id="h_birthday" class="o"><path d="M300,-2 L266,78 L334,78 Z" fill="#8B6CF2"/><path d="M283,38 L317,38 M274,60 L326,60" stroke="#FFD27A" stroke-width="6"/><circle cx="300" cy="-4" r="10" fill="#F58FA8"/></g>
+<g id="h_eid" class="o"><path d="M232,92 C234,54 366,54 368,92 Z" fill="#FBFBF7"/><path d="M234,84 C270,76 330,76 366,84" stroke="#D4AF37" stroke-width="5" fill="none"/></g>
+<g id="h_summer" class="o"><ellipse cx="262" cy="104" rx="30" ry="18" fill="#1D2433"/><ellipse cx="338" cy="104" rx="30" ry="18" fill="#1D2433"/><path d="M292,104 L308,104" stroke="#1D2433" stroke-width="5"/><path d="M248,98 C256,94 266,94 272,98" stroke="#FFFFFF" stroke-width="3" opacity="0.5" fill="none"/></g>
 </g></g>
 </svg>
 <script>
@@ -838,8 +957,15 @@ function flap(){
   show(r<0.34?'b':r<0.62?'a':r<0.8?'o':'rest');
   timer=setTimeout(flap, 85+Math.random()*95);
 }
-window.nik=function(sp, beat, md){
+var outfit='';
+function dress(o){
+  if(o===outfit) return; outfit=o;
+  var all=document.querySelectorAll('.o'); for(var i=0;i<all.length;i++) all[i].style.display='none';
+  ['o_','h_'].forEach(function(p){ var e=document.getElementById(p+o); if(e) e.style.display='inline'; });
+}
+window.nik=function(sp, beat, md, o){
   mood=md||'smile';
+  dress(o||'none');
   if(sp && !speaking){ speaking=true; flap(); }
   else if(!sp && speaking){ speaking=false; clearTimeout(timer); }
   if(sp && beat!==lastBeat){ show(Math.random()<0.5?'b':'a'); }
@@ -851,4 +977,604 @@ function blink(){ document.body.classList.add('blink'); setTimeout(function(){do
 setTimeout(blink, 1500);
 </script></body></html>
 """#
+}
+
+// MARK: - Nik's memory: who the student is, each course, what's covered and what's left
+
+struct NikCourse: Codable, Identifiable, Hashable {
+    var id: String                    // language id
+    var lessonsDone = 0
+    var covered: [String] = []
+    var trouble: [String] = []
+    var started = Date()
+    var last: Date?
+    var hours: [Int] = []             // the hours they usually start, to learn their study time
+}
+
+@MainActor
+final class NikBrain: ObservableObject {
+    static let shared = NikBrain()
+    /// The speaking course: real situations, in order.
+    static let path = ["Say hello and introduce yourself", "Ask and answer simple questions", "Food, shopping and prices", "Directions and travel",
+                       "Talk about your day", "Talk about yesterday", "Plans and the future", "Opinions and feelings", "Real conversations and phone calls"]
+    static let lessonsPerStep = 2
+    static var totalLessons: Int { path.count * lessonsPerStep }
+
+    @Published var profile: [String: String] = (UserDefaults.standard.dictionary(forKey: "nikProfile") as? [String: String]) ?? [:] {
+        didSet { UserDefaults.standard.set(profile, forKey: "nikProfile") }
+    }
+    @Published var courses: [NikCourse] = TeamStore.load("nik-courses", [NikCourse]()) { didSet { TeamStore.save("nik-courses", courses) } }
+    @Published var showIntake = false
+    @Published var showLanguages = false
+    var knowsStudent: Bool { !(profile["name"] ?? "").isEmpty }
+    var firstName: String { (profile["name"] ?? ZuffiPlan.shared.profile["name"] ?? "").components(separatedBy: " ").first ?? "" }
+
+    func course(_ id: String) -> NikCourse { courses.first { $0.id == id } ?? NikCourse(id: id) }
+    private func update(_ id: String, _ change: (inout NikCourse) -> Void) {
+        var c = course(id); change(&c)
+        courses.removeAll { $0.id == id }
+        courses.insert(c, at: 0)                       // the newest course comes first on the dashboard
+    }
+    func started(_ id: String) {
+        update(id) { c in
+            c.last = Date(); c.hours.append(Calendar.current.component(.hour, from: Date()))
+            if c.hours.count > 20 { c.hours.removeFirst(c.hours.count - 20) }
+        }
+    }
+    func lessonDone(_ id: String, title: String) {
+        update(id) { c in
+            c.lessonsDone += 1; c.last = Date()
+            if !title.isEmpty, !c.covered.contains(title) { c.covered.append(title) }
+            if c.covered.count > 40 { c.covered.removeFirst(c.covered.count - 40) }
+        }
+    }
+    func trouble(_ id: String, _ fix: String) {
+        update(id) { c in
+            c.trouble.removeAll { $0.lowercased() == fix.lowercased() }
+            c.trouble.insert(fix, at: 0)
+            if c.trouble.count > 6 { c.trouble.removeLast(c.trouble.count - 6) }
+        }
+    }
+    static func step(_ c: NikCourse) -> Int { min(c.lessonsDone / lessonsPerStep, path.count - 1) }
+    static func percent(_ c: NikCourse) -> Int { min(100, c.lessonsDone * 100 / max(1, totalLessons)) }
+    static func usualTime(_ c: NikCourse) -> String? {
+        guard !c.hours.isEmpty else { return nil }
+        var count: [Int: Int] = [:]; c.hours.forEach { count[$0, default: 0] += 1 }
+        guard let h = count.max(by: { $0.value < $1.value })?.key else { return nil }
+        return h == 0 ? "12 am" : h < 12 ? "\(h) am" : h == 12 ? "12 pm" : "\(h - 12) pm"
+    }
+
+    /// What Nik always keeps in mind about this student and this course.
+    func memory(for lang: TutorLanguage) -> String {
+        let c = course(lang.id), st = Self.step(c)
+        var lines = ["WHAT YOU REMEMBER ABOUT YOUR STUDENT (use it naturally, don't list it back)"]
+        let p = profile
+        if let n = p["name"], !n.isEmpty { lines.append("- Name: \(n)") }
+        if let a = p["age"], !a.isEmpty { lines.append("- Age group: \(a)") }
+        if let o = p["own"], !o.isEmpty { lines.append("- Their own language: \(o)") }
+        if let g = p["goals"], !g.isEmpty { lines.append("- Why they learn: \(g)") }
+        if let m = p["minutes"], !m.isEmpty { lines.append("- Time per day: \(m)") }
+        if let x = p["notes"], !x.isEmpty { lines.append("- They told you: \(x)") }
+        lines.append("COURSE: \(lang.name) speaking course, step \(st + 1) of \(Self.path.count): \(Self.path[st]). Lessons done: \(c.lessonsDone) of \(Self.totalLessons).")
+        if !c.covered.isEmpty { lines.append("- Already covered: \(c.covered.suffix(8).joined(separator: "; "))") }
+        lines.append("- Still to do: \(Self.path[st...].joined(separator: "; "))")
+        if !c.trouble.isEmpty { lines.append("- Keeps tripping on (gently revise these): \(c.trouble.joined(separator: "; "))") }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: "Hey Nik …"
+    func heard(_ said: String) {
+        let low = said.lowercased()
+        if low.range(of: #"\b(read|pronounce|say this|how do i (say|read)|this line|marked|highlight)"#, options: .regularExpression) != nil {
+            Task { await NikReader.shared.readMarked() }
+            return
+        }
+        ZuffiHub.shared.show(.languages)
+        if said.trimmingCharacters(in: .whitespaces).isEmpty {
+            TutorVoice.shared.speak("Yes\(firstName.isEmpty ? "" : ", \(firstName)")? I'm here. What shall we learn today?", locale: "en-GB")
+            return
+        }
+        Task {
+            let lang = LanguageTutor.shared.lang
+            let r = await AIService.shared.oneShot("""
+                The student just said to you out loud: "\(said)"
+                Answer as Nik in 2 to 5 short spoken sentences (it will be read aloud). If they ask to learn or practise, start right away with one useful sentence for them to repeat.
+                """, system: ZuffiVoice.nik + "\n" + memory(for: lang)) ?? ""
+            let answer = r.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !answer.isEmpty else { return }
+            AppState.shared.noteIsAlert = false; AppState.shared.noteAction = nil
+            AppState.shared.noteMessage = "Nik · Teacher\n" + answer
+            NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+            TutorVoice.shared.speakAuto(answer)
+        }
+    }
+}
+
+/// "Hey Nik", "Hi Nick", "Nik teacher…" → the words after it ("" = just his name). nil = not for Nik.
+enum NikWake {
+    static func command(_ said: String) -> String? {
+        let low = said.lowercased()
+        for p in [#"\b(hey|hi|hello|ok|okay|hay)[ ,]+(nik|nick|nic|neek|nikk|nique)\b[\s,.!?]*"#, #"^\s*(nik|nick)[ ,]+(teacher|sir)\b[\s,.!?]*"#, #"\bteacher (nik|nick)\b[\s,.!?]*"#] {
+            if let r = low.range(of: p, options: .regularExpression) {
+                return String(low[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
+            }
+        }
+        return nil
+    }
+}
+
+// MARK: - Nik's "about you" form
+
+struct NikIntakeSheet: View {
+    var light: Bool
+    let done: () -> Void
+    @ObservedObject private var brain = NikBrain.shared
+    @ObservedObject private var t = LanguageTutor.shared
+    @State private var name = ""
+    @State private var age = "18–24"
+    @State private var own = "English"
+    @State private var learn = "es"
+    @State private var level = "A few words"
+    @State private var goals: Set<String> = []
+    @State private var minutes = "15 minutes"
+    @State private var remind = "Evening · 6 pm"
+    @State private var notes = ""
+    private var T: HubTheme { HubTheme(light: light) }
+    private static let levels = ["Nothing yet": "A1", "A few words": "A1", "I can chat a bit": "A2", "I'm good": "B1"]
+    private static let goalList = ["School or exam", "Travel", "Work or study abroad", "Family and friends", "Just for fun"]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 14) {
+                NikAvatar(mood: "smile").frame(width: 220, height: 290)
+                    .background(RoundedRectangle(cornerRadius: 22).fill(LinearGradient(colors: [Color(hex: "#E8EDF4"), Color(hex: "#D9E1EC")], startPoint: .top, endPoint: .bottom)))
+                    .clipShape(RoundedRectangle(cornerRadius: 22))
+                Text("Hi, I'm Nik").font(HubFont.p(20, .semibold))
+                Text("Before our first lesson, tell me a little about you. I'll remember it every time we meet, so each lesson fits you.")
+                    .font(HubFont.p(14, .regular)).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Text("Saved only on this Mac.").font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+            }
+            .frame(width: 230)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("About you").font(HubFont.p(22, .semibold))
+                    HStack(spacing: 14) {
+                        ZField(label: "Your name", text: $name, light: light)
+                        ZSelect(label: "Age group", value: $age, options: ["Under 13", "13–17", "18–24", "25+"].map { ($0, $0) }, light: light).frame(width: 150)
+                    }
+                    HStack(spacing: 14) {
+                        ZSelect(label: "Your own language", value: $own, options: ["English", "Urdu", "Arabic", "Hindi", "Spanish", "French", "German", "Turkish", "Bengali", "Polish"].map { ($0, $0) }, light: light)
+                        ZSelect(label: "Language to learn", value: $learn, options: TutorLanguage.all.map { ($0.id, $0.name) }, light: light)
+                    }
+                    Text("How much do you know already?").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                    HStack(spacing: 8) { ForEach(["Nothing yet", "A few words", "I can chat a bit", "I'm good"], id: \.self) { l in pill(l, on: level == l) { level = l } } }
+                    Text("Why are you learning? (pick any)").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                    WrapRow(items: Self.goalList) { g in pill(g, on: goals.contains(g)) { if goals.contains(g) { goals.remove(g) } else { goals.insert(g) } } }
+                    HStack(spacing: 14) {
+                        ZSelect(label: "Time per day", value: $minutes, options: ["10 minutes", "15 minutes", "30 minutes", "1 hour"].map { ($0, $0) }, light: light)
+                        ZSelect(label: "Best time to learn", value: $remind, options: ["Morning · 8 am", "Afternoon · 3 pm", "Evening · 6 pm", "Night · 9 pm"].map { ($0, $0) }, light: light)
+                    }
+                    ZField(label: "Anything I should know? (what's hard, how you like to learn)", text: $notes, light: light)
+                    HStack {
+                        Spacer()
+                        Button("Skip for now") { done() }.buttonStyle(.plain).foregroundColor(T.inactive).padding(.horizontal, 12)
+                        DashButton(title: "Start my first lesson", icon: "sparkles", light: light) { save() }
+                    }
+                }
+                .padding(.trailing, 6)
+            }
+        }
+        .padding(28).frame(width: 860, height: 600)
+        .onAppear {
+            name = brain.profile["name"] ?? (ZuffiPlan.shared.profile["name"] ?? "")
+            own = brain.profile["own"] ?? t.explainIn
+            learn = brain.profile["learn"] ?? t.langID
+            if let g = brain.profile["goals"] { goals = Set(g.components(separatedBy: ", ").filter { !$0.isEmpty }) }
+            notes = brain.profile["notes"] ?? ""
+        }
+    }
+
+    private func pill(_ s: String, on: Bool, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            Text(s).font(HubFont.p(13)).foregroundColor(on ? .white : T.text).padding(.horizontal, 14).frame(height: 36)
+                .background(Capsule().fill(on ? AnyShapeStyle(ZInk.accentGradient) : AnyShapeStyle(T.content)))
+        }.buttonStyle(.plain)
+    }
+
+    private func save() {
+        brain.profile = ["name": name.trimmingCharacters(in: .whitespaces), "age": age, "own": own, "learn": learn, "level": level,
+                         "goals": goals.sorted().joined(separator: ", "), "minutes": minutes, "remind": remind, "notes": notes]
+        if ["English", "Urdu", "Arabic", "Hindi", "Spanish", "French", "German", "Turkish", "Bengali", "Polish"].contains(own) { t.explainIn = own }
+        t.langID = learn
+        if t.levels[learn] == nil { t.levels[learn] = Self.levels[level] ?? "A1" }
+        brain.started(learn)
+        let first = name.components(separatedBy: " ").first ?? ""
+        TutorVoice.shared.speak("Thank you\(first.isEmpty ? "" : ", \(first)"). I'll remember all of this. Let's start speaking \(t.lang.name) together.", locale: "en-GB")
+        done()
+    }
+}
+
+/// A row that wraps onto the next line when it runs out of space.
+struct WrapRow<Content: View>: View {
+    let items: [String]
+    @ViewBuilder let content: (String) -> Content
+    var body: some View {
+        if #available(macOS 13.0, *) {
+            FlowLayout(spacing: 8) { ForEach(items, id: \.self) { content($0) } }
+        } else {
+            HStack(spacing: 8) { ForEach(items, id: \.self) { content($0) } }
+        }
+    }
+}
+
+@available(macOS 13.0, *)
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let w = proposal.width ?? 600
+        var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x + s.width > w, x > 0 { x = 0; y += row + spacing; row = 0 }
+            x += s.width + spacing; row = max(row, s.height)
+        }
+        return CGSize(width: w, height: y + row)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, row: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x + s.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += row + spacing; row = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width + spacing; row = max(row, s.height)
+        }
+    }
+}
+
+// MARK: - Pick any of 50 languages; Nik says hello in it
+
+struct LanguagePickerSheet: View {
+    var light: Bool
+    let done: () -> Void
+    @ObservedObject private var t = LanguageTutor.shared
+    @State private var search = ""
+    private var T: HubTheme { HubTheme(light: light) }
+    private var found: [TutorLanguage] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? TutorLanguage.all : TutorLanguage.all.filter { $0.name.lowercased().contains(q) || $0.native.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Which language today?").font(HubFont.p(22, .semibold))
+                    Text("50 world languages — Nik teaches them all").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                }
+                Spacer()
+                ZField(label: "Search languages", text: $search, light: light).frame(width: 260)
+                Button("Done", action: done).keyboardShortcut(.cancelAction)
+            }
+            ScrollView {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 5), spacing: 12) {
+                    ForEach(found) { l in
+                        Button { pick(l) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(l.flag) \(l.native)").font(HubFont.p(15, .semibold)).lineLimit(1)
+                                Text(l.name).font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).frame(height: 64)
+                            .background(RoundedRectangle(cornerRadius: 16).fill(t.langID == l.id ? HubTheme.blue.opacity(0.22) : T.content))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(t.langID == l.id ? HubTheme.blue : .clear, lineWidth: 2))
+                            .contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(26).frame(width: 900, height: 600)
+        .foregroundColor(T.text)
+    }
+
+    private func pick(_ l: TutorLanguage) {
+        t.langID = l.id
+        NikBrain.shared.started(l.id)
+        NikSays.hello(l)
+        done()
+    }
+}
+
+enum NikSays {
+    /// Nik greets in the new language, then says what's next in the student's own language.
+    @MainActor static func hello(_ l: TutorLanguage) {
+        let name = NikBrain.shared.firstName
+        let c = NikBrain.shared.course(l.id), st = NikBrain.step(c)
+        TutorVoice.shared.speakSequence([
+            (l.hello, l.locale),
+            ("\(name.isEmpty ? "" : "\(name), ")let's learn \(l.name) together. \(c.lessonsDone == 0 ? "We'll start by saying hello and introducing yourself." : "Last time we got to: \(NikBrain.path[st]). Let's carry on.")",
+             TutorVoice.locale(forName: LanguageTutor.shared.explainIn)),
+        ])
+    }
+}
+
+// MARK: - "Hey Nik, read this line": Nik reads the marked line and shows how to say each word
+
+@MainActor
+final class NikReader: ObservableObject {
+    static let shared = NikReader()
+    struct Word: Hashable { let w: String; let say: String; let meaning: String }
+    @Published var line = ""
+    @Published var locale = "en-GB"
+    @Published var words: [Word] = []
+    @Published var tips: [String] = []
+    @Published var meaning = ""
+    @Published var busy = ""
+    @Published var score: Int?
+    private var panel: NSPanel?
+
+    func readMarked() async {
+        show()
+        busy = "Looking at the line you marked…"; words = []; tips = []; meaning = ""; score = nil
+        var text = Self.selectedText() ?? ""
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let shot = await ScreenGrab.main() {
+            text = await AIService.shared.oneShot("""
+                Look at this screen. Return ONLY the text of the line the person has selected, highlighted or marked. If nothing is marked, return the single line nearest the middle of the screen. No quotes, nothing else.
+                """, system: "You read text from screenshots exactly.", image: (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString())) ?? ""
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            busy = ""
+            line = "Select a line first, then say “Hey Nik, read this”."
+            TutorVoice.shared.speak("Select the line you want, then ask me again.", locale: "en-GB")
+            return
+        }
+        line = String(text.prefix(400))
+        let r = NLLanguageRecognizer(); r.processString(line)
+        locale = Self.voiceLocale(r.dominantLanguage?.rawValue ?? "en")
+        busy = ""
+        TutorVoice.shared.speak(line, locale: locale, slow: true)
+        let explain = LanguageTutor.shared.explainIn
+        let j = await AIService.shared.oneShot("""
+            The student marked this line and wants to read it aloud correctly: "\(line)"
+            JSON only: {"meaning":"what the line means, in \(explain)","words":[{"w":"each word as written","say":"easy sound-it-out spelling with the STRESSED part in capitals","meaning":"short meaning in \(explain)"}],"tips":["1-3 short pronunciation tips in \(explain): silent letters, sounds that are hard for a \(explain) speaker"]}
+            """, system: ZuffiVoice.nik).flatMap { AIService.jsonIn($0) as? [String: Any] }
+        meaning = (j?["meaning"] as? String) ?? ""
+        words = ((j?["words"] as? [[String: Any]]) ?? []).map { Word(w: $0["w"] as? String ?? "", say: $0["say"] as? String ?? "", meaning: $0["meaning"] as? String ?? "") }.filter { !$0.w.isEmpty }
+        tips = (j?["tips"] as? [String]) ?? []
+    }
+
+    func myTurn() {
+        let ear = TutorEar.shared
+        if ear.listening {
+            ear.stop()
+            score = LanguageTutor.match(ear.heard, line)
+            let s = score ?? 0
+            TutorVoice.shared.speak(s >= 85 ? "Excellent! That was very clear." : s >= 60 ? "Good try! Listen once more and copy my rhythm." : "Let's do it slowly together. Listen first.", locale: "en-GB")
+        } else {
+            score = nil
+            let l = TutorLanguage.all.first { $0.locale == locale } ?? TutorLanguage(id: "x", name: "this language", flag: "", locale: locale, rtl: false)
+            ear.start(l)
+        }
+    }
+
+    static func voiceLocale(_ code: String) -> String {
+        if let l = TutorLanguage.all.first(where: { $0.locale.hasPrefix(code + "-") || $0.id == code }) { return l.locale }
+        return code
+    }
+
+    /// The text selected in the app in front (needs Accessibility, which Zuffi already asks for).
+    static func selectedText() -> String? {
+        let sys = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &focused) == .success, let f = focused else { return nil }
+        var sel: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(f as! AXUIElement, kAXSelectedTextAttribute as CFString, &sel) == .success else { return nil }
+        return sel as? String
+    }
+
+    func show() {
+        if let p = panel { p.orderFrontRegardless(); return }
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 470, height: 600), styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.title = "Read with Nik"; p.titlebarAppearsTransparent = true; p.isReleasedWhenClosed = false
+        p.level = .floating; p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        p.contentView = NSHostingView(rootView: NikReadView())
+        if let s = NSScreen.main { p.setFrameOrigin(NSPoint(x: s.visibleFrame.maxX - 500, y: s.visibleFrame.maxY - 640)) }
+        p.orderFrontRegardless()
+        panel = p
+    }
+}
+
+struct NikReadView: View {
+    @ObservedObject private var r = NikReader.shared
+    @ObservedObject private var voice = TutorVoice.shared
+    @ObservedObject private var ear = TutorEar.shared
+    private var spoken: Int? {
+        // which word Nik is saying right now
+        guard voice.speaking, voice.range.location != NSNotFound else { return nil }
+        let ns = r.line as NSString
+        var i = 0, idx: Int?
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: .byWords) { _, range, _, stop in
+            if NSLocationInRange(voice.range.location, range) { idx = i; stop.pointee = true }
+            i += 1
+        }
+        return idx
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                NikAvatar(mood: "explain").frame(width: 84, height: 110)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "#E3E9F2"))).clipShape(RoundedRectangle(cornerRadius: 16))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Say it like Nik").font(.system(size: 17, weight: .semibold, design: .rounded))
+                    Text(r.busy.isEmpty ? (voice.speaking ? "Nik is reading…" : "Listen, then try it yourself") : r.busy).font(.system(size: 12.5)).foregroundColor(.secondary)
+                }
+            }
+            Text(r.line).font(.system(size: 17, weight: .medium, design: .serif)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(hex: "#FFF2B8").opacity(0.55)))
+            if !r.meaning.isEmpty { Text(r.meaning).font(.system(size: 13)).foregroundColor(.secondary) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    WrapRow(items: r.words.indices.map { String($0) }) { k in
+                        let i = Int(k) ?? 0, w = r.words[i]
+                        Button { TutorVoice.shared.speak(w.w, locale: r.locale, slow: true) } label: {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(w.w).font(.system(size: 14, weight: .semibold))
+                                Text(w.say).font(.system(size: 11.5)).opacity(0.8)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .foregroundColor(spoken == i ? .white : .primary)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(spoken == i ? Color(hex: "#5B4BD6") : Color.primary.opacity(0.07)))
+                        }.buttonStyle(.plain).help(w.meaning)
+                    }
+                    ForEach(r.tips, id: \.self) { t in Text("• " + t).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true) }
+                }
+            }
+            if let s = r.score { Text("You matched \(s)% of the words").font(.system(size: 13, weight: .semibold)).foregroundColor(s >= 85 ? .green : .orange) }
+            if ear.listening { Text(ear.heard.isEmpty ? "Listening…" : ear.heard).font(.system(size: 13)).foregroundColor(.secondary) }
+            HStack(spacing: 10) {
+                Button { TutorVoice.shared.speak(r.line, locale: r.locale, slow: true) } label: { Label("Slower", systemImage: "tortoise.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent)
+                Button { TutorVoice.shared.speak(r.line, locale: r.locale) } label: { Label("Normal", systemImage: "speaker.wave.2.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered)
+                Button { r.myTurn() } label: { Label(ear.listening ? "Done" : "My turn", systemImage: ear.listening ? "stop.fill" : "mic.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
+            Text("Select any line on screen and say “Hey Nik, read this”.").font(.system(size: 11.5)).foregroundColor(.secondary)
+        }
+        .padding(20).frame(width: 470, height: 600, alignment: .top)
+    }
+}
+
+// MARK: - Student dashboard: continue the course, what Nik remembers, today, courses, today's outfits
+
+struct StudentHomeCards: View {
+    var light: Bool
+    @ObservedObject private var brain = NikBrain.shared
+    @ObservedObject private var t = LanguageTutor.shared
+    @ObservedObject private var study = StudyHub.shared
+    private var T: HubTheme { HubTheme(light: light) }
+    private var current: NikCourse? { brain.courses.first }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            continueCard
+            HStack(alignment: .top, spacing: 22) {
+                rememberCard
+                todayCard
+                outfitCard
+            }
+            if brain.courses.count > 0 { coursesCard }
+        }
+    }
+
+    private var continueCard: some View {
+        DashCard(light: light) {
+            HStack(alignment: .center, spacing: 24) {
+                NikAvatar(mood: "smile").frame(width: 130, height: 172)
+                    .background(RoundedRectangle(cornerRadius: 20).fill(LinearGradient(colors: [Color(hex: "#E8EDF4"), Color(hex: "#D9E1EC")], startPoint: .top, endPoint: .bottom)))
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(current == nil ? "START LEARNING WITH NIK" : "CONTINUE YOUR COURSE").font(HubFont.p(12, .semibold)).foregroundColor(HubTheme.blue)
+                    if let c = current {
+                        let l = TutorLanguage.of(c.id), st = NikBrain.step(c), left = max(0, NikBrain.totalLessons - c.lessonsDone)
+                        Text("\(l.name) \(t.levels[c.id] ?? "A1") · Step \(st + 1): \(NikBrain.path[st])").font(HubFont.p(22, .semibold)).lineLimit(2)
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(T.content)
+                                Capsule().fill(ZInk.accentGradient).frame(width: max(10, g.size.width * CGFloat(NikBrain.percent(c)) / 100))
+                            }
+                        }.frame(height: 10)
+                        Text("\(c.lessonsDone) of \(NikBrain.totalLessons) lessons done · \(left) left · about \(left * 12) min to finish").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                        if let tr = c.trouble.first { Text("“Last time you mixed up \(tr). We'll practise it again today.” — Nik").font(HubFont.p(14, .regular)) }
+                        HStack(spacing: 14) {
+                            DashButton(title: "Resume lesson", icon: "play.fill", light: light) { t.langID = c.id; ZuffiHub.shared.show(.languages); NikSays.hello(l) }
+                            Text([NikBrain.usualTime(c).map { "Your usual start: \($0)" }, c.last.map { "last studied \($0.formatted(.relative(presentation: .named)))" }].compactMap { $0 }.joined(separator: " · "))
+                                .font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive)
+                        }
+                    } else {
+                        Text("Speak a new language with Nik, your senior teacher").font(HubFont.p(22, .semibold))
+                        Text("Pick any of 50 languages. Nik remembers what you covered and what's next.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                        DashButton(title: "Choose a language", icon: "globe", light: light) { ZuffiHub.shared.show(.languages); brain.showLanguages = true }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var rememberCard: some View {
+        DashCard(title: "Nik remembers", light: light) {
+            if let c = current {
+                let st = NikBrain.step(c)
+                row("Covered", c.covered.isEmpty ? "Nothing yet — your first lesson is next" : c.covered.suffix(4).joined(separator: " · "))
+                row("Still to do", NikBrain.path[st...].prefix(4).joined(separator: " · "))
+                if !c.trouble.isEmpty { row("Keeps tripping you up", c.trouble.prefix(3).joined(separator: " · ")) }
+            } else {
+                Text(brain.knowsStudent ? "Start a course and Nik keeps track of everything." : "Tell Nik about you and he'll remember it every lesson.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                if !brain.knowsStudent { DashButton(title: "Tell Nik about you", icon: "person.fill", filled: false, light: light) { ZuffiHub.shared.show(.languages); brain.showIntake = true } }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var todayCard: some View {
+        DashCard(title: "Today", light: light) {
+            if let c = current { item("\(TutorLanguage.of(c.id).name) lesson \(c.lessonsDone + 1)", NikBrain.usualTime(c) ?? "any time") }
+            let due = t.words.filter { $0.due <= Date() }.count
+            if due > 0 { item("Review words", "\(due) due") }
+            ForEach(study.deadlines.filter { !$0.done && $0.date >= Calendar.current.startOfDay(for: Date()) }.sorted { $0.date < $1.date }.prefix(3)) { d in
+                item(d.title, d.date.formatted(.dateTime.weekday(.wide)))
+            }
+            if current == nil && due == 0 && study.deadlines.isEmpty { Text("Nothing planned yet.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var outfitCard: some View {
+        let s = ZuffiSeasons.find(ZuffiSeasons.activeId())
+        return DashCard(title: "Dressed for today", light: light) {
+            HStack(spacing: 12) {
+                LiveBunnyFace(size: 96).frame(width: 110, height: 120).background(RoundedRectangle(cornerRadius: 16).fill(T.content))
+                NikAvatar(mood: "smile").frame(width: 92, height: 120).background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "#E3E9F2"))).clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+            Text(s.id == "none" ? "Everyday look. Zuffi and Nik dress up on their own for Eid, Christmas, Halloween, your birthday and the seasons." : "\(s.name) look — picked automatically. \(s.says)")
+                .font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var coursesCard: some View {
+        DashCard(title: "Your courses", light: light) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
+                ForEach(brain.courses) { c in
+                    let l = TutorLanguage.of(c.id)
+                    Button { t.langID = c.id; ZuffiHub.shared.show(.languages) } label: {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("\(l.flag) \(l.name) \(t.levels[c.id] ?? "A1")").font(HubFont.p(15, .semibold))
+                            GeometryReader { g in
+                                ZStack(alignment: .leading) { Capsule().fill(T.content); Capsule().fill(HubTheme.blue).frame(width: max(8, g.size.width * CGFloat(NikBrain.percent(c)) / 100)) }
+                            }.frame(height: 8)
+                            Text("\(NikBrain.percent(c))% · next: \(NikBrain.path[NikBrain.step(c)])").font(HubFont.p(12, .regular)).foregroundColor(T.inactive).lineLimit(1)
+                        }
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 16).fill(T.content)).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func row(_ head: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(head).font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
+            Text(body).font(HubFont.p(13.5, .regular)).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    private func item(_ a: String, _ b: String) -> some View {
+        HStack { Text(a).font(HubFont.p(13.5, .regular)).lineLimit(1); Spacer(); Text(b).font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive) }
+            .padding(.horizontal, 12).frame(height: 40).background(RoundedRectangle(cornerRadius: 12).fill(T.content))
+    }
 }

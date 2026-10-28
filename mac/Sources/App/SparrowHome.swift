@@ -429,7 +429,8 @@ private struct BubbleView: View {
                     .fill(LinearGradient(colors: [Color(hex: "#2B3244").opacity(0.92), Color(hex: "#1B2131").opacity(0.92)], startPoint: .top, endPoint: .bottom))
                     .overlay(Circle().stroke(LinearGradient(colors: [Color(hex: "#FFD27A"), Color(hex: "#F28A3C").opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 1.5))
                     .shadow(color: Color(hex: "#F9A830").opacity(hovered ? 0.7 : 0.35), radius: hovered ? 10 : 6)
-                LittleSparrow(color: nil, size: 30)
+                LiveBunnyFace(size: 40)
+                    .clipShape(Circle())
                     .offset(y: CGFloat(sin(t * 2)) * 1.5)
             }
             .frame(width: 52, height: 52)

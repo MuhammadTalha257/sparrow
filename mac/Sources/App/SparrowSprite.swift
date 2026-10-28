@@ -1038,6 +1038,39 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         }
         let mo = faceBit(SCNSphere(radius: 1), flat(Self.rgb(201, 84, 95)), SCNVector3(0, -0.125, 0.425), scale: SCNVector3(0.03, 0.025, 0.01))
         mo.opacity = 0; head.addChildNode(mo); mouthO = mo
+        dressUp(ZuffiSeasons.activeId())
+    }
+
+    /// Today's outfit (picked automatically for the season, Eid, Christmas, a birthday…): a scarf and sometimes a little hat.
+    private func dressUp(_ id: String) {
+        func mat(_ c: NSColor) -> SCNMaterial { let m = SCNMaterial(); m.lightingModel = .physicallyBased; m.diffuse.contents = c; m.roughness.contents = 0.85; return m }
+        let scarf: [String: NSColor] = [
+            "winter": Self.rgb(79, 127, 209), "christmas": Self.rgb(210, 53, 63), "halloween": Self.rgb(242, 138, 60),
+            "independence": Self.rgb(31, 138, 76), "eid": Self.rgb(79, 209, 165), "ramadan": Self.rgb(233, 196, 106),
+        ]
+        if let c = scarf[id] {
+            let ring = SCNNode(geometry: SCNTorus(ringRadius: 0.27, pipeRadius: 0.075))
+            ring.geometry?.materials = [mat(c)]
+            ring.position = SCNVector3(0, 0.02, 0); ring.eulerAngles.x = 0.18
+            neck.addChildNode(ring)
+            let tail = SCNNode(geometry: SCNBox(width: 0.11, height: 0.3, length: 0.05, chamferRadius: 0.025))
+            tail.geometry?.materials = [mat(c)]
+            tail.position = SCNVector3(0.1, -0.16, 0.27); tail.eulerAngles.z = 0.12
+            neck.addChildNode(tail)
+        }
+        if id == "birthday" || id == "christmas" {
+            let cone = SCNNode(geometry: SCNCone(topRadius: 0, bottomRadius: 0.11, height: 0.24))
+            cone.geometry?.materials = [mat(id == "birthday" ? Self.rgb(139, 108, 242) : Self.rgb(210, 53, 63))]
+            cone.position = SCNVector3(0, 0.46, 0.06); cone.eulerAngles.z = id == "christmas" ? -0.35 : 0
+            head.addChildNode(cone)
+            let pom = SCNNode(geometry: SCNSphere(radius: 0.04))
+            pom.geometry?.materials = [mat(id == "birthday" ? Self.rgb(245, 143, 168) : .white)]
+            pom.position = SCNVector3(0, 0.12, 0); cone.addChildNode(pom)
+            if id == "christmas" {
+                let brim = SCNNode(geometry: SCNTorus(ringRadius: 0.11, pipeRadius: 0.03))
+                brim.geometry?.materials = [mat(.white)]; brim.position = SCNVector3(0, -0.12, 0); cone.addChildNode(brim)
+            }
+        }
     }
 
     // MARK: moving (every frame)

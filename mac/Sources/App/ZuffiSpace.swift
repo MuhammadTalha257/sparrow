@@ -771,7 +771,8 @@ struct NotchFeaturesList: View {
         NotchFeature(id: "lecture", cat: "study", icon: "waveform.badge.mic", tint: "#E5577E", name: "Lecture notes", sub: "Record a class — get notes and exam questions"),
         NotchFeature(id: "explain", cat: "study", icon: "lightbulb.fill", tint: "#F7C948", name: "Explain my screen", sub: "Homework explained step by step"),
         NotchFeature(id: "deadlines", cat: "study", icon: "calendar.badge.clock", tint: "#F08A3E", name: "Deadlines & exams", sub: "Countdown, study plan and reminders"),
-        NotchFeature(id: "languages", cat: "study", icon: "character.bubble.fill", tint: "#7C5CFF", name: "Learn a language", sub: "English, Spanish, French, German, Arabic — speak with a teacher"),
+        NotchFeature(id: "languages", cat: "study", icon: "character.bubble.fill", tint: "#7C5CFF", name: "Learn a language", sub: "50 languages — speak with Nik, your senior teacher"),
+        NotchFeature(id: "readalong", cat: "study", icon: "text.viewfinder", tint: "#5B4BD6", name: "Read with Nik", sub: "Select a line on screen — Nik reads it and shows how to say each word"),
         NotchFeature(id: "tryon-nails", cat: "tryon", icon: "hand.raised.fingers.spread.fill", tint: "#F27BA6", name: "Nail try-on", sub: "Any design on your own nails, live"),
         NotchFeature(id: "tryon-hair", cat: "tryon", icon: "comb.fill", tint: "#A86B3C", name: "Hair colour try-on", sub: "See a new hair colour on you"),
         NotchFeature(id: "business", cat: "business", icon: "briefcase.fill", tint: "#F58FA8", name: "Business", sub: "Your AI team: posts, reviews, competitors, weekly report", business: true),
@@ -869,6 +870,7 @@ struct NotchFeaturesList: View {
             if id == "lecture" { StudyHub.shared.toggleLecture() }
             if id == "explain" { Task { await StudyHub.shared.explainScreen() } }
         case "languages": ZuffiHub.shared.show(.languages); NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        case "readalong": Task { await NikReader.shared.readMarked() }; NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "tryon-nails", "tryon-hair":
             TryOnCamera.shared.mode = id == "tryon-hair" ? "hair" : "nails"
             ZuffiHub.shared.show(.tryon); NotificationCenter.default.post(name: .islandCollapse, object: nil)
@@ -1030,6 +1032,7 @@ struct NotchHomeView: View {
     @ObservedObject private var inbox = NotchInbox.shared
     @ObservedObject private var hang = NotchHang.shared
     @State private var ask = ""
+    @State private var shown = false
     @FocusState private var askFocus: Bool
 
     private let W = IslandConst.width(for: .overview)
@@ -1045,10 +1048,16 @@ struct NotchHomeView: View {
             .padding(.horizontal, 20)
             .padding(.top, 42)
             .frame(width: W, height: H, alignment: .top)
+            .opacity(shown ? 1 : 0).offset(y: shown ? 0 : -8).scaleEffect(shown ? 1 : 0.98, anchor: .top)
             .background(Color.black.opacity(0.35))
         }
         .frame(width: W, height: H)
-        .onAppear { NowPlaying.shared.start() }
+        .onAppear {
+            NowPlaying.shared.start()
+            shown = false
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.78).delay(0.08)) { shown = true }
+        }
+        .onDisappear { shown = false }
     }
 
     // MARK: row 1
@@ -1093,16 +1102,16 @@ struct NotchHomeView: View {
                         .foregroundColor(.white.opacity(0.85)).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
                     }.buttonStyle(.plain).help("Your profile & settings")
                 }
-                .frame(height: 36)
-                .background(Capsule().fill(Color.white.opacity(0.12)))
+                .frame(height: 30)
             }
 
             if !ZuffiFocus.agents {
                 VStack(spacing: 10) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         quick("arrow.triangle.2.circlepath", "Convert a file") { NotchFeaturesList.open("convert") }
                         quick("eye.fill", "What's on my screen?") { NotchFeaturesList.open("screen") }
                         quick("graduationcap.fill", "Study") { NotchFeaturesList.open("study") }
+                        quick("person.wave.2.fill", "Nik, your teacher") { NotchFeaturesList.open("languages") }
                     }
                     Button {
                         let q = ask.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1147,7 +1156,7 @@ struct NotchHomeView: View {
     private func quick(_ icon: String, _ help: String, _ go: @escaping () -> Void) -> some View {
         Button(action: go) {
             Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundColor(.white)
-                .frame(width: 36, height: 32).background(Capsule().fill(Color.white.opacity(0.14)))
+                .frame(width: 29, height: 32).background(Capsule().fill(Color.white.opacity(0.14)))
         }.buttonStyle(.plain).help(help)
     }
 

@@ -672,6 +672,12 @@ final class VoiceEngine: NSObject, ObservableObject {
         if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { startRecognition() }   // fresh transcript
         else if wasOneShot { stopRecognition(); status = "" }
 
+        // "Hey Nik …" goes to Nik, the teacher (only while the mic is listening, like "Hey Zuffi").
+        if !wasOneShot, let nikSaid = NikWake.command(said) {
+            appendAppLog("voice.log", "nik: \(nikSaid)")
+            NikBrain.shared.heard(nikSaid)
+            return
+        }
         guard let command else {
             // Hands-free: no need to say "Zuffi" first — act when it's clearly a request.
             let handsFree = UserDefaults.standard.object(forKey: "handsFree") as? Bool ?? false

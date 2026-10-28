@@ -619,16 +619,6 @@ struct IslandHeader: View {
                 }
                 .buttonStyle(.plain)
 
-                Button(action: { SparrowBubble.shared.hideIsland() }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(Color(hex: "#D8CCBF"))
-                        .frame(width: 24, height: 24)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
-                        .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.6))
-                }
-                .buttonStyle(.plain)
-                .help("Hide Zuffi — click the little bubble to bring it back")
             }
             .padding(.trailing, 6)
         }

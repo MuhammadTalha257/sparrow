@@ -314,11 +314,10 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
     private var web: WKWebView?
     private var window: NSWindow?
 
-    func startIfEnabled() { if enabled, ZuffiFocus.whatsapp { start() } }
+    func startIfEnabled() { if enabled { start() } }
 
     func start() {
-        // WhatsApp (leads, auto-replies) is part of Zuffi Business; Pro is for your own day.
-        guard ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal else { state = "off"; return }
+        // Everyone can see their WhatsApp messages in the notch and reply there; leads and auto-replies stay Business-only (see handle).
         guard web == nil else { window?.makeKeyAndOrderFront(nil); return }
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()                       // stays linked after restarts

@@ -354,8 +354,8 @@ final class IslandWindowController: NSWindowController {
         guard mode != prev else { return }
         let shrinking = modeLevel(mode) < modeLevel(prev)
         let anim: Animation = shrinking
-            ? .timingCurve(0.45, 0, 0.2, 1, duration: 0.34)
-            : .spring(response: 0.5, dampingFraction: 0.72)
+            ? .timingCurve(0.45, 0, 0.2, 1, duration: 0.32).delay(0.05)      // the content fades first, then the shape folds away
+            : .spring(response: 0.46, dampingFraction: 0.74)
         withAnimation(anim) { state.mode = mode }
         if mode == .expanded { SoundEngine.shared.play("open") }
         if prev == .expanded { SoundEngine.shared.play("close"); state.isPinned = false }

@@ -3280,6 +3280,7 @@ struct DashHomePage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
+            if !ZuffiFocus.agents { StudentHomeCards(light: light) }
             chatCard
             if ZuffiFocus.agents {
             DashCard(title: "Agent Office", sub: mc.question.isEmpty ? "Your agents at their desks. When they work, they get up, go desk to desk and bring the result to Nik." : "Working on: \(mc.question)", light: light) {
@@ -4285,6 +4286,21 @@ struct GeneralPane: View {
                     DashButton(title: "Open the setup again", icon: "wand.and.stars", filled: false, light: light) { SetupWizard.shared.show() }
                 }
             }
+            MessagesInNotchCard(light: light)
+        }
+    }
+}
+
+/// WhatsApp and email at the notch: a new message drops down and you can reply right there.
+struct MessagesInNotchCard: View {
+    var light: Bool
+    @ObservedObject private var wa = WhatsAppLink.shared
+    private var T: HubTheme { HubTheme(light: light) }
+    var body: some View {
+        DashCard(title: "Messages in the notch", sub: "New messages drop down from the notch. Reply right there — nothing is sent until you press Send. Click anywhere else to fold it away.", light: light) {
+            ZToggle(title: "WhatsApp messages", sub: wa.ready ? "Linked — new chats show at the notch" : wa.state == "qr" ? "Scan the code with WhatsApp on your phone (Linked devices)" : "Link your WhatsApp once with a QR code", on: $wa.enabled, light: light)
+            if wa.enabled && !wa.ready { DashButton(title: "Show the QR code", icon: "qrcode", filled: false, light: light) { wa.showWindow() } }
+            Text("Email: every account in Apple Mail (Gmail, Outlook, iCloud…) shows at the notch while the Mail app is open.").font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive)
         }
     }
 }
