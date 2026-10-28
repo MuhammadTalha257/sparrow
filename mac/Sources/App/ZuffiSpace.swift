@@ -262,7 +262,7 @@ struct HomeAction: Identifiable {
         if ZuffiPlan.shared.isLocked && id != "settings" { ZuffiPlan.shared.openAccount(); return }
         switch id {
         case "chat": ZuffiChat.shared.open()
-        case "settings": ZuffiNav.go(.settings)
+        case "settings": NotificationCenter.default.post(name: .openFullSettings, object: nil)
         case "more": ZuffiNav.go(.features)
         case "convert": pickAndDrop()
         case "record": Task { await Assistant.run(ScreenRecorder.shared.isRecording ? "stop recording" : "record my screen", spoken: false) }
@@ -955,7 +955,7 @@ struct ZuffiProfilePanel: View {
                         Text(plan.isBusiness ? "Business plan" : plan.isPaid ? "Pro plan" : "Free").font(.system(size: 10.5, weight: .semibold)).foregroundColor(.white.opacity(0.6))
                     }
                     Spacer()
-                    Button { WebHub.shared.showTool("profile"); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
+                    Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
                         Label("Edit", systemImage: "pencil").font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
                             .padding(.horizontal, 10).frame(height: 26).background(Capsule().fill(Color.white.opacity(0.14)))
                     }.buttonStyle(.plain)
@@ -1085,7 +1085,13 @@ struct NotchHomeView: View {
                     chip("square.grid.2x2.fill", "Dashboard") { ZuffiHub.shared.show(.home) }
                     chip("sparkles", "Features") { ZuffiNav.go(.features) }
                     chip("hare.fill", "Pet") { PetController.shared.toggle() }
-                    chip("gearshape.fill", "Settings") { ZuffiHub.shared.show(.settings) }
+                    Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) } label: {
+                        HStack(spacing: 4) {
+                            ProfileAvatar(size: 18)
+                            Text((ZuffiPlan.shared.profile["name"] ?? "Me").components(separatedBy: " ").first ?? "Me").font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                        }
+                        .foregroundColor(.white.opacity(0.85)).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help("Your profile & settings")
                 }
                 .frame(height: 36)
                 .background(Capsule().fill(Color.white.opacity(0.12)))

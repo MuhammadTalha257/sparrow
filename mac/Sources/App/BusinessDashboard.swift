@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 import AppKit
 import UniformTypeIdentifiers
 
@@ -3155,8 +3156,8 @@ struct ZuffiDashboard: View {
     var body: some View {
         ZStack {
             VisualEffectBlur(material: .fullScreenUI).ignoresSafeArea()
-            LinearGradient(colors: light ? [Color(hex: "#EEF1F8").opacity(0.9), Color(hex: "#E4E8F3").opacity(0.85)] : [Color(hex: "#0B0D16").opacity(0.82), Color(hex: "#111526").opacity(0.78)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
+            LinearGradient(colors: light ? [Color(hex: "#F3F4FA").opacity(0.94), Color(hex: "#E8EAF4").opacity(0.9)] : [Color(hex: "#0B0C10").opacity(0.92), Color(hex: "#1A1D28").opacity(0.9)],
+                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             HStack(spacing: 0) {
                 sidebar
                 VStack(spacing: 0) {
@@ -3171,6 +3172,8 @@ struct ZuffiDashboard: View {
         }
         .foregroundColor(T.text)
         .font(HubFont.p(14, .regular))
+        .preferredColorScheme(light ? .light : .dark)
+        .tint(ZInk.accent)
         .onAppear {
             HubFont.register()
             if ZuffiFocus.agents { SocialHub.shared.start(); DailyReport.shared.start(); OfficeModel.shared.ensure() }
@@ -3209,7 +3212,7 @@ struct ZuffiDashboard: View {
                     }
                     .foregroundColor(tab == t ? .white : T.text.opacity(0.78))
                     .padding(.horizontal, 14).frame(height: 42)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tab == t ? HubTheme.blue : Color.clear))
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tab == t ? AnyShapeStyle(ZInk.accentGradient) : AnyShapeStyle(Color.clear)))
                     .contentShape(Rectangle())
                 }.buttonStyle(.plain).padding(.horizontal, 12)
             }
@@ -3221,7 +3224,17 @@ struct ZuffiDashboard: View {
                     Spacer()
                 }.foregroundColor(T.inactive).padding(.horizontal, 26).frame(height: 40).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            Text(plan.isPersonal ? "Zuffi for you" : "Zuffi Business").font(HubFont.p(11, .regular)).foregroundColor(T.inactive).padding(.leading, 26).padding(.bottom, 18)
+            Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); hub.section = .settings } label: {
+                HStack(spacing: 10) {
+                    ProfileAvatar(size: 34)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(plan.profile["name"]?.isEmpty == false ? plan.profile["name"]! : "Your profile").font(HubFont.p(13, .semibold)).foregroundColor(T.text).lineLimit(1)
+                        Text("Profile & settings").font(HubFont.p(11, .regular)).foregroundColor(T.inactive)
+                    }
+                    Spacer()
+                }
+                .padding(10).background(RoundedRectangle(cornerRadius: 12).fill(T.content)).contentShape(Rectangle())
+            }.buttonStyle(.plain).padding(.horizontal, 12).padding(.bottom, 16)
         }
         .frame(width: 230)
         .background(light ? Color.white.opacity(0.45) : Color.black.opacity(0.28))
@@ -3903,28 +3916,404 @@ struct DashAutomationsPage: View {
     }
 }
 
-// MARK: 7 · Settings
+// MARK: 7 · Settings — see "Settings: everything in the new design" below
+
+// =====================================================================
+// MARK: - Beautiful inputs: a floating label, a bar that grows from the middle on focus, and a quick highlight
+// =====================================================================
+
+enum ZInk {
+    /// Zuffi's accent: the notch's pink → lilac, with the dashboard blue.
+    static let accent = Color(hex: "#7C6CF2")
+    static let accentGradient = LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#B79CFF"), Color(hex: "#6E8BFF")], startPoint: .leading, endPoint: .trailing)
+    static func text(_ light: Bool) -> Color { light ? Color(hex: "#1E2130") : Color(hex: "#F4F5FA") }
+    static func label(_ light: Bool) -> Color { light ? Color(hex: "#6B7086") : Color(hex: "#9AA0B8") }
+    static func line(_ light: Bool) -> Color { light ? Color(hex: "#C9CDD9") : Color.white.opacity(0.18) }
+    static func fill(_ light: Bool) -> Color { light ? Color.white.opacity(0.7) : Color.white.opacity(0.05) }
+}
+
+struct ZField: View {
+    let label: String
+    @Binding var text: String
+    var secure = false
+    var light = false
+    var onSubmit: () -> Void = {}
+    @FocusState private var focused: Bool
+    @State private var sweep: CGFloat = 0
+    private var up: Bool { focused || !text.isEmpty }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Text(label)
+                .font(HubFont.p(up ? 11 : 14, up ? .medium : .regular))
+                .foregroundColor(focused ? ZInk.accent : (up ? ZInk.accent.opacity(0.85) : ZInk.label(light)))
+                .offset(y: up ? -15 : 0)
+                .allowsHitTesting(false)
+            Group {
+                if secure { SecureField("", text: $text) } else { TextField("", text: $text) }
+            }
+            .textFieldStyle(.plain).font(HubFont.p(14, .regular)).foregroundColor(ZInk.text(light))
+            .focused($focused).onSubmit(onSubmit)
+            .padding(.top, 10)
+        }
+        .padding(.horizontal, 12).frame(height: 54)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(ZInk.fill(light)))
+        .overlay(alignment: .bottom) {
+            ZStack {
+                Rectangle().fill(!text.isEmpty ? ZInk.accent.opacity(0.6) : ZInk.line(light)).frame(height: 1)
+                Rectangle().fill(ZInk.accentGradient).frame(height: 2).scaleEffect(x: focused ? 1 : 0.001, anchor: .center)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 1))
+            .padding(.horizontal, 4)
+        }
+        .overlay {
+            // the quick highlight that sweeps across when you click in
+            GeometryReader { g in
+                Rectangle().fill(ZInk.accent.opacity(0.28 * (1 - sweep))).frame(width: max(1, g.size.width * sweep)).position(x: g.size.width / 2, y: g.size.height / 2).allowsHitTesting(false)
+            }.clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .animation(.easeOut(duration: 0.2), value: focused)
+        .animation(.easeOut(duration: 0.2), value: up)
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+        .onChange(of: focused) { _, f in
+            guard f else { return }
+            sweep = 0.02
+            withAnimation(.easeOut(duration: 0.5)) { sweep = 1 }
+        }
+    }
+}
+
+struct ZTextArea: View {
+    let label: String
+    @Binding var text: String
+    var light = false
+    var height: CGFloat = 120
+    @FocusState private var focused: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(HubFont.p(11, .medium)).foregroundColor(focused ? ZInk.accent : ZInk.label(light))
+            TextEditor(text: $text).font(HubFont.p(14, .regular)).foregroundColor(ZInk.text(light))
+                .scrollContentBackground(.hidden).focused($focused).frame(height: height)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(ZInk.fill(light)))
+        .overlay(alignment: .bottom) {
+            ZStack {
+                Rectangle().fill(ZInk.line(light)).frame(height: 1)
+                Rectangle().fill(ZInk.accentGradient).frame(height: 2).scaleEffect(x: focused ? 1 : 0.001, anchor: .center)
+            }.padding(.horizontal, 4)
+        }
+        .animation(.easeOut(duration: 0.2), value: focused)
+    }
+}
+
+/// A dropdown that looks like the fields: floating label, the value, a chevron.
+struct ZSelect: View {
+    let label: String
+    @Binding var value: String
+    let options: [(String, String)]          // (tag, shown)
+    var light = false
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.0) { o in Button { value = o.0 } label: { if o.0 == value { Label(o.1, systemImage: "checkmark") } else { Text(o.1) } } }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(HubFont.p(11, .medium)).foregroundColor(ZInk.accent.opacity(0.85))
+                HStack {
+                    Text(options.first { $0.0 == value }?.1 ?? value).font(HubFont.p(14, .regular)).foregroundColor(ZInk.text(light)).lineLimit(1)
+                    Spacer(minLength: 6)
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundColor(ZInk.label(light))
+                }
+            }
+            .padding(.horizontal, 12).frame(height: 54)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(ZInk.fill(light)))
+            .overlay(alignment: .bottom) { Rectangle().fill(ZInk.line(light)).frame(height: 1).padding(.horizontal, 4) }
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden)
+    }
+}
+
+/// A switch row in the same style.
+struct ZToggle: View {
+    let title: String
+    var sub = ""
+    @Binding var on: Bool
+    var light = false
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(HubFont.p(14)).foregroundColor(ZInk.text(light))
+                if !sub.isEmpty { Text(sub).font(HubFont.p(12, .regular)).foregroundColor(ZInk.label(light)).fixedSize(horizontal: false, vertical: true) }
+            }
+            Spacer()
+            Toggle("", isOn: $on).labelsHidden().toggleStyle(.switch).tint(ZInk.accent)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+// =====================================================================
+// MARK: - Settings: everything in the new design (no old windows)
+// =====================================================================
+
+enum ProfilePhoto {
+    static var url: URL {
+        let d = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Zuffi", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d.appendingPathComponent("profile.jpg")
+    }
+    static var image: NSImage? { NSImage(contentsOf: url) }
+    static func set(_ from: URL) {
+        guard let img = NSImage(contentsOf: from), let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+              let d = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else { return }
+        try? d.write(to: url)
+        NotificationCenter.default.post(name: .profileChanged, object: nil)
+    }
+}
+extension Notification.Name { static let profileChanged = Notification.Name("zuffiProfileChanged") }
+
+/// Your picture (or your first letter) in a ring — used in Settings and the notch.
+struct ProfileAvatar: View {
+    var size: CGFloat = 40
+    @State private var version = 0
+    var body: some View {
+        let name = ZuffiPlan.shared.profile["name"] ?? ""
+        ZStack {
+            Circle().fill(LinearGradient(colors: [Color(hex: "#F5B963"), Color(hex: "#F58FA8"), Color(hex: "#B79CFF")], startPoint: .topLeading, endPoint: .bottomTrailing))
+            if let img = ProfilePhoto.image { Image(nsImage: img).resizable().scaledToFill().clipShape(Circle()).padding(size * 0.06) }
+            else { Text(String(name.prefix(1)).uppercased().isEmpty ? "🙂" : String(name.prefix(1)).uppercased()).font(.system(size: size * 0.45, weight: .bold, design: .rounded)).foregroundColor(.white) }
+        }
+        .frame(width: size, height: size)
+        .id(version)
+        .onReceive(NotificationCenter.default.publisher(for: .profileChanged)) { _ in version += 1 }
+    }
+}
 
 struct DashSettingsPage: View {
     var light: Bool
-    @AppStorage("reachBackup") private var backup = true
-    @AppStorage("officeOnTask") private var officeOnTask = true
+    @AppStorage("settingsTab") private var tab = "Profile"
+    private let tabs: [(String, String)] = [("Profile", "person.crop.circle.fill"), ("AI models", "cpu.fill"), ("Voice & sound", "waveform"), ("General", "gearshape.fill"), ("Privacy", "lock.fill")]
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            if ZuffiFocus.agents {
-            DashCard(title: "Agents", light: light) {
-                Toggle("Open the dashboard and Agent Office when I give a task", isOn: $officeOnTask).toggleStyle(.switch)
-                Toggle("Backup page readers (Jina Reader, Exa) when a page won't open", isOn: $backup).toggleStyle(.switch)
-                Text("Agents never type your passwords or card numbers, and never pay, buy or delete anything.").font(HubFont.p(12, .regular)).foregroundColor(HubTheme(light: light).inactive)
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 8) {
+                ForEach(tabs, id: \.0) { t in
+                    Button { tab = t.0 } label: {
+                        Label(t.0, systemImage: t.1).font(HubFont.p(13)).foregroundColor(tab == t.0 ? .white : ZInk.text(light))
+                            .padding(.horizontal, 14).frame(height: 34)
+                            .background(Capsule().fill(tab == t.0 ? AnyShapeStyle(ZInk.accentGradient) : AnyShapeStyle(ZInk.fill(light))))
+                    }.buttonStyle(.plain)
+                }
             }
-            }
-            DashCard(title: "Privacy", light: light) {
-                Text("Your chats, results and channel messages stay on this Mac. You can delete any chat in Dashboard → Chat history.").font(HubFont.p(13, .regular))
-            }
-            DashCard(title: "Everything else", light: light) {
-                SettingsView().frame(minHeight: 620).clipShape(RoundedRectangle(cornerRadius: 14))
+            switch tab {
+            case "AI models": AIModelsPane(light: light)
+            case "Voice & sound": VoicePane(light: light)
+            case "General": GeneralPane(light: light)
+            case "Privacy": PrivacyPane(light: light)
+            default: ProfilePane(light: light)
             }
         }
-        .font(HubFont.p(13.5, .regular))
+    }
+}
+
+struct ProfilePane: View {
+    var light: Bool
+    @State private var p: [String: String] = ZuffiPlan.shared.profile
+    @State private var saved = ""
+    private let fields: [(String, String)] = [("name", "Your name"), ("school", "School / college / university"), ("course", "Course or subjects"), ("year", "Year / grade"),
+                                              ("dob", "Birthday (YYYY-MM-DD)"), ("city", "City"), ("country", "Country"), ("langs", "Languages you speak"),
+                                              ("goals", "What do you want help with?"), ("hobbies", "Hobbies")]
+    var body: some View {
+        DashCard(light: light) {
+            HStack(spacing: 18) {
+                ProfileAvatar(size: 84)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(p["name"]?.isEmpty == false ? p["name"]! : "Your profile").font(HubFont.p(20, .semibold)).foregroundColor(ZInk.text(light))
+                    Text("Zuffi uses this to help you better. It stays on your Mac.").font(HubFont.p(12.5, .regular)).foregroundColor(ZInk.label(light))
+                    HStack(spacing: 8) {
+                        DashButton(title: "Change photo", icon: "camera.fill", filled: false, light: light) {
+                            let o = NSOpenPanel(); o.allowedContentTypes = [.image]
+                            if o.runModal() == .OK, let u = o.url { ProfilePhoto.set(u) }
+                        }
+                        if ProfilePhoto.image != nil {
+                            Button("Remove") { try? FileManager.default.removeItem(at: ProfilePhoto.url); NotificationCenter.default.post(name: .profileChanged, object: nil) }
+                                .buttonStyle(.plain).foregroundColor(ZInk.label(light)).font(HubFont.p(12))
+                        }
+                    }
+                }
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 14) {
+                ForEach(fields, id: \.0) { f in ZField(label: f.1, text: Binding(get: { p[f.0] ?? "" }, set: { p[f.0] = $0; saved = "" }), light: light) }
+            }
+            ZTextArea(label: "Anything else Zuffi should know about you", text: Binding(get: { p["notes"] ?? "" }, set: { p["notes"] = $0; saved = "" }), light: light, height: 70)
+            HStack(spacing: 12) {
+                DashButton(title: "Save profile", icon: "checkmark", light: light) {
+                    var all: [String: Any] = ZuffiPlan.shared.profile
+                    for (k, v) in p { all[k] = v }
+                    all["type"] = "personal"
+                    ZuffiPlan.shared.saveProfile(all)
+                    NotificationCenter.default.post(name: .profileChanged, object: nil)
+                    saved = "Saved ✓"
+                }
+                Text(saved).font(HubFont.p(12.5, .regular)).foregroundColor(Color(hex: "#3DBE7E"))
+            }
+        }
+    }
+}
+
+struct AIModelsPane: View {
+    var light: Bool
+    @ObservedObject private var state = AppState.shared
+    @State private var keys: [String: String] = [:]
+    @State private var saved = ""
+    @State private var ollama = "Checking…"
+    @State private var pulling: Double?
+    private let providers: [(String, String, String, String)] = [   // keychain key, name, placeholder, help
+        ("anthropic-api-key", "Claude (Anthropic)", "sk-ant-…", "Best for studying and writing. Sees pictures."),
+        ("openai-api-key", "ChatGPT (OpenAI)", "sk-…", "Sees pictures."),
+        ("gemini-api-key", "Gemini (Google)", "AIza…", "Free tier available. Sees pictures (Flash models)."),
+        ("groq-api-key", "Groq", "gsk_…", "Very fast, free tier. Text only."),
+        ("openrouter-api-key", "OpenRouter", "sk-or-…", "Many models with one key."),
+        ("deepseek-api-key", "DeepSeek", "sk-…", "Text only."),
+        ("mistral-api-key", "Mistral", "…", "Text only."),
+        ("xai-api-key", "Grok (xAI)", "xai-…", ""),
+        ("perplexity-api-key", "Perplexity", "pplx-…", "Answers with web sources."),
+    ]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            DashCard(title: "Which AI answers", sub: "Auto picks the best one you've set up. Your own keys stay in your Mac's Keychain.", light: light) {
+                ZSelect(label: "AI", value: $state.aiProvider, options: AIProvider.allCases.filter { ![.claudeCode, .codex, .geminiCLI].contains($0) }.map { ($0.rawValue, $0 == .auto ? "Auto (best available)" : $0.label) }, light: light)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 14) {
+                    ZField(label: "Claude model (optional)", text: $state.claudeModel, light: light)
+                    ZField(label: "ChatGPT model (optional)", text: $state.openaiModel, light: light)
+                    ZField(label: "Gemini model (optional)", text: $state.geminiModel, light: light)
+                }
+            }
+            DashCard(title: "Free AI on your Mac (Ollama)", sub: "Works offline and costs nothing. Needs the free Ollama app.", light: light) {
+                HStack(spacing: 12) {
+                    Circle().fill(ollama.hasPrefix("Ready") ? Color(hex: "#3DBE7E") : Color(hex: "#F5B963")).frame(width: 9, height: 9)
+                    Text(ollama).font(HubFont.p(13.5)).foregroundColor(ZInk.text(light))
+                    Spacer()
+                    if let p = pulling { ProgressView(value: p).frame(width: 140) }
+                    DashButton(title: "Get Ollama", icon: "arrow.down.circle", filled: false, light: light) { NSWorkspace.shared.open(URL(string: "https://ollama.com/download")!) }
+                    DashButton(title: "Download the free model", icon: "cpu", light: light) {
+                        pulling = 0
+                        Task { let ok = await AIService.pullOllama(AIService.recommendedOllama) { v, _ in pulling = v }; pulling = nil; ollama = ok ? "Ready — \(AIService.recommendedOllama)" : "Couldn't download — is Ollama open?" }
+                    }
+                }
+            }
+            DashCard(title: "Your own keys", sub: "Paste a key to use that AI. Leave empty to skip.", light: light) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 14) {
+                    ForEach(providers, id: \.0) { pr in
+                        VStack(alignment: .leading, spacing: 4) {
+                            ZField(label: pr.1, text: Binding(get: { keys[pr.0] ?? "" }, set: { keys[pr.0] = $0; saved = "" }), secure: true, light: light)
+                            if !pr.3.isEmpty { Text(pr.3).font(HubFont.p(11, .regular)).foregroundColor(ZInk.label(light)).padding(.leading, 4) }
+                        }
+                    }
+                }
+                HStack(spacing: 12) {
+                    DashButton(title: "Save keys", icon: "key.fill", light: light) {
+                        for (k, v) in keys { KeychainStore.shared.set(k, value: v.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                        UserDefaults.standard.removeObject(forKey: "geminiResolved")
+                        saved = "Saved ✓"
+                    }
+                    Text(saved).font(HubFont.p(12.5, .regular)).foregroundColor(Color(hex: "#3DBE7E"))
+                }
+            }
+        }
+        .onAppear {
+            for pr in providers { keys[pr.0] = KeychainStore.shared.get(pr.0) ?? "" }
+            Task {
+                let running = await AIService.ollamaRunning()
+                let models = await AIService.ollamaModels()
+                ollama = !running ? "Ollama isn't running" : models.isEmpty ? "Ollama is running — no model yet" : "Ready — \(models.first ?? "")"
+            }
+        }
+    }
+}
+
+struct VoicePane: View {
+    var light: Bool
+    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var voice = VoiceEngine.shared
+    @AppStorage(AssistantPrefs.wakeWord) private var wake = true
+    @AppStorage(AssistantPrefs.speakReplies) private var speak = true
+    @AppStorage(AssistantPrefs.voiceGender) private var gender = "female"
+    @AppStorage(AssistantPrefs.voiceRate) private var rate = 0.5
+    @AppStorage(AssistantPrefs.greetEnabled) private var greet = true
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            DashCard(title: "Voice", light: light) {
+                ZToggle(title: "Microphone on", sub: "Talk to Zuffi. You can also switch it from the notch.", on: Binding(get: { voice.micEnabled }, set: { voice.setMic($0) }), light: light)
+                ZToggle(title: "“Hey Zuffi”", sub: "Start talking without clicking (takes effect the next time Zuffi starts)", on: $wake, light: light)
+                ZToggle(title: "Read answers out loud", on: $speak, light: light)
+                ZToggle(title: "Say hello when Zuffi starts", on: $greet, light: light)
+                HStack(spacing: 16) {
+                    ZSelect(label: "Voice", value: $gender, options: [("female", "Female"), ("male", "Male")], light: light).frame(width: 220)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Speed").font(HubFont.p(11, .medium)).foregroundColor(ZInk.label(light))
+                        Slider(value: $rate, in: 0.35...0.65).tint(ZInk.accent)
+                    }
+                    DashButton(title: "Test", icon: "speaker.wave.2.fill", filled: false, light: light) { VoiceEngine.shared.speak("Hi! This is how I sound.") }
+                }
+            }
+            DashCard(title: "Sounds", light: light) {
+                ZToggle(title: "Little sounds", sub: "When Zuffi opens, answers or reminds you", on: $state.soundEnabled, light: light)
+                HStack { Text("Volume").font(HubFont.p(13)).foregroundColor(ZInk.text(light)); Slider(value: $state.soundVolume, in: 0...0.2).tint(ZInk.accent).disabled(!state.soundEnabled) }
+            }
+        }
+    }
+}
+
+struct GeneralPane: View {
+    var light: Bool
+    @ObservedObject private var state = AppState.shared
+    @State private var login = SMAppService.mainApp.status == .enabled
+    @AppStorage("notchWide") private var notchWide = true
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            DashCard(title: "General", light: light) {
+                ZToggle(title: "Open Zuffi when the Mac starts", on: Binding(get: { login }, set: { v in
+                    login = v
+                    if v { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
+                }), light: light)
+                ZToggle(title: "Keyboard shortcut opens the chat", on: $state.hotkeyEnabled, light: light)
+                ZToggle(title: "Small glass notch", on: $notchWide, light: light)
+                HStack(spacing: 16) {
+                    ZField(label: "Close the notch after (seconds)", text: Binding(get: { String(Int(state.autoCloseInterval)) }, set: { state.autoCloseInterval = TimeInterval(Int($0) ?? 15) }), light: light).frame(width: 280)
+                    DashButton(title: "Open the setup again", icon: "wand.and.stars", filled: false, light: light) { SetupWizard.shared.show() }
+                }
+            }
+        }
+    }
+}
+
+struct PrivacyPane: View {
+    var light: Bool
+    @State private var cleared = ""
+    private func open(_ pane: String) { if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") { NSWorkspace.shared.open(u) } }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            DashCard(title: "Permissions", sub: "Zuffi only uses these when you ask.", light: light) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    DashButton(title: "Microphone", icon: "mic.fill", filled: false, light: light) { open("Privacy_Microphone") }
+                    DashButton(title: "Screen (explain my screen)", icon: "rectangle.dashed", filled: false, light: light) { open("Privacy_ScreenCapture") }
+                    DashButton(title: "Camera", icon: "camera.fill", filled: false, light: light) { open("Privacy_Camera") }
+                    DashButton(title: "Accessibility (control the Mac)", icon: "hand.point.up.left.fill", filled: false, light: light) { open("Privacy_Accessibility") }
+                    DashButton(title: "Automation (Notes, Music…)", icon: "gearshape.2.fill", filled: false, light: light) { open("Privacy_Automation") }
+                    DashButton(title: "Speech recognition", icon: "waveform", filled: false, light: light) { open("Privacy_SpeechRecognition") }
+                }
+            }
+            DashCard(title: "Your data", sub: "Your chats, study sets, words and profile stay on this Mac.", light: light) {
+                HStack(spacing: 12) {
+                    DashButton(title: "Clear chat history", icon: "trash", filled: false, light: light) {
+                        for c in ChatArchive.shared.chats { ChatArchive.shared.delete(c) }
+                        cleared = "Chat history cleared"
+                    }
+                    Text(cleared).font(HubFont.p(12.5, .regular)).foregroundColor(ZInk.label(light))
+                }
+            }
+        }
     }
 }

@@ -382,12 +382,10 @@ struct LanguagePage: View {
                 Label("\(t.xp) XP", systemImage: "star.fill").foregroundColor(HubTheme.blue).font(HubFont.p(13))
             }
             HStack(spacing: 12) {
-                Text("Level").font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
-                Picker("", selection: Binding(get: { t.level }, set: { t.levels[t.langID] = $0 })) { ForEach(["A1", "A2", "B1", "B2", "C1", "C2"], id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(width: 80)
+                ZSelect(label: "Level", value: Binding(get: { t.level }, set: { t.levels[t.langID] = $0 }), options: ["A1", "A2", "B1", "B2", "C1", "C2"].map { ($0, $0) }, light: light).frame(width: 110)
                 Button("Not sure? Take the level test") { tab = "Level test"; Task { pIndex = 0; pScore = 0; await t.startPlacement() } }.buttonStyle(.plain).foregroundColor(HubTheme.blue).font(HubFont.p(12))
                 Spacer()
-                Text("Explain in").font(HubFont.p(12, .regular)).foregroundColor(T.inactive)
-                Picker("", selection: $t.explainIn) { ForEach(["English", "Urdu", "Arabic", "Hindi", "Spanish", "French", "German", "Turkish", "Bengali", "Polish"], id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(width: 120)
+                ZSelect(label: "Explain in", value: $t.explainIn, options: ["English", "Urdu", "Arabic", "Hindi", "Spanish", "French", "German", "Turkish", "Bengali", "Polish"].map { ($0, $0) }, light: light).frame(width: 160)
             }
             HStack(spacing: 8) {
                 ForEach(["Lesson", "Speak with your teacher", "Pronunciation", "My words"], id: \.self) { s in
@@ -421,7 +419,7 @@ struct LanguagePage: View {
         VStack(alignment: .leading, spacing: 18) {
             DashCard(light: light) {
                 HStack(spacing: 10) {
-                    TextField("Topic (optional): food, travel, work, past tense…", text: $topic).textFieldStyle(.roundedBorder)
+                    ZField(label: "Topic (optional): food, travel, work, past tense…", text: $topic, light: light)
                     DashButton(title: t.lesson == nil ? "Start today's lesson" : "New lesson", icon: "book.fill", light: light) { picks = [:]; let tp = topic; Task { await t.newLesson(topic: tp) } }
                 }
             }
@@ -470,7 +468,7 @@ struct LanguagePage: View {
 
     private var conversation: some View {
         DashCard(title: "Speak with your teacher", sub: "Talk or type in \(t.lang.name). Your teacher answers, corrects you gently and gives tips.", light: light) {
-            Picker("Situation", selection: $t.scenario) { ForEach(LanguageTutor.scenarios, id: \.self) { Text($0).tag($0) } }.frame(width: 300)
+            ZSelect(label: "Situation", value: $t.scenario, options: LanguageTutor.scenarios.map { ($0, $0) }, light: light).frame(width: 300)
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     if t.chat.isEmpty { Text("Say hello to start — e.g. “\(["en": "Hi! How are you?", "es": "¡Hola! ¿Qué tal?", "fr": "Bonjour ! Ça va ?", "de": "Hallo! Wie geht's?", "ar": "مرحبا! كيف حالك؟"][t.langID] ?? "Hello!")”").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
@@ -492,9 +490,8 @@ struct LanguagePage: View {
                 Button { if ear.listening { ear.stop(); typed = ear.heard } else { ear.start(t.lang) } } label: {
                     Image(systemName: ear.listening ? "stop.circle.fill" : "mic.circle.fill").font(.system(size: 30)).foregroundColor(ear.listening ? Color(hex: "#E5534B") : HubTheme.blue)
                 }.buttonStyle(.plain).help("Speak")
-                TextField("Write in \(t.lang.name)…", text: Binding(get: { ear.listening ? ear.heard : typed }, set: { typed = $0 }))
-                    .textFieldStyle(.roundedBorder).environment(\.layoutDirection, t.lang.rtl ? .rightToLeft : .leftToRight)
-                    .onSubmit(send)
+                ZField(label: "Write in \(t.lang.name)…", text: Binding(get: { ear.listening ? ear.heard : typed }, set: { typed = $0 }), light: light, onSubmit: send)
+                    .environment(\.layoutDirection, t.lang.rtl ? .rightToLeft : .leftToRight)
                 DashButton(title: "Send", icon: "paperplane.fill", light: light, go: send)
             }
         }
@@ -508,7 +505,7 @@ struct LanguagePage: View {
     private var pronunciation: some View {
         DashCard(title: "Pronunciation", sub: "Listen, then say it. Zuffi checks how close you were.", light: light) {
             HStack(spacing: 10) {
-                TextField("A phrase in \(t.lang.name)", text: $practice).textFieldStyle(.roundedBorder).environment(\.layoutDirection, t.lang.rtl ? .rightToLeft : .leftToRight)
+                ZField(label: "A phrase in \(t.lang.name)", text: $practice, light: light).environment(\.layoutDirection, t.lang.rtl ? .rightToLeft : .leftToRight)
                 Button { TutorVoice.shared.say(practice, t.lang, slow: true) } label: { Label("Slow", systemImage: "tortoise.fill") }.buttonStyle(.plain).foregroundColor(HubTheme.blue)
                 Button { TutorVoice.shared.say(practice, t.lang) } label: { Label("Normal", systemImage: "speaker.wave.2.fill") }.buttonStyle(.plain).foregroundColor(HubTheme.blue)
             }

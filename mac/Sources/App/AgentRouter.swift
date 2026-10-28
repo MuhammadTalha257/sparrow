@@ -648,7 +648,7 @@ enum ZuffiSelf {
             case "business": return perform("open_business", [:])
             case "whatsapp": return perform("open_whatsapp", [:])
             case "features": ZuffiNav.go(.features)
-            case "settings": ZuffiNav.go(.settings)
+            case "settings": NotificationCenter.default.post(name: .openFullSettings, object: nil)
             case "chat": ZuffiChat.shared.open()
             case "profile": ZuffiNav.go(.profile)
             case "history": ZuffiNav.go(.history)

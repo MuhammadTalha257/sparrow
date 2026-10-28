@@ -325,7 +325,14 @@ final class AIService {
             }
         }
         history.removeLast()
-        finish("⚠︎ \(provider.label): \(lastError?.localizedDescription ?? "no answer")", state: state, emote: .annoyed)
+        let hadImage = pendingImage != nil
+        pendingImage = nil              // a picture that failed must not ride along on every later message
+        let why = lastError?.localizedDescription ?? "no answer"
+        if hadImage, why.lowercased().contains("multimodal") || why.lowercased().contains("image") {
+            finish("This AI model can't look at pictures. In Settings → AI, pick a model that can see images (Claude, ChatGPT, or Gemini 2.5 Flash), then send the picture again.", state: state, emote: .annoyed)
+        } else {
+            finish("⚠︎ \(provider.label): \(why)", state: state, emote: .annoyed)
+        }
     }
 
     private func call(_ p: AIProvider, state: AppState) async throws -> String {
@@ -827,7 +834,8 @@ final class AIService {
         let models = (json["models"] as? [[String: Any]] ?? []).filter {
             ($0["supportedGenerationMethods"] as? [String] ?? []).contains("generateContent")
         }.compactMap { $0["name"] as? String }.map { $0.replacingOccurrences(of: "models/", with: "") }
-        let usable = models.filter { !$0.contains("image") && !$0.contains("tts") && !$0.contains("embedding") && !$0.contains("live") && !$0.contains("audio") }
+        // Gemini models only (Gemma can't see pictures), and none of the special-purpose ones
+        let usable = models.filter { $0.hasPrefix("gemini") && !$0.contains("image") && !$0.contains("tts") && !$0.contains("embedding") && !$0.contains("live") && !$0.contains("audio") }
         func version(_ m: String) -> Double { Double(m.split(separator: "-").dropFirst().first ?? "0") ?? 0 }
         let stable = usable.filter { !$0.contains("preview") && !$0.contains("exp") }
         for pool in [stable, usable] {
@@ -861,6 +869,14 @@ final class AIService {
         var json: [String: Any]
         do {
             json = try await postJSON(url(chosen), body: body, headers: ["x-goog-api-key": k])
+        } catch let error where pendingImage != nil && error.localizedDescription.lowercased().contains("multimodal") {
+            // This model can't see pictures: use a Gemini model that can.
+            var got: [String: Any]?
+            for m in ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash"] where m != chosen {
+                if let j = try? await postJSON(url(m), body: body, headers: ["x-goog-api-key": k]) { got = j; UserDefaults.standard.set(m, forKey: "geminiResolved"); break }
+            }
+            guard let got else { throw error }
+            json = got
         } catch let error where Self.isModelProblem(error) {
             // Google retires models often — ask which ones this key can use and pick the newest Flash.
             let pick = try await Self.newestGemini(key: k)

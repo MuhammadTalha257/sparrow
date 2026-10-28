@@ -513,7 +513,7 @@ struct StudyPage: View {
                 return true
             }
             HStack(spacing: 10) {
-                TextField("…or paste a YouTube lecture link", text: $link).textFieldStyle(.roundedBorder)
+                ZField(label: "…or paste a YouTube lecture link", text: $link, light: light)
                 DashButton(title: "Make notes", icon: "play.rectangle.fill", light: light) { let l = link; link = ""; Task { await hub.fromYouTube(l) } }
             }
             if !hub.output.isEmpty { Text(hub.output).font(HubFont.p(12.5, .regular)).foregroundColor(Color(hex: "#EF6B6B")) }
@@ -540,7 +540,7 @@ struct StudyPage: View {
     private var explainPane: some View {
         DashCard(title: "Explain my screen", sub: "Open your homework or a question, then press Explain. Zuffi teaches it step by step — so you really get it.", light: light) {
             HStack(spacing: 10) {
-                TextField("Optional: what don't you get? e.g. why is step 2 like that?", text: $ask).textFieldStyle(.roundedBorder)
+                ZField(label: "Optional: what don't you get? e.g. why is step 2 like that?", text: $ask, light: light)
                 DashButton(title: "Explain", icon: "eye.fill", light: light) { let q = ask; ask = ""; Task { await hub.explainScreen(q) } }
             }
         }
@@ -549,9 +549,9 @@ struct StudyPage: View {
     private var deadlinesPane: some View {
         DashCard(title: "Deadlines & exams", sub: "Add them once. Zuffi counts down, makes a study plan and reminds you 3 days before, the day before and on the day.", light: light) {
             HStack(spacing: 10) {
-                Picker("", selection: $dlKind) { Text("Assignment").tag("Assignment"); Text("Exam").tag("Exam"); Text("Test").tag("Test") }.labelsHidden().frame(width: 120)
-                TextField("What is it? e.g. Biology essay", text: $dlTitle).textFieldStyle(.roundedBorder)
-                TextField("Subject", text: $dlSubject).textFieldStyle(.roundedBorder).frame(width: 140)
+                ZSelect(label: "Type", value: $dlKind, options: [("Assignment", "Assignment"), ("Exam", "Exam"), ("Test", "Test")], light: light).frame(width: 140)
+                ZField(label: "What is it? e.g. Biology essay", text: $dlTitle, light: light)
+                ZField(label: "Subject", text: $dlSubject, light: light).frame(width: 160)
                 DatePicker("", selection: $dlDate, displayedComponents: [.date, .hourAndMinute]).labelsHidden()
                 DashButton(title: "Add", icon: "plus", light: light) {
                     let t = dlTitle.trimmingCharacters(in: .whitespaces); guard !t.isEmpty else { return }
@@ -596,13 +596,13 @@ struct StudyPage: View {
                 }
             }
             DashCard(title: "Writing feedback", sub: "Paste your essay. Zuffi gives teacher-style feedback and the word count — it doesn't write it for you.", light: light) {
-                TextEditor(text: $essay).font(HubFont.p(13, .regular)).frame(height: 120).overlay(RoundedRectangle(cornerRadius: 8).stroke(T.border))
+                ZTextArea(label: "Your essay or paragraph", text: $essay, light: light, height: 140)
                 DashButton(title: "Get feedback", icon: "text.badge.checkmark", light: light) { let e = essay; Task { await hub.essayFeedback(e) } }
             }
             DashCard(title: "References", sub: "Paste a link (or a book's details) and get the reference and in-text citation.", light: light) {
                 HStack(spacing: 10) {
-                    TextField("https://… or Author, Title, Year, Publisher", text: $refSource).textFieldStyle(.roundedBorder)
-                    Picker("", selection: $refStyle) { ForEach(["Harvard", "APA 7", "MLA 9", "Chicago"], id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(width: 110)
+                    ZField(label: "https://… or Author, Title, Year, Publisher", text: $refSource, light: light)
+                    ZSelect(label: "Style", value: $refStyle, options: ["Harvard", "APA 7", "MLA 9", "Chicago"].map { ($0, $0) }, light: light).frame(width: 140)
                     DashButton(title: "Make", icon: "quote.opening", light: light) { let s = refSource, st = refStyle; Task { await hub.reference(s, style: st) } }
                 }
             }
