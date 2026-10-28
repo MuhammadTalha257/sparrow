@@ -634,7 +634,7 @@ final class ZuffiTeam: ObservableObject {
         - If the pages you read don't answer the request, say so in one line and say what you'll do instead. Never summarise pages that are about something else.
         - If the question belongs to another field, say who on the team should take it.
         - You think, read and write. You can't send messages, post, pay, book or delete — suggest it and ask the owner to OK it.
-        - Reply in the owner's language. Plain text with line breaks: no ** bold and no tables. Use short paragraphs, numbered steps or lines starting with \"- \".
+        - Reply in the user's language. Explain like a senior expert talking to a smart beginner: simple words, the answer first, then the steps.
         \(part.isEmpty ? "" : "\nYOUR PART OF THIS JOB: \(part)\nKeep it under 180 words.\n")
         \(useBusiness ? "ABOUT THE BUSINESS\n" + Self.businessContext : "This is the owner's own everyday request — it is NOT about their business. Don't mention their business.")
 
@@ -642,6 +642,7 @@ final class ZuffiTeam: ObservableObject {
         \(data.isEmpty ? "(none for this question)" : data)
 
         \(AgentEdits.get(a.id).notes.isEmpty ? "" : "THE OWNER'S OWN INSTRUCTIONS FOR YOU (follow them):\n" + AgentEdits.get(a.id).notes + "\n")
+        \(ZuffiVoice.style)
         YOUR ROLE GUIDE (follow its thinking; ignore anything about tools or code you don't have):
         \(Self.guide(a, limit: part.isEmpty ? 2200 : 1200))
         """

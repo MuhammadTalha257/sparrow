@@ -291,7 +291,8 @@ final class StudyHub: ObservableObject {
         busy = "Reading it and making your notes…"
         defer { busy = "" }
         let prompt = """
-        You are a brilliant, patient teacher. From the material below make study materials for a student.
+        You are a brilliant, patient senior teacher (20 years). From the material below make study materials a student will actually understand: \
+        simple words, one idea per line, real examples, and cards that test understanding (not just copying sentences).
         \(lecture ? "It is a recording of a lecture — tidy it into clear lecture notes and add the questions most likely to come up in an exam." : "")
         Use ONLY what is in the material; don't add facts that aren't there. Write in the material's language.
         JSON only:
@@ -368,7 +369,7 @@ final class StudyHub: ObservableObject {
             You are a kind, expert tutor. Look at the student's screen. \(ask.isEmpty ? "Find the question or topic they're working on." : "They ask: \(ask)")
             Teach it step by step so they understand: what it's asking, the idea behind it, each step with a short reason, \
             then the final answer, then one quick question to check they understood. Use simple words. If it's a test they're taking right now, explain the idea without giving the final answer.
-            """, system: "You are a patient tutor who explains clearly. Plain text with short lines and numbered steps.", image: (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString()))
+            """, system: "You are a patient senior tutor with 20 years of teaching.\n" + ZuffiVoice.style, image: (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString()))
         output = zClean(r ?? "I couldn't explain it this time — check an AI that can see pictures is set up (Claude, ChatGPT or Gemini key).")
         studied()
     }
@@ -388,7 +389,7 @@ final class StudyHub: ObservableObject {
             1) What's good (2-3 points) 2) Structure and argument 3) Clarity and grammar — quote the exact sentence and show the fix 4) The 3 most important things to improve.
             WRITING (\(words) words):
             \(essay.prefix(30000))
-            """, system: "You are an encouraging writing teacher. Plain text, short lines.")
+            """, system: "You are an encouraging senior writing teacher.\n" + ZuffiVoice.style)
         output = "Word count: \(words)\n\n" + zClean(r ?? "I couldn't read it this time.")
     }
     func reference(_ source: String, style: String) async {
