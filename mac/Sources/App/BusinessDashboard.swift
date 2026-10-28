@@ -3067,7 +3067,7 @@ enum DashTab: String, CaseIterable, Identifiable {
         case .business: return "Your agents use these details for everything they do"
         case .look: return "Aurora, the notch and how Zuffi looks"
         case .automations: return "Switch on what your agents run for you"
-        case .settings: return "Agents, privacy and everything else"
+        case .settings: return "Your profile, AI models, voice and privacy"
         }
     }
     var section: HubSection {
