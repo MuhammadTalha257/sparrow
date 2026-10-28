@@ -420,6 +420,13 @@ final class ZuffiTeam: ObservableObject {
     /// Personal helpers (everyday): the chat with Zuffi only uses these. Business agents work only in the business tabs or with Nik.
     static func isPersonal(_ a: TeamAgent) -> Bool { personalTeam.contains(a.id) }
     /// Who you can talk to in the chat.
+    /// Every specialist (the full 289), grouped by field, for the chat's "Talking to" menu.
+    var agentGroups: [(String, [TeamAgent])] {
+        let all = everyone.filter { $0.id != Self.manager.id }
+        let groups = Dictionary(grouping: all) { a -> String in let d = a.division.replacingOccurrences(of: "-", with: " "); return d.prefix(1).uppercased() + d.dropFirst() }
+        return groups.map { ($0.key, $0.value.sorted { $0.name < $1.name }) }.sorted { $0.0 < $1.0 }
+    }
+
     var chatAgents: [TeamAgent] {
         let personal = (Self.personalTeam.compactMap { agent($0) })
         let biz = ZuffiPlan.shared.isPersonal ? [] : hiredAgents.filter { !Self.isPersonal($0) }

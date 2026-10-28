@@ -265,28 +265,35 @@ struct ZuffiChatView: View {
                     Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
                         .frame(width: 26, height: 26).background(Circle().fill(Color.white.opacity(0.1)))
                 }.buttonStyle(.plain).help("New chat")
-                if ZuffiFocus.agents {
                 Menu {
                     Button { chat.who = .zuffi } label: { Label("Zuffi — everyday help", systemImage: "sparkles") }
-                    if !ZuffiPlan.shared.isPersonal {
+                    if ZuffiFocus.agents, !ZuffiPlan.shared.isPersonal {
                         Button { chat.who = .nik } label: { Label("Nik — your business manager", systemImage: "person.crop.circle.badge.checkmark") }
                     }
                     Divider()
                     ForEach(ZuffiTeam.shared.chatAgents) { a in
-                        Button { chat.who = .agent(a.id) } label: { Text(a.name) }
+                        Button { chat.who = .agent(a.id) } label: { Text(AgentEdits.name(a)) }
+                    }
+                    Divider()
+                    // every specialist, grouped by field
+                    ForEach(ZuffiTeam.shared.agentGroups, id: \.0) { g in
+                        Menu(g.0) { ForEach(g.1) { a in Button(a.name) { chat.who = .agent(a.id) } } }
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        Text("Talking to").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
-                        Text(chat.whoTitle).font(.system(size: 14, weight: .bold, design: .rounded)).lineLimit(1)
+                    HStack(spacing: 7) {
+                        if case .agent(let id) = chat.who, let a = ZuffiTeam.shared.agent(id) { RobotFace(agent: a, size: 20) }
+                        else { LiveBunnyFace(size: 22) }
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Talking to").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.55))
+                            Text(chat.whoTitle).font(.system(size: 14, weight: .bold, design: .rounded)).lineLimit(1)
+                        }
                         Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundColor(.white.opacity(0.7))
                     }
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help("Choose who you're talking to")
-                } else {
-                    Text("Zuffi").font(.system(size: 14, weight: .bold, design: .rounded))
-                }
+                .help("Choose who you're talking to — Zuffi or any of the 289 specialists")
                 Spacer()
                 ProviderMenu(state: state)
                 if let last = state.chatHistory.last(where: { $0.role == .assistant }) {
@@ -347,14 +354,23 @@ struct ZuffiChatView: View {
 
     @ViewBuilder private func bubble(_ m: ChatMessage) -> some View {
         if m.role == .user {
-            HStack {
+            HStack(alignment: .bottom, spacing: 6) {
                 Spacer(minLength: 50)
-                Text(m.content).font(.system(size: 14)).foregroundColor(Color(hex: "#2A1520"))
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Capsule(style: .continuous).fill(Color.white.opacity(0.92)))
-                    .textSelection(.enabled)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(m.content).font(.system(size: 14)).foregroundColor(.white)
+                        .padding(.horizontal, 13).padding(.vertical, 9)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#B79CFF")], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                        .textSelection(.enabled)
+                    Text(m.at.formatted(date: .omitted, time: .shortened)).font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
+                }
             }
         } else {
+            HStack(alignment: .top, spacing: 8) {
+                Group {
+                    if case .agent(let id) = chat.who, let a = ZuffiTeam.shared.agent(id) { RobotFace(agent: a, size: 22) }
+                    else { LiveBunnyFace(size: 26) }
+                }.frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 8) {
                 ChatRichText(text: m.content)
                 HStack(spacing: 14) {
@@ -369,7 +385,9 @@ struct ZuffiChatView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08)))
+            }
         }
     }
 

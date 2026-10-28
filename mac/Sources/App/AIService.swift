@@ -172,7 +172,7 @@ final class AIService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         if ZuffiPlan.shared.isLocked { finish(ZuffiPlan.shared.lockedMessage, state: state, emote: .happy); ZuffiPlan.shared.openAccount(); return }
         var context = context
-        let who = ZuffiFocus.agents ? ZuffiChat.shared.who : .zuffi
+        let who = (!ZuffiFocus.agents && ZuffiChat.shared.who == .nik) ? .zuffi : ZuffiChat.shared.who
         let team = ZuffiTeam.shared
         // An agent asked you something ("which city?"): this message goes back to it, with the original task.
         if ZuffiFocus.agents, context == nil, let w = team.awaiting, Date().timeIntervalSince(w.at) < 20 * 60, !ZuffiTeam.looksLikeCommand(query) {

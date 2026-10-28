@@ -14,6 +14,8 @@ import CoreMedia
 final class MeetingNotes {
     static let shared = MeetingNotes()
     private(set) var active = false
+    /// The words of the last recording (for Study: lecture → notes, flashcards, quiz).
+    private(set) var lastTranscript = ""
     private var started = Date()
     private var lines: [String] = []
     private var recorder: AVAudioRecorder?
@@ -70,6 +72,7 @@ final class MeetingNotes {
             appendAppLog("voice.log", String(format: "meeting transcript: %d chars from the recording in %.1fs (live had %d)", transcript.count, Date().timeIntervalSince(t0), live.count))
             try? FileManager.default.removeItem(at: url)   // the audio isn't kept once it's written down
         }
+        lastTranscript = transcript
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "I didn't hear anything to write down." }
         let f = DateFormatter(); f.dateFormat = "d MMM yyyy, h:mm a"
         let title = "Meeting notes — \(f.string(from: started))"

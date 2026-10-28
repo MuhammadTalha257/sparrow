@@ -2311,7 +2311,7 @@ struct BizFAQEditor: View {
 // =====================================================================
 
 enum HubSection: Hashable {
-    case home, team, office, library, missions, routines, settings, channels, look, automations, business, biz(BizTab)
+    case home, team, office, library, missions, routines, settings, channels, look, automations, business, study, languages, tryon, biz(BizTab)
     var title: String {
         switch self {
         case .home: return "Home"
@@ -2319,6 +2319,9 @@ enum HubSection: Hashable {
         case .office: return "Office"
         case .library: return "Results"
         case .channels: return "Channels"
+        case .study: return "Study"
+        case .languages: return "Languages"
+        case .tryon: return "Try-On"
         case .look: return "Pet & look"
         case .automations: return "Automations"
         case .business: return "Business"
@@ -2462,7 +2465,7 @@ struct ZuffiHubView: View {
         case .team: return .team
         case .office: return .office
         case .library: return .library
-        case .channels, .look, .automations, .business: return .settings
+        case .channels, .look, .automations, .business, .study, .languages, .tryon: return .settings
         case .missions: return .missions
         case .routines: return .routines
         case .settings: return .settings
@@ -2644,7 +2647,7 @@ struct ZuffiHubView: View {
         case .team: return "Your team"
         case .office: return "Agent Office"
         case .library: return "Results & chats"
-        case .channels, .look, .automations, .business: return hub.section.title
+        case .channels, .look, .automations, .business, .study, .languages, .tryon: return hub.section.title
         case .missions: return "Missions"
         case .routines: return "Routines"
         case .settings: return "Settings"
@@ -2693,7 +2696,7 @@ struct ZuffiHubView: View {
             }
         case .office: EmptyView()
         case .library: LibraryView(light: light, chats: subFor(.library) == "Chats")
-        case .channels, .look, .automations, .business: EmptyView()
+        case .channels, .look, .automations, .business, .study, .languages, .tryon: EmptyView()
         case .missions: activitySection
         case .routines: routinesSection
         case .settings: settingsPage
@@ -3036,11 +3039,14 @@ struct ZuffiHubView: View {
 // =====================================================================
 
 enum DashTab: String, CaseIterable, Identifiable {
-    case dashboard = "Dashboard", routines = "Routines", channels = "Channels", business = "Business", look = "Pet & look", automations = "Automations", settings = "Settings"
+    case dashboard = "Dashboard", study = "Study", languages = "Languages", tryon = "Try-On", routines = "Routines", channels = "Channels", business = "Business", look = "Pet & look", automations = "Automations", settings = "Settings"
     var id: String { rawValue }
     var icon: String {
         switch self {
         case .dashboard: return "square.grid.2x2.fill"
+        case .study: return "graduationcap.fill"
+        case .languages: return "character.bubble.fill"
+        case .tryon: return "hand.raised.fingers.spread.fill"
         case .routines: return "clock.arrow.circlepath"
         case .channels: return "bubble.left.and.text.bubble.right.fill"
         case .business: return "storefront.fill"
@@ -3052,6 +3058,9 @@ enum DashTab: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .dashboard: return ZuffiFocus.agents ? "Talk to your agents, watch them work and see everything they did" : "Ask Zuffi anything and find all your chats"
+        case .study: return "Notes, flashcards and quizzes from anything · lecture notes · explain my screen · deadlines"
+        case .languages: return "Learn English, Spanish, French, German or Arabic with a senior teacher who talks with you"
+        case .tryon: return "See nail designs on your own hand and a new hair colour — live on your camera"
         case .routines: return "Your agents' daily pipeline and the end-of-day report"
         case .channels: return "Hand your social apps to agents — one inbox for every message"
         case .business: return "Your agents use these details for everything they do"
@@ -3063,6 +3072,9 @@ enum DashTab: String, CaseIterable, Identifiable {
     var section: HubSection {
         switch self {
         case .dashboard: return .home
+        case .study: return .study
+        case .languages: return .languages
+        case .tryon: return .tryon
         case .routines: return .routines
         case .channels: return .channels
         case .business: return .business
@@ -3074,6 +3086,9 @@ enum DashTab: String, CaseIterable, Identifiable {
     static func of(_ s: HubSection) -> DashTab {
         switch s {
         case .routines: return .routines
+        case .study: return .study
+        case .languages: return .languages
+        case .tryon: return .tryon
         case .channels: return .channels
         case .business, .biz: return .business
         case .look: return .look
@@ -3159,13 +3174,16 @@ struct ZuffiDashboard: View {
         .onAppear {
             HubFont.register()
             if ZuffiFocus.agents { SocialHub.shared.start(); DailyReport.shared.start(); OfficeModel.shared.ensure() }
-            else if ![.home, .look, .settings].contains(hub.section) { hub.section = .home }
+            else if ![.home, .look, .settings, .study, .languages, .tryon].contains(hub.section) { hub.section = .home }
         }
     }
 
     @ViewBuilder private var page: some View {
         switch tab {
         case .dashboard: DashHomePage(light: light)
+        case .study: StudyPage(light: light)
+        case .languages: LanguagePage(light: light)
+        case .tryon: TryOnPage(light: light)
         case .routines: DashRoutinesPage(light: light)
         case .channels: DashChannelsPage(light: light)
         case .business: DashBusinessPage(light: light)
@@ -3182,7 +3200,7 @@ struct ZuffiDashboard: View {
                 Text("Zuffi").font(HubFont.p(20, .semibold))
             }
             .padding(.leading, 18).padding(.top, 46).padding(.bottom, 26)
-            ForEach(DashTab.allCases.filter { ZuffiFocus.agents || [.dashboard, .look, .settings].contains($0) }) { t in
+            ForEach(DashTab.allCases.filter { ZuffiFocus.agents || [.dashboard, .study, .languages, .tryon, .look, .settings].contains($0) }) { t in
                 Button { withAnimation(.easeOut(duration: 0.15)) { hub.section = t.section } } label: {
                     HStack(spacing: 12) {
                         Image(systemName: t.icon).font(.system(size: 14, weight: .semibold)).frame(width: 22)

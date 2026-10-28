@@ -765,8 +765,15 @@ struct NotchFeaturesList: View {
     @ObservedObject private var plan = ZuffiPlan.shared
     @State private var query = ""
 
-    static let cats: [(String, String)] = [("business", "Business"), ("files", "Files & PDF"), ("everyday", "Every day"), ("create", "Create"), ("devices", "This Mac & devices")]
+    static let cats: [(String, String)] = [("study", "Study & languages"), ("tryon", "Try-On"), ("business", "Business"), ("files", "Files & PDF"), ("everyday", "Every day"), ("create", "Create"), ("devices", "This Mac & devices")]
     static let all: [NotchFeature] = [
+        NotchFeature(id: "study", cat: "study", icon: "graduationcap.fill", tint: "#4F6BFF", name: "Study from any file", sub: "Notes, flashcards and a quiz from slides, PDFs or photos"),
+        NotchFeature(id: "lecture", cat: "study", icon: "waveform.badge.mic", tint: "#E5577E", name: "Lecture notes", sub: "Record a class — get notes and exam questions"),
+        NotchFeature(id: "explain", cat: "study", icon: "lightbulb.fill", tint: "#F7C948", name: "Explain my screen", sub: "Homework explained step by step"),
+        NotchFeature(id: "deadlines", cat: "study", icon: "calendar.badge.clock", tint: "#F08A3E", name: "Deadlines & exams", sub: "Countdown, study plan and reminders"),
+        NotchFeature(id: "languages", cat: "study", icon: "character.bubble.fill", tint: "#7C5CFF", name: "Learn a language", sub: "English, Spanish, French, German, Arabic — speak with a teacher"),
+        NotchFeature(id: "tryon-nails", cat: "tryon", icon: "hand.raised.fingers.spread.fill", tint: "#F27BA6", name: "Nail try-on", sub: "Any design on your own nails, live"),
+        NotchFeature(id: "tryon-hair", cat: "tryon", icon: "comb.fill", tint: "#A86B3C", name: "Hair colour try-on", sub: "See a new hair colour on you"),
         NotchFeature(id: "business", cat: "business", icon: "briefcase.fill", tint: "#F58FA8", name: "Business", sub: "Your AI team: posts, reviews, competitors, weekly report", business: true),
         NotchFeature(id: "aiteam", cat: "business", icon: "person.3.sequence.fill", tint: "#5B6CFF", name: "AI Team", sub: "Hire specialists, give them jobs — led by a Team Manager", business: true),
         NotchFeature(id: "agentbrowser", cat: "devices", icon: "safari.fill", tint: "#7C3AED", name: "Agents at work", sub: "Watch your helpers work in their own browser tabs — pause or take over"),
@@ -857,6 +864,14 @@ struct NotchFeaturesList: View {
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
         let home = ZuffiHomeModel.shared
         switch id {
+        case "study", "lecture", "explain", "deadlines":
+            ZuffiHub.shared.show(.study); NotificationCenter.default.post(name: .islandCollapse, object: nil)
+            if id == "lecture" { StudyHub.shared.toggleLecture() }
+            if id == "explain" { Task { await StudyHub.shared.explainScreen() } }
+        case "languages": ZuffiHub.shared.show(.languages); NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        case "tryon-nails", "tryon-hair":
+            TryOnCamera.shared.mode = id == "tryon-hair" ? "hair" : "nails"
+            ZuffiHub.shared.show(.tryon); NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "room": RoomListener.shared.toggle(); ZuffiNav.go(.overview)   // from the list → back to home, where the room card shows
         case "walink": WhatsAppLink.shared.showWindow(); NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "aiteam": BusinessDashboard.shared.show(.aiTeam); NotificationCenter.default.post(name: .islandCollapse, object: nil)
@@ -1081,7 +1096,7 @@ struct NotchHomeView: View {
                     HStack(spacing: 8) {
                         quick("arrow.triangle.2.circlepath", "Convert a file") { NotchFeaturesList.open("convert") }
                         quick("eye.fill", "What's on my screen?") { NotchFeaturesList.open("screen") }
-                        quick("waveform.badge.mic", "Meeting / lecture notes") { NotchFeaturesList.open("meeting") }
+                        quick("graduationcap.fill", "Study") { NotchFeaturesList.open("study") }
                     }
                     Button {
                         let q = ask.trimmingCharacters(in: .whitespacesAndNewlines)
