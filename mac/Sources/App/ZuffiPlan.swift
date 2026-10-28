@@ -95,6 +95,7 @@ final class ZuffiPlan: ObservableObject {
     /// "personal" (Just me) or "business". Business screens only show for a business.
     var use: String { mode.map { $0.isBusiness ? "business" : "personal" } ?? UserDefaults.standard.string(forKey: "zuffiUse") ?? "personal" }
     var isPersonal: Bool {
+        if !ZuffiFocus.agents { return true }        // Zuffi is personal-only for now
         if let m = mode { return m == .personal }
         return UserDefaults.standard.string(forKey: "zuffiProfile") != nil && use != "business"
     }
@@ -441,6 +442,8 @@ enum ZuffiFocus {
     static let whatsapp = false
     /// The full list of 289 specialists (Zuffi's own focused team is shown instead).
     static let allAgents = false
+    /// Agents, the Agent Office, channels, automations and business pages — hidden for now (all the code stays, switch back on here).
+    static let agents = false
     /// Business pages hidden for now.
     static let hiddenBizTabs: Set<String> = ["Inbox", "Pipeline", "Properties", "Customers", "WhatsApp contacts", "Money", "Staff", "Data sources"]
 }
@@ -450,7 +453,7 @@ enum ZuffiFocus {
 final class ZuffiModeWindow {
     static let shared = ZuffiModeWindow()
     private var window: NSWindow?
-    func showIfNeeded() { if ZuffiPlan.shared.mode == nil, !ZuffiPlan.shared.isLocked { show() } }
+    func showIfNeeded() { if ZuffiFocus.agents, ZuffiPlan.shared.mode == nil, !ZuffiPlan.shared.isLocked { show() } }
     func show() {
         if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 560), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)

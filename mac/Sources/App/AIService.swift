@@ -172,10 +172,10 @@ final class AIService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         if ZuffiPlan.shared.isLocked { finish(ZuffiPlan.shared.lockedMessage, state: state, emote: .happy); ZuffiPlan.shared.openAccount(); return }
         var context = context
-        let who = ZuffiChat.shared.who
+        let who = ZuffiFocus.agents ? ZuffiChat.shared.who : .zuffi
         let team = ZuffiTeam.shared
         // An agent asked you something ("which city?"): this message goes back to it, with the original task.
-        if context == nil, let w = team.awaiting, Date().timeIntervalSince(w.at) < 20 * 60, !ZuffiTeam.looksLikeCommand(query) {
+        if ZuffiFocus.agents, context == nil, let w = team.awaiting, Date().timeIntervalSince(w.at) < 20 * 60, !ZuffiTeam.looksLikeCommand(query) {
             team.awaiting = nil
             state.stateOverride = .thinking
             let run = await team.work(w.agent, w.task + "\nMore details from the owner (already answered — don't ask these again): " + query)
@@ -183,7 +183,7 @@ final class AIService {
             remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return
         }
         // A follow-up about the last job ("which one is cheapest, and the route?") goes back to the same agent, with the same facts.
-        if context == nil, let lw = team.lastWork, Date().timeIntervalSince(lw.at) < 30 * 60, Self.isFollowUp(query, after: lw.agent) {
+        if ZuffiFocus.agents, context == nil, let lw = team.lastWork, Date().timeIntervalSince(lw.at) < 30 * 60, Self.isFollowUp(query, after: lw.agent) {
             state.stateOverride = .thinking
             let r: String
             if AgentField.of(lw.agent) == .travel, let fp = team.flightPage {
@@ -195,7 +195,7 @@ final class AIService {
             remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return
         }
         // 0) Zuffi's team: "use the finance agent", "who are you?", "who are you guys?", "assign … to research and product manager"
-        if let r = await team.handle(query) {
+        if ZuffiFocus.agents, let r = await team.handle(query) {
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
@@ -248,7 +248,7 @@ final class AIService {
         }
         if let r = await ZuffiPA.shared.handle(query) { finish(r, state: state, emote: .happy); return }
         // Everyday jobs (flights, research, a website, writing): Zuffi gives them to her own helpers — never the business agents.
-        if context == nil, ZuffiPlan.shared.isPaid {
+        if ZuffiFocus.agents, context == nil, ZuffiPlan.shared.isPaid {
             state.stateOverride = .thinking
             if let r = await team.dispatch(query, personalOnly: true) { remember(user: query, assistant: r); finish(r, state: state, emote: .happy); return }
             state.stateOverride = nil

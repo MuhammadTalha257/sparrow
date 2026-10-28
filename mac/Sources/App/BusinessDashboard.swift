@@ -3051,7 +3051,7 @@ enum DashTab: String, CaseIterable, Identifiable {
     }
     var subtitle: String {
         switch self {
-        case .dashboard: return "Talk to your agents, watch them work and see everything they did"
+        case .dashboard: return ZuffiFocus.agents ? "Talk to your agents, watch them work and see everything they did" : "Ask Zuffi anything and find all your chats"
         case .routines: return "Your agents' daily pipeline and the end-of-day report"
         case .channels: return "Hand your social apps to agents — one inbox for every message"
         case .business: return "Your agents use these details for everything they do"
@@ -3158,9 +3158,8 @@ struct ZuffiDashboard: View {
         .font(HubFont.p(14, .regular))
         .onAppear {
             HubFont.register()
-            SocialHub.shared.start()
-            DailyReport.shared.start()
-            OfficeModel.shared.ensure()
+            if ZuffiFocus.agents { SocialHub.shared.start(); DailyReport.shared.start(); OfficeModel.shared.ensure() }
+            else if ![.home, .look, .settings].contains(hub.section) { hub.section = .home }
         }
     }
 
@@ -3183,7 +3182,7 @@ struct ZuffiDashboard: View {
                 Text("Zuffi").font(HubFont.p(20, .semibold))
             }
             .padding(.leading, 18).padding(.top, 46).padding(.bottom, 26)
-            ForEach(DashTab.allCases) { t in
+            ForEach(DashTab.allCases.filter { ZuffiFocus.agents || [.dashboard, .look, .settings].contains($0) }) { t in
                 Button { withAnimation(.easeOut(duration: 0.15)) { hub.section = t.section } } label: {
                     HStack(spacing: 12) {
                         Image(systemName: t.icon).font(.system(size: 14, weight: .semibold)).frame(width: 22)
@@ -3218,7 +3217,7 @@ struct ZuffiDashboard: View {
                 Text(tab.subtitle).font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
             }
             Spacer()
-            DashButton(title: "Give Nik a task", icon: "plus", light: light) { hub.section = .home; ZuffiChat.shared.who = .nik }
+            if ZuffiFocus.agents { DashButton(title: "Give Nik a task", icon: "plus", light: light) { hub.section = .home; ZuffiChat.shared.who = .nik } }
         }
         .padding(.horizontal, 32).padding(.top, 40).padding(.bottom, 14)
         .overlay(alignment: .bottom) { Rectangle().fill(T.border).frame(height: 1) }
@@ -3251,6 +3250,7 @@ struct DashHomePage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             chatCard
+            if ZuffiFocus.agents {
             DashCard(title: "Agent Office", sub: mc.question.isEmpty ? "Your agents at their desks. When they work, they get up, go desk to desk and bring the result to Nik." : "Working on: \(mc.question)", light: light) {
                 AgentOfficeView(light: light, showTaskBar: false)
                     .frame(height: 440)
@@ -3259,6 +3259,11 @@ struct DashHomePage: View {
             HStack(alignment: .top, spacing: 22) {
                 activityCard
                 teamCard.frame(width: 360)
+            }
+            } else {
+                DashCard(title: "Your chats", sub: "Everything you asked Zuffi — read again, copy, download or continue", light: light) {
+                    LibraryView(light: light, chats: true)
+                }
             }
         }
         .sheet(isPresented: $showLibrary) {
@@ -3275,6 +3280,7 @@ struct DashHomePage: View {
     private var chatCard: some View {
         DashCard(light: light) {
             HStack(spacing: 10) {
+                if ZuffiFocus.agents {
                 Menu {
                     Button("Zuffi — everyday help") { chat.who = .zuffi }
                     Button("Nik — your manager") { chat.who = .nik }
@@ -3290,9 +3296,10 @@ struct DashHomePage: View {
                     .background(Capsule().fill(T.content))
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                }
                 HStack(spacing: 8) {
                     Image(systemName: "text.bubble").foregroundColor(T.inactive)
-                    TextField("Ask or give a task — e.g. find the 3 best cheap hotels in Dubai for March", text: $text)
+                    TextField(ZuffiFocus.agents ? "Ask or give a task — e.g. find the 3 best cheap hotels in Dubai for March" : "Ask Zuffi anything — e.g. explain photosynthesis simply", text: $text)
                         .textFieldStyle(.plain).font(HubFont.p(14, .regular)).onSubmit(send)
                 }
                 .padding(.horizontal, 14).frame(height: 42)
@@ -3329,7 +3336,7 @@ struct DashHomePage: View {
             }
             HStack(spacing: 14) {
                 Button { libraryChats = true; showLibrary = true } label: { Label("Chat history", systemImage: "clock").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(HubTheme.blue)
-                Button { libraryChats = false; showLibrary = true } label: { Label("All agent results", systemImage: "tray.full").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(HubTheme.blue)
+                if ZuffiFocus.agents { Button { libraryChats = false; showLibrary = true } label: { Label("All agent results", systemImage: "tray.full").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(HubTheme.blue) }
                 Spacer()
                 if !app.chatHistory.isEmpty { Button { app.newChat() } label: { Label("New chat", systemImage: "square.and.pencil").font(HubFont.p(12)) }.buttonStyle(.plain).foregroundColor(T.inactive) }
             }
@@ -3886,10 +3893,12 @@ struct DashSettingsPage: View {
     @AppStorage("officeOnTask") private var officeOnTask = true
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
+            if ZuffiFocus.agents {
             DashCard(title: "Agents", light: light) {
                 Toggle("Open the dashboard and Agent Office when I give a task", isOn: $officeOnTask).toggleStyle(.switch)
                 Toggle("Backup page readers (Jina Reader, Exa) when a page won't open", isOn: $backup).toggleStyle(.switch)
                 Text("Agents never type your passwords or card numbers, and never pay, buy or delete anything.").font(HubFont.p(12, .regular)).foregroundColor(HubTheme(light: light).inactive)
+            }
             }
             DashCard(title: "Privacy", light: light) {
                 Text("Your chats, results and channel messages stay on this Mac. You can delete any chat in Dashboard → Chat history.").font(HubFont.p(13, .regular))

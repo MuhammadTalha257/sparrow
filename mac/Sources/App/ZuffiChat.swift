@@ -265,6 +265,7 @@ struct ZuffiChatView: View {
                     Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
                         .frame(width: 26, height: 26).background(Circle().fill(Color.white.opacity(0.1)))
                 }.buttonStyle(.plain).help("New chat")
+                if ZuffiFocus.agents {
                 Menu {
                     Button { chat.who = .zuffi } label: { Label("Zuffi — everyday help", systemImage: "sparkles") }
                     if !ZuffiPlan.shared.isPersonal {
@@ -283,6 +284,9 @@ struct ZuffiChatView: View {
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help("Choose who you're talking to")
+                } else {
+                    Text("Zuffi").font(.system(size: 14, weight: .bold, design: .rounded))
+                }
                 Spacer()
                 ProviderMenu(state: state)
                 if let last = state.chatHistory.last(where: { $0.role == .assistant }) {

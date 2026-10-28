@@ -3894,7 +3894,7 @@ final class MissionControl: ObservableObject {
 
     func begin(_ q: String, agents ids: [String], show: Bool = true) {
         // You see your agents at work: the dashboard (with the Agent Office) comes up when a task starts.
-        if show, UserDefaults.standard.object(forKey: "officeOnTask") as? Bool ?? true, !ZuffiHub.shared.isOpen { ZuffiHub.shared.show(.home) }
+        if ZuffiFocus.agents, show, UserDefaults.standard.object(forKey: "officeOnTask") as? Bool ?? true, !ZuffiHub.shared.isOpen { ZuffiHub.shared.show(.home) }
         if Date().timeIntervalSince(started) > 5 || question != q { started = Date().addingTimeInterval(-1); result = nil }
         question = q; agents = ids
         BunnyFaceCenter.shared.show(.thinking, for: 3)

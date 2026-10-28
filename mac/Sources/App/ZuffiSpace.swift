@@ -809,6 +809,7 @@ struct NotchFeaturesList: View {
         let biz = plan.isBusiness && !plan.isPersonal
         let words = query.lowercased().split(separator: " ").map(String.init)
         return Self.all.filter { f in
+            if !ZuffiFocus.agents, ["business", "aiteam", "agentbrowser", "agents", "jobs", "walink"].contains(f.id) { return false }
             if f.business && !biz { return false }
             if f.id == "walink" && !ZuffiFocus.whatsapp { return false }
             if f.id == "jobs" && biz { return false }
@@ -1075,6 +1076,23 @@ struct NotchHomeView: View {
                 .background(Capsule().fill(Color.white.opacity(0.12)))
             }
 
+            if !ZuffiFocus.agents {
+                VStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        quick("arrow.triangle.2.circlepath", "Convert a file") { NotchFeaturesList.open("convert") }
+                        quick("eye.fill", "What's on my screen?") { NotchFeaturesList.open("screen") }
+                        quick("waveform.badge.mic", "Meeting / lecture notes") { NotchFeaturesList.open("meeting") }
+                    }
+                    Button {
+                        let q = ask.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if q.isEmpty { ZuffiChat.shared.open() } else { ask = ""; ZuffiChat.shared.ask(q) }
+                    } label: {
+                        Text("Open chat").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#111111"))
+                            .frame(maxWidth: .infinity).frame(height: 36).background(Capsule().fill(Color.white))
+                    }.buttonStyle(.plain)
+                }
+                .frame(width: 136)
+            } else {
             VStack(spacing: 10) {
                 HStack(spacing: -6) {
                     ForEach(Array(agents.prefix(4))) { a in
@@ -1101,7 +1119,15 @@ struct NotchHomeView: View {
                 }.buttonStyle(.plain)
             }
             .frame(width: 136)
+            }
         }
+    }
+
+    private func quick(_ icon: String, _ help: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundColor(.white)
+                .frame(width: 36, height: 32).background(Capsule().fill(Color.white.opacity(0.14)))
+        }.buttonStyle(.plain).help(help)
     }
 
     private func chip(_ icon: String, _ label: String, _ go: @escaping () -> Void) -> some View {
@@ -1226,7 +1252,7 @@ struct CompactWings: View {
                 if !working.isEmpty {
                     HStack(spacing: -5) {
                         ForEach(working.prefix(3)) { r in
-                            if let a = team.agent(r.agent) { RobotFace(agent: a, size: 15, working: true) }
+                            if ZuffiFocus.agents, let a = team.agent(r.agent) { RobotFace(agent: a, size: 15, working: true) }
                         }
                     }
                     Text("\(working.count)").font(.system(size: 10.5, weight: .bold)).foregroundColor(.white.opacity(0.85))
