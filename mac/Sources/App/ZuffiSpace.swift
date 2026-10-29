@@ -1615,10 +1615,12 @@ struct AuroraFace: NSViewRepresentable {
         if voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) { return "listening" }
         if state.stateOverride == .thinking { return "thinking" }
         switch BunnyFaceCenter.shared.flash {
-        case .some(.happy), .some(.laugh): return "done"
+        case .some(.laugh): return "laugh"
+        case .some(.happy): return "done"
         case .some(.love): return "love"
         case .some(.surprised): return "surprised"
-        case .some(.sad), .some(.cross): return "oops"
+        case .some(.cross): return "angry"
+        case .some(.sad): return "oops"
         case .some(.thinking), .some(.busy): return "thinking"
         case .some(.listening): return "listening"
         case .some(.sleepy): return "sleepy"
@@ -2222,6 +2224,8 @@ struct RealAuroraIcon: View {
         case "listening": return .listening
         case "thinking": return .thinking
         case "done", "hello": return .happy
+        case "laugh": return .laugh
+        case "angry": return .cross
         case "love": return .love
         case "surprised": return .surprised
         case "oops": return .sad

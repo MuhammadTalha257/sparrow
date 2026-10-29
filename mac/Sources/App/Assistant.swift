@@ -239,7 +239,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             speaking = true
             neuralTurn += 1
             let turn = neuralTurn
-            let text = String(clean.prefix(1200))
+            let text = ZuffiExpress.spoken(String(clean.prefix(1200)))
             Task { @MainActor in
                 let ok = await NativeSpeech.shared.say(text) {
                     if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
@@ -248,6 +248,7 @@ final class VoiceEngine: NSObject, ObservableObject {
                 if !ok { self.appleSpeak(clean) }
                 else {
                     self.audioStartedAt = Date()     // Aurora's lips follow the words from here
+                    ZuffiExpress.face(for: clean)     // and her face follows the feeling
                     // Safety net: never leave the microphone paused.
                     let secs = 6.0 + Double(text.count) / 9.0
                     DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
@@ -266,7 +267,9 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     private func appleSpeak(_ clean: String) {
         audioStartedAt = Date().addingTimeInterval(0.15)
-        let u = Self.naturalUtterance(String(clean.prefix(1200)))
+        ZuffiExpress.face(for: clean)
+        let feel = ZuffiExpress.mood(clean)
+        let u = Self.naturalUtterance(ZuffiExpress.spoken(String(clean.prefix(1200))))
         let voice = currentVoice()
         u.voice = voice
         let rate = UserDefaults.standard.double(forKey: AssistantPrefs.voiceRate)
@@ -274,6 +277,8 @@ final class VoiceEngine: NSObject, ObservableObject {
         let base = Float(rate == 0 ? 0.5 : rate)
         u.rate = voice?.quality == .default ? base * 0.94 : base
         u.pitchMultiplier = (UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true) ? 1.45 : (voice?.gender == .female ? 1.04 : 0.98)
+        u.pitchMultiplier = min(2, u.pitchMultiplier * ZuffiExpress.pitch(feel))
+        u.rate = u.rate * Float(ZuffiExpress.speed(feel))
         u.volume = 0.95
         u.preUtteranceDelay = 0.05
         u.prefersAssistiveTechnologySettings = false

@@ -148,7 +148,7 @@ final class NativeSpeech {
         let lang = UserDefaults.standard.string(forKey: "sparrowLang") ?? "en"
         let model = Self.model(for: text, lang: lang)
         let rate = UserDefaults.standard.double(forKey: AssistantPrefs.voiceRate)
-        let speed = rate == 0 ? 1.0 : max(0.8, min(1.3, rate / 0.5))
+        let speed = (rate == 0 ? 1.0 : max(0.8, min(1.3, rate / 0.5))) * ZuffiExpress.speed(ZuffiExpress.mood(text))
         onEnd = ended
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
         send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny ? speed * 1.06 : speed, "pitch": bunny ? 450.0 : 0.0])

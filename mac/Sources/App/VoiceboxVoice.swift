@@ -98,7 +98,7 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         var lang = rec.dominantLanguage?.rawValue.components(separatedBy: "-").first ?? "en"
         if lang == "nb" || lang == "nn" { lang = "no" }
         if !Self.languages.contains(lang) { lang = "en" }
-        var body: [String: Any] = ["profile_id": pid, "text": text, "language": lang, "normalize": true]
+        var body: [String: Any] = ["profile_id": pid, "text": ZuffiExpress.spoken(text), "language": lang, "normalize": true]
         if UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? false {
             body["effects_chain"] = [["type": "pitch_shift", "enabled": true, "params": ["semitones": 4.5]]]
         }
@@ -118,6 +118,8 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         player = p
         onEnd = ended
         p.play()
+        VoiceEngine.shared.audioStartedAt = Date()
+        ZuffiExpress.face(for: text)
         return true
     }
 
@@ -125,7 +127,7 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
     private func studioSay(_ text: String, my: Int, ended: @escaping () -> Void) async -> Bool {
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
         let picked = UserDefaults.standard.string(forKey: "voicestudioVoice") ?? ""
-        var body: [String: Any] = ["model": "tts-1", "input": text, "voice": picked.isEmpty ? "alloy" : picked, "response_format": "wav"]
+        var body: [String: Any] = ["model": "tts-1", "input": ZuffiExpress.omni(text), "voice": picked.isEmpty ? "alloy" : picked, "response_format": "wav"]
         if bunny && picked.isEmpty { body["instructions"] = "female, child, very high pitch" }
         var r = URLRequest(url: Self.studioBase.appendingPathComponent("v1/audio/speech"), timeoutInterval: 60)
         r.httpMethod = "POST"
@@ -142,6 +144,8 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         player = p
         onEnd = ended
         p.play()
+        VoiceEngine.shared.audioStartedAt = Date()
+        ZuffiExpress.face(for: text)
         return true
     }
 
@@ -249,5 +253,89 @@ struct VoiceboxSettings: View {
         boxUp = VoiceboxVoice.shared.boxUp
         studioList = studioUp ? await VoiceboxVoice.shared.studioVoices() : []
         list = boxUp ? await VoiceboxVoice.shared.profiles() : []
+    }
+}
+
+
+// MARK: - Zuffi's feelings in her voice: "hmm", "ahan", "haha", "oh!", a sigh, a little "hmph" — online and offline
+
+@MainActor
+enum ZuffiExpress {
+    enum Mood { case neutral, happy, laugh, thinking, surprised, annoyed, sad, agree }
+
+    private static let rules: [(pattern: String, mood: Mood, omni: String, spoken: String)] = [
+        (#"\b(?:ha){2,}h?\b|\bhe(?:he)+\b|\blol\b|😂|🤣"#, .laugh, "[laughter]", "ha ha ha!"),
+        (#"\b(?:a+ha+n+|uh-?huh|mm-?hm+|haan ji|ji haan)\b"#, .agree, "[confirmation-en]", "a-haan,"),
+        (#"\bh+m{2,}\b|\bhmm\b"#, .thinking, "Hmmm…", "Hmmm…"),
+        (#"\bo+h+\b(?=[!,.…])"#, .surprised, "[surprise-oh]", "Ohh!"),
+        (#"\ba+h+\b(?=[!,.…])"#, .surprised, "[surprise-ah]", "Aah!"),
+        (#"\bwo+w+\b"#, .surprised, "[surprise-wa] wow", "Wow!"),
+        (#"\b(?:ugh+|hmph|tsk)\b|😠|😤"#, .annoyed, "[dissatisfaction-hnn]", "hmph."),
+        (#"\*?\bsighs?\b\*?|😮‍💨"#, .sad, "[sigh]", "haahh…"),
+    ]
+
+    /// Where each reaction happens in the sentence (letter position) and how she feels there.
+    static func cues(_ t: String) -> [(at: Int, mood: Mood)] {
+        var out: [(Int, Mood)] = []
+        let ns = t as NSString
+        for r in rules {
+            guard let re = try? NSRegularExpression(pattern: r.pattern, options: [.caseInsensitive]) else { continue }
+            for m in re.matches(in: t, range: NSRange(location: 0, length: ns.length)) { out.append((m.range.location, r.mood)) }
+        }
+        return out.sorted { $0.0 < $1.0 }
+    }
+
+    /// The overall feeling of what she's about to say.
+    static func mood(_ t: String) -> Mood {
+        if let first = cues(t).first, first.at < 40 { return first.mood }
+        let l = t.lowercased()
+        if l.range(of: #"\b(sorry|sad|unfortunately|afsos|maaf)\b"#, options: .regularExpression) != nil { return .sad }
+        if l.range(of: #"\b(great|yay|awesome|congrat|well done|amazing|shabash|mubarak)\b|🎉|😊|!$"#, options: .regularExpression) != nil { return .happy }
+        return .neutral
+    }
+
+    private static func apply(_ t: String, _ pick: (Int) -> String) -> String {
+        var s = t
+        for (i, r) in rules.enumerated() {
+            s = s.replacingOccurrences(of: r.pattern, with: pick(i), options: [.regularExpression, .caseInsensitive])
+        }
+        return s
+    }
+    /// For OmniVoice (offline studio): written reactions become real sounds (laugh, "mm-hm", sigh, surprise…).
+    static func omni(_ t: String) -> String { apply(t) { rules[$0].omni } }
+    /// For the built-in voices: spell reactions so they come out as sounds, not as words.
+    static func spoken(_ t: String) -> String { apply(t) { rules[$0].spoken } }
+
+    /// Talking speed and pitch for the feeling.
+    static func speed(_ m: Mood) -> Double {
+        switch m { case .laugh: return 1.08; case .happy: return 1.05; case .sad: return 0.92; case .thinking: return 0.95; case .annoyed: return 0.97; default: return 1 }
+    }
+    static func pitch(_ m: Mood) -> Float {
+        switch m { case .laugh, .happy: return 1.12; case .surprised: return 1.15; case .sad: return 0.9; case .annoyed: return 0.94; default: return 1 }
+    }
+
+    /// Aurora's face follows the voice: she laughs on "haha", thinks on "hmm", looks surprised on "oh!", gets cross on "hmph".
+    static func face(for text: String, startingNow: Bool = true) {
+        let total = Double(text.count) / 14.5
+        let m = mood(text)
+        if let f = Self.bunny(m), m != .neutral { BunnyFaceCenter.shared.show(f, for: min(6, max(1.6, total * 0.6))) }
+        for c in cues(text) {
+            guard let f = Self.bunny(c.mood) else { continue }
+            let at = Double(c.at) / 14.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + at) {
+                MainActor.assumeIsolated { if VoiceEngine.shared.speaking { BunnyFaceCenter.shared.show(f, for: 1.8) } }
+            }
+        }
+    }
+    static func bunny(_ m: Mood) -> BunnyMood? {
+        switch m {
+        case .laugh: return .laugh
+        case .happy, .agree: return .happy
+        case .thinking: return .thinking
+        case .surprised: return .surprised
+        case .annoyed: return .cross
+        case .sad: return .sad
+        case .neutral: return nil
+        }
     }
 }
