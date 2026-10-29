@@ -865,7 +865,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     private var talkOpen: CGFloat = 0, talkAmt: CGFloat = 0
     private var idleKind = 0, idleStart: CGFloat = -100, nextIdle: CGFloat = 5
     private var groom: CGFloat = 0, lookAround: CGFloat = 0, earFlop: CGFloat = 0, sniff: CGFloat = 0
-    private var nose: SCNNode?, whiskers: [SCNNode] = []
+    private var nose: SCNNode?, whiskers: [SCNNode] = [], eyeRims: [SCNNode] = []
     func setTalk(_ on: Bool, text: String, startedAt: Date) { lock.lock(); talking = on; talkText = text; talkStart = startedAt; lock.unlock() }
     /// How open the mouth is for the letter being said right now (vowels open, m/b/p closed).
     static func mouthOpen(_ text: String, since: Double) -> CGFloat {
@@ -897,9 +897,13 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     float shellH;
     float furDensity;
     #pragma body
-    float2 cell = floor(_surface.diffuseTexcoord * furDensity);
+    float2 uvc = _surface.diffuseTexcoord * furDensity * float2(2.0, 1.0);
+    float2 cell = floor(uvc);
+    float2 inCell = fract(uvc) - 0.5;
     float r = fract(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
-    if (shellH > 0.0 && r < pow(shellH, 0.75)) { discard_fragment(); }
+    // each hair is a thin strand that tapers to a point (no square tufts)
+    float strand = length(inCell) * 2.0;
+    if (shellH > 0.0 && (r < pow(shellH, 0.75) || strand > (1.0 - shellH) * 1.05 + 0.12)) { discard_fragment(); }
     float ao = mix(0.80, 1.0, shellH);
     float sheen = pow(shellH, 3.0) * 0.55;
     _surface.diffuse.rgb = mix(_surface.diffuse.rgb * ao, float3(1.0, 0.995, 0.99), sheen);
@@ -961,7 +965,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             m.shaderModifiers = [.geometry: Self.geoMod, .surface: Self.surfMod]
             m.setValue(NSNumber(value: Double(i) / Double(Self.shells)), forKey: "shellH")
             m.setValue(NSNumber(value: Double(len / avg)), forKey: "furLen")
-            m.setValue(NSNumber(value: Double(density)), forKey: "furDensity")
+            m.setValue(NSNumber(value: Double(density) * 2.4), forKey: "furDensity")     // fine, dense hair like a real rabbit
             geo.materials = [m]
             g.addChildNode(SCNNode(geometry: geo))
         }
@@ -1046,7 +1050,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             // real rabbit eyes: dark, glossy, on the sides of the head, with a thin pink rim
             let rim = faceBit(SCNSphere(radius: 1), flat(Self.rgb(226, 150, 150)), SCNVector3(0.2 * s, 0.03, 0.335), scale: SCNVector3(0.082, 0.088, 0.03))
             rim.eulerAngles.y = 0.62 * s; rim.renderingOrder = 98
-            head.addChildNode(rim); faceBits.append(rim)
+            head.addChildNode(rim); faceBits.append(rim); eyeRims.append(rim)
             let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3(0.2 * s, 0.03, 0.345), scale: SCNVector3(0.07, 0.078, 0.035))
             e.eulerAngles.y = 0.62 * s
             let hl = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(0.3 * s, 0.4, 0.9), scale: SCNVector3(0.26, 0.23, 0.2))
@@ -1229,9 +1233,10 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         ease(&openE, [.laugh, .surprised].contains(ex) ? 1 : 0, 10)
         let squint = max(happyE, cheer)
         for (i, e) in eyes.enumerated() {
-            var y = 0.097 * blink * (1 - 0.72 * squint) * (1 - 0.3 * max(crossAmt, crossE)) * (1 - 0.88 * sleepE) * (1 + 0.18 * surpriseE)
+            var y = 0.078 * blink * (1 - 0.72 * squint) * (1 - 0.3 * max(crossAmt, crossE)) * (1 - 0.88 * sleepE) * (1 + 0.18 * surpriseE)
             if i == 1 { y *= (1 - 0.85 * winkE) }
             e.scale.y += (y - e.scale.y) * min(1, dt * 22)
+            if i < eyeRims.count { eyeRims[i].scale.y = e.scale.y * (0.088 / 0.078) }   // the pink rim closes with the eye
         }
         let browOn = max(crossAmt, crossE, sadE, thinkE * 0.8, surpriseE * 0.8)
         for (i, b) in brows.enumerated() {
