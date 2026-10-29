@@ -487,14 +487,14 @@ final class VoiceEngine: NSObject, ObservableObject {
         guard Self.micOn else { status = "Mic is off — turn it on to talk to Zuffi"; return }
         guard !speaking else { resumeAfterSpeech = true; return }
         // Offline: if this language can't be heard on the Mac itself, use a language that can (so voice still works with no internet).
-        var heard = recognizer
-        if !NetStatus.shared.online, !(heard?.supportsOnDeviceRecognition ?? false) {
+        var hearWith = recognizer
+        if !NetStatus.shared.online, !(hearWith?.supportsOnDeviceRecognition ?? false) {
             for id in ["en-IN", "en-US", "en-GB"] {
-                if let r = SFSpeechRecognizer(locale: Locale(identifier: id)), r.supportsOnDeviceRecognition { heard = r; break }
+                if let r = SFSpeechRecognizer(locale: Locale(identifier: id)), r.supportsOnDeviceRecognition { hearWith = r; break }
             }
-            appendAppLog("voice.log", "offline: listening on this Mac with \(heard?.locale.identifier ?? "none")")
+            appendAppLog("voice.log", "offline: listening on this Mac with \(hearWith?.locale.identifier ?? "none")")
         }
-        guard let recognizer = heard, recognizer.isAvailable || (!NetStatus.shared.online && recognizer.supportsOnDeviceRecognition) else {
+        guard let recognizer = hearWith, recognizer.isAvailable || (!NetStatus.shared.online && recognizer.supportsOnDeviceRecognition) else {
             status = NetStatus.shared.online ? "Speech recognition isn't ready yet — retrying…" : "Offline: turn on Dictation once (System Settings › Keyboard) so your Mac can hear you without internet"
             appendAppLog("voice.log", "recogniser not available")
             return
