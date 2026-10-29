@@ -1051,7 +1051,7 @@ struct NotchHomeView: View {
             NotchSeasonBackground().contentShape(Rectangle()).movesIsland()
             VStack(spacing: 10) {
                 // Aurora rises from behind the bottom edge of this window, waves, then reacts to what's happening
-                ZuffiFace(mood: ZuffiFace.mood(voice, state), speaking: voice.speaking, rise: shown)
+                AuroraFace(mood: AuroraFace.mood(voice, state), speaking: voice.speaking, rise: shown)
                     .frame(width: 236, height: 190)
                     .frame(width: W, height: 150, alignment: .top)
                     .clipped()
@@ -1463,7 +1463,7 @@ struct NotchSeasonBackground: View {
 
 // MARK: - Aurora's drawn face for the notch: big, expressive, with paws and lip-sync (from the Zuffi 2.0 design)
 
-struct ZuffiFace: NSViewRepresentable {
+struct AuroraFace: NSViewRepresentable {
     var mood: String = "idle"          // idle · hello · listening · thinking · looking · pointing · done · love · surprised · oops · sleepy
     var speaking = false
     var rise = true                     // pops up from behind the bottom edge when it appears
@@ -1472,7 +1472,7 @@ struct ZuffiFace: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let w = Web(frame: .zero)
         w.setValue(false, forKey: "drawsBackground")
-        w.loadHTMLString(ZuffiFaceArt.html, baseURL: nil)
+        w.loadHTMLString(AuroraFaceArt.html, baseURL: nil)
         return w
     }
     func updateNSView(_ w: WKWebView, context: Context) {
@@ -1496,7 +1496,7 @@ struct ZuffiFace: NSViewRepresentable {
     }
 }
 
-enum ZuffiFaceArt {
+enum AuroraFaceArt {
     static let html = #"""
 <!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:transparent;overflow:hidden}
@@ -1690,7 +1690,7 @@ struct FaceDropView: View {
         ZStack(alignment: .top) {
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 40, bottomTrailing: 40, topTrailing: 0), style: .continuous)
                 .fill(Color(hex: "#050507"))
-            ZuffiFace(mood: ZuffiFace.mood(voice, state), speaking: voice.speaking || tutor.speaking, rise: m.open)
+            AuroraFace(mood: AuroraFace.mood(voice, state), speaking: voice.speaking || tutor.speaking, rise: m.open)
                 .frame(width: 236, height: 190)
                 .padding(.top, 14)
         }
