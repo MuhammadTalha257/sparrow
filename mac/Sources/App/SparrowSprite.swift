@@ -884,13 +884,14 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     private var thighs: [SCNNode] = [], feet: [SCNNode] = [], arms: [SCNNode] = [], ears: [SCNNode] = []
     private var eyes: [SCNNode] = [], brows: [SCNNode] = [], faceBits: [SCNNode] = []
 
-    private static let shells = 18
+    private static let shells = 26      // more layers = softer, fluffier fur
     private static let geoMod = """
     #pragma arguments
     float shellH;
     float furLen;
     #pragma body
-    _geometry.position.xyz += _geometry.normal * (furLen * shellH);
+    // hair grows out and droops a little under its own weight (soft, fluffy, not spiky)
+    _geometry.position.xyz += _geometry.normal * (furLen * shellH) + float3(0.0, -1.0, 0.0) * (furLen * shellH * shellH * 0.45);
     """
     private static let surfMod = """
     #pragma arguments
@@ -903,7 +904,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     float r = fract(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
     // each hair is a thin strand that tapers to a point (no square tufts)
     float strand = length(inCell) * 2.0;
-    if (shellH > 0.0 && (r < pow(shellH, 0.75) || strand > (1.0 - shellH) * 1.05 + 0.12)) { discard_fragment(); }
+    if (shellH > 0.0 && (r < pow(shellH, 0.6) * 0.92 || strand > (1.0 - shellH) * 1.15 + 0.18)) { discard_fragment(); }
     float ao = mix(0.80, 1.0, shellH);
     float sheen = pow(shellH, 3.0) * 0.55;
     _surface.diffuse.rgb = mix(_surface.diffuse.rgb * ao, float3(1.0, 0.995, 0.99), sheen);
@@ -1008,7 +1009,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         scene.rootNode.addChildNode(root)
         stance.position = SCNVector3(0, 0.06, -0.42); root.addChildNode(stance)
         hips.position = SCNVector3(0, 0.5, 0.42); stance.addChildNode(hips)
-        let rear = fur(0.56, 0.52, 0.58, cream, len: 0.09, density: 80, at: SCNVector3(0, 0.08, -0.02)); hips.addChildNode(rear); bodyParts.append(rear)
+        let rear = fur(0.56, 0.52, 0.58, cream, len: 0.15, density: 62, at: SCNVector3(0, 0.08, -0.02)); hips.addChildNode(rear); bodyParts.append(rear)
         let tailN = fur(0.16, 0.16, 0.14, .white, len: 0.08, density: 20, at: SCNVector3(0, 0.24, -0.62)); hips.addChildNode(tailN); bodyParts.append(tailN)
         for s in [-1.0, 1.0] as [CGFloat] {
             let th = SCNNode(); th.position = SCNVector3(0.36 * s, -0.02, -0.08); hips.addChildNode(th); thighs.append(th); bodyParts.append(th)
@@ -1021,26 +1022,26 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             ft.addChildNode(pad)
         }
         chest.position = SCNVector3(0, 0.12, 0.42); hips.addChildNode(chest)
-        let chestFur = fur(0.42, 0.46, 0.42, cream, len: 0.09, density: 80); chest.addChildNode(chestFur); bodyParts.append(chestFur)
-        let bibFur = fur(0.3, 0.32, 0.2, bib, len: 0.07, at: SCNVector3(0, -0.08, 0.3)); chest.addChildNode(bibFur); bodyParts.append(bibFur)
+        let chestFur = fur(0.42, 0.46, 0.42, cream, len: 0.15, density: 62); chest.addChildNode(chestFur); bodyParts.append(chestFur)
+        let bibFur = fur(0.3, 0.32, 0.2, bib, len: 0.13, at: SCNVector3(0, -0.08, 0.3)); chest.addChildNode(bibFur); bodyParts.append(bibFur)
         for s in [-1.0, 1.0] as [CGFloat] {
             let a = SCNNode(); a.position = SCNVector3(0.2 * s, -0.12, 0.24); chest.addChildNode(a); arms.append(a); bodyParts.append(a)
             a.addChildNode(fur(0.085, 0.24, 0.09, cream, len: 0.035, density: 25, at: SCNVector3(0, -0.2, 0)))
             a.addChildNode(fur(0.08, 0.06, 0.1, cream2, len: 0.03, density: 20, at: SCNVector3(0, -0.44, 0.03)))
         }
         neck.position = SCNVector3(0, 0.36, 0.22); chest.addChildNode(neck)
-        head.position = SCNVector3(0, 0.22, 0.06); head.scale = SCNVector3(1.12, 1.12, 1.12); neck.addChildNode(head)
-        head.addChildNode(fur(0.35, 0.33, 0.37, cream, len: 0.07, density: 90))
-        for s in [-1.0, 1.0] as [CGFloat] { head.addChildNode(fur(0.17, 0.13, 0.15, bib, len: 0.05, at: SCNVector3(0.15 * s, -0.12, 0.2))) }
+        head.position = SCNVector3(0, 0.22, 0.06); head.scale = SCNVector3(1.24, 1.24, 1.24); neck.addChildNode(head)
+        head.addChildNode(fur(0.35, 0.33, 0.37, cream, len: 0.11, density: 70))
+        for s in [-1.0, 1.0] as [CGFloat] { head.addChildNode(fur(0.19, 0.15, 0.16, bib, len: 0.09, at: SCNVector3(0.15 * s, -0.12, 0.2))) }   // chubby cheeks
         head.addChildNode(fur(0.13, 0.1, 0.1, bib, len: 0.04, at: SCNVector3(0, -0.11, 0.3)))
         for s in [-1.0, 1.0] as [CGFloat] {
             let e = SCNNode(); e.position = SCNVector3(0.12 * s, 0.26, -0.06); e.eulerAngles.z = -0.1 * s; head.addChildNode(e); ears.append(e)
-            e.addChildNode(fur(0.1, 0.46, 0.045, cream, len: 0.035, density: 45, at: SCNVector3(0, 0.46, 0)))
+            e.addChildNode(fur(0.11, 0.4, 0.05, cream, len: 0.06, density: 40, at: SCNVector3(0, 0.4, 0)))
             // inside of the ear: thin, warm pink, lit from behind like a real rabbit's
             let inner = SCNMaterial(); inner.lightingModel = .lambert
             inner.diffuse.contents = Self.rgb(238, 168, 156); inner.emission.contents = Self.rgb(120, 52, 44)
             let inEar = SCNNode(geometry: SCNSphere(radius: 1)); inEar.geometry?.materials = [inner]
-            inEar.scale = SCNVector3(0.062, 0.38, 0.02); inEar.position = SCNVector3(0, 0.45, 0.032)
+            inEar.scale = SCNVector3(0.066, 0.33, 0.022); inEar.position = SCNVector3(0, 0.39, 0.04)
             e.addChildNode(inEar)
         }
         // face, on top of the fur
@@ -1048,11 +1049,11 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         eyeM.diffuse.contents = Self.rgb(16, 10, 9); eyeM.roughness.contents = 0.04; eyeM.clearCoat.contents = 1; eyeM.clearCoatRoughness.contents = 0.02
         for s in [-1.0, 1.0] as [CGFloat] {
             // real rabbit eyes: dark, glossy, on the sides of the head, with a thin pink rim
-            let rim = faceBit(SCNSphere(radius: 1), flat(Self.rgb(226, 150, 150)), SCNVector3(0.2 * s, 0.03, 0.335), scale: SCNVector3(0.082, 0.088, 0.03))
-            rim.eulerAngles.y = 0.62 * s; rim.renderingOrder = 98
+            let rim = faceBit(SCNSphere(radius: 1), flat(Self.rgb(226, 150, 150)), SCNVector3(0.19 * s, 0.03, 0.35), scale: SCNVector3(0.098, 0.106, 0.03))
+            rim.eulerAngles.y = 0.5 * s; rim.renderingOrder = 98
             head.addChildNode(rim); faceBits.append(rim); eyeRims.append(rim)
-            let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3(0.2 * s, 0.03, 0.345), scale: SCNVector3(0.07, 0.078, 0.035))
-            e.eulerAngles.y = 0.62 * s
+            let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3(0.19 * s, 0.03, 0.36), scale: SCNVector3(0.086, 0.096, 0.035))   // big, cute eyes
+            e.eulerAngles.y = 0.5 * s
             let hl = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(0.3 * s, 0.4, 0.9), scale: SCNVector3(0.26, 0.23, 0.2))
             let hl2 = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(-0.35 * s, -0.4, 0.9), scale: SCNVector3(0.11, 0.1, 0.1))
             e.addChildNode(hl); e.addChildNode(hl2)
@@ -1239,10 +1240,10 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         ease(&openE, [.laugh, .surprised].contains(ex) ? 1 : 0, 10)
         let squint = max(happyE, cheer)
         for (i, e) in eyes.enumerated() {
-            var y = 0.078 * blink * (1 - 0.72 * squint) * (1 - 0.3 * max(crossAmt, crossE)) * (1 - 0.88 * sleepE) * (1 + 0.18 * surpriseE)
+            var y = 0.096 * blink * (1 - 0.45 * squint) * (1 - 0.3 * max(crossAmt, crossE)) * (1 - 0.88 * sleepE) * (1 + 0.18 * surpriseE)
             if i == 1 { y *= (1 - 0.85 * winkE) }
             e.scale.y += (y - e.scale.y) * min(1, dt * 22)
-            if i < eyeRims.count { eyeRims[i].scale.y = e.scale.y * (0.088 / 0.078) }   // the pink rim closes with the eye
+            if i < eyeRims.count { eyeRims[i].scale.y = e.scale.y * (0.106 / 0.096) }   // the pink rim closes with the eye
         }
         let browOn = max(crossAmt, crossE, sadE, thinkE * 0.8, surpriseE * 0.8)
         for (i, b) in brows.enumerated() {
@@ -1254,9 +1255,9 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             b.opacity = browOn
         }
         for t in tears { t.opacity = sadE }
-        for b in blushes { b.opacity = 0.4 * max(happyE, crossE) }
+        for b in blushes { b.opacity = 0.22 + 0.3 * max(happyE, crossE) }     // a soft pink blush, always a little
         let smileTilt: CGFloat = 0.45 * (1 - sadE * 2) * (1 - openE)
-        mouthL?.eulerAngles.z = .pi / 2 + smileTilt; mouthR?.eulerAngles.z = .pi / 2 - smileTilt
+        mouthL?.eulerAngles.z = .pi / 2 - smileTilt; mouthR?.eulerAngles.z = .pi / 2 + smileTilt     // a little smile, not a frown
         mouthL?.opacity = 1 - openE; mouthR?.opacity = 1 - openE
         let mOpen = max(openE, min(1, talkOpen * talkAmt))
         mouthL?.opacity = 1 - min(1, mOpen * 2); mouthR?.opacity = 1 - min(1, mOpen * 2)

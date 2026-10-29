@@ -1047,8 +1047,8 @@ struct NotchHomeView: View {
     @State private var reply = ""
     @State private var thinking = false
 
-    private let W: CGFloat = 360
-    private let H: CGFloat = 340
+    private let W: CGFloat = IslandConst.homeW
+    private var H: CGFloat { state.homeTall ? IslandConst.homeTallH : IslandConst.homeShortH }
     private var agents: [TeamAgent] { [ZuffiTeam.manager] + team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id } }
     private let pillFill = Color.white.opacity(0.10), pillLine = Color.white.opacity(0.22)
     private var listening: Bool { voice.isListening && (voice.pushToTalk || voice.status.hasPrefix("Listening")) }
@@ -1058,18 +1058,22 @@ struct NotchHomeView: View {
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.contentShape(Rectangle()).movesIsland()
-            VStack(spacing: 10) {
-                // Aurora — the real picture, alive. Ears to chin always visible; smaller while an answer is showing.
-                RealAuroraHead(width: answering ? 74 : 104, mood: mood, speaking: voice.speaking || tutor.speaking)
-                    .overlay(Color.clear.contentShape(Rectangle())
-                        .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
-                        .help("Double-click Aurora to talk"))
-                    .offset(y: risen ? 0 : 50).opacity(risen ? 1 : 0)
-                if listening { listenStrip } else { askBar }
-                if answering { answerCard } else { restRow }
+            // Low and wide, so it never covers your work: Aurora's face and the ask bar side by side in one short strip
+            // under the notch. Only when there's an answer does a card drop below it (and it folds back after).
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    RealAuroraIcon(size: 62, mood: mood, speaking: voice.speaking || tutor.speaking)
+                        .frame(width: 62, height: 62)
+                        .overlay(Color.clear.contentShape(Rectangle())
+                            .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
+                            .help("Double-click Aurora to talk"))
+                        .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
+                    if listening { listenStrip } else { askBar }
+                }
+                if answering { answerCard.transition(.move(edge: .top).combined(with: .opacity)) }
             }
-            .padding(.top, 26)
-            .padding(.horizontal, 16)
+            .padding(.top, max(30, state.notchHeight + 2))
+            .padding(.horizontal, 12)
             .frame(width: W, height: H, alignment: .top)
             .opacity(shown ? 1 : 0)
             .animation(.spring(response: 0.42, dampingFraction: 0.8), value: answering)
@@ -1085,7 +1089,8 @@ struct NotchHomeView: View {
             waving = true      // she says hi with a little wave
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { MainActor.assumeIsolated { waving = false } }
         }
-        .onDisappear { shown = false; risen = false }
+        .onDisappear { shown = false; risen = false; state.homeTall = false }
+        .onChange(of: answering) { _, a in withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeTall = a } }
         // what you said shows straight away; Zuffi's answer (spoken or written) lands in the card
         .onChange(of: voice.lastHeard) { _, h in
             guard !h.isEmpty else { return }
@@ -1204,6 +1209,7 @@ struct NotchHomeView: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(hex: "#0F0E13")))
+        .onTapGesture(count: 2) { reply = ""; askedQ = "" }      // double-click the card to put it away
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.08)))
         .padding(.bottom, 12)
     }

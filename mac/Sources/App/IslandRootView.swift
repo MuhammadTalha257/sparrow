@@ -208,6 +208,11 @@ struct IslandContainer: View {
                 islandHeight = newView == .prompt ? chatPromptHeight : h
             }
         }
+        .onChange(of: state.homeTall) { _, _ in
+            guard state.mode == .expanded, IslandConst.isWideHome(state.view) else { return }
+            let (w, h) = islandSize(mode: .expanded, view: state.view, progress: state.uploadProgress, nw: state.notchWidth, nh: state.notchHeight)
+            withAnimation(openSpring) { islandWidth = w; islandHeight = h }
+        }
         .onChange(of: state.chatHistory.count) { _, _ in
             guard state.mode == .expanded, state.view == .prompt else { return }
             withAnimation(openSpring) { islandHeight = chatPromptHeight }

@@ -958,7 +958,7 @@ func islandSize(mode: IslandMode, view: IslandView,
         if NotchDesign.on { return (max(nw, 128), nh + IslandConst.tabDrop) }   // a small black tab: Aurora peeks out under the notch
         return (nw + 24, nh + IslandConst.compactDrop)   // Zuffi's face hangs just under the notch
     case .expanded:
-        if IslandConst.isWideHome(view) { return (360, 340) }
+        if IslandConst.isWideHome(view) { return (IslandConst.homeW, IslandConst.homeTallNow ? IslandConst.homeTallH : IslandConst.homeShortH) }
         let layout = IslandConst.viewLayouts[view]!
         return (IslandConst.width(for: view), layout.height)
     }
