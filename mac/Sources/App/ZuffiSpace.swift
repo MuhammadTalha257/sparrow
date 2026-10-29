@@ -1782,7 +1782,10 @@ final class FaceDrop {
             // Like Taby: when you talk to her, the notch itself opens (her face, the listening strip, then the answer) —
             // no extra window. It stays open while she listens, thinks and talks, then folds away.
             let thinkingNow = BunnyFaceCenter.shared.flash == .thinking || BunnyFaceCenter.shared.flash == .busy
-            let active = busy || thinkingNow
+            let hearing = v.isListening && (v.status.hasPrefix("Listening") || v.pushToTalk)
+            // only for a conversation with her (not a reminder being read out), and not while the chat window is open
+            let talkedRecently = Date().timeIntervalSince(max(v.lastHeardAt, ZuffiAsk.shared.pendingAt, ZuffiAsk.shared.answerAt)) < 45
+            let active = !ZuffiChat.shared.isOpen && (hearing || ((busy || thinkingNow) && talkedRecently))
             if active {
                 voiceHold = Date().addingTimeInterval(8)
                 if st.mode != .expanded { ZuffiNav.go(.overview); openedForVoice = true }
