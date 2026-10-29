@@ -394,8 +394,8 @@ struct Walk3DView: View {
                 .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
             }
             ZStack(alignment: .bottom) {
-                RealAurora(width: 112, mood: model.cross ? "oops" : model.answered ? "done" : "idle", speaking: VoiceEngine.shared.speaking, lookAtMouse: !model.walking, walking: model.walking)
-                    .frame(width: 230, height: 250, alignment: .bottom)
+                Aurora3DView(pose: pose, faceLeft: model.sprite.walkLeft, lookAtMouse: !model.walking, speaking: VoiceEngine.shared.speaking)
+                    .frame(width: 230, height: 250)
                     .allowsHitTesting(false)
                 if let d = model.danceStart, model.answered, !model.cross {
                     TimelineView(.animation) { tl in JoyBurst(elapsed: tl.date.timeIntervalSince(d)) }.offset(y: -90).allowsHitTesting(false)

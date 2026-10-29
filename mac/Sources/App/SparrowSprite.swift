@@ -798,9 +798,13 @@ enum Aurora3DPrefs {
 
 /// Aurora's fur colour (Settings → Pet). Presets plus any colour you pick.
 enum AuroraColor {
-    static let presets: [(name: String, hex: String)] = [("White", "#F7F2F0"), ("Cream", "#F2E4E2"), ("Pink", "#F6D3D8"), ("Grey", "#D9D7DC"), ("Brown", "#C8A68E")]
+    static let presets: [(name: String, hex: String)] = [("White", "#F7F5F3"), ("Cream", "#F2E4E2"), ("Pink", "#F6D3D8"), ("Grey", "#D9D7DC"), ("Brown", "#C8A68E")]
     static var hex: String {
-        get { UserDefaults.standard.string(forKey: "auroraColor") ?? "#F2E4E2" }
+        get {
+            // one-time move to the realistic white coat (any earlier pick, like pink, is replaced once)
+            if !UserDefaults.standard.bool(forKey: "auroraRealCoat") { UserDefaults.standard.set(true, forKey: "auroraRealCoat"); UserDefaults.standard.set("#F7F5F3", forKey: "auroraColor") }
+            return UserDefaults.standard.string(forKey: "auroraColor") ?? "#F7F5F3"
+        }
         set { UserDefaults.standard.set(newValue, forKey: "auroraColor"); NotificationCenter.default.post(name: .auroraColorChanged, object: nil) }
     }
 }
@@ -814,9 +818,14 @@ struct Aurora3DView: NSViewRepresentable {
     var lookAtMouse = true
     var framing: AuroraFraming = .full
     var expression: BunnyMood = .smile
+    var speaking = false
     func makeCoordinator() -> Aurora3DRig { Aurora3DRig(framing: framing) }
     func makeNSView(context: Context) -> SCNView { context.coordinator.makeView(lookAtMouse: lookAtMouse) }
-    func updateNSView(_ v: SCNView, context: Context) { context.coordinator.set(pose: pose, faceLeft: faceLeft, expression: expression) }
+    func updateNSView(_ v: SCNView, context: Context) {
+        context.coordinator.set(pose: pose, faceLeft: faceLeft, expression: expression)
+        let ve = VoiceEngine.shared
+        context.coordinator.setTalk(speaking, text: ve.lastSpoken, startedAt: ve.audioStartedAt)
+    }
     static func dismantleNSView(_ v: SCNView, coordinator: Aurora3DRig) { coordinator.stop() }
 }
 
@@ -851,6 +860,24 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     private var stand: CGFloat = 0.62, hopAmt: CGFloat = 0, turn: CGFloat = 0, yaw: CGFloat = 0, pitch: CGFloat = 0
     private var cheer: CGFloat = 0, crossAmt: CGFloat = 0, holdAmt: CGFloat = 0, listen: CGFloat = 0, waveAmt: CGFloat = 0
     private var nextBlink: CGFloat = 2
+    // talking (lip-sync) and real-rabbit idle habits
+    private var talking = false, talkText = "", talkStart = Date.distantPast
+    private var talkOpen: CGFloat = 0, talkAmt: CGFloat = 0
+    private var idleKind = 0, idleStart: CGFloat = -100, nextIdle: CGFloat = 5
+    private var groom: CGFloat = 0, lookAround: CGFloat = 0, earFlop: CGFloat = 0, sniff: CGFloat = 0
+    private var nose: SCNNode?, whiskers: [SCNNode] = []
+    func setTalk(_ on: Bool, text: String, startedAt: Date) { lock.lock(); talking = on; talkText = text; talkStart = startedAt; lock.unlock() }
+    /// How open the mouth is for the letter being said right now (vowels open, m/b/p closed).
+    static func mouthOpen(_ text: String, since: Double) -> CGFloat {
+        let chars = Array(text.lowercased()); let x = since * 14.5; let i = Int(x)
+        guard since >= 0, i < chars.count else { return 0.25 + 0.25 * CGFloat(abs(sin(since * 11))) }
+        func v(_ c: Character) -> CGFloat {
+            switch c { case "a": return 1; case "o": return 0.85; case "e", "i", "y": return 0.6; case "u", "w": return 0.5
+            case "m", "b", "p": return 0; case " ", ",", ".", "!", "?": return 0.05; default: return 0.35 }
+        }
+        let f = CGFloat(x - Double(i)); let n = i + 1 < chars.count ? v(chars[i + 1]) : 0
+        return v(chars[i]) * (1 - f) + n * f
+    }
 
     private let root = SCNNode(), stance = SCNNode(), hips = SCNNode(), chest = SCNNode(), neck = SCNNode(), head = SCNNode()
     private let camNode = SCNNode()
@@ -873,8 +900,9 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     float2 cell = floor(_surface.diffuseTexcoord * furDensity);
     float r = fract(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
     if (shellH > 0.0 && r < pow(shellH, 0.75)) { discard_fragment(); }
-    float ao = mix(0.62, 1.0, shellH);
-    _surface.diffuse.rgb = mix(_surface.diffuse.rgb * ao, float3(1.0, 0.99, 0.985), shellH * shellH * 0.45);
+    float ao = mix(0.80, 1.0, shellH);
+    float sheen = pow(shellH, 3.0) * 0.55;
+    _surface.diffuse.rgb = mix(_surface.diffuse.rgb * ao, float3(1.0, 0.995, 0.99), sheen);
     """
 
     func set(pose p: AuroraPose, faceLeft l: Bool, expression e: BunnyMood = .smile) { lock.lock(); pose = p; faceLeft = l; expression = e; lock.unlock() }
@@ -976,7 +1004,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         scene.rootNode.addChildNode(root)
         stance.position = SCNVector3(0, 0.06, -0.42); root.addChildNode(stance)
         hips.position = SCNVector3(0, 0.5, 0.42); stance.addChildNode(hips)
-        let rear = fur(0.56, 0.52, 0.56, cream, len: 0.09, density: 55, at: SCNVector3(0, 0.08, -0.02)); hips.addChildNode(rear); bodyParts.append(rear)
+        let rear = fur(0.56, 0.52, 0.58, cream, len: 0.06, density: 80, at: SCNVector3(0, 0.08, -0.02)); hips.addChildNode(rear); bodyParts.append(rear)
         let tailN = fur(0.16, 0.16, 0.14, .white, len: 0.08, density: 20, at: SCNVector3(0, 0.24, -0.62)); hips.addChildNode(tailN); bodyParts.append(tailN)
         for s in [-1.0, 1.0] as [CGFloat] {
             let th = SCNNode(); th.position = SCNVector3(0.36 * s, -0.02, -0.08); hips.addChildNode(th); thighs.append(th); bodyParts.append(th)
@@ -989,7 +1017,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             ft.addChildNode(pad)
         }
         chest.position = SCNVector3(0, 0.12, 0.42); hips.addChildNode(chest)
-        let chestFur = fur(0.42, 0.46, 0.42, cream, len: 0.09, density: 55); chest.addChildNode(chestFur); bodyParts.append(chestFur)
+        let chestFur = fur(0.42, 0.46, 0.42, cream, len: 0.06, density: 80); chest.addChildNode(chestFur); bodyParts.append(chestFur)
         let bibFur = fur(0.3, 0.32, 0.2, bib, len: 0.07, at: SCNVector3(0, -0.08, 0.3)); chest.addChildNode(bibFur); bodyParts.append(bibFur)
         for s in [-1.0, 1.0] as [CGFloat] {
             let a = SCNNode(); a.position = SCNVector3(0.2 * s, -0.12, 0.24); chest.addChildNode(a); arms.append(a); bodyParts.append(a)
@@ -997,25 +1025,34 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             a.addChildNode(fur(0.08, 0.06, 0.1, cream2, len: 0.03, density: 20, at: SCNVector3(0, -0.44, 0.03)))
         }
         neck.position = SCNVector3(0, 0.36, 0.22); chest.addChildNode(neck)
-        head.position = SCNVector3(0, 0.22, 0.04); head.scale = SCNVector3(1.28, 1.28, 1.28); neck.addChildNode(head)
-        head.addChildNode(fur(0.36, 0.34, 0.34, cream, len: 0.085, density: 60))
+        head.position = SCNVector3(0, 0.22, 0.06); head.scale = SCNVector3(1.12, 1.12, 1.12); neck.addChildNode(head)
+        head.addChildNode(fur(0.35, 0.33, 0.37, cream, len: 0.05, density: 90))
         for s in [-1.0, 1.0] as [CGFloat] { head.addChildNode(fur(0.17, 0.13, 0.15, bib, len: 0.05, at: SCNVector3(0.15 * s, -0.12, 0.2))) }
         head.addChildNode(fur(0.13, 0.1, 0.1, bib, len: 0.04, at: SCNVector3(0, -0.11, 0.3)))
         for s in [-1.0, 1.0] as [CGFloat] {
-            let e = SCNNode(); e.position = SCNVector3(0.12 * s, 0.26, -0.04); e.eulerAngles.z = -0.12 * s; head.addChildNode(e); ears.append(e)
-            e.addChildNode(fur(0.11, 0.38, 0.05, cream, len: 0.04, density: 30, at: SCNVector3(0, 0.38, 0)))
-            e.addChildNode(fur(0.06, 0.3, 0.02, pink, len: 0.02, density: 20, at: SCNVector3(0, 0.36, 0.06)))
+            let e = SCNNode(); e.position = SCNVector3(0.12 * s, 0.26, -0.06); e.eulerAngles.z = -0.1 * s; head.addChildNode(e); ears.append(e)
+            e.addChildNode(fur(0.1, 0.46, 0.045, cream, len: 0.025, density: 45, at: SCNVector3(0, 0.46, 0)))
+            // inside of the ear: thin, warm pink, lit from behind like a real rabbit's
+            let inner = SCNMaterial(); inner.lightingModel = .lambert
+            inner.diffuse.contents = Self.rgb(238, 168, 156); inner.emission.contents = Self.rgb(120, 52, 44)
+            let inEar = SCNNode(geometry: SCNSphere(radius: 1)); inEar.geometry?.materials = [inner]
+            inEar.scale = SCNVector3(0.062, 0.38, 0.02); inEar.position = SCNVector3(0, 0.45, 0.032)
+            e.addChildNode(inEar)
         }
         // face, on top of the fur
         let eyeM = SCNMaterial(); eyeM.lightingModel = .physicallyBased
-        eyeM.diffuse.contents = Self.rgb(43, 26, 18); eyeM.roughness.contents = 0.05; eyeM.clearCoat.contents = 1; eyeM.clearCoatRoughness.contents = 0.02
+        eyeM.diffuse.contents = Self.rgb(16, 10, 9); eyeM.roughness.contents = 0.04; eyeM.clearCoat.contents = 1; eyeM.clearCoatRoughness.contents = 0.02
         for s in [-1.0, 1.0] as [CGFloat] {
-            let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3(0.165 * s, 0.02, 0.39), scale: SCNVector3(0.085, 0.097, 0.04))
-            e.eulerAngles.y = 0.42 * s
+            // real rabbit eyes: dark, glossy, on the sides of the head, with a thin pink rim
+            let rim = faceBit(SCNSphere(radius: 1), flat(Self.rgb(226, 150, 150)), SCNVector3(0.2 * s, 0.03, 0.335), scale: SCNVector3(0.082, 0.088, 0.03))
+            rim.eulerAngles.y = 0.62 * s; rim.renderingOrder = 98
+            head.addChildNode(rim); faceBits.append(rim)
+            let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3(0.2 * s, 0.03, 0.345), scale: SCNVector3(0.07, 0.078, 0.035))
+            e.eulerAngles.y = 0.62 * s
             let hl = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(0.3 * s, 0.4, 0.9), scale: SCNVector3(0.26, 0.23, 0.2))
             let hl2 = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(-0.35 * s, -0.4, 0.9), scale: SCNVector3(0.11, 0.1, 0.1))
             e.addChildNode(hl); e.addChildNode(hl2)
-            let iris = faceBit(SCNSphere(radius: 1), flat(Self.rgb(110, 76, 58)), SCNVector3(0, -0.1, -0.15), scale: SCNVector3(1.08, 1.06, 0.6))
+            let iris = faceBit(SCNSphere(radius: 1), flat(Self.rgb(58, 40, 36)), SCNVector3(0, -0.1, -0.15), scale: SCNVector3(1.04, 1.03, 0.6))
             iris.renderingOrder = 99
             e.addChildNode(iris)
             head.addChildNode(e); eyes.append(e); faceBits.append(e)
@@ -1027,9 +1064,19 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             brow.eulerAngles.z = .pi / 2 + 0.45 * s; brow.opacity = 0
             head.addChildNode(brow); brows.append(brow)
         }
-        let noseM = SCNMaterial(); noseM.lightingModel = .physicallyBased; noseM.diffuse.contents = Self.rgb(240, 138, 156); noseM.roughness.contents = 0.3
-        let nose = faceBit(SCNSphere(radius: 1), noseM, SCNVector3(0, -0.06, 0.43), scale: SCNVector3(0.035, 0.025, 0.025))
-        head.addChildNode(nose); faceBits.append(nose)
+        let noseM = SCNMaterial(); noseM.lightingModel = .physicallyBased; noseM.diffuse.contents = Self.rgb(232, 160, 165); noseM.roughness.contents = 0.35
+        let nose = faceBit(SCNSphere(radius: 1), noseM, SCNVector3(0, -0.06, 0.45), scale: SCNVector3(0.03, 0.02, 0.02))
+        head.addChildNode(nose); faceBits.append(nose); self.nose = nose
+        // whiskers: thin, pale, three each side
+        let wm = SCNMaterial(); wm.lightingModel = .constant; wm.diffuse.contents = NSColor(white: 0.92, alpha: 0.8)
+        for s in [-1.0, 1.0] as [CGFloat] {
+            for k in 0..<3 {
+                let w = SCNNode(geometry: SCNCylinder(radius: 0.0035, height: 0.42)); w.geometry?.materials = [wm]
+                w.position = SCNVector3(0.07 * s + 0.2 * s, -0.09 - 0.012 * CGFloat(k), 0.38)
+                w.eulerAngles = SCNVector3(0, 0.35 * s, .pi / 2 + (CGFloat(k) - 1) * 0.16 * s)
+                head.addChildNode(w); whiskers.append(w)
+            }
+        }
         for s in [-1.0, 1.0] as [CGFloat] {
             let m = faceBit(SCNCapsule(capRadius: 0.006, height: 0.05), flat(Self.rgb(155, 111, 102)), SCNVector3(0.022 * s, -0.112, 0.425))
             m.eulerAngles.z = .pi / 2 - 0.45 * s
@@ -1076,7 +1123,8 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     // MARK: moving (every frame)
 
     func renderer(_ renderer: any SCNSceneRenderer, updateAtTime time: TimeInterval) {
-        lock.lock(); let p = framing == .face ? AuroraPose.sit : pose, left = faceLeft, ty = targetYaw, tp = targetPitch, ex = expression; lock.unlock()
+        lock.lock(); let p = framing == .face ? AuroraPose.sit : pose, left = faceLeft, ty = targetYaw, tp = targetPitch, ex = expression
+        let talkOn = talking, tText = talkText, tStart = talkStart; lock.unlock()
         if framing == .face { for b in bodyParts where !b.isHidden { b.isHidden = true } }
         let dt = CGFloat(last == 0 ? 1.0 / 60 : min(0.05, time - last)); last = time; t += dt
         func ease(_ v: inout CGFloat, _ to: CGFloat, _ rate: CGFloat = 5) { v += (to - v) * (1 - exp(-dt * rate)) }
@@ -1110,6 +1158,26 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         let br = 1 + 0.018 * sin(t * 2.4)
         chest.scale = SCNVector3(br, br, br)
 
+        // real-rabbit habits while she sits quietly: washes her face, looks around, flops an ear, sniffs
+        let calm = p == .sit && !talkOn && (ex == .smile || ex == .wink)
+        if calm && t > nextIdle {
+            idleKind = (idleKind + 1 + Int(t * 7) % 3) % 4; idleStart = t
+            nextIdle = t + 7 + CGFloat(Int(t * 13) % 6)
+        }
+        let ie = t - idleStart
+        func win(_ dur: CGFloat) -> CGFloat { (ie < 0 || ie > dur) ? 0 : min(1, min(ie / 0.45, (dur - ie) / 0.45)) }
+        ease(&groom, calm && idleKind == 0 ? win(3.4) : 0, 7)
+        ease(&lookAround, calm && idleKind == 1 ? win(3.6) : 0, 5)
+        ease(&earFlop, calm && idleKind == 2 ? win(3.0) : 0, 6)
+        ease(&sniff, calm && idleKind == 3 ? win(2.4) : 0, 8)
+        // talking: the mouth follows the words; paws and head move like she's explaining
+        if talkOn { ease(&talkOpen, Self.mouthOpen(tText, since: Date().timeIntervalSince(tStart)), 28) } else { ease(&talkOpen, 0, 18) }
+        ease(&talkAmt, talkOn ? 1 : 0, 6)
+        if let n = nose {
+            let tw: CGFloat = (sniff > 0.1 || sin(t * 0.7) > 0.93) ? 0.3 * max(0, sin(t * 22)) : 0
+            n.scale = SCNVector3(0.03, 0.02 * (1 + tw), 0.02)
+        }
+
         // arms: hop swing / folded when sitting / held out for the card / up when cheering
         let swing = -0.6 * sin(ph + .pi) * hopAmt
         let sitArms: CGFloat = 0.9 * (1 - hopAmt) * (1 - holdAmt) * (1 - cheer)
@@ -1118,7 +1186,9 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         for (i, a) in arms.enumerated() {
             let s: CGFloat = i == 0 ? -1 : 1
             a.eulerAngles.x = swing + sitArms + holdArms + cheerArms
-            a.eulerAngles.z = -0.15 * s * sitArms / 0.9 + 0.35 * s * cheer
+                + groom * (-1.75 - sitArms + 0.22 * sin(t * 13 + CGFloat(i)))                 // paws up to wash her face
+                + talkAmt * (-0.45 - 0.5 * max(0, sin(t * 3.4 + CGFloat(i) * 1.7)))            // explaining with her paws
+            a.eulerAngles.z = -0.15 * s * sitArms / 0.9 + 0.35 * s * cheer - 0.35 * s * groom
             if i == 1 && waveAmt > 0.01 {
                 // hello: the right paw goes up and waves side to side
                 a.eulerAngles.x = a.eulerAngles.x * (1 - waveAmt) + (-2.4) * waveAmt
@@ -1128,8 +1198,10 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
 
         // head: level face when standing, follows the mouse, tilts when listening, shakes when cross
         ease(&yaw, hopping ? 0 : ty, 5); ease(&pitch, hopping ? 0 : tp, 5)
-        neck.eulerAngles.x = STAND * stand * 0.85 + 0.08 * sin(ph + 1) * hopAmt + pitch
-        head.eulerAngles = SCNVector3(0.12 * sadE + 0.1 * sleepE - 0.08 * thinkE, yaw + crossAmt * 0.12 * sin(t * 14), 0.2 * max(listen, thinkE) + 0.03 * sin(t * 0.9))
+        neck.eulerAngles.x = STAND * stand * 0.85 + 0.08 * sin(ph + 1) * hopAmt + pitch + 0.32 * groom + 0.06 * talkAmt * sin(t * 5.2) - 0.1 * sniff
+        head.eulerAngles = SCNVector3(0.12 * sadE + 0.1 * sleepE - 0.08 * thinkE + 0.1 * groom * sin(t * 6),
+                                      yaw + crossAmt * 0.12 * sin(t * 14) + 0.85 * lookAround * sin(ie * 1.7),
+                                      0.2 * max(listen, thinkE) + 0.03 * sin(t * 0.9) + 0.05 * talkAmt * sin(t * 2.3))
 
         // ears: lag behind the hop, perk up when happy, flatten back when cross
         for (i, e) in ears.enumerated() {
@@ -1137,7 +1209,10 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             let twitch: CGFloat = sin(t * 0.9 + CGFloat(i) * 2) > 0.97 ? 0.25 : 0
             let flat = max(crossAmt, crossE)
             e.eulerAngles.x = -0.25 * kick + 0.04 * sin(t * 3 + CGFloat(i)) - 0.15 * stand - 1.1 * flat - 0.6 * sadE - 0.5 * sleepE + 0.12 * surpriseE
+                - 0.5 * groom - (i == 0 ? 0.35 * earFlop : 0) + 0.06 * talkAmt * sin(t * 5.2 + CGFloat(i))
             e.eulerAngles.z = -0.12 * s - twitch * s + 0.25 * s * flat - 0.08 * s * cheer + 0.5 * s * sadE + 0.25 * s * sleepE
+                + (i == 1 ? 1.0 * s * earFlop : 0)
+            e.eulerAngles.y = 0.35 * s * lookAround * sin(ie * 1.7 + CGFloat(i))      // ears turn to listen, like a real rabbit
         }
 
         // eyes: blink, squint when happy, narrow when cross
@@ -1168,12 +1243,14 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             b.opacity = browOn
         }
         for t in tears { t.opacity = sadE }
-        for b in blushes { b.opacity = 0.55 + 0.4 * max(happyE, crossE) }
+        for b in blushes { b.opacity = 0.4 * max(happyE, crossE) }
         let smileTilt: CGFloat = 0.45 * (1 - sadE * 2) * (1 - openE)
         mouthL?.eulerAngles.z = .pi / 2 + smileTilt; mouthR?.eulerAngles.z = .pi / 2 - smileTilt
         mouthL?.opacity = 1 - openE; mouthR?.opacity = 1 - openE
-        mouthO?.opacity = openE
-        mouthO?.scale = SCNVector3(0.03 + 0.015 * happyE, 0.025 + 0.012 * openE, 0.01)
+        let mOpen = max(openE, min(1, talkOpen * talkAmt))
+        mouthL?.opacity = 1 - min(1, mOpen * 2); mouthR?.opacity = 1 - min(1, mOpen * 2)
+        mouthO?.opacity = min(1, mOpen * 2)
+        mouthO?.scale = SCNVector3(0.026 + 0.012 * mOpen + 0.01 * happyE, 0.008 + 0.034 * mOpen, 0.01)
 
         // hide face parts that turn away from the camera (they're drawn on top of the fur)
         let cam = camNode.worldPosition
@@ -1185,16 +1262,17 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             let d = -(fwd.x * toCam.x + fwd.y * toCam.y + fwd.z * toCam.z) / len
             let vis = max(0, min(1, (d - 0.1) / 0.25))
             if brows.contains(f) { f.opacity = vis * browOn }
-            else if f === mouthO { f.opacity = vis * openE }
-            else if mouthL === f || mouthR === f { f.opacity = vis * (1 - openE) }
+            else if f === mouthO { f.opacity = vis * min(1, mOpen * 2) }
+            else if mouthL === f || mouthR === f { f.opacity = vis * (1 - min(1, mOpen * 2)) }
             else { f.opacity = vis }
         }
 
         if framing == .face {
             // a close-up of her head (with the ears)
             let h = head.presentation.worldPosition
-            let target = SCNVector3(h.x, h.y + 0.3, h.z)
-            camNode.position = SCNVector3(h.x, h.y + 0.34, h.z + 3.2)
+            // far enough back that the long ears are never cut off
+            let target = SCNVector3(h.x, h.y + 0.42, h.z)
+            camNode.position = SCNVector3(h.x, h.y + 0.46, h.z + 3.95)
             camNode.look(at: target)
             return
         }
@@ -1421,7 +1499,8 @@ struct LiveBunnyFace: View {
     @State private var colorVersion = 0
     var body: some View {
         // the real (3D, furry) Aurora, close up — her feelings change with what's happening
-        RealAuroraIcon(size: size, mood: mood.map(RealAuroraIcon.word) ?? AuroraFace.mood(voice, state), speaking: voice.speaking)
+        Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face, expression: mood ?? BunnyMood.now(voice, state), speaking: voice.speaking)
+            .frame(width: size, height: size)
             .id(colorVersion)
             .allowsHitTesting(false)
             .onReceive(NotificationCenter.default.publisher(for: .auroraColorChanged)) { _ in colorVersion += 1 }

@@ -398,7 +398,7 @@ final class ChatArchive: ObservableObject {
         s.newChat()
         s.chatHistory = c.messages.map { ChatMessage(role: $0["role"] == "user" ? .user : .assistant, content: $0["content"] ?? "") }
         delete(c)          // it's the live chat again; New chat files it back
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { s.view = .prompt }
+        ZuffiChat.shared.open()      // it opens in the chat window, ready to continue
     }
     private func save() { if let d = try? JSONEncoder().encode(chats) { try? d.write(to: url, options: .atomic) } }
 }
@@ -714,7 +714,7 @@ struct HelloView: View {
                 .scaleEffect(model.phase == 1 ? 1 : 0.2, anchor: .bottom)
                 .opacity(model.phase == 1 ? 1 : 0)
             Group {
-                RealAuroraHead(width: 130, mood: "done").frame(width: 200, height: 210)
+                Aurora3DView(pose: .happy, lookAtMouse: false).frame(width: 200, height: 210)
             }
             .rotationEffect(.degrees(wave ? 6 : -6), anchor: .bottom)
             .animation(.easeInOut(duration: 0.28).repeatCount(6, autoreverses: true), value: wave)

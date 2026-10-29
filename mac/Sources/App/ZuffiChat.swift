@@ -46,7 +46,20 @@ final class ZuffiChat: ObservableObject {
     }
     @Published var focusTick = 0
     private var panel: ChatKeyPanel?
-    let width: CGFloat = 460
+    /// The list of past chats, shown at the side of the chat.
+    @Published var showHistory = false { didSet { if showHistory != oldValue { resizeForHistory() } } }
+    var width: CGFloat { showHistory ? 700 : 460 }
+    let height: CGFloat = 580
+    private func resizeForHistory() {
+        guard let p = panel else { return }
+        let f = p.frame
+        p.setFrame(NSRect(x: f.midX - width / 2, y: f.minY, width: width, height: f.height), display: true, animate: true)
+    }
+    /// Open one of your past chats right here in the chat.
+    func openPast(_ c: ChatArchive.Chat) {
+        ChatArchive.shared.open(c)
+        open()
+    }
 
     var isOpen: Bool { panel?.isVisible == true }
 
@@ -92,7 +105,7 @@ final class ZuffiChat: ObservableObject {
         panel = p
         if !p.isVisible {
             let screen = IslandWindowController.notchScreen() ?? NSScreen.main ?? NSScreen.screens[0]
-            let h: CGFloat = 520
+            let h: CGFloat = height
             let top = screen.frame.maxY - max(AppState.shared.notchHeight, 24) - 8
             var origin = NSPoint(x: screen.frame.midX - width / 2, y: top - h)
             if let s = UserDefaults.standard.string(forKey: "chatOrigin"), !s.isEmpty {
@@ -128,16 +141,17 @@ final class ZuffiChat: ObservableObject {
     func savePosition() { if let p = panel { UserDefaults.standard.set(NSStringFromPoint(p.frame.origin), forKey: "chatOrigin") } }
 
     private func make() -> ChatKeyPanel {
-        let p = ChatKeyPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 520),
+        let p = ChatKeyPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                              styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
         p.level = .floating
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         p.hidesOnDeactivate = false
         p.isMovableByWindowBackground = false
         p.appearance = NSAppearance(named: .darkAqua)     // the chat is dark: icons, placeholder and menus must be light
         let host = NSHostingView(rootView: ZuffiChatView(state: AppState.shared, chat: self).environment(\.colorScheme, .dark))
-        host.frame = NSRect(x: 0, y: 0, width: width, height: 520)
+        host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        host.autoresizingMask = [.width, .height]
         p.contentView = host
         return p
     }
@@ -147,248 +161,323 @@ struct ZuffiChatView: View {
     @ObservedObject var state: AppState
     @ObservedObject var chat: ZuffiChat
     @ObservedObject private var voice = VoiceEngine.shared
+    @ObservedObject private var archive = ChatArchive.shared
     @FocusState private var focused: Bool
     @State private var sentAt: Date?
     @State private var meta = ""
     @State private var liked: Set<UUID> = []
     @State private var dragLast: NSPoint?
+    @State private var search = ""
 
     private var thinking: Bool { state.stateOverride != nil }
     private var listening: Bool { voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) }
+    private let ink = Color(hex: "#0B0A0E"), field = Color(hex: "#16141B"), soft = Color(hex: "#9E99AC")
 
     var body: some View {
-        VStack(spacing: 10) {
-            line
-            if !state.chatHistory.isEmpty || thinking {
-                conversation.transition(.move(edge: .top).combined(with: .opacity))
+        HStack(spacing: 0) {
+            if chat.showHistory {
+                historyPane.frame(width: 240)
+                Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1)
             }
-            Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                header
+                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                if state.chatHistory.isEmpty && !thinking { welcome } else { conversation }
+                composer
+            }
         }
-        .frame(width: chat.width, height: 520, alignment: .top)
-        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: state.chatHistory.isEmpty)
+        .frame(width: chat.width, height: chat.height)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(ink))
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.white.opacity(0.09), lineWidth: 1))
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: chat.showHistory)
         .onChange(of: chat.focusTick) { _, _ in focused = true; ZuffiChat.shared.caretToEnd() }
         .onAppear { focused = true; ZuffiChat.shared.caretToEnd() }
         .onChange(of: state.chatHistory.count) { _, _ in
             if let start = sentAt, let last = state.chatHistory.last, last.role == .assistant {
-                let secs = max(0.1, Date().timeIntervalSince(start))
-                meta = String(format: "%.0fs", secs)
+                meta = String(format: "%.0fs", max(0.1, Date().timeIntervalSince(start)))
                 sentAt = nil
             }
         }
     }
 
-    // MARK: the line
+    // MARK: header — who you're talking to
 
-    private var line: some View {
+    private var header: some View {
         HStack(spacing: 10) {
+            circleButton(chat.showHistory ? "sidebar.left" : "clock.arrow.circlepath", help: chat.showHistory ? "Hide your chats" : "Your past chats") { chat.showHistory.toggle() }
             Menu {
-                Button { attach(images: false) } label: { Label("Add a file (PDF, Excel, Word…)", systemImage: "paperclip") }
-                Button { attach(images: true) } label: { Label("Add a picture", systemImage: "photo") }
-                Button { Task { await Assistant.run("what's on my screen", spoken: true) } } label: { Label("Ask about my screen", systemImage: "eye") }
+                Button { chat.who = .zuffi } label: { Label("Zuffi — everyday help", systemImage: "sparkles") }
+                if ZuffiFocus.agents, !ZuffiPlan.shared.isPersonal {
+                    Button { chat.who = .nik } label: { Label("Nik — your business manager", systemImage: "person.crop.circle.badge.checkmark") }
+                }
+                Divider()
+                ForEach(ZuffiTeam.shared.chatAgents) { a in Button { chat.who = .agent(a.id) } label: { Text(AgentEdits.name(a)) } }
+                Divider()
+                ForEach(ZuffiTeam.shared.agentGroups, id: \.0) { g in
+                    Menu(g.0) { ForEach(g.1) { a in Button(a.name) { chat.who = .agent(a.id) } } }
+                }
             } label: {
-                Image(systemName: "plus").font(.system(size: 13, weight: .bold)).foregroundColor(.white.opacity(0.8))
-            }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            if case .file(let name, _)? = state.promptContext {
-                HStack(spacing: 4) {
-                    Image(systemName: "doc.fill").font(.system(size: 9))
-                    Text(name).font(.system(size: 10.5, weight: .semibold)).lineLimit(1)
-                    Button { state.promptContext = nil } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }.buttonStyle(.plain)
-                }
-                .padding(.horizontal, 7).frame(height: 22).background(Capsule().fill(Color.white.opacity(0.14)))
-                .frame(maxWidth: 140)
-            }
-            if thinking {
-                TypingDotsView()
-                Text("Sending…").font(.system(size: 13, weight: .medium)).foregroundColor(.white.opacity(0.8))
-                Spacer(minLength: 0)
-            } else if listening {
-                WaveBars().frame(width: 22, height: 14)
-                Text(voice.heard.isEmpty ? "Listening…" : "“\(voice.heard)”").font(.system(size: 13, weight: .medium)).lineLimit(1).foregroundColor(.white.opacity(0.9))
-                Spacer(minLength: 0)
-            } else {
-                TextField(state.chatHistory.isEmpty ? "Ask Zuffi anything…" : "Ask a follow-up…", text: $chat.draft)
-                    .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
-                    .focused($focused)
-                    .onSubmit(send)
-            }
-            if !thinking && !listening {
-                ModelChip(state: state)
-                TeamMenu()
-            }
-            if thinking || voice.speaking || listening {
-                Button {
-                    VoiceEngine.shared.stopSpeaking()
-                    if LiveSession.shared.active { LiveSession.shared.stop("stopped") }
-                    state.stateOverride = nil
-                } label: {
-                    Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 24, height: 24).background(Circle().fill(Color(hex: "#E5484D")))
-                }.buttonStyle(.plain).help("Stop")
-            } else {
-                Button { VoiceEngine.shared.listenOnce() } label: {
-                    Image(systemName: VoiceEngine.shared.micEnabled ? "mic.fill" : "mic.slash.fill").font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(VoiceEngine.shared.micEnabled ? .white.opacity(0.85) : Color(hex: "#FF8A8F"))
-                }.buttonStyle(.plain).help("Talk (turns the mic on if it was off)")
-                if !chat.draft.isEmpty {
-                    Button(action: send) {
-                        Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#1A1008"))
-                            .frame(width: 24, height: 24)
-                            .background(Circle().fill(LinearGradient(colors: [Color(hex: "#FBC56A"), Color(hex: "#F28A3C")], startPoint: .top, endPoint: .bottom)))
-                    }.buttonStyle(.plain)
+                HStack(spacing: 10) {
+                    Group {
+                        if case .agent(let id) = chat.who, let a = ZuffiTeam.shared.agent(id) { RobotFace(agent: a, size: 26) }
+                        else { LiveBunnyFace(size: 34) }
+                    }
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white.opacity(0.06)))
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 4) {
+                            Text(chat.whoTitle).font(.system(size: 14, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundColor(soft)
+                        }
+                        HStack(spacing: 4) {
+                            Circle().fill(thinking ? Color(hex: "#F5B963") : Color(hex: "#7CE0A3")).frame(width: 6, height: 6)
+                            Text(thinking ? "thinking…" : listening ? "listening…" : voice.speaking ? "talking…" : "ready")
+                                .font(.system(size: 11)).foregroundColor(thinking ? Color(hex: "#F5B963") : Color(hex: "#7CE0A3"))
+                        }
+                    }
                 }
             }
-            Button { chat.close() } label: {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.8))
-                    .frame(width: 24, height: 24).background(Circle().fill(Color.white.opacity(0.12)))
-            }.buttonStyle(.plain).help("Close (Esc)")
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .help("Choose who you're talking to")
+            Spacer(minLength: 0)
+            if !state.chatHistory.isEmpty { circleButton("square.and.pencil", help: "New chat") { state.newChat() } }
+            circleButton("xmark", help: "Close (Esc)") { chat.close() }
         }
-        .padding(.horizontal, 14).frame(height: 48)
-        .background(
-            ZStack {
-                ZuffiSpaceBackground()
-                Capsule().fill(Color.black.opacity(0.25))
-            }
-            .clipShape(Capsule())
-        )
-        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
+        .padding(.horizontal, 16).frame(height: 62)
+        .contentShape(Rectangle())
         .gesture(dragGesture)
     }
 
-    // MARK: the conversation card
+    private func circleButton(_ icon: String, help: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.85))
+                .frame(width: 32, height: 32).background(Circle().fill(Color.white.opacity(0.07)))
+        }.buttonStyle(.plain).help(help)
+    }
 
-    private var conversation: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Button { AppState.shared.newChat() } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
-                        .frame(width: 26, height: 26).background(Circle().fill(Color.white.opacity(0.1)))
-                }.buttonStyle(.plain).help("New chat")
-                Menu {
-                    Button { chat.who = .zuffi } label: { Label("Zuffi — everyday help", systemImage: "sparkles") }
-                    if ZuffiFocus.agents, !ZuffiPlan.shared.isPersonal {
-                        Button { chat.who = .nik } label: { Label("Nik — your business manager", systemImage: "person.crop.circle.badge.checkmark") }
-                    }
-                    Divider()
-                    ForEach(ZuffiTeam.shared.chatAgents) { a in
-                        Button { chat.who = .agent(a.id) } label: { Text(AgentEdits.name(a)) }
-                    }
-                    Divider()
-                    // every specialist, grouped by field
-                    ForEach(ZuffiTeam.shared.agentGroups, id: \.0) { g in
-                        Menu(g.0) { ForEach(g.1) { a in Button(a.name) { chat.who = .agent(a.id) } } }
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        if case .agent(let id) = chat.who, let a = ZuffiTeam.shared.agent(id) { RobotFace(agent: a, size: 20) }
-                        else { LiveBunnyFace(size: 22) }
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("Talking to").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.55))
-                            Text(chat.whoTitle).font(.system(size: 14, weight: .bold, design: .rounded)).lineLimit(1)
-                        }
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundColor(.white.opacity(0.7))
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help("Choose who you're talking to — Zuffi or any of the 289 specialists")
+    // MARK: past chats — pick one and it opens right here
+
+    private var historyPane: some View {
+        let today = Calendar.current.startOfDay(for: Date())
+        let list = archive.chats.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.messages.contains { ($0["content"] ?? "").localizedCaseInsensitiveContains(search) } }
+        let groups: [(String, [ChatArchive.Chat])] = [
+            ("TODAY", list.filter { $0.date >= today }),
+            ("YESTERDAY", list.filter { $0.date < today && $0.date >= today.addingTimeInterval(-86400) }),
+            ("EARLIER", list.filter { $0.date < today.addingTimeInterval(-86400) }),
+        ].filter { !$0.1.isEmpty }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Chats").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                 Spacer()
-                ProviderMenu(state: state)
-                if let last = state.chatHistory.last(where: { $0.role == .assistant }) {
-                    Button { liked.insert(last.id) } label: {
-                        Image(systemName: liked.contains(last.id) ? "hand.thumbsup.fill" : "hand.thumbsup").font(.system(size: 12))
-                    }.buttonStyle(.plain).help("Good answer")
-                }
-                Button { WebHub.shared.show(tab: "chat") } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11, weight: .bold))
-                }.buttonStyle(.plain).help("Open the full chat")
+                Button { state.newChat(); focused = true } label: {
+                    Label("New", systemImage: "plus").font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#141218"))
+                        .padding(.horizontal, 10).frame(height: 26).background(Capsule().fill(Color(hex: "#F2F1F6")))
+                }.buttonStyle(.plain)
             }
-            .foregroundColor(.white.opacity(0.9))
-            .contentShape(Rectangle())
-            .gesture(dragGesture)
-
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(state.chatHistory) { m in
-                            bubble(m).id(m.id)
-                            if m.role == .assistant, m.id == state.chatHistory.last?.id, !thinking {
-                                HStack(spacing: 8) {
-                                    if !meta.isEmpty { Label(meta, systemImage: "clock").font(.system(size: 9.5)).foregroundColor(.white.opacity(0.45)) }
-                                    Spacer()
-                                    Button("Listen again") { VoiceEngine.shared.speak(m.content) }
-                                        .buttonStyle(.plain).font(.system(size: 10.5, weight: .semibold)).foregroundColor(Color(hex: "#F58FA8"))
-                                }
-                            }
-                        }
-                        if thinking {
-                            HStack(spacing: 6) {
-                                Image(systemName: "text.book.closed").font(.system(size: 11)).foregroundColor(.white.opacity(0.6))
-                                ShimmeringText("Reading your message…")
-                            }.id("typing")
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundColor(soft)
+                TextField("", text: $search, prompt: Text("Search chats").foregroundColor(soft.opacity(0.8))).textFieldStyle(.plain).font(.system(size: 12)).foregroundColor(.white)
+            }
+            .padding(.horizontal, 10).frame(height: 32).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if !state.chatHistory.isEmpty {
+                        pastRow(title: state.chatHistory.first { $0.role == .user }?.content ?? "This chat", sub: "Open now", active: true) {}
+                    }
+                    if groups.isEmpty && state.chatHistory.isEmpty {
+                        Text(search.isEmpty ? "Your chats will be kept here." : "No chats match.").font(.system(size: 12)).foregroundColor(soft).padding(.top, 8)
+                    }
+                    ForEach(groups, id: \.0) { g in
+                        Text(g.0).font(.system(size: 10, weight: .bold)).tracking(1).foregroundColor(Color(hex: "#6F6A80")).padding(.top, 10).padding(.leading, 6)
+                        ForEach(g.1) { c in
+                            pastRow(title: c.title, sub: (c.messages.last?["content"] ?? "").replacingOccurrences(of: "\n", with: " "), active: false) { chat.openPast(c) }
+                                .contextMenu { Button("Delete", role: .destructive) { archive.delete(c) } }
                         }
                     }
-                    .padding(.vertical, 2)
                 }
-                .onChange(of: state.chatHistory.count) { _, _ in
-                    if let last = state.chatHistory.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
-                }
-                .onChange(of: thinking) { _, t in if t { withAnimation { proxy.scrollTo("typing", anchor: .bottom) } } }
-                .onAppear { if let last = state.chatHistory.last { proxy.scrollTo(last.id, anchor: .bottom) } }
             }
         }
-        .padding(14)
-        .frame(width: chat.width, height: 440)
-        .background(
-            ZStack {
-                ZuffiSpaceBackground()
-                Color.black.opacity(0.28)
+        .padding(.horizontal, 12).padding(.top, 18).padding(.bottom, 12)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(hex: "#08070B"))
+    }
+
+    private func pastRow(title: String, sub: String, active: Bool, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12.5, weight: active ? .semibold : .medium)).foregroundColor(.white).lineLimit(1)
+                Text(sub).font(.system(size: 11)).foregroundColor(soft).lineLimit(1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        )
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 0.8))
-        .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(active ? Color(hex: "#8E7CFF").opacity(0.2) : Color.clear))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
+    // MARK: empty — a friendly start
+
+    private var welcome: some View {
+        let first = (ZuffiPlan.shared.profile["name"] ?? "").components(separatedBy: " ").first ?? ""
+        return VStack(spacing: 12) {
+            Spacer(minLength: 0)
+            LiveBunnyFace(size: 120)
+            Text(first.isEmpty ? "Hi, what can I do?" : "Hi \(first), what can I do?").font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+            Text("Ask anything, add a file, or hold Z to talk.").font(.system(size: 13)).foregroundColor(soft)
+            VStack(spacing: 8) {
+                suggestion("Explain what's on my screen") { Task { await Assistant.run("what's on my screen", spoken: true) } }
+                suggestion("Write a polite reply to a customer") { chat.draft = "Write a polite reply to a customer who asked: "; focused = true; ZuffiChat.shared.caretToEnd() }
+                suggestion("Summarise a file for me") { attach(images: false) }
+            }
+            .padding(.top, 6)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func suggestion(_ t: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            HStack {
+                Text(t).font(.system(size: 13)).foregroundColor(.white.opacity(0.92))
+                Spacer()
+                Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .bold)).foregroundColor(soft)
+            }
+            .padding(.horizontal, 14).frame(height: 42)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(field))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
+    // MARK: the conversation
+
+    private var conversation: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(state.chatHistory) { m in bubble(m).id(m.id) }
+                    if thinking {
+                        HStack(spacing: 10) {
+                            LiveBunnyFace(size: 28).frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            TypingDotsView()
+                        }.id("typing")
+                    }
+                }
+                .padding(.horizontal, 18).padding(.vertical, 18)
+            }
+            .onChange(of: state.chatHistory.count) { _, _ in
+                if let last = state.chatHistory.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+            }
+            .onChange(of: thinking) { _, t in if t { withAnimation { proxy.scrollTo("typing", anchor: .bottom) } } }
+            .onAppear { if let last = state.chatHistory.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+        }
+        .frame(maxHeight: .infinity)
     }
 
     @ViewBuilder private func bubble(_ m: ChatMessage) -> some View {
         if m.role == .user {
-            HStack(alignment: .bottom, spacing: 6) {
-                Spacer(minLength: 50)
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(m.content).font(.system(size: 14)).foregroundColor(.white)
-                        .padding(.horizontal, 13).padding(.vertical, 9)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(LinearGradient(colors: [Color(hex: "#F58FA8"), Color(hex: "#B79CFF")], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                        .textSelection(.enabled)
-                    Text(m.at.formatted(date: .omitted, time: .shortened)).font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
-                }
+            HStack {
+                Spacer(minLength: 70)
+                Text(m.content).font(.system(size: 13.5)).foregroundColor(Color(hex: "#141218"))
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(UnevenRoundedRectangle(cornerRadii: .init(topLeading: 18, bottomLeading: 18, bottomTrailing: 6, topTrailing: 18), style: .continuous).fill(Color(hex: "#F2F1F6")))
+                    .textSelection(.enabled)
+                    .help(m.at.formatted(date: .omitted, time: .shortened))
             }
         } else {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
                 Group {
                     if case .agent(let id) = chat.who, let a = ZuffiTeam.shared.agent(id) { RobotFace(agent: a, size: 22) }
-                    else { LiveBunnyFace(size: 26) }
-                }.frame(width: 28, height: 28)
-            VStack(alignment: .leading, spacing: 8) {
-                ChatRichText(text: m.content)
-                HStack(spacing: 14) {
-                    Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(m.content, forType: .string) } label: {
-                        Label("Copy", systemImage: "doc.on.doc").font(.system(size: 11, weight: .semibold))
-                    }.buttonStyle(.plain)
-                    Button { ChatRichText.save(m.content) } label: {
-                        Label("Save", systemImage: "square.and.arrow.down").font(.system(size: 11, weight: .semibold))
-                    }.buttonStyle(.plain)
+                    else { LiveBunnyFace(size: 28) }
                 }
-                .foregroundColor(.white.opacity(0.55))
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.08)))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08)))
+                .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 8) {
+                    ChatRichText(text: m.content).foregroundColor(Color(hex: "#ECEAF2"))
+                    HStack(spacing: 14) {
+                        action("Copy", "doc.on.doc") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(m.content, forType: .string) }
+                        action("Listen", "speaker.wave.2") { VoiceEngine.shared.speak(m.content) }
+                        action("Save", "square.and.arrow.down") { ChatRichText.save(m.content) }
+                        if m.id == state.chatHistory.last?.id {
+                            Button { liked.insert(m.id) } label: { Image(systemName: liked.contains(m.id) ? "hand.thumbsup.fill" : "hand.thumbsup").font(.system(size: 11)) }
+                                .buttonStyle(.plain).foregroundColor(soft).help("Good answer")
+                            if !meta.isEmpty { Text(meta).font(.system(size: 10.5)).foregroundColor(soft.opacity(0.7)) }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    private func action(_ t: String, _ icon: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) { Label(t, systemImage: icon).font(.system(size: 11, weight: .medium)) }
+            .buttonStyle(.plain).foregroundColor(soft)
+    }
+
+    // MARK: the composer
+
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if case .file(let name, _)? = state.promptContext {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.fill").font(.system(size: 10))
+                    Text(name).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                    Button { state.promptContext = nil } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }.buttonStyle(.plain)
+                }
+                .foregroundColor(.white).padding(.horizontal, 10).frame(height: 26).background(Capsule().fill(Color.white.opacity(0.1)))
+            }
+            HStack(spacing: 8) {
+                Menu {
+                    Button { attach(images: false) } label: { Label("Add a file (PDF, Excel, Word…)", systemImage: "paperclip") }
+                    Button { attach(images: true) } label: { Label("Add a picture", systemImage: "photo") }
+                    Button { Task { await Assistant.run("what's on my screen", spoken: true) } } label: { Label("Ask about my screen", systemImage: "eye") }
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 14, weight: .semibold)).foregroundColor(Color(hex: "#C9C3DA")).frame(width: 26, height: 26)
+                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                if listening {
+                    WaveBars().frame(width: 22, height: 14)
+                    Text(voice.heard.isEmpty ? "Listening…" : "“\(voice.heard)”").font(.system(size: 13.5, weight: .medium)).foregroundColor(.white).lineLimit(1)
+                    Spacer(minLength: 0)
+                } else {
+                    TextField("", text: $chat.draft, prompt: Text(state.chatHistory.isEmpty ? "Ask Zuffi anything…" : "Ask a follow-up…").foregroundColor(Color(hex: "#77728A")))
+                        .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
+                        .focused($focused).onSubmit(send)
+                }
+                ProviderMenu(state: state, tint: .white)
+                Button { VoiceEngine.shared.setMic(!voice.micEnabled) } label: {
+                    Image(systemName: voice.micEnabled ? "mic.fill" : "mic.slash.fill").font(.system(size: 11, weight: .bold))
+                        .foregroundColor(voice.micEnabled ? Color(hex: "#7CE0A3") : Color(hex: "#FF7A7A"))
+                        .frame(width: 28, height: 28).background(Circle().fill((voice.micEnabled ? Color(hex: "#7CE0A3") : Color(hex: "#FF7A7A")).opacity(0.14)))
+                }.buttonStyle(.plain).help(voice.micEnabled ? "Mic on — click to turn off" : "Mic off — click to turn on")
+                if thinking || voice.speaking || listening {
+                    Button {
+                        VoiceEngine.shared.stopSpeaking()
+                        if LiveSession.shared.active { LiveSession.shared.stop("stopped") }
+                        state.stateOverride = nil
+                    } label: {
+                        RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 10, height: 10)
+                            .frame(width: 36, height: 36).background(Circle().fill(Color(hex: "#E5484D")))
+                    }.buttonStyle(.plain).help("Stop")
+                } else if chat.draft.trimmingCharacters(in: .whitespaces).isEmpty && state.promptContext == nil {
+                    Button { VoiceEngine.shared.listenOnce() } label: {
+                        Image(systemName: "waveform").font(.system(size: 13, weight: .bold)).foregroundColor(Color(hex: "#141218"))
+                            .frame(width: 36, height: 36).background(Circle().fill(Color(hex: "#F2F1F6")))
+                    }.buttonStyle(.plain).help("Talk")
+                } else {
+                    Button(action: send) {
+                        Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold)).foregroundColor(Color(hex: "#141218"))
+                            .frame(width: 36, height: 36).background(Circle().fill(Color(hex: "#F2F1F6")))
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.leading, 12).padding(.trailing, 7).frame(height: 52)
+            .background(Capsule().fill(field))
+            .overlay(Capsule().stroke(Color.white.opacity(focused ? 0.18 : 0.08), lineWidth: 1))
+        }
+        .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 14)
     }
 
     private var dragGesture: some Gesture {

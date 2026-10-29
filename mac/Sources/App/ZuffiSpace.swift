@@ -2176,16 +2176,16 @@ struct RealAurora: View {
     }
 }
 
-/// Just Aurora's head (ears to chin), never cut: the frame is as tall as the face needs.
+/// Just Aurora's head (ears to chin), never cut — the real 3D Aurora, close up.
 struct RealAuroraHead: View {
     var width: CGFloat = 110
     var mood: String = "idle"
     var speaking = false
     var body: some View {
-        RealAurora(width: width, mood: mood, speaking: speaking, notchPaws: true)
-            .padding(.top, 6)
-            .frame(width: width * 1.3, height: RealAurora.faceHeight(width) + 12, alignment: .top)
-            .clipped()
+        Aurora3DView(pose: mood == "hello" ? .wave : .sit, lookAtMouse: true, framing: .face,
+                     expression: RealAuroraIcon.feeling(mood), speaking: speaking)
+            .frame(width: width * 1.3, height: RealAurora.faceHeight(width) + 12)
+            .allowsHitTesting(false)
     }
 }
 
@@ -2199,10 +2199,12 @@ struct CompactAuroraTab: View {
     let height: CGFloat
     let notchH: CGFloat
     var body: some View {
-        let top = max(18, notchH) - 6              // where her forehead starts
-        let s = max(0.25, (height - 4 - top) / 168) // forehead (y≈100) … chin (y≈268) of the picture
-        RealAurora(width: 200 * s, mood: AuroraFace.mood(voice, state), speaking: voice.speaking || tutor.speaking, notchPaws: true)
-            .offset(y: top - 100 * s)
+        // her head close-up; the ear tips tuck behind the notch, the face shows below it
+        let side = max(60, (height - notchH) * 1.9)
+        Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face,
+                     expression: RealAuroraIcon.feeling(AuroraFace.mood(voice, state)), speaking: voice.speaking || tutor.speaking)
+            .frame(width: side, height: side)
+            .offset(y: height - side * 0.92)
             .frame(width: width, height: height, alignment: .top)
             .clipped()
             .allowsHitTesting(false)
@@ -2214,6 +2216,19 @@ struct RealAuroraIcon: View {
     var size: CGFloat
     var mood: String = "idle"
     var speaking = false
+    /// A notch mood word → the 3D Aurora's feeling.
+    static func feeling(_ m: String) -> BunnyMood {
+        switch m {
+        case "listening": return .listening
+        case "thinking": return .thinking
+        case "done", "hello": return .happy
+        case "love": return .love
+        case "surprised": return .surprised
+        case "oops": return .sad
+        case "sleepy": return .sleepy
+        default: return .smile
+        }
+    }
     static func word(_ m: BunnyMood) -> String {
         switch m {
         case .happy, .laugh: return "done"
@@ -2227,17 +2242,8 @@ struct RealAuroraIcon: View {
         }
     }
     var body: some View {
-        if size >= 70 {
-            // big enough: the whole head, ears included
-            let w = min((size - 12) / 1.36, size / 1.3)
-            RealAuroraHead(width: w, mood: mood, speaking: speaking).frame(width: size, height: size)
-        } else {
-            // small: just the face (forehead to chin) so it reads clearly
-            let w = size / 0.86
-            RealAurora(width: w, mood: mood, speaking: speaking)
-                .offset(y: -w / 200 * 112)
-                .frame(width: size, height: size, alignment: .top)
-                .clipped()
-        }
+        Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face, expression: Self.feeling(mood), speaking: speaking)
+            .frame(width: size, height: size)
+            .allowsHitTesting(false)
     }
 }

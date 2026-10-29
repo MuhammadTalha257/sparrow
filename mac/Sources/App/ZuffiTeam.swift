@@ -5790,7 +5790,13 @@ struct LibraryView: View {
     private func empty(_ t: String) -> some View { Text(t).font(HubFont.p(13, .regular)).foregroundColor(T.inactive).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
 
     private func row(_ id: String, icon: String, agent: TeamAgent?, title: String, sub: String) -> some View {
-        Button { pick = id } label: {
+        Button {
+            // a chat opens straight in the chat window, ready to continue
+            if chats {
+                if id == "live" { ZuffiChat.shared.open() }
+                else if let c = archive.chats.first(where: { $0.id == id }) { ZuffiChat.shared.openPast(c) }
+            } else { pick = id }
+        } label: {
             HStack(spacing: 10) {
                 if let agent { RobotFace(agent: agent, size: 24) } else { Image(systemName: icon).font(.system(size: 13)).foregroundColor(HubTheme.blue).frame(width: 24) }
                 VStack(alignment: .leading, spacing: 2) {

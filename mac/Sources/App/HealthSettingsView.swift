@@ -1861,6 +1861,7 @@ struct YourDayCards: View {
     @ObservedObject private var meeting = MeetingHelper.shared
     @ObservedObject private var log = ZuffiHelpLog.shared
     @ObservedObject private var day = DashToday.shared
+    @ObservedObject private var archive = ChatArchive.shared
     private var T: HubTheme { HubTheme(light: light) }
 
     private var soon: [Deadline] {
@@ -1941,6 +1942,25 @@ struct YourDayCards: View {
                     }
                 }
             }
+            DashCard(title: "Recent chats", light: light) {
+                let past = Array(archive.chats.prefix(6))
+                if past.isEmpty && AppState.shared.chatHistory.isEmpty {
+                    Text("Your chats with Zuffi are kept here. Click one to open it in the chat.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                }
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], alignment: .leading, spacing: 12) {
+                    if let now = AppState.shared.chatHistory.first(where: { $0.role == .user }) {
+                        chatTile("Open now", now.content) { ZuffiChat.shared.open() }
+                    }
+                    ForEach(past) { c in
+                        chatTile(c.date.formatted(date: .abbreviated, time: .shortened), c.title) { ZuffiChat.shared.openPast(c) }
+                    }
+                }
+                HStack {
+                    Spacer()
+                    small("All chats") { ZuffiChat.shared.showHistory = true; ZuffiChat.shared.open() }
+                    small("New chat", filled: true) { AppState.shared.newChat(); ZuffiChat.shared.open() }
+                }
+            }
             DashCard(title: "How to ask", light: light) {
                 HStack(spacing: 22) {
                     tip("Hold Z", "talk, let go")
@@ -1952,6 +1972,20 @@ struct YourDayCards: View {
             }
         }
         .task { await day.refresh() }
+    }
+    private func chatTile(_ top: String, _ title: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.left.and.bubble.right.fill").font(.system(size: 10)).foregroundColor(Color(hex: "#B79CFF"))
+                    Text(top).font(HubFont.p(11.5, .regular)).foregroundColor(T.inactive)
+                }
+                Text(title).font(HubFont.p(13, .regular)).foregroundColor(T.text).lineLimit(2).multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
+            .padding(14).background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(light ? 0.05 : 0.25)))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain).help("Open this chat")
     }
     private func stat(_ n: Int, _ label: String) -> some View {
         VStack(spacing: 0) {

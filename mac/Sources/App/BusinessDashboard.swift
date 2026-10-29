@@ -2725,7 +2725,7 @@ struct ZuffiHubView: View {
             .frame(maxWidth: 350, alignment: .leading)
             .foregroundColor(.white)
             Spacer()
-            RealAuroraHead(width: 118).frame(width: 186, height: 186)
+            Aurora3DView(pose: .sit, lookAtMouse: true).frame(width: 186, height: 186).padding(.top, -25).allowsHitTesting(false)
         }
         .padding(.horizontal, 40).padding(.vertical, 20)
         .background(RoundedRectangle(cornerRadius: 14).fill(LinearGradient(colors: ["#CF4AF3", "#E73BD7", "#F631BC", "#FD31A2", "#FF3A8B", "#FF4B78", "#FF5E68", "#FF705C", "#FF8C51", "#FFAA49", "#FFC848", "#FFE652"].map { Color(hex: $0) }, startPoint: .bottomLeading, endPoint: .topTrailing)))
