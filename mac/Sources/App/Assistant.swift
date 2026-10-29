@@ -486,8 +486,16 @@ final class VoiceEngine: NSObject, ObservableObject {
     fileprivate func startRecognition() {
         guard Self.micOn else { status = "Mic is off — turn it on to talk to Zuffi"; return }
         guard !speaking else { resumeAfterSpeech = true; return }
-        guard let recognizer, recognizer.isAvailable else {
-            status = "Speech recognition isn't ready yet — retrying…"
+        // Offline: if this language can't be heard on the Mac itself, use a language that can (so voice still works with no internet).
+        var heard = recognizer
+        if !NetStatus.shared.online, !(heard?.supportsOnDeviceRecognition ?? false) {
+            for id in ["en-IN", "en-US", "en-GB"] {
+                if let r = SFSpeechRecognizer(locale: Locale(identifier: id)), r.supportsOnDeviceRecognition { heard = r; break }
+            }
+            appendAppLog("voice.log", "offline: listening on this Mac with \(heard?.locale.identifier ?? "none")")
+        }
+        guard let recognizer = heard, recognizer.isAvailable || (!NetStatus.shared.online && recognizer.supportsOnDeviceRecognition) else {
+            status = NetStatus.shared.online ? "Speech recognition isn't ready yet — retrying…" : "Offline: turn on Dictation once (System Settings › Keyboard) so your Mac can hear you without internet"
             appendAppLog("voice.log", "recogniser not available")
             return
         }
@@ -501,7 +509,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         // "Zuffi…" is listened for privately on this Mac. Once you're talking to Zuffi (after its name, the mic
         // button or the ⌥ key), Apple's sharper online recognition is used when there's internet.
         let sharp = (oneShot || pushToTalk) && NetStatus.shared.online && UserDefaults.standard.object(forKey: "sharpHearing") as? Bool ?? true
-        if recognizer.supportsOnDeviceRecognition && !sharp { req.requiresOnDeviceRecognition = true }
+        if recognizer.supportsOnDeviceRecognition && (!sharp || !NetStatus.shared.online) { req.requiresOnDeviceRecognition = true }
         request = req
         let node = audio.inputNode
         Self.installTap(node, req)
@@ -819,7 +827,7 @@ enum Assistant {
         NotificationCenter.default.post(name: .hookExpand, object: IslandView.prompt)
         let before = state.chatHistory.count
         await AIService.shared.chat(query: text, context: nil, state: state)
-        if spoken && UserDefaults.standard.bool(forKey: AssistantPrefs.speakReplies),
+        if spoken && (UserDefaults.standard.bool(forKey: AssistantPrefs.speakReplies) || !NetStatus.shared.online),   // offline it talks back like the live voice
            state.chatHistory.count > before, let last = state.chatHistory.last, last.role == .assistant {
             VoiceEngine.shared.speak(last.content)
         }

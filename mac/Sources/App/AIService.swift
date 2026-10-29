@@ -574,7 +574,7 @@ final class AIService {
         let savedHistory = history, savedDoc = document, savedImage = pendingImage
         history = [(role: "user", text: prompt)]; document = nil; pendingImage = image; oneShotSystem = system
         defer { history = savedHistory; document = savedDoc; pendingImage = savedImage; oneShotSystem = nil }
-        if let k = KeychainStore.shared.get("anthropic-api-key"), !k.isEmpty,
+        if NetStatus.shared.online, let k = KeychainStore.shared.get("anthropic-api-key"), !k.isEmpty,
            let j = try? await postJSON(URL(string: "https://api.anthropic.com/v1/messages")!,
                                        body: ["model": AppState.shared.claudeModel.isEmpty ? AppState.defaultClaudeModel : AppState.shared.claudeModel,
                                               "max_tokens": 4000, "system": system,

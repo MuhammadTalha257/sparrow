@@ -1333,7 +1333,7 @@ struct NotchHomeView: View {
                 """, system: "You are Zuffi, a friendly helper that lives in the notch of the user's Mac.\n" + ZuffiVoice.style) ?? ""
             let out = r.trimmingCharacters(in: .whitespacesAndNewlines)
             thinking = false
-            reply = out.isEmpty ? "I couldn't answer just now — pick an AI model with the button in the bar." : out
+            reply = out.isEmpty ? ZuffiAsk.noBrainLine : out
             if !out.isEmpty { ZuffiHelpLog.shared.add("Answered", out); BunnyFaceCenter.shared.show(.happy, for: 2) }
         }
     }

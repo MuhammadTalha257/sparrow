@@ -136,8 +136,14 @@ final class ZuffiAsk: ObservableObject {
         var context = ""
         if let s = selection, !s.isEmpty { context = "The user selected this text on their screen:\n\"\"\"\n\(s)\n\"\"\"" }
         else if let shot = await ScreenGrab.main() {
-            image = (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString())
-            context = "A screenshot of the user's screen is attached."
+            if NetStatus.shared.online {
+                image = (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString())
+                context = "A screenshot of the user's screen is attached."
+            } else if let cg = NSImage(data: shot.jpeg)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                // offline: the brain on this Mac can't see pictures, so read the words on the screen here instead
+                let words = await StudyText.ocr(cg)
+                context = "The user is offline. The words on their screen (read by the Mac) are:\n\"\"\"\n\(words.prefix(6000))\n\"\"\""
+            }
         }
         let r = await AIService.shared.oneShot("""
             \(context)
@@ -147,7 +153,7 @@ final class ZuffiAsk: ObservableObject {
             Sound like a real person talking, not a robot: you may begin with ONE small natural reaction when it truly fits — "Oh!", "Ah, I see.", "Okay so…", "Hmm," or "Haha," (only if something is funny).
             """, system: "You are Zuffi, a friendly helper that lives on the user's computer.\n" + ZuffiVoice.style, image: image) ?? ""
         let reply = r.trimmingCharacters(in: .whitespacesAndNewlines)
-        show(reply.isEmpty ? "I couldn't answer that just now — check an AI model is set up (the model button in the notch)." : reply, title: question)
+        show(reply.isEmpty ? ZuffiAsk.noBrainLine : reply, title: question)
     }
 
     /// One tap from the selection bar.
@@ -168,11 +174,17 @@ final class ZuffiAsk: ObservableObject {
         if ["reply", "rewrite"].contains(kind), !out.isEmpty {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(out, forType: .string)
         }
-        show(out.isEmpty ? "I couldn't do that just now — check an AI model is set up." : out,
+        show(out.isEmpty ? ZuffiAsk.noBrainLine : out,
              title: ["translate": "Translation", "reply": "Reply — copied, press ⌘V to paste", "rewrite": "Rewritten — copied, press ⌘V to paste"][kind] ?? "Explained",
              speak: kind == "explain" || kind == "translate")
     }
 
+    /// What to say when no AI could answer — offline it explains how to answer without internet.
+    static var noBrainLine: String {
+        NetStatus.shared.online
+            ? "I couldn't answer that just now — check an AI model is set up (the model button in the notch)."
+            : "I'm offline, and there's no AI on this Mac yet. Add a free offline one in Settings › AI model (Ollama) and I'll answer even without internet. Opening apps, music, reminders and notes still work."
+    }
     @Published var answerText = ""
     @Published var answerTitle = ""
     private var panel: NSPanel?
