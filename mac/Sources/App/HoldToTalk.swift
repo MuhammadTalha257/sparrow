@@ -92,10 +92,8 @@ final class ZuffiAsk: ObservableObject {
         var role: CFTypeRef?
         AXUIElementCopyAttributeValue(f as! AXUIElement, kAXRoleAttribute as CFString, &role)
         let r = (role as? String) ?? ""
-        if ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(r) { return true }
-        var settable: DarwinBoolean = false
-        AXUIElementIsAttributeSettable(f as! AXUIElement, kAXValueAttribute as CFString, &settable)
-        return settable.boolValue && r != "AXButton"
+        // only real text boxes count (lists, web pages, Finder… don't): there a held Z means "Zuffi, listen"
+        return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXSecureTextField"].contains(r)
     }
 
     /// Hold Z / double-click: remember what's selected, then listen.
@@ -133,6 +131,7 @@ final class ZuffiAsk: ObservableObject {
             await PointerRing.find(question); return
         }
         BunnyFaceCenter.shared.show(.thinking, for: 8)
+        VoiceEngine.shared.speak(["Hmm…", "Let me see…", "Okay, one sec…", "Ooh, let me look…"].randomElement()!)
         var image: (mime: String, base64: String)?
         var context = ""
         if let s = selection, !s.isEmpty { context = "The user selected this text on their screen:\n\"\"\"\n\(s)\n\"\"\"" }
@@ -144,7 +143,8 @@ final class ZuffiAsk: ObservableObject {
             \(context)
             The user asks (by voice): "\(question)"
             Answer like a kind, clever friend: short and clear, ready to be read aloud (under 90 words), in \(userLanguage) unless they asked for another language. \
-            If they ask to reply or rewrite, give only the text to use. Plain text, no symbols.
+            If they ask to reply or rewrite, give only the text to use. Plain text, no symbols. \
+            Sound like a real person talking, not a robot: you may begin with ONE small natural reaction when it truly fits — "Oh!", "Ah, I see.", "Okay so…", "Hmm," or "Haha," (only if something is funny).
             """, system: "You are Zuffi, a friendly helper that lives on the user's computer.\n" + ZuffiVoice.style, image: image) ?? ""
         let reply = r.trimmingCharacters(in: .whitespacesAndNewlines)
         show(reply.isEmpty ? "I couldn't answer that just now — check an AI model is set up (the model button in the notch)." : reply, title: question)
@@ -154,13 +154,14 @@ final class ZuffiAsk: ObservableObject {
     func act(_ kind: String, _ text: String) async {
         if kind == "read" { TutorVoice.shared.speakAuto(text); return }
         BunnyFaceCenter.shared.show(.thinking, for: 8)
+        if kind == "explain" || kind == "translate" { VoiceEngine.shared.speak(["Hmm…", "Okay, let me see…", "Ah, let me look…"].randomElement()!) }
         let lang = userLanguage
         let ask: String
         switch kind {
         case "translate": ask = "Translate this into \(lang) (if it is already in \(lang), translate it into English). Give only the translation:\n\(text)"
         case "reply": ask = "Write a short, polite reply to this message, in the same language as the message. Give only the reply text:\n\(text)"
         case "rewrite": ask = "Rewrite this to be clear, correct and polite, same language and meaning. Give only the new text:\n\(text)"
-        default: ask = "Explain this simply in \(lang), like a kind friend, in under 90 words. If it asks the reader to do something, say what and by when:\n\(text)"
+        default: ask = "Explain this simply in \(lang), like a kind friend talking out loud, in under 90 words. You may start with one small natural reaction if it fits (\"Oh, okay —\", \"Ah,\", \"So basically…\"). If it asks the reader to do something, say what and by when:\n\(text)"
         }
         let r = await AIService.shared.oneShot(ask, system: "You are Zuffi, a friendly helper.\n" + ZuffiVoice.style) ?? ""
         let out = r.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -178,7 +179,7 @@ final class ZuffiAsk: ObservableObject {
     func show(_ text: String, title: String, speak: Bool = true) {
         answerText = text; answerTitle = title
         BunnyFaceCenter.shared.show(.happy, for: 3)
-        if speak { TutorVoice.shared.speakAuto(text) }
+        if speak { VoiceEngine.shared.speak(text) }
         let p = panel ?? {
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 260), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.level = .floating
@@ -194,7 +195,7 @@ final class ZuffiAsk: ObservableObject {
         p.alphaValue = 0; p.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { $0.duration = 0.18; p.animator().alphaValue = 1 }
     }
-    func hide() { panel?.orderOut(nil); TutorVoice.shared.stop() }
+    func hide() { panel?.orderOut(nil) }
 }
 
 struct ZuffiAnswerView: View {
@@ -213,7 +214,7 @@ struct ZuffiAnswerView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 14) {
-                Button { voice.speaking ? voice.stop() : TutorVoice.shared.speakAuto(a.answerText) } label: { Label(voice.speaking ? "Stop" : "Say it", systemImage: voice.speaking ? "stop.fill" : "speaker.wave.2.fill") }
+                Button { VoiceEngine.shared.speak(a.answerText) } label: { Label("Say it", systemImage: "speaker.wave.2.fill") }
                 Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.answerText, forType: .string) } label: { Label("Copy", systemImage: "doc.on.doc") }
                 Spacer()
             }

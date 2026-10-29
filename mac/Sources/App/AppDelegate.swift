@@ -143,6 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WebHub.shared.start()
         NativeSpeech.shared.start()
         HoldToTalk.start()
+        FaceDrop.shared.start()
         BackgroundKeeper.start()
         // Agents (Claude Code / Codex / GitHub) and the glowing notch edge
         AgentHub.shared.start()

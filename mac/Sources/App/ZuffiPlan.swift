@@ -444,6 +444,8 @@ enum ZuffiFocus {
     static let allAgents = false
     /// Agents, the Agent Office, channels, automations and business pages — hidden for now (all the code stays, switch back on here).
     static let agents = false
+    /// Learn (Nik the teacher, study, languages) — hidden for now; the code stays, switch back on here.
+    static let learn = false
     /// Business pages hidden for now.
     static let hiddenBizTabs: Set<String> = ["Inbox", "Pipeline", "Properties", "Customers", "WhatsApp contacts", "Money", "Staff", "Data sources"]
 }

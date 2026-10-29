@@ -3177,7 +3177,7 @@ struct ZuffiDashboard: View {
         .onAppear {
             HubFont.register()
             if ZuffiFocus.agents { SocialHub.shared.start(); DailyReport.shared.start(); OfficeModel.shared.ensure() }
-            else if ![.home, .look, .settings, .study, .languages].contains(hub.section) { hub.section = .home }
+            else if ![.home, .look, .settings].contains(hub.section) && !(ZuffiFocus.learn && [.study, .languages].contains(hub.section)) { hub.section = .home }
         }
     }
 
@@ -3203,7 +3203,7 @@ struct ZuffiDashboard: View {
                 Text("Zuffi").font(HubFont.p(20, .semibold))
             }
             .padding(.leading, 18).padding(.top, 46).padding(.bottom, 26)
-            ForEach(DashTab.allCases.filter { ZuffiFocus.agents || [.dashboard, .study, .look, .settings].contains($0) }) { t in
+            ForEach(DashTab.allCases.filter { ZuffiFocus.agents || [.dashboard, .look, .settings].contains($0) || ($0 == .study && ZuffiFocus.learn) }) { t in
                 Button { withAnimation(.easeOut(duration: 0.15)) { hub.section = t.section } } label: {
                     HStack(spacing: 12) {
                         Image(systemName: t.icon).font(.system(size: 14, weight: .semibold)).frame(width: 22)

@@ -1874,7 +1874,6 @@ struct YourDayCards: View {
                         tip("“Where do I click…?”", "Zuffi rings the right button")
                         HStack(spacing: 10) {
                             DashButton(title: meeting.on ? "Meeting helper is on" : "Meeting helper", icon: "person.2.wave.2.fill", filled: false, light: light) { meeting.toggle() }
-                            DashButton(title: "Chat with Nik", icon: "graduationcap.fill", filled: false, light: light) { LearnNav.nik() }
                         }
                     }
                 }

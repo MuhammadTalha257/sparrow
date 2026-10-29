@@ -540,7 +540,7 @@ final class IslandWindowController: NSWindowController {
         NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
             let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
             guard mods == [.command, .option], event.keyCode == 45 else { return }
-            Task { @MainActor in await NikReader.shared.explainMarked() }
+            Task { @MainActor in if let t = ZuffiAsk.selectedText() { await ZuffiAsk.shared.act("explain", t) } else { await ZuffiAsk.shared.answer("Explain what is on my screen", about: nil) } }
         }
 
         // Global hotkey to show island
@@ -958,7 +958,7 @@ func islandSize(mode: IslandMode, view: IslandView,
         if NotchDesign.on && SparrowPosition.current == .notch { return (nw + 2 * 64, nh) }   // two glass wings beside the camera
         return (nw + 24, nh + IslandConst.compactDrop)   // Zuffi's face hangs just under the notch
     case .expanded:
-        if IslandConst.isWideHome(view) { return (560, 156) }
+        if IslandConst.isWideHome(view) { return (460, 300) }
         let layout = IslandConst.viewLayouts[view]!
         return (IslandConst.width(for: view), layout.height)
     }

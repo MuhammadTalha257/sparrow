@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import WebKit
 import ApplicationServices
 
 // =====================================================================
@@ -819,6 +820,7 @@ struct NotchFeaturesList: View {
         let words = query.lowercased().split(separator: " ").map(String.init)
         return Self.all.filter { f in
             if !ZuffiFocus.agents, ["business", "aiteam", "agentbrowser", "agents", "jobs", "walink", "tryon-nails", "tryon-hair"].contains(f.id) { return false }
+            if !ZuffiFocus.learn, ["study", "languages", "readalong", "lecture", "deadlines"].contains(f.id) { return false }
             if f.business && !biz { return false }
             if f.id == "walink" && !ZuffiFocus.whatsapp { return false }
             if f.id == "jobs" && biz { return false }
@@ -1039,34 +1041,83 @@ struct NotchHomeView: View {
     @State private var waving = false
     @FocusState private var askFocus: Bool
 
-    private let W = IslandConst.width(for: .overview)
-    private let H = IslandConst.viewLayouts[.overview]!.height
+    private let W: CGFloat = 460
+    private let H: CGFloat = 300
     private var agents: [TeamAgent] { [ZuffiTeam.manager] + team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id } }
     private let pillFill = Color.white.opacity(0.10), pillLine = Color.white.opacity(0.22)
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.clear.frame(width: W, height: H).contentShape(Rectangle()).movesIsland()
-            // Small and simple: Aurora with the mic switch · ask + shortcuts · your agents + Give a task
-            topRow
-            .padding(.horizontal, 20)
-            .padding(.top, 42)
+            NotchSeasonBackground().contentShape(Rectangle()).movesIsland()
+            VStack(spacing: 10) {
+                // Aurora rises from behind the bottom edge of this window, waves, then reacts to what's happening
+                ZuffiFace(mood: ZuffiFace.mood(voice, state), speaking: voice.speaking, rise: shown)
+                    .frame(width: 236, height: 190)
+                    .frame(width: W, height: 150, alignment: .top)
+                    .clipped()
+                    .overlay(Color.clear.contentShape(Rectangle()).frame(width: 200, height: 150)
+                        .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
+                        .help("Double-click Aurora to talk"))
+                askCard
+                HStack(spacing: 0) {
+                    chip("square.grid.2x2.fill", "Dashboard") { ZuffiHub.shared.show(.home) }
+                    chip("sparkles", "Features") { ZuffiNav.go(.features) }
+                    chip("hare.fill", "Pet") { PetController.shared.toggle() }
+                    chip(voice.micEnabled ? "mic.fill" : "mic.slash.fill", voice.micEnabled ? "Mic on" : "Mic off") { VoiceEngine.shared.setMic(!voice.micEnabled) }
+                    Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) } label: {
+                        HStack(spacing: 4) {
+                            ProfileAvatar(size: 18)
+                            Text((ZuffiPlan.shared.profile["name"] ?? "Me").components(separatedBy: " ").first ?? "Me").font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                        }
+                        .foregroundColor(.white.opacity(0.85)).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help("Your profile & settings")
+                }
+                .frame(height: 26)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 30)
             .frame(width: W, height: H, alignment: .top)
-            .opacity(shown ? 1 : 0).offset(y: shown ? 0 : -8).scaleEffect(shown ? 1 : 0.98, anchor: .top)
-            // the whole panel behind the buttons moves the notch: hold anywhere empty and drag
-            .background(NotchSeasonBackground().contentShape(Rectangle()).movesIsland())
+            .opacity(shown ? 1 : 0).offset(y: shown ? 0 : -8)
         }
         .frame(width: W, height: H)
         .onAppear {
             NowPlaying.shared.start()
-            shown = false; risen = false
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.78).delay(0.08)) { shown = true }
-            // up from behind the wall with a little bounce, then a wave
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.12)) { risen = true }
-            waving = true
-            Task { @MainActor in try? await Task.sleep(nanoseconds: 1_800_000_000); waving = false }
+            shown = false
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.78).delay(0.06)) { shown = true }
         }
-        .onDisappear { shown = false; risen = false; waving = false }
+        .onDisappear { shown = false }
+    }
+
+    private var askCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle().fill(Color(hex: "#7CE0A3")).frame(width: 7, height: 7)
+                Text(todayLine).font(.system(size: 11.5, design: .rounded)).foregroundColor(.white.opacity(0.65)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 8) {
+                TextField("Ask Zuffi, or hold Z and talk…", text: $ask)
+                    .textFieldStyle(.plain).font(.system(size: 13.5, design: .rounded)).foregroundColor(.white)
+                    .focused($askFocus).onSubmit { send() }
+                ProviderMenu(state: state)
+                Button { ZuffiAsk.shared.listenOnce() } label: {
+                    Image(systemName: voice.isListening && voice.pushToTalk ? "waveform" : "mic.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 30, height: 30).background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: "#8E7CFF")))
+                }.buttonStyle(.plain).help("Talk to Zuffi")
+            }
+            .padding(.leading, 12).padding(.trailing, 5).frame(height: 40)
+            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(0.10)))
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.55)))
+    }
+
+    private var todayLine: String {
+        let n = inbox.notes.count
+        let first = (ZuffiPlan.shared.profile["name"] ?? "").components(separatedBy: " ").first ?? ""
+        let h = Calendar.current.component(.hour, from: Date())
+        let hello = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
+        return n > 0 ? "\(n) message\(n == 1 ? "" : "s") waiting · \(inbox.notes.first?.head ?? "")" : "\(hello)\(first.isEmpty ? "" : ", \(first)") · select text or hold Z to ask"
     }
 
     // MARK: row 1
@@ -1407,5 +1458,243 @@ struct NotchSeasonBackground: View {
             }
         }
         .allowsHitTesting(true)
+    }
+}
+
+// MARK: - Aurora's drawn face for the notch: big, expressive, with paws and lip-sync (from the Zuffi 2.0 design)
+
+struct ZuffiFace: NSViewRepresentable {
+    var mood: String = "idle"          // idle · hello · listening · thinking · looking · pointing · done · love · surprised · oops · sleepy
+    var speaking = false
+    var rise = true                     // pops up from behind the bottom edge when it appears
+
+    final class Web: WKWebView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
+    func makeNSView(context: Context) -> WKWebView {
+        let w = Web(frame: .zero)
+        w.setValue(false, forKey: "drawsBackground")
+        w.loadHTMLString(ZuffiFaceArt.html, baseURL: nil)
+        return w
+    }
+    func updateNSView(_ w: WKWebView, context: Context) {
+        w.evaluateJavaScript("window.zf && window.zf('\(mood)', \(speaking ? "true" : "false"), \(rise ? "true" : "false"))", completionHandler: nil)
+    }
+
+    /// Aurora's face from what Zuffi is doing right now.
+    @MainActor static func mood(_ voice: VoiceEngine, _ state: AppState) -> String {
+        if voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) { return "listening" }
+        if state.stateOverride == .thinking { return "thinking" }
+        switch BunnyFaceCenter.shared.flash {
+        case .some(.happy), .some(.laugh): return "done"
+        case .some(.love): return "love"
+        case .some(.surprised): return "surprised"
+        case .some(.sad), .some(.cross): return "oops"
+        case .some(.thinking), .some(.busy): return "thinking"
+        case .some(.listening): return "listening"
+        case .some(.sleepy): return "sleepy"
+        default: return "idle"
+        }
+    }
+}
+
+enum ZuffiFaceArt {
+    static let html = #"""
+<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+svg{width:100%;height:100%;display:block}
+#all{transition:transform .55s cubic-bezier(.34,1.56,.64,1)}
+body.down #all{transform:translateY(120px)}
+#bob{transform-box:fill-box;transform-origin:50% 100%;animation:idle 4s ease-in-out infinite}
+@keyframes idle{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-2px) rotate(.6deg)}}
+body.talk #bob{animation:nod .9s ease-in-out infinite}
+@keyframes nod{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(2px) rotate(1deg)}}
+.eye{transform-box:fill-box;transform-origin:center;transition:transform .08s}
+body.blink .eye{transform:scaleY(.08)}
+#earL,#earR{transform-box:fill-box;transform-origin:50% 100%;transition:transform .4s cubic-bezier(.34,1.56,.64,1)}
+body.m-listening #earL{transform:rotate(-8deg) scaleY(1.08)}body.m-listening #earR{transform:rotate(8deg) scaleY(1.08)}
+body.m-oops #earL,body.m-sleepy #earL{transform:rotate(-58deg)}body.m-oops #earR,body.m-sleepy #earR{transform:rotate(58deg)}
+body.m-surprised #earL{transform:rotate(-6deg) scaleY(1.12)}body.m-surprised #earR{transform:rotate(6deg) scaleY(1.12)}
+#pupils{transition:transform .3s}
+body.m-thinking #pupils,body.m-pointing #pupils{transform:translate(5px,-3px)}
+body.m-listening #pupils{transform:translate(0,-4px)}
+.wave{transform-box:fill-box;transform-origin:40% 95%;animation:wave .6s ease-in-out infinite}
+@keyframes wave{0%,100%{transform:rotate(-16deg)}50%{transform:rotate(10deg)}}
+.pop{transform-box:fill-box;transform-origin:center;animation:pop .5s cubic-bezier(.34,1.56,.64,1)}
+@keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+.g{display:none}
+</style></head><body class="down">
+<svg viewBox="0 0 260 210" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<radialGradient id="fur" cx="0.45" cy="0.35" r="0.75"><stop offset="0" stop-color="#FBF4F2"/><stop offset="0.65" stop-color="#F2E4E2"/><stop offset="1" stop-color="#DCC5C1"/></radialGradient>
+<radialGradient id="bib" cx="0.5" cy="0.4" r="0.6"><stop offset="0" stop-color="#FFFDFC"/><stop offset="1" stop-color="#F8EEEC" stop-opacity="0"/></radialGradient>
+<linearGradient id="earIn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F4B3BD"/><stop offset="1" stop-color="#FAD4DA"/></linearGradient>
+<radialGradient id="eyeG" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#6B4330"/><stop offset="0.6" stop-color="#2B1A12"/><stop offset="1" stop-color="#140B07"/></radialGradient>
+<filter id="fuzz" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G"/></filter>
+<g id="paw"><ellipse rx="17" ry="20" fill="url(#fur)" filter="url(#fuzz)"/><path d="M-9,-12 L-7,-4 M0,-15 L0,-6 M9,-12 L7,-4" stroke="#CDB3AE" stroke-width="2" stroke-linecap="round"/><ellipse cy="6" rx="7" ry="6" fill="#F4B3BD" opacity="0.85"/></g>
+</defs>
+<g id="all"><g id="bob">
+<g id="earL"><g transform="rotate(-12 96 70)"><ellipse cx="96" cy="40" rx="17" ry="44" fill="url(#fur)" filter="url(#fuzz)"/><ellipse cx="96" cy="44" rx="8" ry="32" fill="url(#earIn)"/></g></g>
+<g id="earR"><g transform="rotate(14 164 70)"><ellipse cx="164" cy="40" rx="17" ry="44" fill="url(#fur)" filter="url(#fuzz)"/><ellipse cx="164" cy="44" rx="8" ry="32" fill="url(#earIn)"/></g></g>
+<path d="M130,62 C182,62 210,96 210,136 C210,176 176,198 130,198 C84,198 50,176 50,136 C50,96 78,62 130,62 Z" fill="url(#fur)" filter="url(#fuzz)"/>
+<ellipse cx="112" cy="160" rx="30" ry="22" fill="url(#bib)"/><ellipse cx="148" cy="160" rx="30" ry="22" fill="url(#bib)"/>
+<ellipse cx="86" cy="150" rx="13" ry="8" fill="#F4B3BD" opacity="0.55"/><ellipse cx="174" cy="150" rx="13" ry="8" fill="#F4B3BD" opacity="0.55"/>
+<!-- eyes -->
+<g id="eOpen"><g class="eye"><ellipse cx="104" cy="126" rx="12" ry="15" fill="url(#eyeG)"/></g><g class="eye"><ellipse cx="156" cy="126" rx="12" ry="15" fill="url(#eyeG)"/></g>
+<g id="pupils"><circle cx="99" cy="119" r="4.5" fill="#fff"/><circle cx="108" cy="132" r="2" fill="#fff" opacity=".8"/><circle cx="151" cy="119" r="4.5" fill="#fff"/><circle cx="160" cy="132" r="2" fill="#fff" opacity=".8"/></g></g>
+<g id="eBig" class="g"><ellipse cx="104" cy="124" rx="15" ry="19" fill="url(#eyeG)"/><circle cx="98" cy="115" r="5.5" fill="#fff"/><ellipse cx="156" cy="124" rx="15" ry="19" fill="url(#eyeG)"/><circle cx="150" cy="115" r="5.5" fill="#fff"/></g>
+<g id="eHappy" class="g"><path d="M92,128 Q104,114 116,128 M144,128 Q156,114 168,128" stroke="#2B1A12" stroke-width="5" fill="none" stroke-linecap="round"/></g>
+<g id="eClosed" class="g"><path d="M92,126 Q104,134 116,126 M144,126 Q156,134 168,126" stroke="#2B1A12" stroke-width="4" fill="none" stroke-linecap="round"/></g>
+<g id="bWorry" class="g"><path d="M90,112 L116,105 M170,112 L144,105" stroke="#8C6E68" stroke-width="4" stroke-linecap="round"/></g>
+<path d="M124,142 C124,138 136,138 136,142 C136,146 132,149 130,149 C128,149 124,146 124,142 Z" fill="#E98AA0"/>
+<!-- mouths -->
+<g id="m_smile"><path d="M130,149 L130,154 M130,154 C126,160 119,160 116,155 M130,154 C134,160 141,160 144,155" stroke="#5A3A48" stroke-width="2.6" fill="none" stroke-linecap="round"/></g>
+<g id="m_grin" class="g"><path d="M114,152 Q130,174 146,152 Z" fill="#5A3A48"/><ellipse cx="130" cy="163" rx="7" ry="4" fill="#E98AA0"/></g>
+<g id="m_o" class="g"><ellipse cx="130" cy="159" rx="6" ry="7" fill="#5A3A48"/></g>
+<g id="m_a" class="g"><path d="M118,152 Q130,174 142,152 Z" fill="#5A3A48"/><ellipse cx="130" cy="163" rx="6" ry="3.5" fill="#E98AA0"/></g>
+<g id="m_e" class="g"><path d="M115,154 Q130,160 145,154 Q130,168 115,154 Z" fill="#5A3A48"/></g>
+<g id="m_m" class="g"><path d="M119,157 L141,157" stroke="#5A3A48" stroke-width="3.5" stroke-linecap="round"/></g>
+<g id="m_flat" class="g"><path d="M120,158 Q125,154 130,158 Q135,162 140,158" stroke="#5A3A48" stroke-width="2.6" fill="none" stroke-linecap="round"/></g>
+<g id="m_frown" class="g"><path d="M118,162 Q130,152 142,162" stroke="#5A3A48" stroke-width="2.6" fill="none" stroke-linecap="round"/></g>
+<!-- paws and little extras -->
+<g id="pRest"><use href="#paw" transform="translate(76,198)"/><use href="#paw" transform="translate(184,198)"/></g>
+<g id="pWave" class="g"><use href="#paw" transform="translate(76,198)"/><g class="wave"><use href="#paw" transform="translate(208,146) rotate(-18)"/></g><path d="M232,104 l6,-6 M236,118 l9,-2 M228,94 l2,-8" stroke="#F7D47A" stroke-width="3" stroke-linecap="round"/></g>
+<g id="pEar" class="g"><use href="#paw" transform="translate(54,114) rotate(24)"/><use href="#paw" transform="translate(184,198)"/><path d="M22,86 q-8,10 0,20 M12,80 q-12,16 0,32" stroke="#8E7CFF" stroke-width="3" fill="none" stroke-linecap="round"/></g>
+<g id="pChin" class="g"><use href="#paw" transform="translate(160,182) rotate(-30)"/><use href="#paw" transform="translate(76,198)"/><circle cx="206" cy="78" r="6" fill="#B9AEDD"/><circle cx="222" cy="58" r="9" fill="#B9AEDD"/></g>
+<g id="pGlass" class="g"><circle cx="156" cy="126" r="26" fill="#fff" fill-opacity="0.18" stroke="#E9C98A" stroke-width="6"/><path d="M175,145 L200,176" stroke="#8A6A45" stroke-width="9" stroke-linecap="round"/><use href="#paw" transform="translate(206,183)"/><use href="#paw" transform="translate(76,198)"/></g>
+<g id="pPoint" class="g"><use href="#paw" transform="translate(216,149) rotate(-80)"/><use href="#paw" transform="translate(76,198)"/><path d="M244,140 L256,140 M244,150 L258,154 M244,130 L256,124" stroke="#8E7CFF" stroke-width="3" stroke-linecap="round"/></g>
+<g id="pUp" class="g"><use href="#paw" transform="translate(48,119) rotate(20)"/><use href="#paw" transform="translate(212,119) rotate(-20)"/><path d="M30,70 l4,-10 l4,10 l10,4 l-10,4 l-4,10 l-4,-10 l-10,-4 Z M218,62 l3,-8 l3,8 l8,3 l-8,3 l-3,8 l-3,-8 l-8,-3 Z" fill="#F7D47A"/></g>
+<g id="pHeart" class="g"><path d="M130,206 C96,184 100,158 116,158 C124,158 128,164 130,168 C132,164 136,158 144,158 C160,158 164,184 130,206 Z" fill="#F06B8E"/><use href="#paw" transform="translate(98,183)"/><use href="#paw" transform="translate(162,183)"/></g>
+<g id="fxExcl" class="g"><path d="M222,40 l0,26 M222,76 l0,4" stroke="#F7D47A" stroke-width="7" stroke-linecap="round"/></g>
+<g id="fxDrop" class="g"><path d="M186,116 q6,10 0,16 q-6,-6 0,-16 Z" fill="#9FD3F5"/></g>
+<g id="fxZ" class="g"><path d="M196,70 h16 l-16,18 h16 M218,44 h10 l-10,12 h10" stroke="#B9AEDD" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+</g></g>
+</svg>
+<script>
+var MOODS={
+ idle:{eyes:'eOpen',mouth:'m_smile',paws:'pRest'},
+ hello:{eyes:'eOpen',mouth:'m_grin',paws:'pWave'},
+ listening:{eyes:'eOpen',mouth:'m_o',paws:'pEar'},
+ thinking:{eyes:'eOpen',mouth:'m_flat',paws:'pChin'},
+ looking:{eyes:'eOpen',mouth:'m_smile',paws:'pGlass'},
+ pointing:{eyes:'eOpen',mouth:'m_smile',paws:'pPoint'},
+ done:{eyes:'eHappy',mouth:'m_grin',paws:'pUp'},
+ love:{eyes:'eHappy',mouth:'m_smile',paws:'pHeart'},
+ surprised:{eyes:'eBig',mouth:'m_o',paws:'pRest',fx:'fxExcl'},
+ oops:{eyes:'eOpen',mouth:'m_frown',paws:'pRest',fx:'fxDrop',brow:true},
+ sleepy:{eyes:'eClosed',mouth:'m_flat',paws:'pRest',fx:'fxZ'}
+};
+var cur='', want='idle', speaking=false, flapT=null, hello=true;
+function only(prefix,list,on){list.forEach(function(id){var e=document.getElementById(id);if(e)e.style.display=(id===on)?'inline':'none';});}
+var EYES=['eOpen','eBig','eHappy','eClosed'], MOUTHS=['m_smile','m_grin','m_o','m_a','m_e','m_m','m_flat','m_frown'], PAWS=['pRest','pWave','pEar','pChin','pGlass','pPoint','pUp','pHeart'], FX=['fxExcl','fxDrop','fxZ'];
+function apply(m){
+  var s=MOODS[m]||MOODS.idle;
+  only('e',EYES,s.eyes); only('p',PAWS,s.paws); only('f',FX,s.fx||'');
+  document.getElementById('bWorry').style.display=s.brow?'inline':'none';
+  if(!speaking) only('m',MOUTHS,s.mouth);
+  document.body.className=document.body.className.replace(/m-\w+/g,'').trim()+' m-'+m;
+  var p=document.getElementById(s.paws); if(p){p.classList.remove('pop'); void p.getBBox(); p.classList.add('pop');}
+}
+function flap(){
+  if(!speaking) return;
+  var r=Math.random(); only('m',MOUTHS,r<.32?'m_a':r<.55?'m_e':r<.75?'m_o':r<.9?'m_m':'m_smile');
+  flapT=setTimeout(flap,85+Math.random()*95);
+}
+var risen=false;
+window.zf=function(m,sp,rise){
+  if(rise&&!risen){ risen=true; hello=true; setTimeout(function(){document.body.classList.remove('down');},60); }
+  if(!rise&&risen){ risen=false; document.body.classList.add('down'); return; }
+  if(!rise) return;
+  want=m;
+  if(hello){ hello=false; cur='hello'; apply('hello'); setTimeout(function(){ cur=want; if(!speaking) apply(want); else apply(want); },1900); }
+  else if(cur!=='hello' && m!==cur){ cur=m; apply(m); }
+  if(sp&&!speaking){ speaking=true; document.body.classList.add('talk'); flap(); }
+  if(!sp&&speaking){ speaking=false; clearTimeout(flapT); document.body.classList.remove('talk'); apply(cur||'idle'); }
+};
+function blink(){ if(['eOpen'].indexOf((MOODS[cur]||MOODS.idle).eyes)>=0){document.body.classList.add('blink');setTimeout(function(){document.body.classList.remove('blink');},120);} setTimeout(blink,2600+Math.random()*2800); }
+setTimeout(blink,1800);
+</script></body></html>
+"""#
+}
+
+
+// MARK: - "Hey Zuffi" / hold Z: Aurora drops down from the notch on her own (like a little face peeking down), talks, then hides
+
+@MainActor
+final class FaceDrop {
+    static let shared = FaceDrop()
+    private var panel: NSPanel?
+    private var timer: Timer?
+    private var hideAt = Date.distantPast
+    private var showing = false
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in MainActor.assumeIsolated { FaceDrop.shared.tick() } }
+    }
+
+    private func tick() {
+        let v = VoiceEngine.shared, st = AppState.shared
+        let busy = (v.isListening && (v.status.hasPrefix("Listening") || v.pushToTalk)) || v.speaking || st.stateOverride == .thinking || TutorVoice.shared.speaking
+        // the open notch already shows her face
+        if st.mode == .expanded { if showing { hide() }; return }
+        if busy { hideAt = Date().addingTimeInterval(2.2); if !showing { show() } }
+        else if showing && Date() > hideAt { hide() }
+    }
+
+    private func show() {
+        guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main else { return }
+        let w: CGFloat = 250, h: CGFloat = 196
+        let p = panel ?? {
+            let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: w, height: h), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.ignoresMouseEvents = true
+            p.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 2)
+            p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            p.contentView = NSHostingView(rootView: FaceDropView())
+            panel = p; return p
+        }()
+        let top = screen.frame.maxY, mid = screen.frame.midX
+        p.setFrame(NSRect(x: mid - w / 2, y: top - 30, width: w, height: 30), display: false)
+        p.alphaValue = 1; p.orderFrontRegardless()
+        showing = true
+        FaceDropModel.shared.open = true
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.42; ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.4, 0.64, 1)
+            p.animator().setFrame(NSRect(x: mid - w / 2, y: top - h, width: w, height: h), display: true)
+        }
+    }
+
+    private func hide() {
+        guard let p = panel, let screen = p.screen ?? NSScreen.main else { return }
+        showing = false
+        FaceDropModel.shared.open = false
+        let f = p.frame
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.32; ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            p.animator().setFrame(NSRect(x: f.minX, y: screen.frame.maxY - 30, width: f.width, height: 30), display: true)
+        }, completionHandler: { MainActor.assumeIsolated { if !FaceDrop.shared.showing { FaceDrop.shared.panel?.orderOut(nil) } } })
+    }
+}
+
+@MainActor
+final class FaceDropModel: ObservableObject {
+    static let shared = FaceDropModel()
+    @Published var open = false
+}
+
+struct FaceDropView: View {
+    @ObservedObject private var voice = VoiceEngine.shared
+    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var tutor = TutorVoice.shared
+    @ObservedObject private var faces = BunnyFaceCenter.shared
+    @ObservedObject private var m = FaceDropModel.shared
+    var body: some View {
+        ZStack(alignment: .top) {
+            UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 40, bottomTrailing: 40, topTrailing: 0), style: .continuous)
+                .fill(Color(hex: "#050507"))
+            ZuffiFace(mood: ZuffiFace.mood(voice, state), speaking: voice.speaking || tutor.speaking, rise: m.open)
+                .frame(width: 236, height: 190)
+                .padding(.top, 14)
+        }
+        .frame(width: 250, height: 196, alignment: .top)
+        .clipped()
     }
 }

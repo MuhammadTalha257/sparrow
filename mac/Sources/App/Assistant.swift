@@ -782,6 +782,11 @@ enum Assistant {
             let short = text.split(separator: " ").count <= 6
             // Habits, prayer times, memory, invoices… (Zuffi's offline brain) — instant for short requests
             if short, let reply = await WebHub.shared.ask(text) { say(reply); return }
+            // A real question takes a second to think about: a little "hmm" so it feels like talking to someone
+            let low = text.lowercased()
+            if !short || text.hasSuffix("?") || low.range(of: #"^(what|why|how|who|when|where|which|can|could|should|is|are|do|does|explain|tell me)\b"#, options: .regularExpression) != nil {
+                VoiceEngine.shared.speak(["Hmm…", "Hmm, let me think…", "Oh, good question…", "Okay…"].randomElement()!)
+            }
             // Anything else, any language: the smart planner turns it into actions and answers like a person
             if let plan = await SmartPlanner.shared.plan(text) {
                 if plan.commands.isEmpty && plan.say.isEmpty { askAgain(); return }

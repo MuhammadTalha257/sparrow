@@ -93,7 +93,7 @@ enum IslandConst {
         .note: 480, .result: 500, .searching: 460, .finished: 460, .error: 480, .confused: 440,
     ]
     static func width(for v: IslandView) -> CGFloat {
-        if v == .overview && NotchDesign.on { return 560 }
+        if v == .overview && NotchDesign.on { return 460 }
         return viewWidths[v] ?? cardWidths[v] ?? expandedWidth
     }
     static func isWideHome(_ v: IslandView) -> Bool { v == .overview && NotchDesign.on }
@@ -114,7 +114,7 @@ enum IslandConst {
     static var viewLayouts: [IslandView: ViewLayout] {
         guard NotchDesign.on else { return baseLayouts }
         var l = baseLayouts
-        l[.overview] = ViewLayout(height: 156, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
+        l[.overview] = ViewLayout(height: 300, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
         return l
     }
     static let baseLayouts: [IslandView: ViewLayout] = [
