@@ -847,3 +847,18 @@ struct Shake: ViewModifier {
             .onChange(of: amount) { _, v in on = v != 0 }
     }
 }
+
+
+/// Today's meetings and reminders for the dashboard — read only if you already allowed Calendar / Reminders (never asks).
+@MainActor
+final class DashToday: ObservableObject {
+    static let shared = DashToday()
+    @Published var events: [Planner.EItem] = []
+    @Published var tasks: [Planner.RItem] = []
+    func refresh() async {
+        events = Planner.shared.eventItems(from: Date(), days: 1).filter { $0.end >= Date() || $0.allDay }
+        guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess else { tasks = []; return }
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
+        tasks = Array(await Planner.openReminderItems().filter { ($0.due ?? .distantFuture) < end }.prefix(5))
+    }
+}

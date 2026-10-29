@@ -93,7 +93,7 @@ enum IslandConst {
         .note: 480, .result: 500, .searching: 460, .finished: 460, .error: 480, .confused: 440,
     ]
     static func width(for v: IslandView) -> CGFloat {
-        if v == .overview && NotchDesign.on { return 460 }
+        if v == .overview && NotchDesign.on { return 360 }
         return viewWidths[v] ?? cardWidths[v] ?? expandedWidth
     }
     static func isWideHome(_ v: IslandView) -> Bool { v == .overview && NotchDesign.on }
@@ -105,6 +105,8 @@ enum IslandConst {
     static let roundedCorner: CGFloat = 14    // hidden/peek/compact
     /// How far the closed island reaches below the notch to show Zuffi's face.
     static let compactDrop: CGFloat = 38
+    /// How far Aurora's resting tab hangs below the notch (eyes to chin show; ears tuck behind the notch).
+    static let tabDrop: CGFloat = 60
     static let compactCorner: CGFloat = 19
     /// Closed island when parked on the left / right edge of the screen.
     static let dockedCompact = CGSize(width: 50, height: 58)
@@ -114,7 +116,7 @@ enum IslandConst {
     static var viewLayouts: [IslandView: ViewLayout] {
         guard NotchDesign.on else { return baseLayouts }
         var l = baseLayouts
-        l[.overview] = ViewLayout(height: 300, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
+        l[.overview] = ViewLayout(height: 340, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
         return l
     }
     static let baseLayouts: [IslandView: ViewLayout] = [

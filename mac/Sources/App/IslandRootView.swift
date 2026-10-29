@@ -80,8 +80,8 @@ struct IslandContainer: View {
                 .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(SparrowPosition.current == .notch && !IslandDock.docked ? 0 : 0.3), Color.white.opacity(0.38)],
                                                      startPoint: .top, endPoint: .bottom), lineWidth: 1))
                 .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
-            } else if state.mode == .compact && NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
-                // closed: glass wings either side, black right behind the camera so it melts into the notch
+            } else if false && state.mode == .compact && NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
+                // (old) closed: glass wings either side, black right behind the camera so it melts into the notch
                 ZStack {
                     VisualEffectBlur(material: .fullScreenUI)
                     LinearGradient(stops: [
@@ -160,7 +160,7 @@ struct IslandContainer: View {
             // Closed: drag the little pill anywhere — drop it at the left or right edge to park it there.
             if state.mode == .compact {
                 if NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
-                    CompactWings(state: state, width: islandWidth, height: islandHeight, notch: state.notchWidth)
+                    CompactAuroraTab(width: islandWidth, height: islandHeight, notchH: state.notchHeight)
                 }
                 Color.clear.frame(width: islandWidth, height: islandHeight)
                     .contentShape(Rectangle())

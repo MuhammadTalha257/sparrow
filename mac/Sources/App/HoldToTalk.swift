@@ -178,6 +178,9 @@ final class ZuffiAsk: ObservableObject {
     private var panel: NSPanel?
     func show(_ text: String, title: String, speak: Bool = true) {
         answerText = text; answerTitle = title
+        if !text.isEmpty && !text.hasPrefix("I couldn't") {
+            ZuffiHelpLog.shared.add(title.hasPrefix("Reply") ? "Reply written" : title.hasPrefix("Rewritten") ? "Rewritten" : title == "Translation" ? "Translated" : "Explained", text)
+        }
         BunnyFaceCenter.shared.show(.happy, for: 3)
         if speak { VoiceEngine.shared.speak(text) }
         let p = panel ?? {
@@ -441,4 +444,21 @@ struct MeetingHelperView: View {
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(hex: "#0B0A10").opacity(0.94)))
     }
     private func label(_ s: String) -> some View { Text(s).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.45)) }
+}
+
+
+// MARK: - What Zuffi helped with (kept only on this Mac, for the dashboard)
+
+@MainActor
+final class ZuffiHelpLog: ObservableObject {
+    static let shared = ZuffiHelpLog()
+    struct Item: Codable, Identifiable { var id = UUID(); let kind: String; let text: String; let at: Date }
+    @Published private(set) var items: [Item] = TeamStore.load("zuffi-help-log", [Item]())
+    func add(_ kind: String, _ text: String) {
+        items.insert(Item(kind: kind, text: String(text.prefix(400)), at: Date()), at: 0)
+        if items.count > 60 { items.removeLast(items.count - 60) }
+        TeamStore.save("zuffi-help-log", items)
+    }
+    var today: [Item] { items.filter { Calendar.current.isDateInToday($0.at) } }
+    func clear() { items.removeAll(); TeamStore.save("zuffi-help-log", items) }
 }

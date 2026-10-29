@@ -3281,8 +3281,8 @@ struct DashHomePage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             if !ZuffiFocus.agents { YourDayCards(light: light) }
-            chatCard
             if ZuffiFocus.agents {
+            chatCard
             DashCard(title: "Agent Office", sub: mc.question.isEmpty ? "Your agents at their desks. When they work, they get up, go desk to desk and bring the result to Nik." : "Working on: \(mc.question)", light: light) {
                 AgentOfficeView(light: light, showTaskBar: false)
                     .frame(height: 440)
@@ -3292,10 +3292,6 @@ struct DashHomePage: View {
                 activityCard
                 teamCard.frame(width: 360)
             }
-            } else {
-                DashCard(title: "Your chats", sub: "Everything you asked Zuffi — read again, copy, download or continue", light: light) {
-                    LibraryView(light: light, chats: true)
-                }
             }
         }
         .sheet(isPresented: $showLibrary) {

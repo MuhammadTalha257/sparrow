@@ -1859,47 +1859,120 @@ struct YourDayCards: View {
     @ObservedObject private var inbox = NotchInbox.shared
     @ObservedObject private var study = StudyHub.shared
     @ObservedObject private var meeting = MeetingHelper.shared
+    @ObservedObject private var log = ZuffiHelpLog.shared
+    @ObservedObject private var day = DashToday.shared
     private var T: HubTheme { HubTheme(light: light) }
 
+    private var soon: [Deadline] {
+        Array(study.deadlines.filter { !$0.done && $0.date >= Calendar.current.startOfDay(for: Date()) }.sorted { $0.date < $1.date }.prefix(3))
+    }
+    private var hello: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        let first = (ZuffiPlan.shared.profile["name"] ?? "").components(separatedBy: " ").first ?? ""
+        return (h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening") + (first.isEmpty ? "" : ", \(first)")
+    }
+    private var needsLine: String {
+        let m = inbox.notes.count, t = day.events.count + day.tasks.count + soon.count
+        if m + t == 0 { return "Nothing needs you right now. Select text and hold Z whenever you want help." }
+        var parts: [String] = []
+        if m > 0 { parts.append("\(m) message\(m == 1 ? "" : "s") to answer") }
+        if t > 0 { parts.append("\(t) thing\(t == 1 ? "" : "s") today") }
+        return "\(m + t) thing\(m + t == 1 ? " needs" : "s need") you: " + parts.joined(separator: " and ") + "."
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 22) {
+        VStack(alignment: .leading, spacing: 22) {
             DashCard(light: light) {
-                HStack(spacing: 16) {
-                    Aurora3DView(pose: .wave, lookAtMouse: true, framing: .full, expression: .happy).frame(width: 120, height: 130).allowsHitTesting(false)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Ask about anything on your screen").font(HubFont.p(18, .semibold))
-                        tip("Hold Z", "for a second, talk, let go")
-                        tip("Select text", "Explain · Translate · Reply · Rewrite")
-                        tip("Double-click Zuffi", "in the notch, then talk")
-                        tip("“Where do I click…?”", "Zuffi rings the right button")
-                        HStack(spacing: 10) {
-                            DashButton(title: meeting.on ? "Meeting helper is on" : "Meeting helper", icon: "person.2.wave.2.fill", filled: false, light: light) { meeting.toggle() }
+                HStack(spacing: 20) {
+                    RealAuroraHead(width: 80, mood: "idle")
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(hello).font(HubFont.p(22, .semibold))
+                        Text(needsLine).font(HubFont.p(14, .regular)).foregroundColor(T.inactive)
+                    }
+                    Spacer(minLength: 10)
+                    stat(log.today.count, "helps today")
+                    stat(log.today.filter { $0.kind == "Reply written" }.count, "replies written")
+                }
+            }
+            HStack(alignment: .top, spacing: 22) {
+                DashCard(title: "Waiting for you", light: light) {
+                    if inbox.notes.isEmpty { Text("No new messages. WhatsApp and email land here and in the notch.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
+                    ForEach(inbox.notes.prefix(4)) { n in
+                        HStack(spacing: 12) {
+                            Image(systemName: n.icon).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(n.action == "whatsapp" ? Color(hex: "#25D366") : Color(hex: "#5B8CFF")))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(n.head).font(HubFont.p(13.5, .semibold)).lineLimit(1)
+                                Text(n.body).font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive).lineLimit(1)
+                            }
+                            Spacer(minLength: 6)
+                            small("Explain") { Task { await ZuffiAsk.shared.act("explain", n.body) } }
+                            small("Reply", filled: true) { Task { await ZuffiAsk.shared.act("reply", n.body) } }
+                        }
+                        .padding(10).background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(light ? 0.05 : 0.25)))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                DashCard(title: "Today", light: light) {
+                    if day.events.isEmpty && day.tasks.isEmpty && soon.isEmpty {
+                        Text("Nothing planned. Say “Hey Zuffi, remind me…” to add something.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                    }
+                    ForEach(day.events.prefix(4)) { e in row(e.title, e.allDay ? "all day" : e.start.formatted(date: .omitted, time: .shortened)) }
+                    ForEach(day.tasks.prefix(4)) { r in row(r.title, r.due.map { $0.formatted(date: .omitted, time: .shortened) } ?? "to do") }
+                    ForEach(soon) { d in row(d.title, d.date.formatted(.dateTime.weekday(.wide)), warn: true) }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            DashCard(title: "Recent help", light: light) {
+                if log.items.isEmpty {
+                    Text("What Zuffi explains, translates or writes for you shows up here. Only on this Mac.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
+                } else {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], alignment: .leading, spacing: 12) {
+                        ForEach(log.items.prefix(6)) { i in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("\(i.kind) · \(i.at.formatted(date: .omitted, time: .shortened))").font(HubFont.p(11.5, .regular)).foregroundColor(T.inactive)
+                                Text(i.text).font(HubFont.p(13, .regular)).lineLimit(3)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
+                            .padding(14).background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(light ? 0.05 : 0.25)))
+                            .contextMenu { Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(i.text, forType: .string) } }
                         }
                     }
                 }
             }
-            .frame(maxWidth: .infinity)
-            DashCard(title: "Waiting for you", light: light) {
-                if inbox.notes.isEmpty { Text("No new messages. WhatsApp and email show here and in the notch.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
-                ForEach(inbox.notes.prefix(4)) { n in
-                    HStack(spacing: 10) {
-                        Image(systemName: n.icon).foregroundColor(HubTheme.blue).frame(width: 20)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(n.head).font(HubFont.p(13, .semibold)).lineLimit(1)
-                            Text(n.body).font(HubFont.p(12, .regular)).foregroundColor(T.inactive).lineLimit(1)
-                        }
-                        Spacer()
-                        Text(n.at.formatted(date: .omitted, time: .shortened)).font(HubFont.p(11, .regular)).foregroundColor(T.inactive)
-                    }
-                }
-                let soon = study.deadlines.filter { !$0.done && $0.date >= Calendar.current.startOfDay(for: Date()) }.sorted { $0.date < $1.date }.prefix(3)
-                if !soon.isEmpty {
-                    Text("Coming up").font(HubFont.p(12, .semibold)).foregroundColor(T.inactive).padding(.top, 4)
-                    ForEach(Array(soon)) { d in Text("\(d.title) · \(d.date.formatted(.dateTime.weekday(.wide)))").font(HubFont.p(13, .regular)) }
+            DashCard(title: "How to ask", light: light) {
+                HStack(spacing: 22) {
+                    tip("Hold Z", "talk, let go")
+                    tip("Select text", "Explain · Translate · Reply")
+                    tip("“Hey Zuffi”", "when the mic is on")
+                    Spacer()
+                    DashButton(title: meeting.on ? "Meeting helper is on" : "Meeting helper", icon: "person.2.wave.2.fill", filled: false, light: light) { meeting.toggle() }
                 }
             }
-            .frame(width: 380)
         }
+        .task { await day.refresh() }
+    }
+    private func stat(_ n: Int, _ label: String) -> some View {
+        VStack(spacing: 0) {
+            Text("\(n)").font(HubFont.p(26, .semibold))
+            Text(label).font(HubFont.p(11.5, .regular)).foregroundColor(T.inactive)
+        }.frame(minWidth: 70)
+    }
+    private func row(_ a: String, _ b: String, warn: Bool = false) -> some View {
+        HStack {
+            Text(a).font(HubFont.p(13.5, .regular)).lineLimit(1)
+            Spacer()
+            Text(b).font(HubFont.p(12.5, .regular)).foregroundColor(warn ? Color(hex: "#F5B963") : T.inactive)
+        }
+        .padding(12).background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(light ? 0.05 : 0.25)))
+    }
+    private func small(_ t: String, filled: Bool = false, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            Text(t).font(HubFont.p(12, .semibold)).foregroundColor(filled ? Color(hex: "#141218") : T.text)
+                .padding(.horizontal, 12).frame(height: 30)
+                .background(Capsule().fill(filled ? Color(hex: "#F9FAFB") : Color.white.opacity(0.08)))
+        }.buttonStyle(.plain)
     }
     private func tip(_ a: String, _ b: String) -> some View {
         HStack(spacing: 8) { Text(a).font(HubFont.p(13.5, .semibold)); Text(b).font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }

@@ -1041,75 +1041,152 @@ struct NotchHomeView: View {
     @State private var waving = false
     @FocusState private var askFocus: Bool
 
-    private let W: CGFloat = 460
-    private let H: CGFloat = 300
+    @ObservedObject private var tutor = TutorVoice.shared
+    @State private var askedQ = ""
+    @State private var reply = ""
+    @State private var thinking = false
+
+    private let W: CGFloat = 360
+    private let H: CGFloat = 340
     private var agents: [TeamAgent] { [ZuffiTeam.manager] + team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id } }
     private let pillFill = Color.white.opacity(0.10), pillLine = Color.white.opacity(0.22)
+    private var listening: Bool { voice.isListening && (voice.pushToTalk || voice.status.hasPrefix("Listening")) }
+    private var answering: Bool { thinking || !reply.isEmpty }
+    private var mood: String { thinking ? "thinking" : AuroraFace.mood(voice, state) }
 
     var body: some View {
         ZStack(alignment: .top) {
-            NotchSeasonBackground().contentShape(Rectangle()).movesIsland()
+            Color.black.contentShape(Rectangle()).movesIsland()
             VStack(spacing: 10) {
-                // Aurora rises from behind the bottom edge of this window, waves, then reacts to what's happening
-                AuroraFace(mood: AuroraFace.mood(voice, state), speaking: voice.speaking, rise: shown)
-                    .frame(width: 236, height: 190)
-                    .frame(width: W, height: 150, alignment: .top)
-                    .clipped()
-                    .overlay(Color.clear.contentShape(Rectangle()).frame(width: 200, height: 150)
+                // Aurora — the real picture, alive. Ears to chin always visible; smaller while an answer is showing.
+                RealAuroraHead(width: answering ? 74 : 104, mood: mood, speaking: voice.speaking || tutor.speaking)
+                    .overlay(Color.clear.contentShape(Rectangle())
                         .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
                         .help("Double-click Aurora to talk"))
-                askCard
-                HStack(spacing: 0) {
-                    chip("square.grid.2x2.fill", "Dashboard") { ZuffiHub.shared.show(.home) }
-                    chip("sparkles", "Features") { ZuffiNav.go(.features) }
-                    chip("hare.fill", "Pet") { PetController.shared.toggle() }
-                    chip(voice.micEnabled ? "mic.fill" : "mic.slash.fill", voice.micEnabled ? "Mic on" : "Mic off") { VoiceEngine.shared.setMic(!voice.micEnabled) }
-                    Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) } label: {
-                        HStack(spacing: 4) {
-                            ProfileAvatar(size: 18)
-                            Text((ZuffiPlan.shared.profile["name"] ?? "Me").components(separatedBy: " ").first ?? "Me").font(.system(size: 10.5, weight: .medium)).lineLimit(1)
-                        }
-                        .foregroundColor(.white.opacity(0.85)).frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
-                    }.buttonStyle(.plain).help("Your profile & settings")
-                }
-                .frame(height: 26)
+                    .offset(y: risen ? 0 : 50).opacity(risen ? 1 : 0)
+                if listening { listenStrip } else { askBar }
+                if answering { answerCard } else { restRow }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 30)
+            .padding(.top, 26)
+            .padding(.horizontal, 16)
             .frame(width: W, height: H, alignment: .top)
-            .opacity(shown ? 1 : 0).offset(y: shown ? 0 : -8)
+            .opacity(shown ? 1 : 0)
+            .animation(.spring(response: 0.42, dampingFraction: 0.8), value: answering)
+            .animation(.easeInOut(duration: 0.2), value: listening)
         }
         .frame(width: W, height: H)
         .onAppear {
-            NowPlaying.shared.start()
-            shown = false
-            withAnimation(.spring(response: 0.42, dampingFraction: 0.78).delay(0.06)) { shown = true }
+            shown = false; risen = false
+            withAnimation(.easeOut(duration: 0.2)) { shown = true }
+            // she comes up from behind the edge, then smiles
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.62).delay(0.08)) { risen = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { MainActor.assumeIsolated { BunnyFaceCenter.shared.show(.happy, for: 1.6) } }
         }
-        .onDisappear { shown = false }
+        .onDisappear { shown = false; risen = false }
     }
 
-    private var askCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Circle().fill(Color(hex: "#7CE0A3")).frame(width: 7, height: 7)
-                Text(todayLine).font(.system(size: 11.5, design: .rounded)).foregroundColor(.white.opacity(0.65)).lineLimit(1)
-                Spacer(minLength: 0)
+    // the slim ask bar: menu · text · model · mic
+    private var askBar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Button("Dashboard") { ZuffiHub.shared.show(.home) }
+                Button("Settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+                Divider()
+                Button(PetController.shared.isShown ? "Hide Aurora on the desktop" : "Aurora on the desktop") { PetController.shared.toggle() }
+                Button(voice.micEnabled ? "Turn “Hey Zuffi” off" : "Turn “Hey Zuffi” on") { VoiceEngine.shared.setMic(!voice.micEnabled) }
+                Button(MeetingHelper.shared.on ? "Stop meeting helper" : "Meeting helper") { MeetingHelper.shared.toggle() }
+            } label: {
+                Image(systemName: "square.grid.2x2").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#C9C3DA"))
             }
-            HStack(spacing: 8) {
-                TextField("Ask Zuffi, or hold Z and talk…", text: $ask)
-                    .textFieldStyle(.plain).font(.system(size: 13.5, design: .rounded)).foregroundColor(.white)
-                    .focused($askFocus).onSubmit { send() }
-                ProviderMenu(state: state)
-                Button { ZuffiAsk.shared.listenOnce() } label: {
-                    Image(systemName: voice.isListening && voice.pushToTalk ? "waveform" : "mic.fill").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 30, height: 30).background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: "#8E7CFF")))
-                }.buttonStyle(.plain).help("Talk to Zuffi")
-            }
-            .padding(.leading, 12).padding(.trailing, 5).frame(height: 40)
-            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(0.10)))
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Dashboard, settings and more")
+            TextField(answering ? "Ask a follow-up…" : "Ask Zuffi anything…", text: $ask)
+                .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
+                .focused($askFocus).onSubmit { send() }
+            ProviderMenu(state: state)
+            Button { ZuffiAsk.shared.listenOnce() } label: {
+                Image(systemName: "mic.fill").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#141218"))
+                    .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#F2F1F6")))
+            }.buttonStyle(.plain).help("Talk to Zuffi (or hold Z)")
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.55)))
+        .padding(.leading, 14).padding(.trailing, 6).frame(height: 44)
+        .background(Capsule().fill(Color(hex: "#141218")))
+        .overlay(Capsule().stroke(Color.white.opacity(0.10)))
+    }
+
+    // while you hold Z or say "Hey Zuffi"
+    private var listenStrip: some View {
+        HStack(spacing: 10) {
+            TimelineView(.animation(minimumInterval: 1 / 20)) { tl in
+                let t = tl.date.timeIntervalSinceReferenceDate
+                HStack(spacing: 3) {
+                    ForEach(0..<4, id: \.self) { i in
+                        Capsule().fill(Color.white).frame(width: 3, height: 5 + 11 * CGFloat(abs(sin(t * 7 + Double(i) * 0.9))))
+                    }
+                }.frame(height: 18)
+            }
+            Text(voice.pushToTalk ? "Listening… let go of Z to send" : "Listening…").font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
+            Spacer(minLength: 0)
+            Button { VoiceEngine.shared.pushToTalkUp() } label: {
+                RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 10, height: 10)
+                    .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#E5484D")))
+            }.buttonStyle(.plain).help("Stop")
+        }
+        .padding(.leading, 16).padding(.trailing, 6).frame(height: 44)
+        .background(Capsule().fill(Color(hex: "#141218")))
+    }
+
+    // the answer hangs under the bar
+    private var answerCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Spacer(minLength: 40)
+                        Text(askedQ).font(.system(size: 12.5)).foregroundColor(Color(hex: "#141218"))
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: "#F2F1F6")))
+                    }
+                    if thinking {
+                        Text("Hmm, let me think…").font(.system(size: 13.5)).foregroundColor(.white.opacity(0.6))
+                    } else {
+                        Text(reply).font(.system(size: 13.5)).foregroundColor(.white).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if !thinking {
+                HStack(spacing: 14) {
+                    Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reply, forType: .string) }
+                    Button("Listen again") { VoiceEngine.shared.speak(reply) }
+                    Spacer()
+                    Button { reply = ""; askedQ = "" } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }.help("Clear")
+                }
+                .buttonStyle(.plain).font(.system(size: 11.5, weight: .medium)).foregroundColor(Color(hex: "#B9B4C6"))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(hex: "#0F0E13")))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.08)))
+        .padding(.bottom, 12)
+    }
+
+    // nothing asked yet: a friendly line and two doors
+    private var restRow: some View {
+        VStack(spacing: 10) {
+            Text(todayLine).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.55)).lineLimit(1)
+            HStack(spacing: 8) {
+                pill("Dashboard") { ZuffiHub.shared.show(.home) }
+                pill("Settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+            }
+        }
+    }
+
+    private func pill(_ t: String, _ go: @escaping () -> Void) -> some View {
+        Button(action: go) {
+            Text(t).font(.system(size: 12, weight: .medium)).foregroundColor(.white.opacity(0.9))
+                .padding(.horizontal, 14).frame(height: 28).background(Capsule().fill(Color.white.opacity(0.09)))
+        }.buttonStyle(.plain)
     }
 
     private var todayLine: String {
@@ -1240,7 +1317,25 @@ struct NotchHomeView: View {
         let q = ask.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
         ask = ""
-        ZuffiChat.shared.ask(q)
+        if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
+        // about the screen ("where do I click", "explain this page") → Zuffi looks at the screen
+        if let hit = ZuffiAsk.shared.takeIfAboutScreen(q) {
+            Task { await ZuffiAsk.shared.answer(hit.0, about: hit.1) }; return
+        }
+        let before = askedQ.isEmpty || reply.isEmpty ? "" : "Earlier they asked: \"\(askedQ)\" and you said: \"\(reply)\"\n"
+        askedQ = q; reply = ""; thinking = true
+        BunnyFaceCenter.shared.show(.thinking, for: 8)
+        Task { @MainActor in
+            let r = await AIService.shared.oneShot("""
+                \(before)The user asks: "\(q)"
+                Answer like a kind, clever friend: short and clear (under 110 words), in the language they wrote in. Plain text, no symbols or lists unless really needed. \
+                You may begin with ONE small natural reaction when it truly fits — "Oh!", "Ah,", "Hmm," or "Haha,".
+                """, system: "You are Zuffi, a friendly helper that lives in the notch of the user's Mac.\n" + ZuffiVoice.style) ?? ""
+            let out = r.trimmingCharacters(in: .whitespacesAndNewlines)
+            thinking = false
+            reply = out.isEmpty ? "I couldn't answer just now — pick an AI model with the button in the bar." : out
+            if !out.isEmpty { ZuffiHelpLog.shared.add("Answered", out); BunnyFaceCenter.shared.show(.happy, for: 2) }
+        }
     }
 
     // MARK: row 2 — notifications
@@ -1642,7 +1737,7 @@ final class FaceDrop {
 
     private func show() {
         guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main else { return }
-        let w: CGFloat = 250, h: CGFloat = 196
+        let w: CGFloat = 250, h: CGFloat = 206
         let p = panel ?? {
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: w, height: h), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.ignoresMouseEvents = true
@@ -1690,11 +1785,130 @@ struct FaceDropView: View {
         ZStack(alignment: .top) {
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 40, bottomTrailing: 40, topTrailing: 0), style: .continuous)
                 .fill(Color(hex: "#050507"))
-            AuroraFace(mood: AuroraFace.mood(voice, state), speaking: voice.speaking || tutor.speaking, rise: m.open)
-                .frame(width: 236, height: 190)
-                .padding(.top, 14)
+            RealAuroraHead(width: 116, mood: AuroraFace.mood(voice, state), speaking: voice.speaking || tutor.speaking)
+                .padding(.top, 28)
+                .offset(y: m.open ? 0 : 60)
+                .animation(.spring(response: 0.45, dampingFraction: 0.62), value: m.open)
         }
-        .frame(width: 250, height: 196, alignment: .top)
+        .frame(width: 250, height: 206, alignment: .top)
         .clipped()
+    }
+}
+
+// MARK: - Aurora, the real picture, brought to life (breathes, blinks, talks, tilts) — used on the notch, the face drop and the dashboard
+
+struct RealAurora: View {
+    /// Width of the whole picture (it is 200 × 420). The face sits between y≈100 and y≈270 of the picture.
+    var width: CGFloat = 120
+    var mood: String = "idle"
+    var speaking = false
+    var lookAtMouse = true
+
+    static let picW: CGFloat = 200, picH: CGFloat = 420
+    /// Height to show so everything from the ear tips down to the chin is visible.
+    static func faceHeight(_ width: CGFloat) -> CGFloat { width / picW * 272 }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            let s = width / Self.picW
+            let happy = ["done", "love", "hello"].contains(mood)
+            let breathe = 1 + 0.014 * CGFloat(sin(t * 2 * .pi / 3.4))
+            let bob = 1.4 * CGFloat(sin(t * 2 * .pi / 3.4)) - (happy ? CGFloat(abs(sin(t * 6))) * 5 : 0)
+            let cycle = t.truncatingRemainder(dividingBy: 4.1)
+            let blink: CGFloat = cycle < 0.16 ? CGFloat(sin(cycle / 0.16 * .pi)) : 0
+            let lid: CGFloat = mood == "sleepy" ? max(0.62, blink) : mood == "thinking" ? max(0.22, blink) : blink
+            let mouth: CGFloat = speaking ? CGFloat(abs(sin(t * 10.5)) * 0.65 + abs(sin(t * 6.7)) * 0.35) : 0
+            let tilt: Double = mood == "listening" ? -6 + 1.2 * sin(t * 1.7)
+                : mood == "thinking" ? 5 + sin(t * 1.1)
+                : mood == "oops" ? -3
+                : speaking ? 2.2 * sin(t * 2.6) : 0.8 * sin(t * 0.9)
+            let look = lookAtMouse ? Self.mouseLean() : 0
+            ZStack(alignment: .topLeading) {
+                if let img = AuroraArt.shared.front {
+                    Image(nsImage: img).resizable().interpolation(.high).antialiased(true)
+                        .frame(width: width, height: width * Self.picH / Self.picW)
+                } else {
+                    LiveBunnyFace(size: width * 0.8).padding(.top, width * 0.5)
+                }
+                // eyelids: fur-coloured, they close from the top
+                ForEach([50.0, 139.0], id: \.self) { x in
+                    Ellipse()
+                        .fill(LinearGradient(colors: [Color(red: 0.84, green: 0.80, blue: 0.79), Color(red: 0.72, green: 0.67, blue: 0.66)], startPoint: .top, endPoint: .bottom))
+                        .frame(width: 40 * s, height: 36 * s)
+                        .mask(Rectangle().frame(width: 40 * s, height: 36 * s * lid).frame(width: 40 * s, height: 36 * s, alignment: .top))
+                        .overlay(alignment: .top) {
+                            if lid > 0.15 { Capsule().fill(Color(red: 0.32, green: 0.24, blue: 0.24).opacity(0.55)).frame(width: 30 * s, height: 1.6 * s).offset(y: 36 * s * lid - 1.2 * s) }
+                        }
+                        .offset(x: (CGFloat(x) - 20) * s, y: (196 - 18) * s)
+                }
+                // mouth: opens a little while she talks
+                if mouth > 0.04 {
+                    Ellipse()
+                        .fill(RadialGradient(colors: [Color(red: 0.36, green: 0.13, blue: 0.17), Color(red: 0.55, green: 0.27, blue: 0.30)], center: .center, startRadius: 0, endRadius: 8 * s))
+                        .frame(width: (11 + 4 * mouth) * s, height: (2 + 9 * mouth) * s)
+                        .offset(x: (93 - (11 + 4 * mouth) / 2) * s, y: 239 * s)
+                }
+                if mood == "thinking" {
+                    HStack(spacing: 3 * s) {
+                        ForEach(0..<3, id: \.self) { i in
+                            Circle().fill(Color.white.opacity(0.85)).frame(width: 7 * s, height: 7 * s)
+                                .offset(y: -4 * s * CGFloat(max(0, sin(t * 5 - Double(i) * 0.7))))
+                        }
+                    }
+                    .offset(x: 150 * s, y: 112 * s)
+                }
+                if mood == "love" {
+                    Image(systemName: "heart.fill").font(.system(size: 18 * s)).foregroundColor(Color(hex: "#FF7FA6"))
+                        .offset(x: 160 * s, y: (110 - 10 * CGFloat(abs(sin(t * 3)))) * s)
+                }
+            }
+            .frame(width: width, height: width * Self.picH / Self.picW, alignment: .topLeading)
+            .scaleEffect(x: 1, y: breathe, anchor: .bottom)
+            .rotation3DEffect(.degrees(look * 9), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
+            .rotationEffect(.degrees(tilt), anchor: UnitPoint(x: 0.47, y: 0.62))
+            .offset(y: bob)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// -1 … 1: how far left or right the mouse is on the screen (she leans a little to look at it).
+    @MainActor static func mouseLean() -> Double {
+        let m = NSEvent.mouseLocation
+        guard let f = (NSScreen.screens.first { $0.frame.contains(m) } ?? NSScreen.main)?.frame, f.width > 0 else { return 0 }
+        return max(-1, min(1, Double((m.x - f.midX) / (f.width / 2))))
+    }
+}
+
+/// Just Aurora's head (ears to chin), never cut: the frame is as tall as the face needs.
+struct RealAuroraHead: View {
+    var width: CGFloat = 110
+    var mood: String = "idle"
+    var speaking = false
+    var body: some View {
+        RealAurora(width: width, mood: mood, speaking: speaking)
+            .padding(.top, 6)
+            .frame(width: width * 1.3, height: RealAurora.faceHeight(width) + 12, alignment: .top)
+            .clipped()
+    }
+}
+
+/// Closed: a small black tab under the notch with Aurora's face peeking out (eyes to chin; ears tuck behind the notch).
+struct CompactAuroraTab: View {
+    @ObservedObject private var voice = VoiceEngine.shared
+    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var faces = BunnyFaceCenter.shared
+    @ObservedObject private var tutor = TutorVoice.shared
+    let width: CGFloat
+    let height: CGFloat
+    let notchH: CGFloat
+    var body: some View {
+        let top = max(18, notchH) - 6              // where her forehead starts
+        let s = max(0.25, (height - 4 - top) / 168) // forehead (y≈100) … chin (y≈268) of the picture
+        RealAurora(width: 200 * s, mood: AuroraFace.mood(voice, state), speaking: voice.speaking || tutor.speaking)
+            .offset(y: top - 100 * s)
+            .frame(width: width, height: height, alignment: .top)
+            .clipped()
+            .allowsHitTesting(false)
     }
 }
