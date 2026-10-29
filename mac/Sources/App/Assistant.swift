@@ -247,6 +247,7 @@ final class VoiceEngine: NSObject, ObservableObject {
                 guard turn == self.neuralTurn else { return }
                 if !ok { self.appleSpeak(clean) }
                 else {
+                    self.audioStartedAt = Date()     // Aurora's lips follow the words from here
                     // Safety net: never leave the microphone paused.
                     let secs = 6.0 + Double(text.count) / 9.0
                     DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
@@ -264,6 +265,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     fileprivate func neuralTimeout(_ turn: Int) { if turn == neuralTurn, speaking { neuralEnded() } }
 
     private func appleSpeak(_ clean: String) {
+        audioStartedAt = Date().addingTimeInterval(0.15)
         let u = Self.naturalUtterance(String(clean.prefix(1200)))
         let voice = currentVoice()
         u.voice = voice
@@ -481,6 +483,8 @@ final class VoiceEngine: NSObject, ObservableObject {
     var lastSpokenAt = Date.distantPast
     @Published var missedAt = Date.distantPast
     var pttEndedAt = Date.distantPast
+    /// When the sound of the current sentence actually started (for lip-sync).
+    var audioStartedAt = Date.distantPast
     func setMic(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: "micOn")
         micEnabled = on

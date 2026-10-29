@@ -1053,7 +1053,7 @@ struct NotchHomeView: View {
     private let pillFill = Color.white.opacity(0.10), pillLine = Color.white.opacity(0.22)
     private var listening: Bool { voice.isListening && (voice.pushToTalk || voice.status.hasPrefix("Listening")) }
     private var answering: Bool { thinking || !reply.isEmpty }
-    private var mood: String { thinking ? "thinking" : AuroraFace.mood(voice, state) }
+    private var mood: String { thinking ? "thinking" : waving ? "hello" : AuroraFace.mood(voice, state) }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -1081,7 +1081,8 @@ struct NotchHomeView: View {
             withAnimation(.easeOut(duration: 0.2)) { shown = true }
             // she comes up from behind the edge, then smiles
             withAnimation(.spring(response: 0.5, dampingFraction: 0.62).delay(0.08)) { risen = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { MainActor.assumeIsolated { BunnyFaceCenter.shared.show(.happy, for: 1.6) } }
+            waving = true      // she says hi with a little wave
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { MainActor.assumeIsolated { waving = false } }
         }
         .onDisappear { shown = false; risen = false }
         // what you said shows straight away; Zuffi's answer (spoken or written) lands in the card
@@ -1870,8 +1871,35 @@ struct AuroraLook {
     var mouthO = false
     var blush: Double = 0.18
     var dots = false, hearts = false, zzz = false
+    var armL: Double = 0, armR: Double = 0      // front legs swing from the shoulder (left: + = out, right: - = out)
+    var pawL: CGFloat = 0, pawR: CGFloat = 0     // in the notch: how far each paw rises over the edge (0 … 1)
 
-    static func make(t: Double, mood: String, speaking: Bool, walking: Bool, look: CGPoint) -> AuroraLook {
+    /// The mouth shape for the letter being said right now (vowels open, m/b/p closed, o/u round).
+    static func viseme(_ text: String, at sec: Double) -> (open: CGFloat, round: Bool, emph: Bool) {
+        let cps = 14.5
+        let chars = Array(text.lowercased())
+        let x = sec * cps
+        let i = Int(x)
+        guard sec >= 0, i < chars.count else { return (0.06, false, false) }
+        func v(_ c: Character) -> (CGFloat, Bool) {
+            switch c {
+            case "a", "ā", "آ", "ا": return (1, false)
+            case "o", "ó": return (0.85, true)
+            case "e", "i", "y", "ی", "े": return (0.55, false)
+            case "u", "w", "و": return (0.5, true)
+            case "m", "b", "p", "م", "ب", "پ": return (0, false)
+            case "f", "v": return (0.15, false)
+            case " ", ",", ".", "!", "?", "\n", "…", "—": return (0.05, false)
+            default: return (0.32, false)
+            }
+        }
+        let f = CGFloat(x - Double(i))
+        let a = v(chars[i]), b = i + 1 < chars.count ? v(chars[i + 1]) : (CGFloat(0), false)
+        let near = chars[max(0, i - 3)..<min(chars.count, i + 4)]
+        return (a.0 * (1 - f) + b.0 * f, f < 0.5 ? a.1 : b.1, near.contains("!") || near.contains("?"))
+    }
+
+    @MainActor static func make(t: Double, mood: String, speaking: Bool, walking: Bool, look: CGPoint) -> AuroraLook {
         var p = AuroraLook()
         p.look = look
         p.breathe = 1 + 0.012 * CGFloat(sin(t * 2 * .pi / 3.4))
@@ -1914,13 +1942,36 @@ struct AuroraLook {
         default: break
         }
         if speaking {
-            // talking: the mouth follows a syllable rhythm, the head nods, the ears bounce
-            let syl = abs(sin(t * 11.0)) * 0.6 + abs(sin(t * 6.9 + 1.3)) * 0.4
-            p.mouth = CGFloat(syl * (0.4 + 0.6 * abs(sin(t * 1.7))))
+            // talking: lips follow the actual words, head nods, ears bounce, paws move like she's explaining
+            let v = VoiceEngine.shared
+            let since = Date().timeIntervalSince(v.audioStartedAt)
+            if since >= 0, since < 60, !v.lastSpoken.isEmpty, v.audioStartedAt >= v.lastSpokenAt.addingTimeInterval(-0.5) {
+                let vis = AuroraLook.viseme(v.lastSpoken, at: since)
+                p.mouth = vis.open; p.mouthO = vis.round
+                if vis.emph { p.armL = 34 + 8 * sin(t * 4); p.armR = -34 - 8 * sin(t * 4 + 1); p.pawL = 1; p.pawR = 1; p.eyeScale = 1.06 }
+            } else {
+                let syl = abs(sin(t * 11.0)) * 0.6 + abs(sin(t * 6.9 + 1.3)) * 0.4
+                p.mouth = CGFloat(syl * (0.4 + 0.6 * abs(sin(t * 1.7)))); p.mouthO = false
+            }
             p.nod += CGFloat(1.8 * sin(t * 5.2))
             p.tilt += 2.5 * sin(t * 2.3)
             p.earL += 3 * sin(t * 5.2); p.earR -= 3 * sin(t * 5.2 + 0.4)
-            p.mouthO = false
+            if p.armL == 0 {
+                // "explaining" hands: one paw lifts and moves, then the other
+                let phase = Int(t / 2.6) % 3
+                let g = max(0, sin(t * 3.4))
+                p.armL = phase != 1 ? 10 + 22 * g : 6
+                p.armR = phase != 0 ? -(10 + 22 * max(0, sin(t * 3.4 + 1.6))) : -6
+                p.pawL = phase != 1 ? CGFloat(0.35 + 0.65 * g) : 0.2
+                p.pawR = phase != 0 ? CGFloat(0.35 + 0.65 * max(0, sin(t * 3.4 + 1.6))) : 0.2
+            }
+        }
+        switch mood {
+        case "hello": p.armR = -70 + 16 * sin(t * 12); p.pawR = 1; p.pawL = 0.3       // waves
+        case "listening": p.armL = 8; p.armR = -8; p.pawL = 0.45; p.pawR = 0.45       // paws up, attentive
+        case "done", "love": p.armL = 26 + 10 * sin(t * 9); p.armR = -26 - 10 * sin(t * 9); p.pawL = 0.8; p.pawR = 0.8  // cheers
+        case "oops": p.armL = -4; p.armR = 4
+        default: break
         }
         if walking { p.hop = max(p.hop, CGFloat(abs(sin(t * 7))) * 12); p.earL -= 6 * sin(t * 14); p.earR += 6 * sin(t * 14) }
         return p
@@ -1934,6 +1985,8 @@ struct RealAurora: View {
     var speaking = false
     var lookAtMouse = true
     var walking = false
+    /// Only her head is on show (the notch): her paws peek over the bottom edge and gesture there.
+    var notchPaws = false
     @State private var probe = AuroraProbe()
 
     static let picW: CGFloat = 200, picH: CGFloat = 420
@@ -1972,8 +2025,16 @@ struct RealAurora: View {
     private func puppet(_ p: AuroraLook, t: Double) -> some View {
         let headAnchor = UnitPoint(x: 0.47, y: 255 / Self.picH)
         return ZStack(alignment: .topLeading) {
-            // body (stays put, breathes)
+            // body (stays put, breathes) — the front legs are drawn on their own so they can gesture
             picture().mask(band(262, 284, 430, 431))
+            if p.armL != 0 || p.armR != 0 {
+                ForEach([48.0, 150.0], id: \.self) { x in
+                    Ellipse().fill(Color(red: 0.80, green: 0.76, blue: 0.74)).frame(width: 46 * s, height: 72 * s).blur(radius: 5 * s)
+                        .offset(x: (CGFloat(x) - 23) * s, y: (284) * s)
+                }
+            }
+            arm(left: true, angle: p.armL)
+            arm(left: false, angle: p.armR)
             // head: ears behind, then the face
             ZStack(alignment: .topLeading) {
                 picture()
@@ -1994,6 +2055,16 @@ struct RealAurora: View {
             }
             .offset(x: p.turn * s, y: p.nod * s)
             .rotationEffect(.degrees(p.tilt), anchor: headAnchor)
+            if notchPaws {
+                ForEach([true, false], id: \.self) { left in
+                    let lift = left ? p.pawL : p.pawR
+                    let wave = (!left && mood == "hello") ? sin(t * 12) * 12 : 0
+                    Self.paw(width: width, left: left)
+                        .rotationEffect(.degrees((left ? -1 : 1) * (8 + 10 * Double(lift)) + wave), anchor: .bottom)
+                        .offset(x: (left ? 34 : 122) * s, y: (262 - 26 * lift) * s)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: lift)
+                }
+            }
             // little extras
             if p.dots {
                 HStack(spacing: 4 * s) {
@@ -2018,6 +2089,31 @@ struct RealAurora: View {
         .scaleEffect(x: 1 + (p.breathe - 1) * 0.5, y: p.breathe, anchor: .bottom)
         .offset(y: -p.hop * s)
         .frame(width: width, height: H, alignment: .topLeading)
+    }
+
+    /// A front leg cut from the picture, swinging from the shoulder.
+    private func arm(left: Bool, angle: Double) -> some View {
+        let cx: CGFloat = left ? 48 : 150, cy: CGFloat = 320
+        return picture()
+            .mask(Ellipse().frame(width: 56 * s, height: 86 * s).blur(radius: 2.5 * s)
+                .offset(x: (cx - 28) * s, y: (cy - 43) * s)
+                .frame(width: width, height: H, alignment: .topLeading))
+            .rotationEffect(.degrees(angle), anchor: UnitPoint(x: (left ? 52 : 146) / Self.picW, y: 286 / Self.picH))
+    }
+
+    /// One paw, cut from the picture — used where only her head shows (the notch), peeking over the edge.
+    static func paw(width: CGFloat, left: Bool) -> some View {
+        let s = width / picW
+        let c = CGPoint(x: left ? 57 : 146, y: 343)
+        return Group {
+            if let img = AuroraArt.shared.front {
+                Image(nsImage: img).resizable().interpolation(.high).frame(width: width, height: width * picH / picW)
+                    .offset(x: -(c.x - 22) * s, y: -(c.y - 20) * s)
+                    .frame(width: 44 * s, height: 40 * s, alignment: .topLeading)
+                    .clipped()
+                    .mask(Ellipse().blur(radius: 1.5 * s))
+            }
+        }
     }
 
     // Her eye, redrawn so it can look around, blink and smile. Sits exactly over the eye in the picture.
@@ -2086,7 +2182,7 @@ struct RealAuroraHead: View {
     var mood: String = "idle"
     var speaking = false
     var body: some View {
-        RealAurora(width: width, mood: mood, speaking: speaking)
+        RealAurora(width: width, mood: mood, speaking: speaking, notchPaws: true)
             .padding(.top, 6)
             .frame(width: width * 1.3, height: RealAurora.faceHeight(width) + 12, alignment: .top)
             .clipped()
@@ -2105,7 +2201,7 @@ struct CompactAuroraTab: View {
     var body: some View {
         let top = max(18, notchH) - 6              // where her forehead starts
         let s = max(0.25, (height - 4 - top) / 168) // forehead (y≈100) … chin (y≈268) of the picture
-        RealAurora(width: 200 * s, mood: AuroraFace.mood(voice, state), speaking: voice.speaking || tutor.speaking)
+        RealAurora(width: 200 * s, mood: AuroraFace.mood(voice, state), speaking: voice.speaking || tutor.speaking, notchPaws: true)
             .offset(y: top - 100 * s)
             .frame(width: width, height: height, alignment: .top)
             .clipped()
