@@ -4335,49 +4335,12 @@ struct PrivacyPane: View {
                 ZToggle(title: "Show the action bar when I select text", sub: "Explain · Translate · Reply · Rewrite · Read aloud", on: Binding(get: { UserDefaults.standard.object(forKey: "selectionBar") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "selectionBar") }), light: light)
                 DashButton(title: MeetingHelper.shared.on ? "Stop meeting helper" : "Start meeting helper (private)", icon: "person.2.wave.2.fill", filled: false, light: light) { MeetingHelper.shared.toggle() }
             }
-            DashCard(title: "Start fresh", sub: "Erase everything Zuffi saved on this Mac — profile, chats, memory, courses, settings — and open the first-run setup again. Your AI keys are kept unless you choose to remove them.", light: light) {
+            DashCard(title: "Start fresh", sub: "Erase everything Zuffi saved on this Mac — profile, chats, memory, courses, settings — and open the first-run setup again. Your Zuffi account and plan stay; just sign in again.", light: light) {
                 HStack(spacing: 12) {
-                    DashButton(title: "Erase and start fresh…", icon: "arrow.counterclockwise", filled: false, light: light) { ZuffiReset.confirm() }
+                    DashButton(title: "Erase and start fresh…", icon: "arrow.counterclockwise", filled: false, light: light) { ZuffiReset.confirmAndRun() }
                 }
             }
         }
     }
 }
 
-/// Erase Zuffi's data on this Mac and relaunch into the first-run setup.
-@MainActor
-enum ZuffiReset {
-    static func confirm() {
-        let a = NSAlert()
-        a.messageText = "Erase Zuffi and start fresh?"
-        a.informativeText = "This deletes your Zuffi profile, chats, memory, courses, notes and settings on this Mac. It can't be undone. Zuffi will restart with the first-run setup."
-        a.addButton(withTitle: "Erase and restart")
-        a.addButton(withTitle: "Cancel")
-        a.showsSuppressionButton = true
-        a.suppressionButton?.title = "Also remove my saved AI keys"
-        a.alertStyle = .warning
-        NSApp.activate(ignoringOtherApps: true)
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        erase(keys: a.suppressionButton?.state == .on)
-    }
-
-    static func erase(keys: Bool) {
-        if keys {
-            for p in AIProvider.allCases { if let k = p.keychainKey { KeychainStore.delete(key: k) } }
-        }
-        let fm = FileManager.default
-        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Zuffi", isDirectory: true)
-        try? fm.removeItem(at: support)
-        if let id = Bundle.main.bundleIdentifier {
-            UserDefaults.standard.removePersistentDomain(forName: id)
-            UserDefaults.standard.synchronize()
-        }
-        // relaunch
-        let url = Bundle.main.bundleURL
-        let cfg = NSWorkspace.OpenConfiguration(); cfg.createsNewApplicationInstance = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            NSWorkspace.shared.openApplication(at: url, configuration: cfg) { _, _ in }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NSApp.terminate(nil) }
-        }
-    }
-}
