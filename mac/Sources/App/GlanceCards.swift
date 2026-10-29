@@ -912,6 +912,7 @@ final class MacStatus: ObservableObject {
         guard toastsOn, !MeetingNotes.shared.active else { return }
         let st = AppState.shared
         if st.mode == .expanded && st.view != .note { return }
+        if st.view == .note && st.isPinned { NotchInbox.shared.add(String(head.prefix(58)), body, icon: icon, action: action); return }   // you're replying to one: don't swap it
         st.noteIsAlert = false
         st.noteAction = action
         st.noteMessage = "\(String(head.prefix(58)))\n\(body)"

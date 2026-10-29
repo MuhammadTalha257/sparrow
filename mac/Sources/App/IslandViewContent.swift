@@ -1202,6 +1202,16 @@ struct NoteView: View {
     }
     private var incoming: String { (state.noteMessage ?? "").components(separatedBy: "\n").dropFirst().joined(separator: " ") }
 
+    /// What kind of card this is, read from the message itself, so a reminder never shows WhatsApp buttons (or the other way round).
+    private var kind: String {
+        if let a = state.noteAction, ["meeting", "screen", "bizinfo"].contains(a) { return a }
+        let head = (state.noteMessage ?? "").components(separatedBy: "\n").first ?? ""
+        if head.hasPrefix("WhatsApp") { return "whatsapp" }
+        if head.hasPrefix("Mail") { return "mail" }
+        if state.noteIsAlert { return "reminder" }
+        return "plain"
+    }
+
     private func fold() { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
     private func startReply() {
         state.isPinned = true          // stay open while you type
@@ -1210,7 +1220,7 @@ struct NoteView: View {
     }
     private func writeForMe() async {
         writing = true; defer { writing = false }
-        let ask = state.noteAction == "mail"
+        let ask = kind == "mail"
             ? "Write a short, polite email reply to \(sender) about: \(incoming). Reply with the email text only."
             : "Write a short, natural WhatsApp reply to this message from \(sender): \"\(incoming)\". Same language and tone as their message. Reply with the message text only."
         if let r = await AIService.shared.oneShot(ask, system: "You write short replies for the user. Reply with the text only, no quotes.") {
@@ -1220,7 +1230,7 @@ struct NoteView: View {
     private func sendReply() {
         let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        let mail = state.noteAction == "mail", chat = state.noteRef ?? sender, who = sender
+        let mail = kind == "mail", chat = state.noteRef ?? sender, who = sender
         state.isPinned = false
         withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { finishing = true }
         Task { @MainActor in
@@ -1240,7 +1250,7 @@ struct NoteView: View {
     /// One colour per kind of note: water, prayer, medicine, mail, WhatsApp, meeting…
     private var tint: Color {
         let t = (state.noteMessage ?? "").lowercased()
-        switch state.noteAction {
+        switch kind {
         case "whatsapp": return Color(hex: "#25D366")
         case "mail": return Color(hex: "#5B8CFF")
         case "meeting": return Color(hex: "#F5A524")
@@ -1325,7 +1335,7 @@ struct NoteView: View {
                     .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(0.08)))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                if state.noteAction == "meeting" {
+                if kind == "meeting" {
                     HStack(spacing: 8) {
                         noteButton("Take notes", icon: "waveform", primary: true) {
                             let r = MeetingWatcher.shared.acceptNotes()
@@ -1337,7 +1347,7 @@ struct NoteView: View {
                 } else if replying {
                     // Quick reply, right in the notch: type (or let Zuffi write it) and send.
                     HStack(spacing: 6) {
-                        TextField(state.noteAction == "mail" ? "Your reply…" : "Message…", text: $replyText)
+                        TextField(kind == "mail" ? "Your reply…" : "Message…", text: $replyText)
                             .textFieldStyle(.plain).font(.system(size: 13)).foregroundColor(.white)
                             .padding(.horizontal, 12).frame(height: 32)
                             .background(Capsule().fill(Color.white.opacity(0.10)))
@@ -1355,12 +1365,12 @@ struct NoteView: View {
                     }
                     .padding(.top, 4)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if state.noteAction == "bizinfo" {
+                } else if kind == "bizinfo" {
                     HStack(spacing: 8) {
                         noteButton("Fill in now", icon: "pencil", primary: true) { BizNav.shared.tab = .business; BusinessDashboard.shared.show(.business); fold() }
                         noteButton("Later", icon: "clock", primary: false) { fold() }
                     }.padding(.top, 4)
-                } else if state.noteAction == "mail" {
+                } else if kind == "mail" {
                     // Email: read it to me · reply · later
                     HStack(spacing: 8) {
                         noteButton("Read", icon: "speaker.wave.2.fill", primary: true) {
@@ -1369,7 +1379,7 @@ struct NoteView: View {
                         noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: false) { startReply() }
                         noteButton("Later", icon: "clock", primary: false) { fold() }
                     }.padding(.top, 4)
-                } else if state.noteAction == "whatsapp" {
+                } else if kind == "whatsapp" {
                     // WhatsApp: reply · read it out · later
                     HStack(spacing: 8) {
                         noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: true) { startReply() }
@@ -1378,7 +1388,7 @@ struct NoteView: View {
                         }
                         noteButton("Later", icon: "clock", primary: false) { fold() }
                     }.padding(.top, 4)
-                } else if state.noteAction == "screen" {
+                } else if kind == "screen" {
                     HStack(spacing: 8) {
                         noteButton("Stop recording", icon: "stop.fill", primary: true) {
                             state.noteAction = nil
@@ -1388,7 +1398,7 @@ struct NoteView: View {
                             }
                         }
                     }.padding(.top, 4)
-                } else if state.noteIsAlert {
+                } else if kind == "reminder" {
                     // A reminder or prayer: tick it off (or snooze) right here; the button answers, then the notch folds away.
                     HStack(spacing: 8) {
                         Button { answer(done: true) } label: {
@@ -1429,7 +1439,7 @@ struct NoteView: View {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.82).delay(0.05)) { shown = true }
         }
         .onChange(of: state.noteMessage) { _, _ in type(parts.text) }
-        .onDisappear { typing?.cancel(); state.noteIsAlert = false; replying = false; state.isPinned = false; if state.noteAction == "meeting" { state.noteAction = nil } }
+        .onDisappear { typing?.cancel(); state.noteIsAlert = false; replying = false; state.isPinned = false; if kind == "meeting" { state.noteAction = nil } }
     }
 
     private func noteButton(_ title: String, icon: String?, primary: Bool, action: @escaping () -> Void) -> some View {

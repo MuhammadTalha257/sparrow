@@ -897,6 +897,16 @@ final class AIService {
     /// The model "Get the offline brain" downloads (Qwen 2.5: strong in English, Urdu, Hindi and Arabic).
     nonisolated static var recommendedOllama: String { bigMac ? "qwen2.5:7b" : "qwen2.5:3b" }
 
+    /// Loads the offline model into memory ahead of time, so the first offline answer doesn't wait 10–20 s.
+    static func warmOllama() async {
+        guard await ollamaRunning(), let m = await ollamaModels().first,
+              let url = URL(string: "http://127.0.0.1:11434/api/generate") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 120)
+        req.httpMethod = "POST"; req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": m, "prompt": "", "keep_alive": "60m"])
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
     static func ollamaRunning() async -> Bool {
         guard let url = URL(string: "http://127.0.0.1:11434/api/version") else { return false }
         let req = URLRequest(url: url, timeoutInterval: 1.5)
@@ -964,9 +974,12 @@ final class AIService {
             messages.append(msg)
         }
         let json = try await postJSON(URL(string: "http://127.0.0.1:11434/api/chat")!,
-                                      body: ["model": model, "messages": messages, "stream": false, "keep_alive": "30m",   // stays loaded: fast replies
-                                             // Default window (2k tokens) is too small for a document.
-                                             "options": ["num_ctx": document == nil ? 4096 : 8192]],
+                                      body: ["model": model, "messages": messages, "stream": false, "keep_alive": "60m",   // stays loaded: fast replies
+                                             "think": false,          // thinking models (qwen3…) answer straight away, no long hidden "thinking"
+                                             // Default window (2k tokens) is too small for a document; quick questions get short, fast answers.
+                                             "options": oneShotSystem != nil
+                                                ? ["num_ctx": 2048, "num_predict": 260, "temperature": 0.6] as [String: Any]
+                                                : ["num_ctx": document == nil ? 4096 : 8192] as [String: Any]],
                                       headers: [:], timeout: 180)
         guard let msg = json["message"] as? [String: Any], let text = msg["content"] as? String else { throw Self.badResponse }
         return text

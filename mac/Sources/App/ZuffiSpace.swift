@@ -1077,6 +1077,7 @@ struct NotchHomeView: View {
         }
         .frame(width: W, height: H)
         .onAppear {
+            if Date().timeIntervalSince(asker.answerAt) < 4 { askedQ = asker.answerTitle; reply = asker.answerText; thinking = false }
             shown = false; risen = false
             withAnimation(.easeOut(duration: 0.2)) { shown = true }
             // she comes up from behind the edge, then smiles
@@ -1758,6 +1759,8 @@ final class FaceDrop {
     private var timer: Timer?
     private var hideAt = Date.distantPast
     private var showing = false
+    private var openedForVoice = false
+    private var voiceHold = Date.distantPast
 
     func start() {
         guard timer == nil else { return }
@@ -1768,7 +1771,24 @@ final class FaceDrop {
         let v = VoiceEngine.shared, st = AppState.shared
         let busy = (v.isListening && (v.status.hasPrefix("Listening") || v.pushToTalk)) || v.speaking || st.stateOverride == .thinking || TutorVoice.shared.speaking
         // the open notch already shows her face; with the new notch the closed tab shows her too (no second "notch")
-        if st.mode == .expanded || NotchDesign.on { if showing { hide() }; return }
+        if NotchDesign.on {
+            if showing { hide() }
+            // Like Taby: when you talk to her, the notch itself opens (her face, the listening strip, then the answer) —
+            // no extra window. It stays open while she listens, thinks and talks, then folds away.
+            let thinkingNow = BunnyFaceCenter.shared.flash == .thinking || BunnyFaceCenter.shared.flash == .busy
+            let active = busy || thinkingNow
+            if active {
+                voiceHold = Date().addingTimeInterval(8)
+                if st.mode != .expanded { ZuffiNav.go(.overview); openedForVoice = true }
+                if openedForVoice { st.isPinned = true }
+            } else if openedForVoice, Date() > voiceHold {
+                openedForVoice = false
+                st.isPinned = false
+                NotificationCenter.default.post(name: .islandCollapse, object: nil)
+            }
+            return
+        }
+        if st.mode == .expanded { if showing { hide() }; return }
         if busy { hideAt = Date().addingTimeInterval(2.2); if !showing { show() } }
         else if showing && Date() > hideAt { hide() }
     }

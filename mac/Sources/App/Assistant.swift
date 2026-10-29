@@ -239,26 +239,50 @@ final class VoiceEngine: NSObject, ObservableObject {
             speaking = true
             neuralTurn += 1
             let turn = neuralTurn
-            let text = ZuffiExpress.spoken(String(clean.prefix(1200)))
-            Task { @MainActor in
-                let ok = await NativeSpeech.shared.say(text) {
-                    if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
-                }
-                guard turn == self.neuralTurn else { return }
-                if !ok { self.appleSpeak(clean) }
-                else {
-                    self.audioStartedAt = Date()     // Aurora's lips follow the words from here
-                    ZuffiExpress.face(for: clean)     // and her face follows the feeling
-                    // Safety net: never leave the microphone paused.
-                    let secs = 6.0 + Double(text.count) / 9.0
-                    DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
-                        MainActor.assumeIsolated { VoiceEngine.shared.neuralTimeout(turn) }
-                    }
-                }
-            }
+            // Sentence by sentence: the first short sentence is ready almost at once, so she starts talking quickly
+            // (even offline), and the rest follows while she speaks.
+            sayChunk(Self.chunks(String(clean.prefix(1600))), 0, turn: turn)
             return
         }
         appleSpeak(clean)
+    }
+
+    /// Splits an answer into short spoken pieces (whole sentences, ~180 letters at most).
+    static func chunks(_ text: String) -> [String] {
+        var out: [String] = [], cur = ""
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .bySentences) { s, _, _, _ in
+            guard let s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return }
+            if cur.isEmpty { cur = s }
+            else if cur.count + s.count < (out.isEmpty ? 90 : 180) { cur += " " + s }
+            else { out.append(cur); cur = s }
+        }
+        if !cur.isEmpty { out.append(cur) }
+        return out.isEmpty ? [text] : out
+    }
+    private var chunkSerial = 0
+    private func sayChunk(_ pieces: [String], _ i: Int, turn: Int) {
+        guard i < pieces.count, turn == neuralTurn else { return }
+        let piece = pieces[i]
+        let text = ZuffiExpress.spoken(piece)
+        chunkSerial += 1
+        let serial = chunkSerial
+        Task { @MainActor in
+            let ok = await NativeSpeech.shared.say(text) {
+                let v = VoiceEngine.shared
+                guard turn == v.neuralTurn else { return }
+                if i + 1 < pieces.count { v.sayChunk(pieces, i + 1, turn: turn) } else { v.neuralEnded() }
+            }
+            guard turn == self.neuralTurn else { return }
+            if !ok { self.appleSpeak(pieces[i...].joined(separator: " ")); return }
+            self.lipText = piece
+            self.audioStartedAt = Date()          // Aurora's lips follow the words from here
+            ZuffiExpress.face(for: piece)          // and her face follows the feeling
+            // Safety net: never leave the microphone paused.
+            let secs = 5.0 + Double(text.count) / 9.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
+                MainActor.assumeIsolated { let v = VoiceEngine.shared; if v.chunkSerial == serial { v.neuralTimeout(turn) } }
+            }
+        }
     }
 
     private var neuralTurn = 0
@@ -267,6 +291,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     private func appleSpeak(_ clean: String) {
         audioStartedAt = Date().addingTimeInterval(0.15)
+        lipText = clean
         ZuffiExpress.face(for: clean)
         let feel = ZuffiExpress.mood(clean)
         let u = Self.naturalUtterance(ZuffiExpress.spoken(String(clean.prefix(1200))))
@@ -455,6 +480,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     }
     nonisolated private static func installTap(_ node: AVAudioInputNode, _ req: SFSpeechAudioBufferRecognitionRequest) {
         let fmt = node.outputFormat(forBus: 0)
+        guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return }      // mic busy / not allowed: don't crash
         nonisolated(unsafe) let r = req
         node.installTap(onBus: 0, bufferSize: 1024, format: fmt) { buffer, _ in
             r.append(buffer)
@@ -490,6 +516,8 @@ final class VoiceEngine: NSObject, ObservableObject {
     var pttEndedAt = Date.distantPast
     /// When the sound of the current sentence actually started (for lip-sync).
     var audioStartedAt = Date.distantPast
+    /// The words being spoken right now (one sentence at a time) — Aurora's lips follow them.
+    @Published var lipText = ""
     func setMic(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: "micOn")
         micEnabled = on
@@ -504,7 +532,18 @@ final class VoiceEngine: NSObject, ObservableObject {
     }
     func setCamera(_ on: Bool) { UserDefaults.standard.set(on, forKey: "cameraOn"); objectWillChange.send() }
 
+    /// The meeting helper takes the microphone for a while: two listeners on one mic can crash macOS audio.
+    private(set) var micLent = false
+    func lendMic() { micLent = true; stopRecognition(); status = "Meeting helper is listening" }
+    func takeMicBack() {
+        micLent = false; status = ""
+        if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) && Self.micOn {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { MainActor.assumeIsolated { VoiceEngine.shared.startRecognition() } }
+        }
+    }
+
     fileprivate func startRecognition() {
+        guard !micLent else { return }
         guard Self.micOn else { status = "Mic is off — turn it on to talk to Zuffi"; return }
         guard !speaking else { resumeAfterSpeech = true; return }
         // Offline: if this language can't be heard on the Mac itself, use a language that can (so voice still works with no internet).

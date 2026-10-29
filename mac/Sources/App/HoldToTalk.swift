@@ -202,6 +202,7 @@ final class ZuffiAsk: ObservableObject {
         if speak { VoiceEngine.shared.speak(text) }
         answerAt = Date()
         if Self.notchOpen { panel?.orderOut(nil); return }      // the open notch shows it (one place, not two)
+        if NotchDesign.on { panel?.orderOut(nil); ZuffiNav.go(.overview); return }   // open the notch and show it there
         let p = panel ?? {
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 260), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.level = .floating
@@ -398,8 +399,9 @@ final class MeetingHelper: ObservableObject {
     func start() {
         guard !on else { return }
         on = true; they = ""; translated = ""; suggest = ""; notes = []; lastLen = 0
-        RoomListener.shared.start()
         showPanel()
+        // let the menu / notch close first, then take the mic
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { MainActor.assumeIsolated { if MeetingHelper.shared.on { RoomListener.shared.start() } } }
         timer = Timer.scheduledTimer(withTimeInterval: 9, repeats: true) { _ in Task { @MainActor in await MeetingHelper.shared.think() } }
     }
     func stop() {
@@ -428,7 +430,8 @@ final class MeetingHelper: ObservableObject {
 
     private func showPanel() {
         if let p = panel { p.orderFrontRegardless(); return }
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 420), styleMask: [.borderless, .nonactivatingPanel, .resizable], backing: .buffered, defer: false)
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 420), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.isReleasedWhenClosed = false
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.level = .floating
         p.isMovableByWindowBackground = true
         p.sharingType = .none                       // private: not shown in screen sharing or recordings

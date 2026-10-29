@@ -416,6 +416,7 @@ final class RoomListener: ObservableObject {
     }
 
     private func begin() {
+        VoiceEngine.shared.lendMic()          // one listener on the mic at a time
         on = true; note = "Listening to the room — nothing is saved"
         listen()
         // Apple's recogniser works in ~1 minute pieces: start a fresh one every 50 s.
@@ -429,6 +430,7 @@ final class RoomListener: ObservableObject {
         restart?.invalidate(); think?.invalidate(); restart = nil; think = nil
         endListening()
         lines = []; current = ""; topics = []; gist = ""; note = ""; summarisedLength = 0
+        VoiceEngine.shared.takeMicBack()
     }
 
     private func endListening() {
@@ -448,7 +450,7 @@ final class RoomListener: ObservableObject {
         req.shouldReportPartialResults = true
         if rec.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }   // stays on this Mac
         let eng = AVAudioEngine()
-        Self.tap(eng.inputNode, req)
+        guard Self.tap(eng.inputNode, req) else { note = "I couldn’t use the microphone — check Microphone access for Zuffi in System Settings."; return }
         eng.prepare()
         do { try eng.start() } catch { note = "I couldn’t use the microphone."; return }
         engine = eng; request = req
@@ -478,10 +480,13 @@ final class RoomListener: ObservableObject {
         if let tip = j["tip"] as? String, !tip.isEmpty { note = "💡 " + tip } else { note = "Listening to the room — nothing is saved" }
     }
 
-    nonisolated private static func tap(_ node: AVAudioInputNode, _ req: SFSpeechAudioBufferRecognitionRequest) {
-        let fmt = node.outputFormat(forBus: 0)
+    /// Listens to the mic. A mic with no usable format (busy, no permission) would crash macOS audio, so it's checked first.
+    nonisolated private static func tap(_ node: AVAudioInputNode, _ req: SFSpeechAudioBufferRecognitionRequest) -> Bool {
+        let fmt = node.inputFormat(forBus: 0)
+        guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return false }
         nonisolated(unsafe) let r = req
         node.installTap(onBus: 0, bufferSize: 2048, format: fmt) { buffer, _ in r.append(buffer) }
+        return true
     }
     nonisolated private static func recognise(_ rec: SFSpeechRecognizer, _ req: SFSpeechAudioBufferRecognitionRequest,
                                                _ cb: @escaping @Sendable (String?, Bool) -> Void) -> SFSpeechRecognitionTask {

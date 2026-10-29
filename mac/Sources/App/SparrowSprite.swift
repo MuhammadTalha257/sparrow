@@ -824,7 +824,7 @@ struct Aurora3DView: NSViewRepresentable {
     func updateNSView(_ v: SCNView, context: Context) {
         context.coordinator.set(pose: pose, faceLeft: faceLeft, expression: expression)
         let ve = VoiceEngine.shared
-        context.coordinator.setTalk(speaking, text: ve.lastSpoken, startedAt: ve.audioStartedAt)
+        context.coordinator.setTalk(speaking, text: ve.lipText, startedAt: ve.audioStartedAt)
     }
     static func dismantleNSView(_ v: SCNView, coordinator: Aurora3DRig) { coordinator.stop() }
 }
@@ -1008,7 +1008,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         scene.rootNode.addChildNode(root)
         stance.position = SCNVector3(0, 0.06, -0.42); root.addChildNode(stance)
         hips.position = SCNVector3(0, 0.5, 0.42); stance.addChildNode(hips)
-        let rear = fur(0.56, 0.52, 0.58, cream, len: 0.06, density: 80, at: SCNVector3(0, 0.08, -0.02)); hips.addChildNode(rear); bodyParts.append(rear)
+        let rear = fur(0.56, 0.52, 0.58, cream, len: 0.09, density: 80, at: SCNVector3(0, 0.08, -0.02)); hips.addChildNode(rear); bodyParts.append(rear)
         let tailN = fur(0.16, 0.16, 0.14, .white, len: 0.08, density: 20, at: SCNVector3(0, 0.24, -0.62)); hips.addChildNode(tailN); bodyParts.append(tailN)
         for s in [-1.0, 1.0] as [CGFloat] {
             let th = SCNNode(); th.position = SCNVector3(0.36 * s, -0.02, -0.08); hips.addChildNode(th); thighs.append(th); bodyParts.append(th)
@@ -1021,7 +1021,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             ft.addChildNode(pad)
         }
         chest.position = SCNVector3(0, 0.12, 0.42); hips.addChildNode(chest)
-        let chestFur = fur(0.42, 0.46, 0.42, cream, len: 0.06, density: 80); chest.addChildNode(chestFur); bodyParts.append(chestFur)
+        let chestFur = fur(0.42, 0.46, 0.42, cream, len: 0.09, density: 80); chest.addChildNode(chestFur); bodyParts.append(chestFur)
         let bibFur = fur(0.3, 0.32, 0.2, bib, len: 0.07, at: SCNVector3(0, -0.08, 0.3)); chest.addChildNode(bibFur); bodyParts.append(bibFur)
         for s in [-1.0, 1.0] as [CGFloat] {
             let a = SCNNode(); a.position = SCNVector3(0.2 * s, -0.12, 0.24); chest.addChildNode(a); arms.append(a); bodyParts.append(a)
@@ -1030,12 +1030,12 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         }
         neck.position = SCNVector3(0, 0.36, 0.22); chest.addChildNode(neck)
         head.position = SCNVector3(0, 0.22, 0.06); head.scale = SCNVector3(1.12, 1.12, 1.12); neck.addChildNode(head)
-        head.addChildNode(fur(0.35, 0.33, 0.37, cream, len: 0.05, density: 90))
+        head.addChildNode(fur(0.35, 0.33, 0.37, cream, len: 0.07, density: 90))
         for s in [-1.0, 1.0] as [CGFloat] { head.addChildNode(fur(0.17, 0.13, 0.15, bib, len: 0.05, at: SCNVector3(0.15 * s, -0.12, 0.2))) }
         head.addChildNode(fur(0.13, 0.1, 0.1, bib, len: 0.04, at: SCNVector3(0, -0.11, 0.3)))
         for s in [-1.0, 1.0] as [CGFloat] {
             let e = SCNNode(); e.position = SCNVector3(0.12 * s, 0.26, -0.06); e.eulerAngles.z = -0.1 * s; head.addChildNode(e); ears.append(e)
-            e.addChildNode(fur(0.1, 0.46, 0.045, cream, len: 0.025, density: 45, at: SCNVector3(0, 0.46, 0)))
+            e.addChildNode(fur(0.1, 0.46, 0.045, cream, len: 0.035, density: 45, at: SCNVector3(0, 0.46, 0)))
             // inside of the ear: thin, warm pink, lit from behind like a real rabbit's
             let inner = SCNMaterial(); inner.lightingModel = .lambert
             inner.diffuse.contents = Self.rgb(238, 168, 156); inner.emission.contents = Self.rgb(120, 52, 44)
@@ -1145,19 +1145,24 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         ease(&turn, hopping ? (left ? -.pi / 2 : .pi / 2) : 0, 6)
         root.eulerAngles.y = turn
 
-        phase += dt * 1.9 * hopAmt
-        let ph = phase.truncatingRemainder(dividingBy: 1) * .pi * 2
-        let hop = max(0, sin(ph)) * hopAmt
+        // a real rabbit hop: push off with the back legs, stretch out in the air, front paws land first, squash, gather
+        phase += dt * 2.2 * hopAmt
+        let pp = phase.truncatingRemainder(dividingBy: 1)
+        let ph = pp * .pi * 2
+        let air: CGFloat = (pp < 0.55 ? sin(.pi * pp / 0.55) : 0) * hopAmt
+        let landSquash: CGFloat = (pp >= 0.55 && pp < 0.78 ? sin(.pi * (pp - 0.55) / 0.23) : 0) * hopAmt
+        hips.scale = SCNVector3(1, 1 - 0.08 * air - 0.1 * landSquash, 1 + 0.15 * air + 0.05 * landSquash)
+        let hop = air
         let kick = sin(ph) * hopAmt
         let STAND: CGFloat = 1.12
         // happy: little jumps
         let jump = cheer * max(0, sin(t * 9)) * 0.22
-        stance.eulerAngles.x = -STAND * stand - 0.12 * kick
+        stance.eulerAngles.x = -STAND * stand - 0.18 * kick
         stance.position.y = 0.06 + 0.16 * hop + jump
-        for th in thighs { th.eulerAngles.x = 0.55 * kick }
+        for th in thighs { th.eulerAngles.x = 0.95 * kick }
         // cross: stomps one foot
         let stomp = crossAmt * max(0, sin(t * 10)) * 0.35
-        for (i, f) in feet.enumerated() { f.eulerAngles.x = STAND * stand - 0.55 * kick - (i == 1 ? stomp : 0) }
+        for (i, f) in feet.enumerated() { f.eulerAngles.x = STAND * stand - 0.9 * kick - (i == 1 ? stomp : 0) }
 
         let br = 1 + 0.018 * sin(t * 2.4)
         chest.scale = SCNVector3(br, br, br)
@@ -1183,7 +1188,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         }
 
         // arms: hop swing / folded when sitting / held out for the card / up when cheering
-        let swing = -0.6 * sin(ph + .pi) * hopAmt
+        let swing = -1.0 * sin(ph + .pi + 0.6) * hopAmt      // front paws reach forward in the air, land first
         let sitArms: CGFloat = 0.9 * (1 - hopAmt) * (1 - holdAmt) * (1 - cheer)
         let holdArms: CGFloat = -0.16 * holdAmt
         let cheerArms: CGFloat = (-2.04 + 0.25 * sin(t * 12)) * cheer
@@ -1214,6 +1219,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             let flat = max(crossAmt, crossE)
             e.eulerAngles.x = -0.25 * kick + 0.04 * sin(t * 3 + CGFloat(i)) - 0.15 * stand - 1.1 * flat - 0.6 * sadE - 0.5 * sleepE + 0.12 * surpriseE
                 - 0.5 * groom - (i == 0 ? 0.35 * earFlop : 0) + 0.06 * talkAmt * sin(t * 5.2 + CGFloat(i))
+                - 0.55 * air + 0.25 * landSquash      // ears stream back in the air, flop forward on landing
             e.eulerAngles.z = -0.12 * s - twitch * s + 0.25 * s * flat - 0.08 * s * cheer + 0.5 * s * sadE + 0.25 * s * sleepE
                 + (i == 1 ? 1.0 * s * earFlop : 0)
             e.eulerAngles.y = 0.35 * s * lookAround * sin(ie * 1.7 + CGFloat(i))      // ears turn to listen, like a real rabbit

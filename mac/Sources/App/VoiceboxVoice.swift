@@ -118,7 +118,7 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         player = p
         onEnd = ended
         p.play()
-        VoiceEngine.shared.audioStartedAt = Date()
+        VoiceEngine.shared.audioStartedAt = Date(); VoiceEngine.shared.lipText = text
         ZuffiExpress.face(for: text)
         return true
     }
@@ -144,7 +144,7 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         player = p
         onEnd = ended
         p.play()
-        VoiceEngine.shared.audioStartedAt = Date()
+        VoiceEngine.shared.audioStartedAt = Date(); VoiceEngine.shared.lipText = text
         ZuffiExpress.face(for: text)
         return true
     }
