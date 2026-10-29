@@ -3040,7 +3040,7 @@ struct ZuffiHubView: View {
 // =====================================================================
 
 enum DashTab: String, CaseIterable, Identifiable {
-    case dashboard = "Dashboard", study = "Study", languages = "Languages", tryon = "Try-On", routines = "Routines", channels = "Channels", business = "Business", look = "Pet & look", automations = "Automations", settings = "Settings"
+    case dashboard = "Dashboard", study = "Learn", languages = "Languages", tryon = "Try-On", routines = "Routines", channels = "Channels", business = "Business", look = "Pet & look", automations = "Automations", settings = "Settings"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -3059,7 +3059,7 @@ enum DashTab: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .dashboard: return ZuffiFocus.agents ? "Talk to your agents, watch them work and see everything they did" : "Ask Zuffi anything and find all your chats"
-        case .study: return "Notes, flashcards and quizzes from anything · lecture notes · explain my screen · deadlines"
+        case .study: return "Chat with Nik, your teacher · study your notes · 50 languages · your progress"
         case .languages: return "Learn English, Spanish, French, German or Arabic with a senior teacher who talks with you"
         case .tryon: return "See nail designs on your own hand and a new hair colour — live on your camera"
         case .routines: return "Your agents' daily pipeline and the end-of-day report"
@@ -3203,7 +3203,7 @@ struct ZuffiDashboard: View {
                 Text("Zuffi").font(HubFont.p(20, .semibold))
             }
             .padding(.leading, 18).padding(.top, 46).padding(.bottom, 26)
-            ForEach(DashTab.allCases.filter { ZuffiFocus.agents || [.dashboard, .study, .languages, .look, .settings].contains($0) }) { t in
+            ForEach(DashTab.allCases.filter { ZuffiFocus.agents || [.dashboard, .study, .look, .settings].contains($0) }) { t in
                 Button { withAnimation(.easeOut(duration: 0.15)) { hub.section = t.section } } label: {
                     HStack(spacing: 12) {
                         Image(systemName: t.icon).font(.system(size: 14, weight: .semibold)).frame(width: 22)
@@ -3280,7 +3280,7 @@ struct DashHomePage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            if !ZuffiFocus.agents { StudentHomeCards(light: light) }
+            if !ZuffiFocus.agents { YourDayCards(light: light) }
             chatCard
             if ZuffiFocus.agents {
             DashCard(title: "Agent Office", sub: mc.question.isEmpty ? "Your agents at their desks. When they work, they get up, go desk to desk and bring the result to Nik." : "Working on: \(mc.question)", light: light) {
@@ -4330,6 +4330,54 @@ struct PrivacyPane: View {
                     Text(cleared).font(HubFont.p(12.5, .regular)).foregroundColor(ZInk.label(light))
                 }
             }
+            DashCard(title: "Screen helpers", sub: "Ways to call Zuffi about what's on your screen.", light: light) {
+                ZToggle(title: "Hold Z to talk", sub: "Hold Z for a second when you're not typing in a box", on: Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }), light: light)
+                ZToggle(title: "Show the action bar when I select text", sub: "Explain · Translate · Reply · Rewrite · Read aloud", on: Binding(get: { UserDefaults.standard.object(forKey: "selectionBar") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "selectionBar") }), light: light)
+                DashButton(title: MeetingHelper.shared.on ? "Stop meeting helper" : "Start meeting helper (private)", icon: "person.2.wave.2.fill", filled: false, light: light) { MeetingHelper.shared.toggle() }
+            }
+            DashCard(title: "Start fresh", sub: "Erase everything Zuffi saved on this Mac — profile, chats, memory, courses, settings — and open the first-run setup again. Your AI keys are kept unless you choose to remove them.", light: light) {
+                HStack(spacing: 12) {
+                    DashButton(title: "Erase and start fresh…", icon: "arrow.counterclockwise", filled: false, light: light) { ZuffiReset.confirm() }
+                }
+            }
+        }
+    }
+}
+
+/// Erase Zuffi's data on this Mac and relaunch into the first-run setup.
+@MainActor
+enum ZuffiReset {
+    static func confirm() {
+        let a = NSAlert()
+        a.messageText = "Erase Zuffi and start fresh?"
+        a.informativeText = "This deletes your Zuffi profile, chats, memory, courses, notes and settings on this Mac. It can't be undone. Zuffi will restart with the first-run setup."
+        a.addButton(withTitle: "Erase and restart")
+        a.addButton(withTitle: "Cancel")
+        a.showsSuppressionButton = true
+        a.suppressionButton?.title = "Also remove my saved AI keys"
+        a.alertStyle = .warning
+        NSApp.activate(ignoringOtherApps: true)
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        erase(keys: a.suppressionButton?.state == .on)
+    }
+
+    static func erase(keys: Bool) {
+        if keys {
+            for p in AIProvider.allCases { if let k = p.keychainKey { KeychainStore.delete(key: k) } }
+        }
+        let fm = FileManager.default
+        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Zuffi", isDirectory: true)
+        try? fm.removeItem(at: support)
+        if let id = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: id)
+            UserDefaults.standard.synchronize()
+        }
+        // relaunch
+        let url = Bundle.main.bundleURL
+        let cfg = NSWorkspace.OpenConfiguration(); cfg.createsNewApplicationInstance = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NSWorkspace.shared.openApplication(at: url, configuration: cfg) { _, _ in }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NSApp.terminate(nil) }
         }
     }
 }

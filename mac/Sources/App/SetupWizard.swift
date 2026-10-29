@@ -25,11 +25,13 @@ final class SetupWizard: NSObject, NSWindowDelegate {
 
     func show() {
         if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
-        w.title = "Welcome to Zuffi"
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 680), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+        w.title = ""
         w.titlebarAppearsTransparent = true
+        w.isMovableByWindowBackground = true
+        w.backgroundColor = NSColor(calibratedRed: 0.043, green: 0.039, blue: 0.063, alpha: 1)
         w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: SetupView(state: AppState.shared) { SetupWizard.shared.finish() })
+        w.contentView = NSHostingView(rootView: FirstRunView(state: AppState.shared) { SetupWizard.shared.finish() })
         w.center()
         w.delegate = self
         window = w
@@ -295,5 +297,208 @@ struct SetupView: View {
             Spacer()
             if !ok { Button("Allow") { ask() }.buttonStyle(.borderedProminent).tint(Color(hex: "#E2648A")).controlSize(.small) }
         }
+    }
+}
+
+
+// MARK: - The new first run: 6 short steps (about 2 minutes), Aurora peeking over the card
+
+struct FirstRunView: View {
+    @ObservedObject var state: AppState
+    var onDone: () -> Void
+    @ObservedObject private var local = LocalAISetup.shared
+    @ObservedObject private var ask = ZuffiAsk.shared
+    @State private var step = 1
+    @State private var name = AssistantPrefs.displayName
+    @State private var language = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
+    @State private var plan = "free"
+    @State private var mic = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    @State private var hands = AXIsProcessTrusted()
+    @State private var see = CGPreflightScreenCaptureAccess()
+    @State private var tried = false
+    private let tick = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
+    private let total = 6
+    private let ink = Color(hex: "#F5F2FA"), dim = Color(hex: "#A9A3BC"), card = Color(hex: "#15131C"), accent = Color(hex: "#8E7CFF")
+    private static let languages = ["English", "Urdu", "Arabic", "Hindi", "Bengali", "Punjabi", "Spanish", "French", "German", "Turkish", "Indonesian", "Tagalog", "Portuguese", "Chinese"]
+    private var caption: String {
+        ["", "Zuffi says hi", "Free runs on your Mac", "One download, then it's yours", "Only when you ask", "Hold Z, or double-click me", "Zuffi explains it — in your language"][step]
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ZStack(alignment: .topTrailing) {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    Group {
+                        switch step {
+                        case 1: hello
+                        case 2: brain
+                        case 3: download
+                        case 4: permissions
+                        case 5: howToCall
+                        default: tryIt
+                        }
+                    }
+                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                    Spacer(minLength: 0)
+                    HStack {
+                        Button("Back") { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step = max(1, step - 1) } }.buttonStyle(.plain).foregroundColor(dim)
+                        Spacer()
+                        Button(action: next) {
+                            Text(step == total ? "Start using Zuffi" : step == 2 && plan == "free" && !local.ready ? "Download" : "Next")
+                                .font(.system(size: 15, weight: .heavy, design: .rounded)).foregroundColor(Color(hex: "#15131C"))
+                                .padding(.horizontal, 26).frame(height: 44).background(Capsule().fill(ink))
+                        }.buttonStyle(.plain).disabled(step == 3 && local.busy)
+                    }
+                }
+                .padding(.horizontal, 26).padding(.vertical, 22)
+                .frame(width: 440, height: 540, alignment: .top)
+                .background(RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Color(hex: "#0B0A10")))
+                .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.06)))
+                // Aurora peeking over the corner
+                Aurora3DView(pose: step == 1 || step == total ? .wave : .sit, lookAtMouse: true, framing: .full, expression: .happy)
+                    .frame(width: 120, height: 128).offset(x: 34, y: -84).allowsHitTesting(false)
+            }
+            .padding(.top, 70)
+            Text(caption).font(.system(size: 15, weight: .heavy, design: .rounded)).foregroundColor(ink)
+                .padding(.horizontal, 22).frame(height: 42).background(Capsule().fill(Color(hex: "#1C1A24")))
+        }
+        .frame(width: 500, height: 680)
+        .background(Color(hex: "#0B0A10"))
+        .foregroundColor(ink)
+        .onReceive(tick) { _ in
+            mic = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+            hands = AXIsProcessTrusted(); see = CGPreflightScreenCaptureAccess()
+            if step == 3 && local.ready { withAnimation { step = 4 } }
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            HStack(spacing: 6) {
+                ForEach(1...total, id: \.self) { i in
+                    Capsule().fill(i <= step ? ink : Color(hex: "#3A3648")).frame(width: i == step ? 22 : 8, height: 8)
+                }
+            }
+            Spacer()
+            Text("Step \(step) of \(total)").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#8E89A3"))
+        }
+    }
+
+    private func title(_ t: String) -> some View { Text(t).font(.system(size: 28, weight: .heavy, design: .rounded)) }
+    private func sub(_ t: String) -> some View { Text(t).font(.system(size: 14.5, design: .rounded)).foregroundColor(dim).fixedSize(horizontal: false, vertical: true) }
+
+    private var hello: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            title("Hi! I'm Zuffi.")
+            sub("I live in your notch and help with anything on your screen — in your language. What should I call you?")
+            TextField("Your name", text: $name).textFieldStyle(.plain).font(.system(size: 16, design: .rounded))
+                .padding(.horizontal, 16).frame(height: 48).background(RoundedRectangle(cornerRadius: 14).fill(card))
+            Text("I'll talk to you in").font(.system(size: 13)).foregroundColor(dim)
+            Picker("", selection: $language) { ForEach(Self.languages, id: \.self) { Text($0).tag($0) } }.labelsHidden().pickerStyle(.menu)
+        }
+    }
+
+    private var brain: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Choose my brain")
+            sub("Your Mac: \(Int((Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824).rounded())) GB memory · I'll use \(LocalAISetup.model)")
+            option("free", "Free — on this Mac", "Runs on your computer, works offline, nothing leaves your Mac. One download.")
+            option("key", "I have my own AI key", "Groq, Gemini, ChatGPT, Claude… paste it in Settings › AI models (Groq and Gemini have free keys).")
+            option("plus", "Zuffi Plus", "A bigger, faster brain with no download, a natural voice and all of Aurora's outfits. Coming soon.")
+        }
+    }
+    private func option(_ id: String, _ t: String, _ d: String) -> some View {
+        Button { plan = id } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(t).font(.system(size: 16, weight: .heavy, design: .rounded))
+                Text(d).font(.system(size: 12.5)).foregroundColor(dim).fixedSize(horizontal: false, vertical: true).multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+            .background(RoundedRectangle(cornerRadius: 18).fill(card))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(plan == id ? accent : Color.clear, lineWidth: 2))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundColor(ink)
+    }
+
+    private var download: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            title(local.ready ? "My brain is ready" : "Getting my brain ready")
+            Text("\(Int(local.progress * 100))%").font(.system(size: 44, weight: .heavy, design: .rounded))
+            ProgressView(value: local.progress).tint(accent)
+            Text(local.failed ?? local.step).font(.system(size: 13)).foregroundColor(local.failed == nil ? dim : .orange).fixedSize(horizontal: false, vertical: true)
+            sub("One download, then it's yours. You can change it any time in Settings.")
+            if local.failed != nil { Button("Try again") { local.start() }.buttonStyle(.plain).foregroundColor(accent) }
+        }
+    }
+
+    private var permissions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Let me hear and see")
+            sub("Only when you ask. I never record your screen all day.")
+            perm("Microphone", "So you can talk to me", mic) { AVCaptureDevice.requestAccess(for: .audio) { @Sendable _ in }; SFSpeechRecognizer.requestAuthorization { @Sendable _ in } }
+            perm("Read what you select", "Accessibility — to explain the text you mark", hands) { ScreenAgent.askToAct() }
+            perm("See the screen", "Screen Recording — only when you ask “what's this?”", see) { ScreenAgent.askToSee() }
+        }
+    }
+    private func perm(_ t: String, _ d: String, _ ok: Bool, _ go: @escaping () -> Void) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) { Text(t).font(.system(size: 15, weight: .semibold)); Text(d).font(.system(size: 12)).foregroundColor(Color(hex: "#8E89A3")) }
+            Spacer()
+            if ok { Image(systemName: "checkmark.circle.fill").foregroundColor(Color(hex: "#7CE0A3")).font(.system(size: 20)) }
+            else { Button(action: go) { Text("Allow").font(.system(size: 13, weight: .heavy)).foregroundColor(Color(hex: "#15131C")).padding(.horizontal, 16).frame(height: 34).background(Capsule().fill(ink)) }.buttonStyle(.plain) }
+        }
+        .padding(12).background(RoundedRectangle(cornerRadius: 16).fill(card))
+    }
+
+    private var howToCall: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            title("Two ways to call me")
+            HStack(spacing: 12) {
+                way(Text("Z").font(.system(size: 28, weight: .heavy, design: .rounded)).foregroundColor(Color(hex: "#15131C")).frame(width: 56, height: 56).background(RoundedRectangle(cornerRadius: 14).fill(ink)), "Hold Z", "Hold for a second, talk, let go")
+                way(Circle().strokeBorder(accent, style: StrokeStyle(lineWidth: 3, dash: [6])).frame(width: 56, height: 56), "Double-click", "on me in the notch")
+            }
+            sub("Or just say “Hey Zuffi”. Select any text and a little bar appears: Explain, Translate, Reply, Rewrite. Move your mouse to the top any time to see me.")
+        }
+    }
+    private func way<V: View>(_ icon: V, _ t: String, _ d: String) -> some View {
+        VStack(spacing: 8) { icon; Text(t).font(.system(size: 15, weight: .heavy)); Text(d).font(.system(size: 12)).foregroundColor(dim).multilineTextAlignment(.center) }
+            .frame(maxWidth: .infinity).padding(.vertical, 18).background(RoundedRectangle(cornerRadius: 18).fill(card))
+    }
+
+    private let sample = "Payment is due within 30 days of the invoice date."
+    private var tryIt: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Try it now")
+            sub("This is what happens when you select text and ask me to explain it:")
+            Text(sample).font(.system(size: 16)).foregroundColor(Color(hex: "#2A2540")).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "#FFF2B8")))
+            Button { tried = true; Task { await ZuffiAsk.shared.act("explain", sample) } } label: {
+                Label("Explain it in \(language)", systemImage: "sparkles").font(.system(size: 14, weight: .heavy)).foregroundColor(.white)
+                    .padding(.horizontal, 16).frame(height: 40).background(Capsule().fill(accent))
+            }.buttonStyle(.plain)
+            if tried && !ask.answerText.isEmpty {
+                Text(ask.answerText).font(.system(size: 14.5)).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(card)).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func next() {
+        if step == 1 {
+            UserDefaults.standard.set(name.trimmingCharacters(in: .whitespaces), forKey: AssistantPrefs.userName)
+            UserDefaults.standard.set(language, forKey: "zuffiLanguage")
+            var p = NikBrain.shared.profile; p["name"] = name; p["own"] = language; NikBrain.shared.profile = p
+        }
+        if step == 2 {
+            if plan == "free" { local.start(); withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step = 3 }; return }
+            if plan == "key" { UserDefaults.standard.set("AI models", forKey: "settingsTab") }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step = 4 }; return
+        }
+        if step == total {
+            if plan == "key" { ZuffiHub.shared.show(.settings) }
+            onDone(); return
+        }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step += 1 }
     }
 }

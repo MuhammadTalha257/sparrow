@@ -1125,7 +1125,7 @@ final class NikBrain: ObservableObject {
             Task { await NikReader.shared.readMarked() }
             return
         }
-        ZuffiHub.shared.show(.languages)
+        LearnNav.languages()
         if said.trimmingCharacters(in: .whitespaces).isEmpty {
             TutorVoice.shared.speak("Yes\(firstName.isEmpty ? "" : ", \(firstName)")? I'm here. What shall we learn today?", locale: "en-GB")
             return
@@ -1590,14 +1590,14 @@ struct StudentHomeCards: View {
                         Text("\(c.lessonsDone) of \(NikBrain.totalLessons) lessons done · \(left) left · about \(left * 12) min to finish").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
                         if let tr = c.trouble.first { Text("“Last time you mixed up \(tr). We'll practise it again today.” — Nik").font(HubFont.p(14, .regular)) }
                         HStack(spacing: 14) {
-                            DashButton(title: "Resume lesson", icon: "play.fill", light: light) { t.langID = c.id; ZuffiHub.shared.show(.languages); NikSays.hello(l) }
+                            DashButton(title: "Resume lesson", icon: "play.fill", light: light) { t.langID = c.id; LearnNav.languages(); NikSays.hello(l) }
                             Text([NikBrain.usualTime(c).map { "Your usual start: \($0)" }, c.last.map { "last studied \($0.formatted(.relative(presentation: .named)))" }].compactMap { $0 }.joined(separator: " · "))
                                 .font(HubFont.p(12.5, .regular)).foregroundColor(T.inactive)
                         }
                     } else {
                         Text("Speak a new language with Nik, your senior teacher").font(HubFont.p(22, .semibold))
                         Text("Pick any of 50 languages. Nik remembers what you covered and what's next.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
-                        DashButton(title: "Choose a language", icon: "globe", light: light) { ZuffiHub.shared.show(.languages); brain.showLanguages = true }
+                        DashButton(title: "Choose a language", icon: "globe", light: light) { LearnNav.languages(); brain.showLanguages = true }
                     }
                 }
                 Spacer(minLength: 0)
@@ -1614,7 +1614,7 @@ struct StudentHomeCards: View {
                 if !c.trouble.isEmpty { row("Keeps tripping you up", c.trouble.prefix(3).joined(separator: " · ")) }
             } else {
                 Text(brain.knowsStudent ? "Start a course and Nik keeps track of everything." : "Tell Nik about you and he'll remember it every lesson.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive)
-                if !brain.knowsStudent { DashButton(title: "Tell Nik about you", icon: "person.fill", filled: false, light: light) { ZuffiHub.shared.show(.languages); brain.showIntake = true } }
+                if !brain.knowsStudent { DashButton(title: "Tell Nik about you", icon: "person.fill", filled: false, light: light) { LearnNav.languages(); brain.showIntake = true } }
             }
         }
         .frame(maxWidth: .infinity)
@@ -1651,7 +1651,7 @@ struct StudentHomeCards: View {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                 ForEach(brain.courses) { c in
                     let l = TutorLanguage.of(c.id)
-                    Button { t.langID = c.id; ZuffiHub.shared.show(.languages) } label: {
+                    Button { t.langID = c.id; LearnNav.languages() } label: {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("\(l.flag) \(l.name) \(t.levels[c.id] ?? "A1")").font(HubFont.p(15, .semibold))
                             GeometryReader { g in
@@ -1843,5 +1843,66 @@ struct NikChatView: View {
         let s = ear.listening ? ear.heard : text
         ear.stop(); text = ""
         Task { await tutor.send(s) }
+    }
+}
+
+/// Learn is one page now (Chat with Nik · Study a file · Languages · My progress).
+@MainActor
+enum LearnNav {
+    static func languages() { UserDefaults.standard.set("Languages", forKey: "studyTab"); ZuffiHub.shared.show(.study) }
+    static func nik() { UserDefaults.standard.set("Chat with Nik", forKey: "studyTab"); ZuffiHub.shared.show(.study) }
+}
+
+/// The front dashboard: your day — how to call Zuffi, messages waiting, what's coming up.
+struct YourDayCards: View {
+    var light: Bool
+    @ObservedObject private var inbox = NotchInbox.shared
+    @ObservedObject private var study = StudyHub.shared
+    @ObservedObject private var meeting = MeetingHelper.shared
+    private var T: HubTheme { HubTheme(light: light) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 22) {
+            DashCard(light: light) {
+                HStack(spacing: 16) {
+                    Aurora3DView(pose: .wave, lookAtMouse: true, framing: .full, expression: .happy).frame(width: 120, height: 130).allowsHitTesting(false)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Ask about anything on your screen").font(HubFont.p(18, .semibold))
+                        tip("Hold Z", "for a second, talk, let go")
+                        tip("Select text", "Explain · Translate · Reply · Rewrite")
+                        tip("Double-click Zuffi", "in the notch, then talk")
+                        tip("“Where do I click…?”", "Zuffi rings the right button")
+                        HStack(spacing: 10) {
+                            DashButton(title: meeting.on ? "Meeting helper is on" : "Meeting helper", icon: "person.2.wave.2.fill", filled: false, light: light) { meeting.toggle() }
+                            DashButton(title: "Chat with Nik", icon: "graduationcap.fill", filled: false, light: light) { LearnNav.nik() }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            DashCard(title: "Waiting for you", light: light) {
+                if inbox.notes.isEmpty { Text("No new messages. WhatsApp and email show here and in the notch.").font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
+                ForEach(inbox.notes.prefix(4)) { n in
+                    HStack(spacing: 10) {
+                        Image(systemName: n.icon).foregroundColor(HubTheme.blue).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(n.head).font(HubFont.p(13, .semibold)).lineLimit(1)
+                            Text(n.body).font(HubFont.p(12, .regular)).foregroundColor(T.inactive).lineLimit(1)
+                        }
+                        Spacer()
+                        Text(n.at.formatted(date: .omitted, time: .shortened)).font(HubFont.p(11, .regular)).foregroundColor(T.inactive)
+                    }
+                }
+                let soon = study.deadlines.filter { !$0.done && $0.date >= Calendar.current.startOfDay(for: Date()) }.sorted { $0.date < $1.date }.prefix(3)
+                if !soon.isEmpty {
+                    Text("Coming up").font(HubFont.p(12, .semibold)).foregroundColor(T.inactive).padding(.top, 4)
+                    ForEach(Array(soon)) { d in Text("\(d.title) · \(d.date.formatted(.dateTime.weekday(.wide)))").font(HubFont.p(13, .regular)) }
+                }
+            }
+            .frame(width: 380)
+        }
+    }
+    private func tip(_ a: String, _ b: String) -> some View {
+        HStack(spacing: 8) { Text(a).font(HubFont.p(13.5, .semibold)); Text(b).font(HubFont.p(13, .regular)).foregroundColor(T.inactive) }
     }
 }

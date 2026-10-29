@@ -459,7 +459,7 @@ struct StudyPage: View {
     @State private var dropping = false
     private var T: HubTheme { HubTheme(light: light) }
     // Everything else (explain the screen, tools, lecture notes) now happens by talking to Nik.
-    private let tabs = ["Chat with Nik", "Study a file"]
+    private let tabs = ["Chat with Nik", "Study a file", "Languages", "My progress"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -476,6 +476,8 @@ struct StudyPage: View {
             if !hub.busy.isEmpty { HStack(spacing: 8) { ProgressView().controlSize(.small); Text(hub.busy).font(HubFont.p(13, .regular)) } }
             switch tab {
             case "Study a file": filePane
+            case "Languages": LanguagePage(light: light)
+            case "My progress": StudentHomeCards(light: light)
             default: NikChatView(light: light)
             }
             if !hub.output.isEmpty && (tab == "Explain my screen" || tab == "Tools") {

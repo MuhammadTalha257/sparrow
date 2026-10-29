@@ -624,6 +624,7 @@ final class ZuffiTeam: ObservableObject {
         - Think like the best \(a.name) in the field, for THIS business: practical steps, examples, what to do first.
         - NUMBERS: use only numbers that appear in VERIFIED DATA below. Never invent, estimate or "assume" revenue, costs, tax, profit, bookings, customers or prices. If a number you need isn't there, say it can't be verified yet and ask the owner for it (or to open the page). Label figures as actual (from data), calculated (show the sum) or missing.
         - If the request is unclear or a detail you need is missing (which city or airport, dates, budget, who it's for…), DON'T guess: ask one to three short questions and stop.
+        - If something the user told you looks wrong or doesn't add up (an impossible date, a number that can't be right, the wrong term for your field), say so politely and ask them to confirm before you build on it.
         - Ask ONCE only. If the task says "already answered", never ask again: use their details, and if something is still missing, say your assumption in one line and carry on.
         - If you need a fact about the business that isn't here, ask one or two short questions first.
         WORK LIKE A SENIOR EXPERT (this is why people use Zuffi instead of a chatbot)

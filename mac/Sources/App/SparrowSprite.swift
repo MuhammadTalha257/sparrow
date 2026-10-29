@@ -789,7 +789,7 @@ struct AuroraBunnyView: View {
 // keeps scattered "hair tips" — together they look like thick fur. She sits upright, hops (side view), stands on her back
 // legs to hold up a reminder, cheers, or gets cross. Her face (eyes, nose, mouth) is always drawn on top of the fur.
 
-enum AuroraPose: Equatable { case sit, hop, hold, happy, cross, listen }
+enum AuroraPose: Equatable { case sit, hop, hold, happy, cross, listen, wave }
 
 enum Aurora3DPrefs {
     /// The 3D pet (default) — off = your picture bunny.
@@ -849,7 +849,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     // smoothed state (render thread only)
     private var last: TimeInterval = 0, t: CGFloat = 0, phase: CGFloat = 0
     private var stand: CGFloat = 0.62, hopAmt: CGFloat = 0, turn: CGFloat = 0, yaw: CGFloat = 0, pitch: CGFloat = 0
-    private var cheer: CGFloat = 0, crossAmt: CGFloat = 0, holdAmt: CGFloat = 0, listen: CGFloat = 0
+    private var cheer: CGFloat = 0, crossAmt: CGFloat = 0, holdAmt: CGFloat = 0, listen: CGFloat = 0, waveAmt: CGFloat = 0
     private var nextBlink: CGFloat = 2
 
     private let root = SCNNode(), stance = SCNNode(), hips = SCNNode(), chest = SCNNode(), neck = SCNNode(), head = SCNNode()
@@ -1087,7 +1087,8 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         ease(&cheer, p == .happy ? 1 : 0, 6)
         ease(&crossAmt, p == .cross ? 1 : 0, 6)
         ease(&listen, p == .listen ? 1 : 0, 4)
-        let wantStand: CGFloat = hopping ? 0 : p == .hold ? 1 : p == .happy ? 0.85 : 0.62
+        ease(&waveAmt, p == .wave ? 1 : 0, 7)
+        let wantStand: CGFloat = hopping ? 0 : p == .hold ? 1 : p == .happy ? 0.85 : p == .wave ? 0.78 : 0.62
         ease(&stand, wantStand, 3.5)
         ease(&turn, hopping ? (left ? -.pi / 2 : .pi / 2) : 0, 6)
         root.eulerAngles.y = turn
@@ -1118,6 +1119,11 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             let s: CGFloat = i == 0 ? -1 : 1
             a.eulerAngles.x = swing + sitArms + holdArms + cheerArms
             a.eulerAngles.z = -0.15 * s * sitArms / 0.9 + 0.35 * s * cheer
+            if i == 1 && waveAmt > 0.01 {
+                // hello: the right paw goes up and waves side to side
+                a.eulerAngles.x = a.eulerAngles.x * (1 - waveAmt) + (-2.4) * waveAmt
+                a.eulerAngles.z = a.eulerAngles.z * (1 - waveAmt) + (0.45 + 0.4 * sin(t * 9)) * waveAmt
+            }
         }
 
         // head: level face when standing, follows the mouse, tilts when listening, shakes when cross

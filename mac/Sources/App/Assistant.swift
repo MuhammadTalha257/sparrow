@@ -355,11 +355,11 @@ final class VoiceEngine: NSObject, ObservableObject {
     // MARK: Hold-to-talk (right ⌥ Option)
     private(set) var pushToTalk = false
 
-    func pushToTalkDown() {
+    func pushToTalkDown(forScreen: Bool = false) {
         guard !pushToTalk else { return }
         if ZuffiPlan.shared.blocked(speak: true) { return }
         if LiveSession.shared.active { return }          // already talking: just speak
-        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(byButton: true); return }
+        if !forScreen, LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(byButton: true); return }
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
         pushToTalk = true
         SoundEngine.shared.play("question")
@@ -401,13 +401,13 @@ final class VoiceEngine: NSObject, ObservableObject {
     }
 
     /// Mic button: listen for one command, no wake word needed.
-    func listenOnce(byButton: Bool = true) {
+    func listenOnce(byButton: Bool = true, forScreen: Bool = false) {
         if ZuffiPlan.shared.blocked(speak: true) { return }
         // The mic button always wins: stop talking and listen right now.
         if speaking { stopSpeaking(); speaking = false; resumeAfterSpeech = false }
         // Pressing a mic / Talk button means "listen" — so switch the mic back on if it was off.
         if !Self.micOn { setMic(true) }
-        if LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(byButton: byButton); return }
+        if !forScreen, LiveSession.shared.usable, !meetingMode { LiveSession.shared.start(byButton: byButton); return }
         requestPermissions { ok in
             guard ok else { return }
             self.oneShot = true
@@ -742,6 +742,17 @@ enum Assistant {
     static func run(_ text: String, spoken: Bool) async {
         let state = AppState.shared
         if ZuffiPlan.shared.blocked(speak: spoken) { return }   // no plan: sign in / choose a plan first
+        // Hold Z / double-click Zuffi / "explain this on my screen": answer about what's selected or on screen.
+        if spoken, let hit = ZuffiAsk.shared.takeIfAboutScreen(text) {
+            await ZuffiAsk.shared.answer(hit.0, about: hit.1)
+            return
+        }
+        // "Zuffi, help me in this meeting" → the private meeting helper
+        if text.lowercased().range(of: #"\b(meeting|call) (helper|help)\b|help me (in|with|during) (this|the) (meeting|call)"#, options: .regularExpression) != nil {
+            MeetingHelper.shared.toggle()
+            VoiceEngine.shared.speak(MeetingHelper.shared.on ? "I'm listening. Only you can see my notes." : "Meeting helper off.")
+            return
+        }
 
         // Voice: everyday commands run instantly without opening the chat.
         if spoken, let reply = await AgentRouter.shared.handle(text) {

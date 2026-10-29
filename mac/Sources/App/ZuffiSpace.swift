@@ -772,6 +772,7 @@ struct NotchFeaturesList: View {
         NotchFeature(id: "explain", cat: "study", icon: "lightbulb.fill", tint: "#F7C948", name: "Explain my screen", sub: "Homework explained step by step"),
         NotchFeature(id: "deadlines", cat: "study", icon: "calendar.badge.clock", tint: "#F08A3E", name: "Deadlines & exams", sub: "Countdown, study plan and reminders"),
         NotchFeature(id: "languages", cat: "study", icon: "character.bubble.fill", tint: "#7C5CFF", name: "Learn a language", sub: "50 languages — speak with Nik, your senior teacher"),
+        NotchFeature(id: "meeting", cat: "study", icon: "person.2.wave.2.fill", tint: "#8E7CFF", name: "Meeting helper", sub: "Private notes, translation and answer ideas — only you see it"),
         NotchFeature(id: "readalong", cat: "study", icon: "text.viewfinder", tint: "#5B4BD6", name: "Read with Nik", sub: "Select a line on screen — Nik reads it and shows how to say each word"),
         NotchFeature(id: "tryon-nails", cat: "tryon", icon: "hand.raised.fingers.spread.fill", tint: "#F27BA6", name: "Nail try-on", sub: "Any design on your own nails, live"),
         NotchFeature(id: "tryon-hair", cat: "tryon", icon: "comb.fill", tint: "#A86B3C", name: "Hair colour try-on", sub: "See a new hair colour on you"),
@@ -869,7 +870,8 @@ struct NotchFeaturesList: View {
             ZuffiHub.shared.show(.study); NotificationCenter.default.post(name: .islandCollapse, object: nil)
             if id == "lecture" { StudyHub.shared.toggleLecture() }
             if id == "explain" { Task { await StudyHub.shared.explainScreen() } }
-        case "languages": ZuffiHub.shared.show(.languages); NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        case "languages": LearnNav.languages(); NotificationCenter.default.post(name: .islandCollapse, object: nil)
+        case "meeting": MeetingHelper.shared.toggle(); NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "readalong": Task { await NikReader.shared.readMarked() }; NotificationCenter.default.post(name: .islandCollapse, object: nil)
         case "tryon-nails", "tryon-hair":
             TryOnCamera.shared.mode = id == "tryon-hair" ? "hair" : "nails"
@@ -1033,6 +1035,8 @@ struct NotchHomeView: View {
     @ObservedObject private var hang = NotchHang.shared
     @State private var ask = ""
     @State private var shown = false
+    @State private var risen = false
+    @State private var waving = false
     @FocusState private var askFocus: Bool
 
     private let W = IslandConst.width(for: .overview)
@@ -1055,10 +1059,14 @@ struct NotchHomeView: View {
         .frame(width: W, height: H)
         .onAppear {
             NowPlaying.shared.start()
-            shown = false
+            shown = false; risen = false
             withAnimation(.spring(response: 0.42, dampingFraction: 0.78).delay(0.08)) { shown = true }
+            // up from behind the wall with a little bounce, then a wave
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.12)) { risen = true }
+            waving = true
+            Task { @MainActor in try? await Task.sleep(nanoseconds: 1_800_000_000); waving = false }
         }
-        .onDisappear { shown = false }
+        .onDisappear { shown = false; risen = false; waving = false }
     }
 
     // MARK: row 1
@@ -1066,11 +1074,16 @@ struct NotchHomeView: View {
         HStack(spacing: 14) {
             // Aurora in a colour ring; the badge turns the mic on or off
             ZStack(alignment: .bottomTrailing) {
-                Circle().fill(AngularGradient(colors: [Color(hex: "#F5B963"), Color(hex: "#F58FA8"), Color(hex: "#B79CFF"), Color(hex: "#F5B963")], center: .center))
-                    .frame(width: 76, height: 76)
-                Circle().fill(RadialGradient(colors: [Color(hex: "#FFF6F7"), Color(hex: "#F3DDE2")], center: .center, startRadius: 2, endRadius: 36))
-                    .frame(width: 70, height: 70).offset(x: -3, y: -3)
-                LiveBunnyFace(size: 62).offset(x: -7, y: -7)
+                // Aurora hides behind the "wall" (the bottom edge), pops up with a smile and waves hello
+                Aurora3DView(pose: waving ? .wave : .sit, lookAtMouse: true, framing: .full, expression: waving ? .happy : BunnyMood.now(voice, state))
+                    .frame(width: 104, height: 112)
+                    .offset(y: risen ? 4 : 96)
+                    .frame(width: 92, height: 92, alignment: .bottom)
+                    .clipped()
+                    .allowsHitTesting(false)
+                Color.clear.frame(width: 92, height: 92).contentShape(Rectangle())
+                    .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
+                    .help("Double-click Zuffi to talk")
                 Button { VoiceEngine.shared.setMic(!voice.micEnabled) } label: {
                     Image(systemName: voice.isListening ? "waveform" : voice.micEnabled ? "mic.fill" : "mic.slash.fill")
                         .font(.system(size: 10, weight: .bold)).foregroundColor(voice.micEnabled ? .white : Color(hex: "#FF8A80"))
@@ -1079,7 +1092,7 @@ struct NotchHomeView: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.22)))
                 }.buttonStyle(.plain).help(voice.micEnabled ? "Mic on — click to turn off" : "Mic off — click to turn on")
             }
-            .frame(width: 76, height: 76)
+            .frame(width: 92, height: 92)
 
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
