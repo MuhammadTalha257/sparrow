@@ -153,22 +153,19 @@ final class NativeSpeech {
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
         send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny ? speed * 1.06 : speed, "pitch": bunny ? 450.0 : 0.0])
         let id = currentId
-        // Never wait long: if the first words aren't ready in 4 s, use the instant voice instead.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+        // Never wait long: if the first words aren't ready in 5 s, use the instant voice instead.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             MainActor.assumeIsolated {
                 if id == NativeSpeech.shared.currentId, let w = NativeSpeech.shared.startWaiter {
                     NativeSpeech.shared.startWaiter = nil
                     NativeSpeech.shared.onEnd = nil
                     NativeSpeech.shared.send(["cmd": "stop"])
                     appendAppLog("voice.log", "natural voice too slow — using the instant voice")
-                    // Twice slow in a row (e.g. after the Mac slept): restart the voice helper fresh.
-                    NativeSpeech.shared.slowStreak += 1
-                    if NativeSpeech.shared.slowStreak >= 2 {
-                        NativeSpeech.shared.slowStreak = 0
-                        NativeSpeech.shared.restarting = true
-                        appendAppLog("voice.log", "natural voice: restarting the helper")
-                        NativeSpeech.shared.proc?.terminate()
-                    }
+                    // Stop the helper outright, so its late audio can never play on top of the instant voice (two voices at once).
+                    NativeSpeech.shared.slowStreak = 0
+                    NativeSpeech.shared.restarting = true
+                    appendAppLog("voice.log", "natural voice: stopping the helper (it starts again next time)")
+                    NativeSpeech.shared.proc?.terminate()
                     w.resume(returning: false)
                 }
             }

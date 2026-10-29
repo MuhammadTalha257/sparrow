@@ -72,10 +72,18 @@ final class ZuffiWalk {
         if current == nil { next() }
     }
 
+    private var petWasShown = false
     private func next() {
-        guard !queue.isEmpty else { current = nil; return }
+        guard !queue.isEmpty else {
+            current = nil
+            // the visit is over: the desktop pet comes back
+            if petWasShown { petWasShown = false; PetController.shared.show(greeting: false) }
+            return
+        }
         let v = queue.removeFirst()
         current = v
+        // only ONE Aurora on screen: the desktop pet steps away while she brings the reminder
+        if PetController.shared.isShown { petWasShown = true; PetController.shared.hide(remember: false) }
         let m = model
         m.answered = false; m.cross = false; m.bubble = nil; m.danceStart = nil; m.tip = nil
         m.title = v.title; m.sub = v.sub
@@ -386,8 +394,8 @@ struct Walk3DView: View {
                 .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
             }
             ZStack(alignment: .bottom) {
-                Aurora3DView(pose: pose, faceLeft: model.sprite.walkLeft, lookAtMouse: !model.walking)
-                    .frame(width: 230, height: 250)
+                RealAurora(width: 112, mood: model.cross ? "oops" : model.answered ? "done" : "idle", speaking: VoiceEngine.shared.speaking, lookAtMouse: !model.walking, walking: model.walking)
+                    .frame(width: 230, height: 250, alignment: .bottom)
                     .allowsHitTesting(false)
                 if let d = model.danceStart, model.answered, !model.cross {
                     TimelineView(.animation) { tl in JoyBurst(elapsed: tl.date.timeIntervalSince(d)) }.offset(y: -90).allowsHitTesting(false)

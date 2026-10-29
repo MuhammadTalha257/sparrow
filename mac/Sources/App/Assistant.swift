@@ -208,6 +208,10 @@ final class VoiceEngine: NSObject, ObservableObject {
         let clean = noEmoji.replacingOccurrences(of: "•", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
+        // Only ever one voice: the live conversation is already talking, so don't talk over it.
+        if LiveSession.shared.active { appendAppLog("voice.log", "skip speak (live voice is on): \(clean.prefix(40))"); return }
+        if TutorVoice.shared.speaking { TutorVoice.shared.stop() }
+        lastSpoken = clean; lastSpokenAt = Date()
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         // Voicebox (if you use it): your own cloned or preset voice, offline, 23 languages.
         if VoiceboxVoice.enabled {
@@ -375,6 +379,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     func pushToTalkUp() {
         guard pushToTalk else { return }
         pushToTalk = false
+        pttEndedAt = Date()
         // a moment for the last word to arrive
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             MainActor.assumeIsolated { VoiceEngine.shared.finishUtterance() }
@@ -469,6 +474,13 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     /// Mirrors the switch so every mic button redraws the moment it changes.
     @Published var micEnabled: Bool = VoiceEngine.micOn
+    /// What was just heard / said / missed — the notch shows it so you always see what happened.
+    @Published var lastHeard = ""
+    var lastHeardAt = Date.distantPast
+    @Published var lastSpoken = ""
+    var lastSpokenAt = Date.distantPast
+    @Published var missedAt = Date.distantPast
+    var pttEndedAt = Date.distantPast
     func setMic(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: "micOn")
         micEnabled = on
@@ -577,7 +589,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         if ended && text == nil && heard.isEmpty {
             // Session ended on its own (timeout / error) with nothing heard: quietly start a new one.
             appendAppLog("voice.log", "session ended empty (gen \(gen))")
-            if oneShot { oneShot = false; status = "Didn't catch that. Tap the mic and try again." }
+            if oneShot { oneShot = false; missedAt = Date(); status = "Didn't catch that. Tap the mic and try again." }
             restartIfWanted(after: 0.5)
             return
         }
@@ -644,6 +656,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         silenceTimer?.invalidate()
         let said = heard.trimmingCharacters(in: .whitespacesAndNewlines)
         let wasOneShot = oneShot
+        if wasOneShot || Date().timeIntervalSince(pttEndedAt) < 3 { if said.isEmpty { missedAt = Date() } else { lastHeard = said; lastHeardAt = Date() } }
         if !said.isEmpty { appendAppLog("voice.log", "heard: \(said)") }
         if meetingMode && !said.isEmpty {
             heard = ""
@@ -821,6 +834,14 @@ enum Assistant {
             if text.split(separator: " ").count <= 1 || !hasAI {
                 askAgain(); return
             }
+        }
+        if spoken, ZuffiAsk.notchOpen {
+            BunnyFaceCenter.shared.show(.thinking, for: 8)
+            let r = await AIService.shared.oneShot("The user asks (by voice): \"\(text)\"\nAnswer like a kind, clever friend talking out loud: short and clear (under 90 words), in the language they spoke. Plain text, no symbols.",
+                                                   system: "You are Zuffi, a friendly helper that lives on the user's Mac.\n" + ZuffiVoice.style) ?? ""
+            let out = r.trimmingCharacters(in: .whitespacesAndNewlines)
+            ZuffiAsk.shared.show(out.isEmpty ? ZuffiAsk.noBrainLine : out, title: text)
+            return
         }
         state.chatHistory.append(ChatMessage(role: .user, content: text))
         state.stateOverride = .thinking

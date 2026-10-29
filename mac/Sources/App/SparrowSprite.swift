@@ -1421,8 +1421,7 @@ struct LiveBunnyFace: View {
     @State private var colorVersion = 0
     var body: some View {
         // the real (3D, furry) Aurora, close up — her feelings change with what's happening
-        Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face, expression: mood ?? BunnyMood.now(voice, state))
-            .frame(width: size, height: size)
+        RealAuroraIcon(size: size, mood: mood.map(RealAuroraIcon.word) ?? AuroraFace.mood(voice, state), speaking: voice.speaking)
             .id(colorVersion)
             .allowsHitTesting(false)
             .onReceive(NotificationCenter.default.publisher(for: .auroraColorChanged)) { _ in colorVersion += 1 }

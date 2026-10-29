@@ -356,7 +356,7 @@ struct FirstRunView: View {
                 .background(RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Color(hex: "#0B0A10")))
                 .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.06)))
                 // Aurora peeking over the corner
-                Aurora3DView(pose: step == 1 || step == total ? .wave : .sit, lookAtMouse: true, framing: .full, expression: .happy)
+                RealAurora(width: 110, mood: step == 1 || step == total ? "hello" : "idle")
                     .frame(width: 120, height: 128).offset(x: 34, y: -84).allowsHitTesting(false)
             }
             .padding(.top, 70)

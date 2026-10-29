@@ -98,11 +98,13 @@ final class ZuffiAsk: ObservableObject {
 
     /// Hold Z / double-click: remember what's selected, then listen.
     func beginListening() {
+        if LiveSession.shared.active { LiveSession.shared.stop("hold Z") }
         pending = Self.selectedText(); pendingAt = Date()
         BunnyFaceCenter.shared.show(.listening, for: 6)
         VoiceEngine.shared.pushToTalkDown(forScreen: true)
     }
     func listenOnce() {
+        if LiveSession.shared.active { LiveSession.shared.stop("notch mic") }
         pending = Self.selectedText(); pendingAt = Date()
         BunnyFaceCenter.shared.show(.listening, for: 6)
         VoiceEngine.shared.listenOnce(byButton: true, forScreen: true)
@@ -187,6 +189,9 @@ final class ZuffiAsk: ObservableObject {
     }
     @Published var answerText = ""
     @Published var answerTitle = ""
+    @Published var answerAt = Date.distantPast
+    /// The notch home is open on screen.
+    static var notchOpen: Bool { AppState.shared.mode == .expanded && IslandConst.isWideHome(AppState.shared.view) }
     private var panel: NSPanel?
     func show(_ text: String, title: String, speak: Bool = true) {
         answerText = text; answerTitle = title
@@ -195,6 +200,8 @@ final class ZuffiAsk: ObservableObject {
         }
         BunnyFaceCenter.shared.show(.happy, for: 3)
         if speak { VoiceEngine.shared.speak(text) }
+        answerAt = Date()
+        if Self.notchOpen { panel?.orderOut(nil); return }      // the open notch shows it (one place, not two)
         let p = panel ?? {
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 260), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.level = .floating

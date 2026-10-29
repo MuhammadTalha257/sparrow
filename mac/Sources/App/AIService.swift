@@ -1051,7 +1051,8 @@ struct ProviderMenu: View {
             .background(tint.opacity(0.08))
             .clipShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)          // keeps its own colours (the borderless style greys it out on dark panels)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("The AI model answering right now — click to change")

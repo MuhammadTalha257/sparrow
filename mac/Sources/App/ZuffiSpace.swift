@@ -1042,6 +1042,7 @@ struct NotchHomeView: View {
     @FocusState private var askFocus: Bool
 
     @ObservedObject private var tutor = TutorVoice.shared
+    @ObservedObject private var asker = ZuffiAsk.shared
     @State private var askedQ = ""
     @State private var reply = ""
     @State private var thinking = false
@@ -1083,6 +1084,33 @@ struct NotchHomeView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { MainActor.assumeIsolated { BunnyFaceCenter.shared.show(.happy, for: 1.6) } }
         }
         .onDisappear { shown = false; risen = false }
+        // what you said shows straight away; Zuffi's answer (spoken or written) lands in the card
+        .onChange(of: voice.lastHeard) { _, h in
+            guard !h.isEmpty else { return }
+            askedQ = h; reply = ""; thinking = true
+            let at = voice.lastHeardAt
+            DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
+                MainActor.assumeIsolated {
+                    guard thinking, VoiceEngine.shared.lastHeardAt == at else { return }
+                    thinking = false
+                    let said = VoiceEngine.shared.lastSpoken
+                    reply = VoiceEngine.shared.lastSpokenAt > at && !said.isEmpty ? said : "Done."
+                }
+            }
+        }
+        .onChange(of: asker.answerAt) { _, _ in
+            let title = asker.answerTitle
+            if ["Translation", "Explained"].contains(title) || title.hasPrefix("Reply") || title.hasPrefix("Rewritten") { if askedQ.isEmpty { askedQ = title } }
+            else { askedQ = title }
+            reply = asker.answerText; thinking = false
+        }
+        .onChange(of: voice.lastSpoken) { _, said in
+            if thinking, said.count >= 18 { reply = said; thinking = false }
+        }
+        .onChange(of: voice.missedAt) { _, _ in
+            askedQ = "…"; thinking = false
+            reply = "I didn't hear anything. Hold Z (or tap the mic) and talk a little closer to the Mac."
+        }
     }
 
     // the slim ask bar: menu · text · model · mic
@@ -1098,15 +1126,22 @@ struct NotchHomeView: View {
             } label: {
                 Image(systemName: "square.grid.2x2").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#C9C3DA"))
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Dashboard, settings and more")
-            TextField(answering ? "Ask a follow-up…" : "Ask Zuffi anything…", text: $ask)
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().help("Dashboard, settings and more")
+            TextField("", text: $ask, prompt: Text(answering ? "Ask a follow-up…" : "Ask Zuffi anything…").foregroundColor(.white.opacity(0.45)))
                 .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
                 .focused($askFocus).onSubmit { send() }
-            ProviderMenu(state: state)
+            ProviderMenu(state: state, tint: .white)
+            // mic on / off: "Hey Zuffi" listening
+            Button { VoiceEngine.shared.setMic(!voice.micEnabled) } label: {
+                Image(systemName: voice.micEnabled ? "mic.fill" : "mic.slash.fill").font(.system(size: 11, weight: .bold))
+                    .foregroundColor(voice.micEnabled ? Color(hex: "#7CE0A3") : Color(hex: "#FF7A7A"))
+                    .frame(width: 26, height: 26).background(Circle().fill(Color.white.opacity(0.08)))
+            }.buttonStyle(.plain).help(voice.micEnabled ? "Mic on — Zuffi hears “Hey Zuffi”. Click to turn off." : "Mic off — click to turn on")
+            // talk now
             Button { ZuffiAsk.shared.listenOnce() } label: {
-                Image(systemName: "mic.fill").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#141218"))
+                Image(systemName: "waveform").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#141218"))
                     .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#F2F1F6")))
-            }.buttonStyle(.plain).help("Talk to Zuffi (or hold Z)")
+            }.buttonStyle(.plain).help("Talk to Zuffi now (or hold Z)")
         }
         .padding(.leading, 14).padding(.trailing, 6).frame(height: 44)
         .background(Capsule().fill(Color(hex: "#141218")))
@@ -1729,8 +1764,8 @@ final class FaceDrop {
     private func tick() {
         let v = VoiceEngine.shared, st = AppState.shared
         let busy = (v.isListening && (v.status.hasPrefix("Listening") || v.pushToTalk)) || v.speaking || st.stateOverride == .thinking || TutorVoice.shared.speaking
-        // the open notch already shows her face
-        if st.mode == .expanded { if showing { hide() }; return }
+        // the open notch already shows her face; with the new notch the closed tab shows her too (no second "notch")
+        if st.mode == .expanded || NotchDesign.on { if showing { hide() }; return }
         if busy { hideAt = Date().addingTimeInterval(2.2); if !showing { show() } }
         else if showing && Date() > hideAt { hide() }
     }
@@ -1795,7 +1830,102 @@ struct FaceDropView: View {
     }
 }
 
-// MARK: - Aurora, the real picture, brought to life (breathes, blinks, talks, tilts) — used on the notch, the face drop and the dashboard
+// MARK: - Aurora, the real picture, brought to life as a puppet
+// The picture (200 × 420) is cut into layers: two ears that move on their own, the head, the body.
+// Her eyes are redrawn on top so they can follow the mouse, blink and smile; her mouth opens while she talks.
+
+/// Where this view is on the screen, so Aurora's eyes can follow the mouse from wherever she is.
+@MainActor
+final class AuroraProbe {
+    weak var view: NSView?
+    var lx: CGFloat = 0, ly: CGFloat = 0
+    func look() -> CGPoint {
+        let m = NSEvent.mouseLocation
+        var c = CGPoint(x: NSScreen.main?.frame.midX ?? 0, y: NSScreen.main?.frame.maxY ?? 0)
+        if let v = view, let w = v.window { let r = w.convertToScreen(v.convert(v.bounds, to: nil)); c = CGPoint(x: r.midX, y: r.midY) }
+        let tx = max(-1, min(1, (m.x - c.x) / 380)), ty = max(-1, min(1, -(m.y - c.y) / 260))
+        lx += (tx - lx) * 0.18; ly += (ty - ly) * 0.18
+        return CGPoint(x: lx, y: ly)
+    }
+}
+struct AuroraProbeView: NSViewRepresentable {
+    let probe: AuroraProbe
+    func makeNSView(context: Context) -> NSView { let v = NSView(); probe.view = v; return v }
+    func updateNSView(_ v: NSView, context: Context) { probe.view = v }
+}
+
+/// One frame of Aurora's body language.
+struct AuroraLook {
+    var earL: Double = 0, earR: Double = 0      // degrees; negative = left ear leans out
+    var tilt: Double = 0                         // head tilt
+    var nod: CGFloat = 0                         // head up/down (picture units)
+    var turn: CGFloat = 0                        // head slides toward where she looks
+    var hop: CGFloat = 0                         // whole body up (picture units)
+    var breathe: CGFloat = 1
+    var look = CGPoint.zero                      // -1 … 1
+    var lid: CGFloat = 0                         // 0 open … 1 closed
+    var happyEyes = false
+    var eyeScale: CGFloat = 1
+    var mouth: CGFloat = 0                       // 0 closed … 1 wide
+    var mouthO = false
+    var blush: Double = 0.18
+    var dots = false, hearts = false, zzz = false
+
+    static func make(t: Double, mood: String, speaking: Bool, walking: Bool, look: CGPoint) -> AuroraLook {
+        var p = AuroraLook()
+        p.look = look
+        p.breathe = 1 + 0.012 * CGFloat(sin(t * 2 * .pi / 3.4))
+        // ears: a slow sway, and every few seconds one ear flicks
+        let sway = 2.2 * sin(t * 0.9)
+        let flickT = t.truncatingRemainder(dividingBy: 6.3)
+        let flick = flickT < 0.32 ? 11 * sin(flickT / 0.32 * .pi) : 0
+        let flickR = Int(t / 6.3) % 2 == 0
+        p.earL = sway - (flickR ? 0 : flick)
+        p.earR = -sway + (flickR ? flick : 0)
+        p.tilt = 1.2 * sin(t * 0.7) + Double(look.x) * 3
+        p.turn = look.x * 5
+        p.nod = look.y * 3
+        // blink about every 4 s (sometimes twice)
+        let c = t.truncatingRemainder(dividingBy: 4.2)
+        let b1: CGFloat = c < 0.15 ? CGFloat(sin(c / 0.15 * .pi)) : 0
+        let b2: CGFloat = (Int(t / 4.2) % 3 == 0 && c > 0.3 && c < 0.45) ? CGFloat(sin((c - 0.3) / 0.15 * .pi)) : 0
+        p.lid = max(b1, b2)
+
+        switch mood {
+        case "listening":
+            p.earL = 7 + 1.5 * sin(t * 6); p.earR = -7 - 1.5 * sin(t * 6 + 1)   // ears up and pointed at you
+            p.tilt = -9 + 1.5 * sin(t * 1.4); p.eyeScale = 1.08; p.blush = 0.25
+        case "thinking":
+            p.earL = -3; p.earR = 16 + 2 * sin(t * 1.3)                          // one ear flops over
+            p.tilt = 7 + sin(t * 1.1); p.look = CGPoint(x: 0.75, y: -0.85); p.lid = max(p.lid, 0.18); p.dots = true
+        case "done", "hello":
+            p.happyEyes = true; p.blush = 0.42
+            p.earL = 6 * sin(t * 9); p.earR = -6 * sin(t * 9 + 0.6)
+            p.hop = CGFloat(abs(sin(t * 5.5))) * 9
+        case "love":
+            p.happyEyes = true; p.blush = 0.55; p.hearts = true
+            p.earL = 4 * sin(t * 4); p.earR = -4 * sin(t * 4); p.tilt = 5 * sin(t * 1.6)
+        case "surprised":
+            p.earL = 9; p.earR = -9; p.eyeScale = 1.18; p.lid = 0; p.mouthO = true; p.mouth = 0.6; p.hop = 3
+        case "oops":
+            p.earL = -24; p.earR = 24; p.lid = max(p.lid, 0.42); p.tilt = -5; p.nod = 4; p.blush = 0.1
+        case "sleepy":
+            p.earL = -16; p.earR = 16; p.lid = max(0.72, p.lid); p.tilt = 6 * sin(t * 0.5); p.zzz = true
+        default: break
+        }
+        if speaking {
+            // talking: the mouth follows a syllable rhythm, the head nods, the ears bounce
+            let syl = abs(sin(t * 11.0)) * 0.6 + abs(sin(t * 6.9 + 1.3)) * 0.4
+            p.mouth = CGFloat(syl * (0.4 + 0.6 * abs(sin(t * 1.7))))
+            p.nod += CGFloat(1.8 * sin(t * 5.2))
+            p.tilt += 2.5 * sin(t * 2.3)
+            p.earL += 3 * sin(t * 5.2); p.earR -= 3 * sin(t * 5.2 + 0.4)
+            p.mouthO = false
+        }
+        if walking { p.hop = max(p.hop, CGFloat(abs(sin(t * 7))) * 12); p.earL -= 6 * sin(t * 14); p.earR += 6 * sin(t * 14) }
+        return p
+    }
+}
 
 struct RealAurora: View {
     /// Width of the whole picture (it is 200 × 420). The face sits between y≈100 and y≈270 of the picture.
@@ -1803,6 +1933,8 @@ struct RealAurora: View {
     var mood: String = "idle"
     var speaking = false
     var lookAtMouse = true
+    var walking = false
+    @State private var probe = AuroraProbe()
 
     static let picW: CGFloat = 200, picH: CGFloat = 420
     /// Height to show so everything from the ear tips down to the chin is visible.
@@ -1811,72 +1943,140 @@ struct RealAurora: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
-            let s = width / Self.picW
-            let happy = ["done", "love", "hello"].contains(mood)
-            let breathe = 1 + 0.014 * CGFloat(sin(t * 2 * .pi / 3.4))
-            let bob = 1.4 * CGFloat(sin(t * 2 * .pi / 3.4)) - (happy ? CGFloat(abs(sin(t * 6))) * 5 : 0)
-            let cycle = t.truncatingRemainder(dividingBy: 4.1)
-            let blink: CGFloat = cycle < 0.16 ? CGFloat(sin(cycle / 0.16 * .pi)) : 0
-            let lid: CGFloat = mood == "sleepy" ? max(0.62, blink) : mood == "thinking" ? max(0.22, blink) : blink
-            let mouth: CGFloat = speaking ? CGFloat(abs(sin(t * 10.5)) * 0.65 + abs(sin(t * 6.7)) * 0.35) : 0
-            let tilt: Double = mood == "listening" ? -6 + 1.2 * sin(t * 1.7)
-                : mood == "thinking" ? 5 + sin(t * 1.1)
-                : mood == "oops" ? -3
-                : speaking ? 2.2 * sin(t * 2.6) : 0.8 * sin(t * 0.9)
-            let look = lookAtMouse ? Self.mouseLean() : 0
-            ZStack(alignment: .topLeading) {
-                if let img = AuroraArt.shared.front {
-                    Image(nsImage: img).resizable().interpolation(.high).antialiased(true)
-                        .frame(width: width, height: width * Self.picH / Self.picW)
-                } else {
-                    LiveBunnyFace(size: width * 0.8).padding(.top, width * 0.5)
-                }
-                // eyelids: fur-coloured, they close from the top
-                ForEach([50.0, 139.0], id: \.self) { x in
-                    Ellipse()
-                        .fill(LinearGradient(colors: [Color(red: 0.84, green: 0.80, blue: 0.79), Color(red: 0.72, green: 0.67, blue: 0.66)], startPoint: .top, endPoint: .bottom))
-                        .frame(width: 40 * s, height: 36 * s)
-                        .mask(Rectangle().frame(width: 40 * s, height: 36 * s * lid).frame(width: 40 * s, height: 36 * s, alignment: .top))
-                        .overlay(alignment: .top) {
-                            if lid > 0.15 { Capsule().fill(Color(red: 0.32, green: 0.24, blue: 0.24).opacity(0.55)).frame(width: 30 * s, height: 1.6 * s).offset(y: 36 * s * lid - 1.2 * s) }
-                        }
-                        .offset(x: (CGFloat(x) - 20) * s, y: (196 - 18) * s)
-                }
-                // mouth: opens a little while she talks
-                if mouth > 0.04 {
-                    Ellipse()
-                        .fill(RadialGradient(colors: [Color(red: 0.36, green: 0.13, blue: 0.17), Color(red: 0.55, green: 0.27, blue: 0.30)], center: .center, startRadius: 0, endRadius: 8 * s))
-                        .frame(width: (11 + 4 * mouth) * s, height: (2 + 9 * mouth) * s)
-                        .offset(x: (93 - (11 + 4 * mouth) / 2) * s, y: 239 * s)
-                }
-                if mood == "thinking" {
-                    HStack(spacing: 3 * s) {
-                        ForEach(0..<3, id: \.self) { i in
-                            Circle().fill(Color.white.opacity(0.85)).frame(width: 7 * s, height: 7 * s)
-                                .offset(y: -4 * s * CGFloat(max(0, sin(t * 5 - Double(i) * 0.7))))
-                        }
-                    }
-                    .offset(x: 150 * s, y: 112 * s)
-                }
-                if mood == "love" {
-                    Image(systemName: "heart.fill").font(.system(size: 18 * s)).foregroundColor(Color(hex: "#FF7FA6"))
-                        .offset(x: 160 * s, y: (110 - 10 * CGFloat(abs(sin(t * 3)))) * s)
-                }
-            }
-            .frame(width: width, height: width * Self.picH / Self.picW, alignment: .topLeading)
-            .scaleEffect(x: 1, y: breathe, anchor: .bottom)
-            .rotation3DEffect(.degrees(look * 9), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
-            .rotationEffect(.degrees(tilt), anchor: UnitPoint(x: 0.47, y: 0.62))
-            .offset(y: bob)
+            let pose = AuroraLook.make(t: t, mood: mood, speaking: speaking, walking: walking, look: lookAtMouse ? probe.look() : .zero)
+            puppet(pose, t: t)
         }
+        .background(AuroraProbeView(probe: probe).frame(width: 1, height: 1))
+        .frame(width: width, height: width * Self.picH / Self.picW, alignment: .topLeading)
         .allowsHitTesting(false)
     }
 
-    /// -1 … 1: how far left or right the mouse is on the screen (she leans a little to look at it).
-    @MainActor static func mouseLean() -> Double {
-        let m = NSEvent.mouseLocation
-        guard let f = (NSScreen.screens.first { $0.frame.contains(m) } ?? NSScreen.main)?.frame, f.width > 0 else { return 0 }
-        return max(-1, min(1, Double((m.x - f.midX) / (f.width / 2))))
+    private var s: CGFloat { width / Self.picW }
+    private var H: CGFloat { width * Self.picH / Self.picW }
+
+    @ViewBuilder private func picture() -> some View {
+        if let img = AuroraArt.shared.front {
+            Image(nsImage: img).resizable().interpolation(.high).antialiased(true).frame(width: width, height: H)
+        } else {
+            Color.clear.frame(width: width, height: H)
+        }
+    }
+    /// A soft vertical band of the picture (y in picture units).
+    private func band(_ fadeInFrom: CGFloat, _ fadeInTo: CGFloat, _ fadeOutFrom: CGFloat, _ fadeOutTo: CGFloat) -> some View {
+        LinearGradient(stops: [
+            .init(color: .clear, location: fadeInFrom / Self.picH), .init(color: .black, location: fadeInTo / Self.picH),
+            .init(color: .black, location: fadeOutFrom / Self.picH), .init(color: .clear, location: fadeOutTo / Self.picH),
+        ], startPoint: .top, endPoint: .bottom).frame(width: width, height: H)
+    }
+
+    private func puppet(_ p: AuroraLook, t: Double) -> some View {
+        let headAnchor = UnitPoint(x: 0.47, y: 255 / Self.picH)
+        return ZStack(alignment: .topLeading) {
+            // body (stays put, breathes)
+            picture().mask(band(262, 284, 430, 431))
+            // head: ears behind, then the face
+            ZStack(alignment: .topLeading) {
+                picture()
+                    .mask(band(-1, 0, 100, 120).frame(width: width / 2).frame(width: width, alignment: .leading))
+                    .rotationEffect(.degrees(p.earL), anchor: UnitPoint(x: 52 / Self.picW, y: 112 / Self.picH))
+                picture()
+                    .mask(band(-1, 0, 100, 120).frame(width: width / 2).frame(width: width, alignment: .trailing))
+                    .rotationEffect(.degrees(p.earR), anchor: UnitPoint(x: 148 / Self.picW, y: 112 / Self.picH))
+                picture().mask(band(96, 113, 270, 286))
+                // cheeks
+                ForEach([40.0, 146.0], id: \.self) { x in
+                    Ellipse().fill(Color(red: 1, green: 0.62, blue: 0.68).opacity(p.blush)).frame(width: 24 * s, height: 13 * s).blur(radius: 3 * s)
+                        .offset(x: (CGFloat(x) - 12) * s, y: (226 - 6) * s)
+                }
+                eye(cx: 50, p)
+                eye(cx: 140, p)
+                mouth(p)
+            }
+            .offset(x: p.turn * s, y: p.nod * s)
+            .rotationEffect(.degrees(p.tilt), anchor: headAnchor)
+            // little extras
+            if p.dots {
+                HStack(spacing: 4 * s) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle().fill(Color.white.opacity(0.9)).frame(width: 9 * s, height: 9 * s)
+                            .offset(y: -5 * s * CGFloat(max(0, sin(t * 5 - Double(i) * 0.7))))
+                    }
+                }.offset(x: 152 * s, y: 112 * s)
+            }
+            if p.hearts {
+                ForEach(0..<2, id: \.self) { i in
+                    let k = (t * 0.6 + Double(i) * 0.5).truncatingRemainder(dividingBy: 1)
+                    Image(systemName: "heart.fill").font(.system(size: (14 + 6 * Double(i)) * s)).foregroundColor(Color(hex: "#FF7FA6"))
+                        .opacity(1 - k).offset(x: (i == 0 ? 150 : 22) * s, y: (120 - 50 * k) * s)
+                }
+            }
+            if p.zzz {
+                Text("z").font(.system(size: 18 * s, weight: .bold, design: .rounded)).foregroundColor(.white.opacity(0.8))
+                    .offset(x: 160 * s, y: (110 - 20 * (t * 0.5).truncatingRemainder(dividingBy: 1)) * s)
+            }
+        }
+        .scaleEffect(x: 1 + (p.breathe - 1) * 0.5, y: p.breathe, anchor: .bottom)
+        .offset(y: -p.hop * s)
+        .frame(width: width, height: H, alignment: .topLeading)
+    }
+
+    // Her eye, redrawn so it can look around, blink and smile. Sits exactly over the eye in the picture.
+    private func eye(cx: CGFloat, _ p: AuroraLook) -> some View {
+        let w: CGFloat = 44, h: CGFloat = 41
+        let fur = LinearGradient(colors: [Color(red: 0.86, green: 0.82, blue: 0.81), Color(red: 0.76, green: 0.71, blue: 0.70)], startPoint: .top, endPoint: .bottom)
+        return ZStack {
+            if p.happyEyes {
+                Ellipse().fill(fur).frame(width: w + 4, height: h + 4).blur(radius: 1.2 * s)
+                Path { q in
+                    q.move(to: CGPoint(x: 6, y: 26)); q.addQuadCurve(to: CGPoint(x: 38, y: 26), control: CGPoint(x: 22, y: 6))
+                }
+                .stroke(Color(red: 0.16, green: 0.09, blue: 0.08), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+                .frame(width: w, height: h).scaleEffect(s)
+                .frame(width: w * s, height: h * s)
+            } else {
+                // white-ish rim, dark outline, glossy brown iris, pupil, two glints
+                Ellipse().fill(Color(red: 0.93, green: 0.88, blue: 0.86)).frame(width: w * s, height: h * s)
+                Ellipse().fill(Color(red: 0.17, green: 0.10, blue: 0.09)).frame(width: (w - 3) * s, height: (h - 3) * s)
+                ZStack {
+                    Circle()
+                        .fill(RadialGradient(colors: [Color(red: 0.05, green: 0.03, blue: 0.03), Color(red: 0.25, green: 0.15, blue: 0.12), Color(red: 0.47, green: 0.31, blue: 0.25)],
+                                             center: .center, startRadius: 0, endRadius: 17 * s))
+                        .frame(width: 34 * s, height: 34 * s)
+                    Circle().fill(Color.black.opacity(0.92)).frame(width: 15 * s, height: 15 * s)
+                    Ellipse().fill(Color.white.opacity(0.96)).frame(width: 11 * s, height: 9 * s).offset(x: -6 * s, y: -7 * s)
+                    Circle().fill(Color.white.opacity(0.8)).frame(width: 4 * s, height: 4 * s).offset(x: 7 * s, y: 6 * s)
+                }
+                .offset(x: p.look.x * 5 * s, y: p.look.y * 4 * s)
+                .frame(width: (w - 6) * s, height: (h - 6) * s)
+                .clipShape(Ellipse())
+                // upper eyelid
+                Ellipse().fill(fur).frame(width: (w + 2) * s, height: (h + 2) * s)
+                    .mask(Rectangle().frame(height: (h + 2) * s * p.lid).frame(width: (w + 2) * s, height: (h + 2) * s, alignment: .top))
+                if p.lid > 0.12 {
+                    Capsule().fill(Color(red: 0.2, green: 0.12, blue: 0.11)).frame(width: (w - 8) * s, height: 2 * s)
+                        .offset(y: (-(h + 2) / 2 + (h + 2) * p.lid) * s)
+                }
+            }
+        }
+        .scaleEffect(p.eyeScale)
+        .frame(width: (w + 4) * s, height: (h + 4) * s)
+        .offset(x: (cx - (w + 4) / 2) * s, y: (196 - (h + 4) / 2) * s)
+    }
+
+    private func mouth(_ p: AuroraLook) -> some View {
+        let m = p.mouth
+        let mw: CGFloat = p.mouthO ? 11 : 12 + 7 * m, mh: CGFloat = p.mouthO ? 12 : 2 + 13 * m
+        return Group {
+            if m > 0.05 || p.mouthO {
+                ZStack(alignment: .bottom) {
+                    Ellipse().fill(Color(red: 0.30, green: 0.09, blue: 0.13))
+                    Ellipse().fill(Color(red: 0.93, green: 0.48, blue: 0.55)).frame(width: mw * 0.6 * s, height: mh * 0.45 * s).offset(y: -0.5 * s)
+                }
+                .frame(width: mw * s, height: mh * s)
+                .clipShape(Ellipse())
+                .offset(x: (92 - mw / 2) * s, y: 239 * s)
+            }
+        }
     }
 }
 
@@ -1910,5 +2110,38 @@ struct CompactAuroraTab: View {
             .frame(width: width, height: height, alignment: .top)
             .clipped()
             .allowsHitTesting(false)
+    }
+}
+
+/// Aurora as a round-ish icon (sidebar, cards, reminders): her face, alive, for any size.
+struct RealAuroraIcon: View {
+    var size: CGFloat
+    var mood: String = "idle"
+    var speaking = false
+    static func word(_ m: BunnyMood) -> String {
+        switch m {
+        case .happy, .laugh: return "done"
+        case .love: return "love"
+        case .surprised: return "surprised"
+        case .sad, .cross: return "oops"
+        case .thinking, .busy: return "thinking"
+        case .listening: return "listening"
+        case .sleepy: return "sleepy"
+        default: return "idle"
+        }
+    }
+    var body: some View {
+        if size >= 70 {
+            // big enough: the whole head, ears included
+            let w = min((size - 12) / 1.36, size / 1.3)
+            RealAuroraHead(width: w, mood: mood, speaking: speaking).frame(width: size, height: size)
+        } else {
+            // small: just the face (forehead to chin) so it reads clearly
+            let w = size / 0.86
+            RealAurora(width: w, mood: mood, speaking: speaking)
+                .offset(y: -w / 200 * 112)
+                .frame(width: size, height: size, alignment: .top)
+                .clipped()
+        }
     }
 }

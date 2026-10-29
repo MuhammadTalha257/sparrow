@@ -56,7 +56,7 @@ struct IslandContainer: View {
             // Island background: glass when open (if enabled), solid black to blend with the notch otherwise
             let shape = IslandShape(width: islandWidth, height: islandHeight,
                                     cornerRadius: cornerRadius, topRadius: islandTopRadius)
-            if state.glassStyle && state.mode == .expanded {
+            if state.glassStyle && state.mode == .expanded && !NotchDesign.on {
                 ZStack {
                     // clear glass: you can see your windows through it, softly blurred
                     VisualEffectBlur(material: .fullScreenUI)
@@ -125,7 +125,7 @@ struct IslandContainer: View {
                 } else {
                     IslandContentView(state: state)
                         .frame(width: islandWidth, height: islandHeight - earOffset)
-                        .background(Group { if state.mode == .expanded && !IslandConst.isPortrait(state.view) { ZuffiAnimatedBackground(base: .clear).opacity(0.5) } })
+                        .background(Group { if state.mode == .expanded && !IslandConst.isPortrait(state.view) && !NotchDesign.on { ZuffiAnimatedBackground(base: .clear).opacity(0.5) } })
                         .offset(y: earOffset)
                         .clipShape(IslandShape(width: islandWidth, height: islandHeight,
                                               cornerRadius: cornerRadius, topRadius: islandTopRadius))
@@ -159,7 +159,7 @@ struct IslandContainer: View {
 
             // Closed: drag the little pill anywhere — drop it at the left or right edge to park it there.
             if state.mode == .compact {
-                if NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
+                if NotchDesign.on && !IslandDock.docked {
                     CompactAuroraTab(width: islandWidth, height: islandHeight, notchH: state.notchHeight)
                 }
                 Color.clear.frame(width: islandWidth, height: islandHeight)
@@ -374,8 +374,8 @@ struct BotPlacement: View {
                         .position(x: uploadCx, y: cy)
                 }
                 .transition(.scale(scale: 0.01, anchor: .center).combined(with: .opacity))
-            } else if state.mode == .compact && NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
-                EmptyView()          // the glass wings draw Aurora beside the camera
+            } else if state.mode == .compact && NotchDesign.on && !IslandDock.docked {
+                EmptyView()          // the black tab draws Aurora itself
             } else if state.mode == .compact {
                 // Closed: one bunny face, centred under the notch, watching the cursor.
                 ZuffiMini(state: state, height: IslandDock.docked ? 38 : 36)
@@ -517,7 +517,7 @@ struct IslandContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !IslandConst.isPortrait(state.view) {
+            if !IslandConst.isPortrait(state.view) && !(NotchDesign.on && state.view == .note) {
                 IslandHeader(state: state)
                     .frame(height: 34)
                     .opacity(state.view == .confused ? 0 : 1)

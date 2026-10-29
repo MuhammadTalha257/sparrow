@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Ignore SIGPIPE — prevents crash when nb-hook closes socket before we write response
         signal(SIGPIPE, SIG_IGN)
+        // One look everywhere: the dark dashboard and the new black notch.
+        UserDefaults.standard.set(false, forKey: "hubLight")
+        UserDefaults.standard.set(true, forKey: "notchWide")
         // Warm up Keychain cache on main thread BEFORE any poller or view touches it
         _ = KeychainStore.shared
         // Ask to take notes when a Zoom / Teams / Meet / FaceTime / WhatsApp call starts

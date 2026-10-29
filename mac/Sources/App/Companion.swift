@@ -316,9 +316,10 @@ struct PetView: View {
                 Group {
                     if Aurora3DPrefs.on {
                         // the fluffy 3D Aurora: turns, hops, sits upright, gets cross when you ignore her
-                        Aurora3DView(pose: model.angry ? .cross : AuroraPose.from(Self.mood3D(model.walking, petPose, BotCanvasView.mood(voice, AppState.shared))), faceLeft: model.walkLeft)
-                            .frame(width: 170, height: 190)
-                            .offset(y: -6)
+                        // the real Aurora (same as in the notch): hops when she walks, follows the mouse, talks, shows how she feels
+                        RealAurora(width: 82, mood: model.angry ? "oops" : AuroraFace.mood(voice, AppState.shared), speaking: voice.speaking, walking: model.walking)
+                            .frame(width: 170, height: 190, alignment: .bottom)
+                            .offset(y: -2)
                             .allowsHitTesting(false)
                     } else if ZuffiLook.shared.kind == .bunny, Buddy3DPrefs.on {
                         // the 3D bunny: smooth head that follows the mouse, real hops, blinks and ear twitches

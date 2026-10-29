@@ -2725,7 +2725,7 @@ struct ZuffiHubView: View {
             .frame(maxWidth: 350, alignment: .leading)
             .foregroundColor(.white)
             Spacer()
-            Aurora3DView(pose: .sit, lookAtMouse: true).frame(width: 186, height: 186).padding(.top, -25).allowsHitTesting(false)
+            RealAuroraHead(width: 118).frame(width: 186, height: 186)
         }
         .padding(.horizontal, 40).padding(.vertical, 20)
         .background(RoundedRectangle(cornerRadius: 14).fill(LinearGradient(colors: ["#CF4AF3", "#E73BD7", "#F631BC", "#FD31A2", "#FF3A8B", "#FF4B78", "#FF5E68", "#FF705C", "#FF8C51", "#FFAA49", "#FFC848", "#FFE652"].map { Color(hex: $0) }, startPoint: .bottomLeading, endPoint: .topTrailing)))
@@ -3217,13 +3217,13 @@ struct ZuffiDashboard: View {
                 }.buttonStyle(.plain).padding(.horizontal, 12)
             }
             Spacer()
-            Button { light.toggle() } label: {
+            if false { Button { light.toggle() } label: {
                 HStack(spacing: 10) {
                     Image(systemName: light ? "moon.fill" : "sun.max.fill")
                     Text(light ? "Dark look" : "Light look").font(HubFont.p(13))
                     Spacer()
                 }.foregroundColor(T.inactive).padding(.horizontal, 26).frame(height: 40).contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain) }
             Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); hub.section = .settings } label: {
                 HStack(spacing: 10) {
                     ProfileAvatar(size: 34)
@@ -3856,11 +3856,7 @@ struct DashLookPage: View {
                 Toggle("Never show the pet (reminders go to the notch)", isOn: $petNever).toggleStyle(.switch)
             }
             DashCard(title: "Notch", light: light) {
-                Toggle("Small glass notch", isOn: $notchWide).toggleStyle(.switch)
                 Toggle("Say hi when Zuffi starts", isOn: $hello).toggleStyle(.switch)
-            }
-            DashCard(title: "Dashboard look", light: light) {
-                Picker("", selection: $hubLight) { Text("Dark").tag(false); Text("Light").tag(true) }.pickerStyle(.segmented).frame(width: 220)
             }
         }
         .font(HubFont.p(13.5, .regular))
