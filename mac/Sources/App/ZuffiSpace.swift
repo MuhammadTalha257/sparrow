@@ -2442,13 +2442,17 @@ final class NotchData: ObservableObject {
         }
     }
     private func run(_ js: String, _ args: [String: Any]) async {
-        _ = await WebHub.shared.callJS("const S = window.Sparrow; if (!S || !S.store) return false; " + js + "; try { S.go && S.go(null) } catch (e) {} return true;", args)
+        let ok = await WebHub.shared.callJS("const S = window.Sparrow; if (!S || !S.store) return false; " + js + "; if (S.refresh) S.refresh(); return true;", args) as? Bool ?? false
+        if !ok { appendAppLog("web.log", "notch data change failed") }
         await refresh()
     }
     func add(_ type: String, title: String, text: String = "", when: Date? = nil, rep: String = "", target: Int = 0, every: Int = 0) async {
         var f: [String: Any] = ["type": type, "title": title]
         if !text.isEmpty { f["text"] = text }
         if let when { f["when"] = ISO8601DateFormatter().string(from: when) }
+        if ["reminder", "meeting"].contains(type), let when {     // same as voice reminders, so they ring the same way
+            await run("S.addReminder(t, w, k, r)", ["t": title, "w": ISO8601DateFormatter().string(from: when), "k": type, "r": rep]); return
+        }
         if !rep.isEmpty { f["repeat"] = rep == "weekdays" ? ["freq": "weekly", "days": [1, 2, 3, 4, 5]] as [String: Any] : ["freq": rep] }
         if type == "habit" { f["target"] = max(1, target); f["log"] = [String: Int](); if every > 0 { f["every"] = every } }
         await run("S.store.add(f)", ["f": f])

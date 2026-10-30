@@ -2715,6 +2715,9 @@ async function voiceAsk(text) {
 }
 jobs.initJobs({ openPanel, openUrl, toast, pickFiles, closeSheets });
 window.Sparrow = {
+  /** Mac notch pages read and change the same list (tasks, notes, reminders, habits). */
+  store,
+  refresh: () => { try { renderAll(); } catch {} },
   /** Mac: the AI included with Pro / Business (key stays on Zuffi's server). → {text} or {error} */
   builtinAI: async (messages, maxTokens = 900) => { try { return { text: await acct.ai(messages, maxTokens) }; } catch (e) { return { error: String(e.message || e) }; } },
   builtinVision: async (prompt, jpegB64) => { try { return { text: await acct.ai([{ role: 'user', content: prompt }], 900, jpegB64) }; } catch (e) { return { error: String(e.message || e) }; } },
