@@ -1059,13 +1059,8 @@ struct NotchHomeView: View {
     private var answering: Bool { thinking || !reply.isEmpty }
     private var mood: String { thinking ? "thinking" : waving ? "hello" : AuroraFace.mood(voice, state) }
 
-    var body: some View {
-        ZStack(alignment: .top) {
-            Color.black.contentShape(Rectangle()).movesIsland()
-            // Low and wide, so it never covers your work: Aurora's face and the ask bar side by side in one short strip
-            // under the notch. Only when there's an answer does a card drop below it (and it folds back after).
-            VStack(spacing: 8) {
-                HStack(spacing: 10) {
+    private var faceAndBar: some View {
+        HStack(spacing: 10) {
                     if showsAurora {
                     RealAuroraIcon(size: 62, mood: mood, speaking: voice.speaking || tutor.speaking)
                         .frame(width: 62, height: 62)
@@ -1076,12 +1071,25 @@ struct NotchHomeView: View {
                     }
                     if listening { listenStrip } else { askBar }
                 }
+    }
+
+    @ViewBuilder private var below: some View {
                 if let p = page {
                     NotchScreen(page: p, go: { withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { page = $0 } },
                                 ask: { text in ask = text; askFocus = true })
                         .padding(.bottom, 12)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 } else if answering { answerCard.transition(.move(edge: .top).combined(with: .opacity)) }
+    }
+
+    private var core: some View {
+        ZStack(alignment: .top) {
+            Color.black.contentShape(Rectangle()).movesIsland()
+            // Low and wide, so it never covers your work: Aurora's face and the ask bar side by side in one short strip
+            // under the notch. Only when there's an answer does a card drop below it (and it folds back after).
+            VStack(spacing: 8) {
+                faceAndBar
+                below
             }
             .padding(.top, max(30, state.notchHeight + 2))
             .padding(.horizontal, 12)
@@ -1091,6 +1099,10 @@ struct NotchHomeView: View {
             .animation(.easeInOut(duration: 0.2), value: listening)
         }
         .frame(width: W, height: H)
+    }
+
+    var body: some View {
+        core
         .onAppear {
             if Date().timeIntervalSince(asker.answerAt) < 4 { askedQ = asker.answerTitle; reply = asker.answerText; thinking = false }
             shown = false; risen = false
