@@ -2936,6 +2936,7 @@ struct TodayPage: View {
         let habits = data.of(["habit"])
         if !habits.isEmpty { NSLabel(t: "HABITS"); ForEach(habits.prefix(4)) { h in NSRow(title: h.title, detail: "\(h.count)/\(max(1, h.target))", tint: Color(hex: "#FF9F5A")) } }
         if !inbox.notes.isEmpty { NSPill(title: "\(inbox.notes.count) message\(inbox.notes.count == 1 ? "" : "s") waiting", primary: true, color: "#25D366") { go("whatsapp") } }
+        EmptyView().task { await day.refresh() }
     }
 }
 
