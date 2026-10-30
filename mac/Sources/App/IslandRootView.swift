@@ -95,6 +95,8 @@ struct IslandContainer: View {
                 }
                 .clipShape(shape)
                 .overlay(shape.stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+            } else if state.mode == .expanded && IslandConst.isWideHome(state.view) {
+                Color.clear     // the open notch draws its own separate pieces (face tab, bar, panel)
             } else {
                 shape.fill(Color.black)
             }
@@ -134,11 +136,11 @@ struct IslandContainer: View {
             }
 
             // Zuffi's light: one thin strip of your colour along the bottom edge of the open island.
-            if state.mode == .expanded && !greetingActive {
+            if state.mode == .expanded && !greetingActive && !IslandConst.isWideHome(state.view) {
                 AccentStrip(width: islandWidth, height: islandHeight)
             }
             // Charging, notifications and music light up the island's own edge (closed or open).
-            if state.mode != .hidden {
+            if state.mode != .hidden && !(state.mode == .expanded && IslandConst.isWideHome(state.view)) {
                 IslandRim(width: islandWidth, height: islandHeight, cornerRadius: cornerRadius, topRadius: islandTopRadius, open: state.mode == .expanded)
             }
 

@@ -1048,7 +1048,8 @@ struct NotchHomeView: View {
     @State private var reply = ""
     @State private var thinking = false
     /// The small screen under the bar: nil = closed, "grid" = all features, or one feature's page.
-    @State private var page: String?
+    @ObservedObject private var nav = NotchNav.shared
+    private var page: String? { nav.page }
     @AppStorage("notchShowsAurora") private var showsAurora = true
 
     private let W: CGFloat = IslandConst.homeW
@@ -1059,46 +1060,61 @@ struct NotchHomeView: View {
     private var answering: Bool { thinking || !reply.isEmpty }
     private var mood: String { thinking ? "thinking" : waving ? "hello" : AuroraFace.mood(voice, state) }
 
-    private var faceAndBar: some View {
-        HStack(spacing: 10) {
-                    if showsAurora {
-                    RealAuroraIcon(size: 62, mood: mood, speaking: voice.speaking || tutor.speaking)
-                        .frame(width: 62, height: 62)
-                        .overlay(Color.clear.contentShape(Rectangle())
-                            .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
-                            .help("Double-click Aurora to talk"))
-                        .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
-                    }
-                    if listening { listenStrip } else { askBar }
-                }
+    /// Like Taby: three separate pieces — the small black tab with Aurora's face under the notch, the chat bar
+    /// floating just below it, and (only when needed) the panel or answer card below that. Nothing else covers the screen.
+    private var tabW: CGFloat { max(state.notchWidth + 24, 196) }
+    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 72 : max(state.notchHeight, 24) + 6 }
+    private var faceTab: some View {
+        ZStack(alignment: .bottom) {
+            UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 24, bottomTrailing: 24, topTrailing: 0), style: .continuous)
+                .fill(Color.black)
+            if showsAurora {
+                RealAuroraIcon(size: 76, mood: mood, speaking: voice.speaking || tutor.speaking)
+                    .frame(width: 76, height: 70, alignment: .top).clipped()
+                    .padding(.bottom, 2)
+                    .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
+                    .overlay(Color.clear.contentShape(Rectangle())
+                        .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
+                        .help("Double-click Aurora to talk"))
+            }
+        }
+        .frame(width: tabW, height: tabH)
+        .contentShape(Rectangle()).movesIsland()
+    }
+
+    private var bar: some View {
+        Group { if listening { listenStrip } else { askBar } }
+            .frame(width: W - 24)
+            .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
     }
 
     @ViewBuilder private var below: some View {
-                if let p = page {
-                    NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { page = target } },
-                                ask: { text in ask = text; askFocus = true })
-                        .padding(.bottom, 12)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                } else if answering { answerCard.transition(.move(edge: .top).combined(with: .opacity)) }
+        if let p = page {
+            VStack(spacing: 8) {
+                if answering && p != "chat" { replyLine }
+                NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { nav.page = target } },
+                            ask: { text in ask = text; askFocus = true })
+            }
+                .frame(width: W - 24)
+                .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
+                .padding(.bottom, 10)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        } else if answering {
+            answerCard.frame(width: W - 24).shadow(color: .black.opacity(0.45), radius: 16, y: 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     private var core: some View {
-        ZStack(alignment: .top) {
-            Color.black.contentShape(Rectangle()).movesIsland()
-            // Low and wide, so it never covers your work: Aurora's face and the ask bar side by side in one short strip
-            // under the notch. Only when there's an answer does a card drop below it (and it folds back after).
-            VStack(spacing: 8) {
-                faceAndBar
-                below
-            }
-            .padding(.top, max(30, state.notchHeight + 2))
-            .padding(.horizontal, 12)
-            .frame(width: W, height: H, alignment: .top)
-            .opacity(shown ? 1 : 0)
-            .animation(.spring(response: 0.42, dampingFraction: 0.8), value: answering)
-            .animation(.easeInOut(duration: 0.2), value: listening)
+        VStack(spacing: 10) {
+            faceTab
+            bar
+            below
         }
-        .frame(width: W, height: H)
+        .frame(width: W, height: H, alignment: .top)
+        .opacity(shown ? 1 : 0)
+        .animation(.spring(response: 0.42, dampingFraction: 0.8), value: answering)
+        .animation(.easeInOut(duration: 0.2), value: listening)
     }
 
     var body: some View {
@@ -1112,12 +1128,11 @@ struct NotchHomeView: View {
             waving = true      // she says hi with a little wave
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { MainActor.assumeIsolated { waving = false } }
         }
-        .onDisappear { shown = false; risen = false; state.homeTall = false; state.homeBig = false; page = nil }
+        .onDisappear { shown = false; risen = false; state.homeTall = false; state.homeBig = false; nav.page = nil }
         .onChange(of: answering) { _, a in
-            if a { page = nil }                 // an answer takes the screen
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeTall = a }
         }
-        .onChange(of: page) { _, p in withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeBig = p != nil } }
+        .onChange(of: nav.page) { _, p in withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeBig = p != nil } }
         // what you said shows straight away; Zuffi's answer (spoken or written) lands in the card
         .onChange(of: voice.lastHeard) { _, h in
             guard !h.isEmpty else { return }
@@ -1141,6 +1156,12 @@ struct NotchHomeView: View {
         .onChange(of: voice.lastSpoken) { _, said in
             if thinking, said.count >= 18 { reply = said; thinking = false }
         }
+        .onChange(of: reply) { _, r in if !r.isEmpty { Task { await ZuffiData.shared.refresh() } } }
+        .onChange(of: nav.pendingChat) { _, q in
+            guard let q, !q.isEmpty else { return }
+            nav.pendingChat = nil
+            sendChat(q, spoken: true)
+        }
         .onChange(of: voice.missedAt) { _, _ in
             askedQ = "…"; thinking = false
             reply = "I didn't hear anything. Hold Z (or tap the mic) and talk a little closer to the Mac."
@@ -1150,7 +1171,7 @@ struct NotchHomeView: View {
     // the slim ask bar: menu · text · model · mic
     private var askBar: some View {
         HStack(spacing: 8) {
-            Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { page = page == nil ? "grid" : nil } } label: {
+            Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { nav.page = nav.page == nil ? "grid" : nil } } label: {
                 Image(systemName: page == nil ? "square.grid.2x2" : "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#E9E5F2"))
                     .frame(width: 30, height: 30).background(Circle().fill(page == nil ? Color.clear : Color(hex: "#B79CFF").opacity(0.25)))
             }.buttonStyle(.plain).help("Everything Zuffi can do")
@@ -1381,6 +1402,8 @@ struct NotchHomeView: View {
         guard !q.isEmpty else { return }
         ask = ""
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
+        // On the Chat page everything goes into the chat (with the agent you picked)
+        if page == "chat" { sendChat(q, spoken: false); return }
         // about the screen ("where do I click", "explain this page") → Zuffi looks at the screen
         if let hit = ZuffiAsk.shared.takeIfAboutScreen(q) {
             Task { await ZuffiAsk.shared.answer(hit.0, about: hit.1) }; return
@@ -1389,16 +1412,65 @@ struct NotchHomeView: View {
         askedQ = q; reply = ""; thinking = true
         BunnyFaceCenter.shared.show(.thinking, for: 8)
         Task { @MainActor in
+            // 1 · her own pages and your data: open / edit / delete / done / move
+            if let r = await ZuffiCommand.handle(q) {
+                thinking = false
+                if r.isEmpty { askedQ = "" } else { reply = r }
+                BunnyFaceCenter.shared.show(.happy, for: 2)
+                return
+            }
+            // 2 · reminders, tasks, notes, habits, apps, music… (same brain as when you talk)
+            let short = q.split(separator: " ").count <= 6
+            if short, let r = await WebHub.shared.ask(q) { done(r); return }
+            if let plan = await SmartPlanner.shared.plan(q), !plan.commands.isEmpty {
+                done(await SmartPlanner.shared.run(plan)); return
+            }
+            if !short, let r = await WebHub.shared.ask(q) { done(r); return }
+            // 3 · a question: a short, friendly answer
             let r = await AIService.shared.oneShot("""
                 \(before)The user asks: "\(q)"
                 Answer like a kind, clever friend: short and clear (under 110 words), in the language they wrote in. Plain text, no symbols or lists unless really needed. \
                 You may begin with ONE small natural reaction when it truly fits — "Oh!", "Ah,", "Hmm," or "Haha,".
-                """, system: "You are Zuffi, a friendly helper that lives in the notch of the user's Mac.\n" + ZuffiVoice.style) ?? ""
+                """, system: ZuffiVoice.persona + "\n" + ZuffiVoice.style) ?? ""
             let out = r.trimmingCharacters(in: .whitespacesAndNewlines)
             thinking = false
             reply = out.isEmpty ? ZuffiAsk.noBrainLine : out
             if !out.isEmpty { ZuffiHelpLog.shared.add("Answered", out); BunnyFaceCenter.shared.show(.happy, for: 2) }
         }
+    }
+    private func done(_ r: String) {
+        thinking = false
+        reply = r.isEmpty ? "Done!" : r
+        BunnyFaceCenter.shared.show(.happy, for: 2)
+        ZuffiHelpLog.shared.add("Done", reply)
+    }
+    /// Chat page: the message goes to the chat (Zuffi or the agent you picked) and the answer appears there.
+    private func sendChat(_ q: String, spoken: Bool) {
+        if page != "chat" { nav.page = "chat" }
+        state.chatHistory.append(ChatMessage(role: .user, content: q))
+        state.stateOverride = .thinking
+        BunnyFaceCenter.shared.show(.thinking, for: 8)
+        Task { @MainActor in
+            let before = state.chatHistory.count
+            await AIService.shared.chat(query: q, context: state.promptContext, state: state)
+            state.stateOverride = nil
+            if state.chatHistory.count >= before, let last = state.chatHistory.last, last.role == .assistant {
+                BunnyFaceCenter.shared.show(.happy, for: 2)
+                if spoken || UserDefaults.standard.bool(forKey: AssistantPrefs.speakReplies) { VoiceEngine.shared.speak(last.content) }
+            }
+        }
+    }
+    /// A one-line answer above an open page ("Done — I deleted …").
+    private var replyLine: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if thinking { ProgressView().controlSize(.mini).tint(.white) }
+            Text(thinking ? "Hmm, one sec…" : reply).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+            Button { reply = ""; askedQ = ""; thinking = false } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(NS.soft) }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(hex: "#1B1922")))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.08)))
     }
 
     // MARK: row 2 — notifications
@@ -2346,255 +2418,838 @@ final class AppUsage: ObservableObject {
     func clear() { days = [:]; TeamStore.save("app-usage", days) }
 }
 
+// Your tasks, notes, reminders and habits — the same list Zuffi's brain keeps (so voice and screen always agree).
+@MainActor
+final class ZuffiData: ObservableObject {
+    static let shared = ZuffiData()
+    struct Item: Identifiable, Hashable {
+        let id: String; let type: String; var title: String; var text: String
+        var when: Date?; var done: Bool; var target: Int; var count: Int; var every: Int; var rep: String
+    }
+    struct Health: Hashable { var on = false; var every = 120 }
+    @Published private(set) var items: [Item] = []
+    @Published private(set) var health: [String: Health] = [:]
+
+    func of(_ types: Set<String>, done: Bool = false) -> [Item] { items.filter { types.contains($0.type) && $0.done == done } }
+
+    func refresh() async {
+        let js = """
+        const S = window.Sparrow; if (!S || !S.store) return [];
+        const k = new Date().toISOString().slice(0, 10);
+        return S.store.items.filter(i => ['task','note','reminder','meeting','habit'].includes(i.type)).map(i => ({
+          id: String(i.id), type: i.type, title: i.title || '', text: i.text || '', when: i.when ? new Date(i.when).getTime() : 0,
+          done: !!i.done, target: +i.target || 0, count: (i.log || {})[k] || 0, every: +i.every || 0, rep: i.repeat ? (i.repeat.freq || '') : '' }));
+        """
+        if let arr = await WebHub.shared.callJS(js) as? [[String: Any]] {
+            items = arr.compactMap { d in
+                guard let id = d["id"] as? String, let type = d["type"] as? String else { return nil }
+                let w = (d["when"] as? Double) ?? 0
+                return Item(id: id, type: type, title: d["title"] as? String ?? "", text: d["text"] as? String ?? "",
+                            when: w > 0 ? Date(timeIntervalSince1970: w / 1000) : nil, done: d["done"] as? Bool ?? false,
+                            target: (d["target"] as? Int) ?? Int((d["target"] as? Double) ?? 0), count: (d["count"] as? Int) ?? Int((d["count"] as? Double) ?? 0),
+                            every: (d["every"] as? Int) ?? Int((d["every"] as? Double) ?? 0), rep: d["rep"] as? String ?? "")
+            }
+        }
+        if let h = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.getHealth ? window.Sparrow.getHealth() : {}") as? [String: Any] {
+            var out: [String: Health] = [:]
+            for k in ["water", "coffee", "meds"] {
+                let v = h[k] as? [String: Any] ?? [:]
+                out[k] = Health(on: v["on"] as? Bool ?? false, every: (v["every"] as? Int) ?? Int((v["every"] as? Double) ?? 120))
+            }
+            health = out
+        }
+    }
+    private func run(_ js: String, _ args: [String: Any]) async {
+        _ = await WebHub.shared.callJS("const S = window.Sparrow; if (!S || !S.store) return false; " + js + "; try { S.go && S.go(null) } catch (e) {} return true;", args)
+        await refresh()
+    }
+    func add(_ type: String, title: String, text: String = "", when: Date? = nil, rep: String = "", target: Int = 0, every: Int = 0) async {
+        var f: [String: Any] = ["type": type, "title": title]
+        if !text.isEmpty { f["text"] = text }
+        if let when { f["when"] = ISO8601DateFormatter().string(from: when) }
+        if !rep.isEmpty { f["repeat"] = rep == "weekdays" ? ["freq": "weekly", "days": [1, 2, 3, 4, 5]] as [String: Any] : ["freq": rep] }
+        if type == "habit" { f["target"] = max(1, target); f["log"] = [String: Int](); if every > 0 { f["every"] = every } }
+        await run("S.store.add(f)", ["f": f])
+    }
+    func update(_ id: String, title: String? = nil, text: String? = nil, when: Date?? = nil, target: Int? = nil) async {
+        var p: [String: Any] = [:]
+        if let title { p["title"] = title }
+        if let text { p["text"] = text }
+        if let when { p["when"] = when.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(); p["notified"] = false }
+        if let target { p["target"] = max(1, target) }
+        await run("S.store.update(id, p)", ["id": id, "p": p])
+    }
+    func remove(_ id: String) async { await run("S.store.remove(id)", ["id": id]) }
+    func complete(_ id: String, _ done: Bool = true) async { await run("S.store.update(id, { done: d, doneAt: d ? new Date().toISOString() : null })", ["id": id, "d": done]) }
+    func bump(_ id: String, by n: Int = 1) async {
+        await run("const h = S.store.items.find(i => String(i.id) === id); if (h) { const k = new Date().toISOString().slice(0, 10); const log = Object.assign({}, h.log || {}); log[k] = Math.max(0, (log[k] || 0) + n); S.store.update(h.id, { log }); }", ["id": id, "n": n])
+    }
+    func setHealth(_ kind: String, on: Bool, every: Int) async {
+        _ = await WebHub.shared.callJS("return window.Sparrow.setHealth(h)", ["h": [kind: ["on": on, "mode": "every", "every": max(15, every)]]])
+        await refresh()
+    }
+}
+
+/// A simple focus timer: work without distractions, then a break. She tells you when it's done.
+@MainActor
+final class FocusTimer: ObservableObject {
+    static let shared = FocusTimer()
+    @Published var endsAt: Date?
+    @Published var minutes = 25
+    @Published private(set) var doneToday = UserDefaults.standard.integer(forKey: "focus-" + AppUsage.key())
+    private var timer: Timer?
+    var running: Bool { (endsAt ?? .distantPast) > Date() }
+    func start(_ m: Int) {
+        minutes = m; endsAt = Date().addingTimeInterval(Double(m) * 60)
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: Double(m) * 60, repeats: false) { _ in MainActor.assumeIsolated { FocusTimer.shared.finish() } }
+        VoiceEngine.shared.speak("Okay! \(m) minutes of focus. I'll keep quiet and tell you when it's time for a break.")
+    }
+    func stop() { timer?.invalidate(); timer = nil; endsAt = nil }
+    private func finish() {
+        endsAt = nil; doneToday += 1
+        UserDefaults.standard.set(doneToday, forKey: "focus-" + AppUsage.key())
+        BunnyFaceCenter.shared.show(.happy, for: 3)
+        let name = AssistantPrefs.displayName
+        VoiceEngine.shared.speak("Yay\(name.isEmpty ? "" : ", \(name)")! Great focus. Time for a short break — stretch and drink some water.")
+    }
+}
+
+// MARK: shared look
+
+enum NS {
+    static let soft = Color(hex: "#9E99AC")
+    static let card = Color(hex: "#16141B")
+    static let ink = Color(hex: "#141218")
+}
+struct NSCard<C: View>: View {
+    @ViewBuilder var content: () -> C
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6, content: content)
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NS.card))
+    }
+}
+struct NSPill: View {
+    let title: String
+    var primary = false
+    var color = "#F2F1F6"
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundColor(primary ? NS.ink : .white).lineLimit(1)
+                .padding(.horizontal, 12).frame(height: 28)
+                .background(Capsule().fill(primary ? Color(hex: color) : Color.white.opacity(0.09)))
+        }.buttonStyle(.plain)
+    }
+}
+struct NSField: View {
+    let placeholder: String
+    @Binding var text: String
+    var onSubmit: () -> Void = {}
+    var body: some View {
+        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(NS.soft.opacity(0.8)))
+            .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
+            .padding(.horizontal, 12).frame(height: 34)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+            .onSubmit(onSubmit)
+    }
+}
+struct NSRow: View {
+    let title: String
+    let detail: String
+    var tint: Color? = nil
+    var body: some View {
+        HStack { Text(title).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(1); Spacer(); Text(detail).font(.system(size: 11.5)).foregroundColor(tint ?? NS.soft) }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NS.card))
+    }
+}
+struct NSLabel: View {
+    let t: String
+    var body: some View { Text(t).font(.system(size: 10.5, weight: .bold)).tracking(1).foregroundColor(Color(hex: "#6F6A80")).padding(.top, 4) }
+}
+struct NSIconButton: View {
+    let icon: String
+    var tint: Color = NS.soft
+    let help: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) { Image(systemName: icon).font(.system(size: 11, weight: .semibold)).foregroundColor(tint).frame(width: 24, height: 24) }
+            .buttonStyle(.plain).help(help)
+    }
+}
+func nsWhen(_ d: Date?) -> String {
+    guard let d else { return "no time" }
+    let c = Calendar.current
+    let t = d.formatted(date: .omitted, time: .shortened)
+    if c.isDateInToday(d) { return "today \(t)" }
+    if c.isDateInTomorrow(d) { return "tomorrow \(t)" }
+    return d.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + " " + t
+}
+
+// MARK: the small screen
+
 struct NotchScreen: View {
     let page: String
     let go: (String?) -> Void
     let ask: (String) -> Void
-    @ObservedObject private var inbox = NotchInbox.shared
-    @ObservedObject private var log = ZuffiHelpLog.shared
-    @ObservedObject private var day = DashToday.shared
-    @ObservedObject private var archive = ChatArchive.shared
-    @ObservedObject private var usage = AppUsage.shared
-    @ObservedObject private var voice = VoiceEngine.shared
-    @ObservedObject private var meeting = MeetingHelper.shared
-    @ObservedObject private var state = AppState.shared
-    @ObservedObject private var study = StudyHub.shared
-    @AppStorage("notchShowsAurora") private var showsAurora = true
-    @AppStorage("trackDay") private var trackDay = true
+    @ObservedObject private var data = ZuffiData.shared
 
-    struct Tile: Identifiable { let id: String; let name: String; let sub: String; let icon: String; let color: String }
-    static let tiles: [Tile] = [
-        Tile(id: "today", name: "Today", sub: "what needs you", icon: "sun.max.fill", color: "#B79CFF"),
-        Tile(id: "chat", name: "Chat", sub: "and past chats", icon: "bubble.left.and.bubble.right.fill", color: "#F2F1F6"),
-        Tile(id: "reminders", name: "Reminders", sub: "water, meetings", icon: "bell.fill", color: "#F5A524"),
-        Tile(id: "messages", name: "Messages", sub: "WhatsApp · Mail", icon: "ellipsis.message.fill", color: "#25D366"),
-        Tile(id: "day", name: "Your day", sub: "activity", icon: "chart.bar.fill", color: "#38BDF8"),
-        Tile(id: "screen", name: "My screen", sub: "explain · click", icon: "eye.fill", color: "#FF8FB1"),
-        Tile(id: "translate", name: "Translate", sub: "any language", icon: "character.bubble.fill", color: "#7CE0A3"),
-        Tile(id: "meeting", name: "Meeting helper", sub: "only you see it", icon: "person.2.wave.2.fill", color: "#C9B8FF"),
-        Tile(id: "notes", name: "Notes", sub: "find · write", icon: "note.text", color: "#FFD479"),
-        Tile(id: "files", name: "Files", sub: "read · convert", icon: "doc.fill", color: "#9FB4FF"),
-        Tile(id: "aurora", name: "Aurora", sub: "pet & look", icon: "hare.fill", color: "#FFFFFF"),
-        Tile(id: "settings", name: "Settings", sub: "voice · AI · mic", icon: "gearshape.fill", color: "#8E89A0"),
+    struct Item: Identifiable { let id: String; let name: String; let icon: String }
+    /// The menu, in the order you asked for (two columns, like Taby).
+    static let menu: [Item] = [
+        Item(id: "chat", name: "Chat", icon: "bubble.left"), Item(id: "tasks", name: "Tasks", icon: "checkmark.square"),
+        Item(id: "notes", name: "Notes", icon: "square.and.pencil"), Item(id: "reminders", name: "Reminders", icon: "bell"),
+        Item(id: "habits", name: "Habits", icon: "flame"), Item(id: "today", name: "Today", icon: "calendar"),
+        Item(id: "week", name: "This week", icon: "calendar.day.timeline.left"), Item(id: "focus", name: "Focus", icon: "timer"),
+        Item(id: "home", name: "Home", icon: "house"), Item(id: "whatsapp", name: "WhatsApp", icon: "message"),
+        Item(id: "settings", name: "Settings", icon: "gearshape"), Item(id: "tools", name: "Tools", icon: "wrench.and.screwdriver"),
+        Item(id: "screen", name: "My screen", icon: "eye"), Item(id: "meeting", name: "Meeting helper", icon: "person.2.wave.2"),
+        Item(id: "day", name: "Your day", icon: "chart.bar"),
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if page == "grid" { grid } else {
+            if page == "grid" {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], alignment: .leading, spacing: 2) {
+                    ForEach(Self.menu) { m in
+                        Button { go(m.id) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: m.icon).font(.system(size: 14, weight: .medium)).foregroundColor(.white).frame(width: 20)
+                                Text(m.name).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).frame(height: 40).contentShape(Rectangle())
+                        }.buttonStyle(NSHover())
+                    }
+                }
+            } else {
                 HStack(spacing: 8) {
                     Button { go("grid") } label: { Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#B9B4C6")).frame(width: 26, height: 26) }
-                        .buttonStyle(.plain).help("All features")
-                    Text(Self.tiles.first { $0.id == page }?.name ?? "").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                        .buttonStyle(.plain).help("Menu")
+                    Text(Self.menu.first { $0.id == page }?.name ?? "").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                     Spacer()
                 }
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 8) { content }.frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 8) { pageView }.frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color(hex: "#0F0E13")))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08)))
-        .task { await day.refresh() }
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(hex: "#0B0A0E")))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.09)))
+        .task(id: page) { await data.refresh() }
     }
 
-    private var grid: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack { Text("Everything Zuffi can do").font(.system(size: 15, weight: .bold)).foregroundColor(.white); Spacer(); Text("tap one").font(.system(size: 11.5)).foregroundColor(soft) }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(Self.tiles) { t in
-                    Button { go(t.id) } label: {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Image(systemName: t.icon).font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#0B0A0E"))
-                                .frame(width: 28, height: 28).background(RoundedRectangle(cornerRadius: 9).fill(Color(hex: t.color)))
-                            Spacer(minLength: 6)
-                            Text(t.name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
-                            Text(t.sub).font(.system(size: 10.5)).foregroundColor(soft).lineLimit(1)
-                        }
-                        .padding(11).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: "#16141B")))
-                        .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private let soft = Color(hex: "#9E99AC")
-    private func card<C: View>(@ViewBuilder _ c: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 6, content: c)
-            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(hex: "#16141B")))
-    }
-    private func pill(_ t: String, primary: Bool = false, color: String = "#F2F1F6", _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            Text(t).font(.system(size: 11.5, weight: .semibold)).foregroundColor(primary ? Color(hex: "#141218") : .white)
-                .padding(.horizontal, 12).frame(height: 28)
-                .background(Capsule().fill(primary ? Color(hex: color) : Color.white.opacity(0.09)))
-        }.buttonStyle(.plain)
-    }
-    private func row(_ a: String, _ b: String, tint: Color? = nil) -> some View {
-        HStack { Text(a).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(1); Spacer(); Text(b).font(.system(size: 11.5)).foregroundColor(tint ?? soft) }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: "#16141B")))
-    }
-    private func label(_ t: String) -> some View { Text(t).font(.system(size: 10.5, weight: .bold)).tracking(1).foregroundColor(Color(hex: "#6F6A80")).padding(.top, 4) }
-    private func toggle(_ t: String, _ on: Binding<Bool>) -> some View {
-        Toggle(isOn: on) { Text(t).font(.system(size: 12.5)).foregroundColor(.white) }.toggleStyle(.switch).controlSize(.small).tint(Color(hex: "#8E7CFF"))
-    }
-    private func noteRow(_ n: NotchInbox.Note) -> some View {
-        card {
-            Text(n.head).font(.system(size: 11, weight: .bold)).foregroundColor(n.action == "whatsapp" ? Color(hex: "#25D366") : Color(hex: "#7EA6FF")).lineLimit(1)
-            Text(n.body).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(2)
-            HStack(spacing: 6) {
-                pill("Reply", primary: true, color: n.action == "whatsapp" ? "#25D366" : "#7EA6FF") { Task { await ZuffiAsk.shared.act("reply", n.body) } }
-                pill("Explain") { Task { await ZuffiAsk.shared.act("explain", n.body) } }
-                pill("Read it") { VoiceEngine.shared.speak(n.head + ". " + n.body) }
-            }
-        }
-    }
-
-    @ViewBuilder private var content: some View {
+    @ViewBuilder private var pageView: some View {
         switch page {
-        case "today":
-            let h = Calendar.current.component(.hour, from: Date())
-            let first = (ZuffiPlan.shared.profile["name"] ?? "").components(separatedBy: " ").first ?? ""
-            Text("\(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening")\(first.isEmpty ? "" : ", \(first)"). \(inbox.notes.count + day.events.count + day.tasks.count == 0 ? "Nothing needs you right now." : "Here's what needs you.")")
-                .font(.system(size: 13)).foregroundColor(Color(hex: "#CFCBD8"))
-            ForEach(inbox.notes.prefix(2)) { noteRow($0) }
-            ForEach(day.events.prefix(3)) { e in row(e.title, e.allDay ? "all day" : e.start.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#F5A524")) }
-            ForEach(day.tasks.prefix(3)) { r in row(r.title, r.due.map { $0.formatted(date: .omitted, time: .shortened) } ?? "to do") }
-            if !log.items.isEmpty {
-                label("RECENT HELP")
-                ForEach(log.items.prefix(3)) { i in card { Text("\(i.kind) · \(i.at.formatted(date: .omitted, time: .shortened))").font(.system(size: 10.5)).foregroundColor(soft); Text(i.text).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(2) } }
-            }
-        case "chat":
-            if state.chatHistory.isEmpty {
-                Text("Ask anything in the bar above, or hold Z and talk. Your chats are kept here.").font(.system(size: 12.5)).foregroundColor(soft)
-            } else {
-                ForEach(state.chatHistory.suffix(4)) { m in
-                    if m.role == .user {
-                        HStack { Spacer(minLength: 50); Text(m.content).font(.system(size: 12.5)).foregroundColor(Color(hex: "#141218")).padding(.horizontal, 11).padding(.vertical, 7).background(RoundedRectangle(cornerRadius: 13).fill(Color(hex: "#F2F1F6"))) }
-                    } else {
-                        Text(m.content).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).lineLimit(6).textSelection(.enabled)
-                    }
-                }
-                HStack(spacing: 6) { pill("Open full chat", primary: true) { ZuffiChat.shared.open() }; pill("New chat") { state.newChat() } }
-            }
-            if !archive.chats.isEmpty {
-                label("PAST CHATS")
-                ForEach(archive.chats.prefix(6)) { c in
-                    Button { ZuffiChat.shared.openPast(c) } label: { row(c.title, c.date.formatted(.dateTime.day().month(.abbreviated))) }.buttonStyle(.plain)
-                }
-            }
-        case "reminders":
-            HStack(spacing: 6) { pill("+ Remind me…", primary: true, color: "#F5A524") { ask("Remind me to ") }; pill("Water every 2 h") { ask("Remind me to drink water every 2 hours") } }
-            if day.tasks.isEmpty && day.events.isEmpty && study.deadlines.filter({ !$0.done }).isEmpty {
-                Text("No reminders yet. Type or say “remind me to call Ali at 5”.").font(.system(size: 12.5)).foregroundColor(soft)
-            }
-            ForEach(day.events.prefix(4)) { e in row(e.title, e.allDay ? "all day" : e.start.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#F5A524")) }
-            ForEach(day.tasks.prefix(5)) { r in row(r.title, r.due.map { $0.formatted(date: .omitted, time: .shortened) } ?? "to do") }
-            ForEach(study.deadlines.filter { !$0.done }.sorted { $0.date < $1.date }.prefix(3)) { d in row(d.title, d.date.formatted(.dateTime.weekday(.wide)), tint: Color(hex: "#F5B963")) }
-            Text("When one is due, Zuffi tells you. Say “snooze” for 10 more minutes.").font(.system(size: 11)).foregroundColor(soft)
-        case "messages":
-            if inbox.notes.isEmpty { Text("No new messages. WhatsApp and email land here.").font(.system(size: 12.5)).foregroundColor(soft) }
-            ForEach(inbox.notes.prefix(6)) { noteRow($0) }
-        case "day":
-            let t = usage.today
-            let active = t.apps.values.reduce(0, +)
-            HStack(spacing: 8) {
-                card { Text(Self.hm(active)).font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("active today").font(.system(size: 10.5)).foregroundColor(soft) }
-                card { Text("\(log.today.count)").font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("helps today").font(.system(size: 10.5)).foregroundColor(soft) }
-            }
-            card {
-                Text(usage.bestWindow.map { "You're usually most active \($0)" } ?? "Zuffi learns when you work best over the next days.").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
-                HStack(alignment: .bottom, spacing: 3) {
-                    let mx = max(1, t.hours[7..<23].max() ?? 1)
-                    ForEach(7..<23, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 3).fill(Color(hex: "#B79CFF")).frame(height: max(3, 60 * CGFloat(t.hours[i]) / CGFloat(mx)))
-                    }
-                }.frame(height: 62)
-                HStack { Text("07:00"); Spacer(); Text("12:00"); Spacer(); Text("17:00"); Spacer(); Text("22:00") }.font(.system(size: 9.5)).foregroundColor(soft)
-            }
-            ForEach(Array(t.apps.sorted { $0.value > $1.value }.prefix(5).enumerated()), id: \.offset) { _, a in row(a.key, Self.hm(a.value)) }
-            toggle("Count my day (only on this Mac)", $trackDay)
-        case "screen":
-            card {
-                Text("Zuffi looks at your screen and explains it, or shows you where to click.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                HStack(spacing: 6) {
-                    pill("Explain my screen", primary: true, color: "#FF8FB1") { Task { await ZuffiAsk.shared.answer("Explain what's on my screen", about: ZuffiAsk.selectedText()) } }
-                    pill("Where do I click…") { ask("Where do I click to ") }
-                }
-            }
-            Text("Tip: select text first, then hold Z and ask about it.").font(.system(size: 11)).foregroundColor(soft)
-        case "translate":
-            card {
-                Text("Select text anywhere, then translate it here. Or hold Z and talk in your language.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                HStack(spacing: 6) {
-                    pill("Translate selection", primary: true, color: "#7CE0A3") {
-                        if let s = ZuffiAsk.selectedText(), !s.isEmpty { Task { await ZuffiAsk.shared.act("translate", s) } } else { ask("Translate: ") }
-                    }
-                    pill("Type to translate") { ask("Translate to English: ") }
-                }
-            }
-            Text("Answers come back in \(ZuffiAsk.shared.userLanguage).").font(.system(size: 11)).foregroundColor(soft)
-        case "meeting":
-            card {
-                Text("A small private window that follows the call: what they said, the same in your language, and a short answer you could give. It isn't shown when you share your screen.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                pill(meeting.on ? "Stop meeting helper" : "Start meeting helper", primary: true, color: "#C9B8FF") { meeting.toggle() }
-            }
-        case "notes":
-            card {
-                Text("Ask to find a note, or save one in a sentence. Works offline.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                HStack(spacing: 6) { pill("Save a note", primary: true, color: "#FFD479") { ask("Save a note: ") }; pill("Find a note") { ask("Find my note about ") } }
-            }
-        case "files":
-            card {
-                Text("Pick a PDF, Word file or a photo of notes. Zuffi reads it and sums it up.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                pill("Choose a file", primary: true, color: "#9FB4FF") { pickFile() }
-            }
-        case "aurora":
-            card {
-                toggle("Aurora on the desktop", Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
-                toggle("She brings reminders to the front", Binding(get: { ZuffiWalk.petBringsReminders }, set: { UserDefaults.standard.set($0, forKey: "petReminders") }))
-            }
-            Text("Her outfit changes by itself for the season and special days.").font(.system(size: 11)).foregroundColor(soft)
-        case "settings":
-            label("WHAT THE NOTCH SHOWS")
-            HStack(spacing: 6) {
-                pill("Aurora", primary: showsAurora) { showsAurora = true }
-                pill("Just the text field", primary: !showsAurora) { showsAurora = false }
-            }
-            label("TALKING")
-            card {
-                toggle("“Hey Zuffi” (mic on)", Binding(get: { voice.micEnabled }, set: { VoiceEngine.shared.setMic($0) }))
-                toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
-                toggle("Her natural voice", Binding(get: { UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "neuralVoice") }))
-                HStack { Text("AI model").font(.system(size: 12.5)).foregroundColor(.white); Spacer(); ProviderMenu(state: state, tint: .white) }
-            }
-            label("MORE")
-            HStack(spacing: 6) {
-                pill("All settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
-                pill("Start fresh…") { ZuffiReset.confirmAndRun() }
-            }
-            Text("Drag the black notch to move it, or park it on the left or right edge.").font(.system(size: 11)).foregroundColor(soft)
+        case "chat": ChatPage(ask: ask)
+        case "tasks": TasksPage()
+        case "notes": NotesPage()
+        case "reminders": RemindersPage()
+        case "habits": HabitsPage()
+        case "today": TodayPage(go: go)
+        case "week": WeekPage()
+        case "focus": FocusPage()
+        case "home": HomePage(go: go, ask: ask)
+        case "whatsapp": WhatsAppPage()
+        case "settings": SettingsPage()
+        case "tools": ToolsPage(ask: ask)
+        case "screen": ScreenPage(ask: ask)
+        case "meeting": MeetingPage()
+        case "day": DayPage()
         default: EmptyView()
         }
     }
+}
 
-    static func hm(_ m: Int) -> String { m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m" }
+struct NSHover: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(configuration.isPressed ? 0.12 : 0.0)))
+    }
+}
 
-    private func pickFile() {
-        let p = NSOpenPanel(); p.allowsMultipleSelection = false
-        p.allowedContentTypes = [.pdf, .image, .plainText, .rtf, .item]
-        guard p.runModal() == .OK, let u = p.url else { return }
-        Task { @MainActor in
-            BunnyFaceCenter.shared.show(.thinking, for: 10)
-            let text = await StudyText.extract(u)
-            let r = await AIService.shared.oneShot("Here is a file called \(u.lastPathComponent):\n\"\"\"\n\(text.prefix(12000))\n\"\"\"\nSum it up simply in \(ZuffiAsk.shared.userLanguage): what it is, the key points, and anything the reader must do (and by when).",
-                                                   system: "You are Zuffi, a friendly helper.\n" + ZuffiVoice.style) ?? ""
-            ZuffiAsk.shared.show(r.isEmpty ? ZuffiAsk.noBrainLine : r, title: "Summary of \(u.lastPathComponent)", speak: false)
+// MARK: pages
+
+struct ChatPage: View {
+    let ask: (String) -> Void
+    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var chat = ZuffiChat.shared
+    @ObservedObject private var archive = ChatArchive.shared
+    @State private var history = NotchNav.shared.wantsHistory
+    var body: some View {
+        let _ = { NotchNav.shared.wantsHistory = false }()
+        HStack(spacing: 6) {
+            Menu {
+                Button("Zuffi — everyday help") { chat.who = .zuffi }
+                Divider()
+                ForEach(ZuffiTeam.shared.agentGroups, id: \.0) { g in
+                    Menu(g.0) { ForEach(g.1) { a in Button(a.name) { chat.who = .agent(a.id) } } }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Talking to: \(chat.whoTitle)").font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundColor(NS.soft)
+                }.padding(.horizontal, 10).frame(height: 28).background(Capsule().fill(Color.white.opacity(0.08)))
+            }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().help("Pick Zuffi or any of the specialist agents")
+            Spacer()
+            NSPill(title: history ? "Back to chat" : "History") { history.toggle() }
+            NSPill(title: "New", primary: true) { state.newChat(); history = false }
         }
+        if history {
+            if archive.chats.isEmpty { Text("Your past chats will be kept here.").font(.system(size: 12.5)).foregroundColor(NS.soft) }
+            ForEach(archive.chats.prefix(30)) { c in
+                Button { open(c) } label: { NSRow(title: c.title, detail: c.date.formatted(.dateTime.day().month(.abbreviated))) }.buttonStyle(.plain)
+                    .contextMenu { Button("Delete", role: .destructive) { archive.delete(c) } }
+            }
+        } else {
+            if state.chatHistory.isEmpty {
+                Text("Type in the bar above or hold Z and talk. This is a new chat.").font(.system(size: 12.5)).foregroundColor(NS.soft)
+            }
+            ForEach(state.chatHistory.suffix(12)) { m in
+                if m.role == .user {
+                    HStack { Spacer(minLength: 50); Text(m.content).font(.system(size: 12.5)).foregroundColor(NS.ink).padding(.horizontal, 11).padding(.vertical, 7).background(RoundedRectangle(cornerRadius: 13).fill(Color(hex: "#F2F1F6"))).textSelection(.enabled) }
+                } else {
+                    Text(m.content).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if state.stateOverride == .thinking { Text("Hmm, thinking…").font(.system(size: 12)).foregroundColor(NS.soft) }
+        }
+    }
+    /// Continue an old chat right here.
+    private func open(_ c: ChatArchive.Chat) {
+        state.newChat()
+        state.chatHistory = c.messages.map { ChatMessage(role: $0["role"] == "user" ? .user : .assistant, content: $0["content"] ?? "") }
+        archive.delete(c)
+        history = false
+    }
+}
+
+struct TasksPage: View {
+    @ObservedObject private var data = ZuffiData.shared
+    @State private var new = ""
+    @State private var editing: String?
+    @State private var editText = ""
+    var body: some View {
+        HStack(spacing: 6) {
+            NSField(placeholder: "New task…", text: $new) { add() }
+            NSPill(title: "Add", primary: true, color: "#7CE0A3") { add() }
+        }
+        let open = data.of(["task"])
+        if open.isEmpty { Text("No tasks. Add one here or say “add task: call the supplier”.").font(.system(size: 12)).foregroundColor(NS.soft) }
+        ForEach(open) { t in
+            HStack(spacing: 8) {
+                NSIconButton(icon: "circle", tint: .white, help: "Done") { Task { await data.complete(t.id) } }
+                if editing == t.id {
+                    NSField(placeholder: "Task", text: $editText) { Task { await data.update(t.id, title: editText); editing = nil } }
+                } else {
+                    Text(t.title).font(.system(size: 12.5)).foregroundColor(.white).frame(maxWidth: .infinity, alignment: .leading)
+                        .onTapGesture { editing = t.id; editText = t.title }
+                    if let w = t.when { Text(nsWhen(w)).font(.system(size: 10.5)).foregroundColor(NS.soft) }
+                }
+                NSIconButton(icon: "trash", help: "Delete") { Task { await data.remove(t.id) } }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6).background(RoundedRectangle(cornerRadius: 12).fill(NS.card))
+        }
+        let done = data.of(["task"], done: true)
+        if !done.isEmpty {
+            NSLabel(t: "DONE (\(done.count))")
+            ForEach(done.prefix(5)) { t in
+                HStack(spacing: 8) {
+                    NSIconButton(icon: "checkmark.circle.fill", tint: Color(hex: "#7CE0A3"), help: "Not done") { Task { await data.complete(t.id, false) } }
+                    Text(t.title).font(.system(size: 12)).foregroundColor(NS.soft).strikethrough().frame(maxWidth: .infinity, alignment: .leading)
+                    NSIconButton(icon: "trash", help: "Delete") { Task { await data.remove(t.id) } }
+                }.padding(.horizontal, 8)
+            }
+        }
+        Text("Tap a task to edit it.").font(.system(size: 10.5)).foregroundColor(NS.soft)
+    }
+    private func add() { let t = new.trimmingCharacters(in: .whitespaces); guard !t.isEmpty else { return }; new = ""; Task { await data.add("task", title: t) } }
+}
+
+struct NotesPage: View {
+    @ObservedObject private var data = ZuffiData.shared
+    @State private var editing: String?      // "new" or an id
+    @State private var title = ""
+    @State private var text = ""
+    @State private var search = ""
+    var body: some View {
+        if editing != nil {
+            NSField(placeholder: "Title", text: $title)
+            TextEditor(text: $text).font(.system(size: 12.5)).foregroundColor(.white).scrollContentBackground(.hidden)
+                .padding(6).frame(height: 170).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+            HStack(spacing: 6) {
+                NSPill(title: "Save", primary: true, color: "#FFD479") { save() }
+                NSPill(title: "Cancel") { editing = nil }
+                Spacer()
+                if let id = editing, id != "new" { NSPill(title: "Delete") { Task { await data.remove(id) }; editing = nil } }
+            }
+        } else {
+            HStack(spacing: 6) {
+                NSField(placeholder: "Search notes", text: $search)
+                NSPill(title: "+ New note", primary: true, color: "#FFD479") { editing = "new"; title = ""; text = "" }
+            }
+            let notes = data.of(["note"]).filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.text.localizedCaseInsensitiveContains(search) }
+            if notes.isEmpty { Text("No notes yet. Write one, or say “save a note: …”.").font(.system(size: 12)).foregroundColor(NS.soft) }
+            ForEach(notes) { n in
+                Button { editing = n.id; title = n.title; text = n.text } label: {
+                    NSCard {
+                        Text(n.title.isEmpty ? "Note" : n.title).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                        if !n.text.isEmpty { Text(n.text).font(.system(size: 11.5)).foregroundColor(NS.soft).lineLimit(2) }
+                    }
+                }.buttonStyle(.plain)
+            }
+        }
+    }
+    private func save() {
+        let t = title.trimmingCharacters(in: .whitespaces), body = text
+        guard !t.isEmpty || !body.isEmpty else { editing = nil; return }
+        let id = editing; editing = nil
+        Task { if let id, id != "new" { await data.update(id, title: t, text: body) } else { await data.add("note", title: t.isEmpty ? String(body.prefix(40)) : t, text: body) } }
+    }
+}
+
+struct RemindersPage: View {
+    @ObservedObject private var data = ZuffiData.shared
+    @State private var editing: String?
+    @State private var title = ""
+    @State private var when = Date().addingTimeInterval(3600)
+    @State private var rep = ""
+    var body: some View {
+        if editing != nil {
+            NSField(placeholder: "Remind me to…", text: $title)
+            DatePicker("When", selection: $when).labelsHidden().datePickerStyle(.compact).colorScheme(.dark)
+            Picker("Repeat", selection: $rep) {
+                Text("Once").tag(""); Text("Every day").tag("daily"); Text("Weekdays").tag("weekdays"); Text("Every week").tag("weekly"); Text("Every month").tag("monthly")
+            }.pickerStyle(.segmented).labelsHidden().colorScheme(.dark)
+            HStack(spacing: 6) {
+                NSPill(title: "Save", primary: true, color: "#F5A524") { save() }
+                NSPill(title: "Cancel") { editing = nil }
+                Spacer()
+                if let id = editing, id != "new" { NSPill(title: "Delete") { Task { await data.remove(id) }; editing = nil } }
+            }
+        } else {
+            NSPill(title: "+ New reminder", primary: true, color: "#F5A524") { editing = "new"; title = ""; when = Date().addingTimeInterval(3600); rep = "" }
+            let list = data.of(["reminder", "meeting"]).sorted { ($0.when ?? .distantFuture) < ($1.when ?? .distantFuture) }
+            if list.isEmpty { Text("No reminders. Add one, or say “remind me to call Ali at 5”.").font(.system(size: 12)).foregroundColor(NS.soft) }
+            ForEach(list) { r in
+                Button { editing = r.id; title = r.title; when = r.when ?? Date().addingTimeInterval(3600); rep = r.rep } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: r.type == "meeting" ? "person.2" : "bell").font(.system(size: 11)).foregroundColor(Color(hex: "#F5A524"))
+                        Text(r.title).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(1)
+                        Spacer()
+                        Text(nsWhen(r.when) + (r.rep.isEmpty ? "" : " · \(r.rep)")).font(.system(size: 11)).foregroundColor(NS.soft)
+                    }.padding(.horizontal, 12).padding(.vertical, 10).background(RoundedRectangle(cornerRadius: 12).fill(NS.card))
+                }.buttonStyle(.plain)
+            }
+            NSLabel(t: "HEALTH REMINDERS")
+            HealthRows()
+            Text("Tap a reminder to change or delete it. When one is due, Zuffi tells you; say “snooze” for 10 more minutes.").font(.system(size: 10.5)).foregroundColor(NS.soft)
+        }
+    }
+    private func save() {
+        let t = title.trimmingCharacters(in: .whitespaces); guard !t.isEmpty else { return }
+        let id = editing; editing = nil
+        Task {
+            if let id, id != "new" { await data.remove(id) }       // changed: replace it (keeps time + repeat right)
+            await data.add("reminder", title: t, when: when, rep: rep)
+        }
+    }
+}
+
+struct HealthRows: View {
+    @ObservedObject private var data = ZuffiData.shared
+    var body: some View {
+        ForEach([("water", "Drink water", "drop.fill"), ("coffee", "Coffee break", "cup.and.saucer.fill"), ("meds", "Medicine", "pills.fill")], id: \.0) { k in
+            let h = data.health[k.0] ?? ZuffiData.Health()
+            HStack(spacing: 8) {
+                Image(systemName: k.2).font(.system(size: 11)).foregroundColor(Color(hex: "#38BDF8")).frame(width: 16)
+                Text(k.1).font(.system(size: 12.5)).foregroundColor(.white)
+                Spacer()
+                Menu("every \(h.every >= 60 ? "\(h.every / 60) h" : "\(h.every) min")") {
+                    ForEach([30, 60, 90, 120, 180, 240], id: \.self) { m in Button(m >= 60 ? "\(m / 60) h\(m % 60 == 30 ? " 30" : "")" : "\(m) min") { Task { await data.setHealth(k.0, on: true, every: m) } } }
+                }.menuStyle(.button).buttonStyle(.plain).font(.system(size: 11)).foregroundColor(NS.soft).fixedSize()
+                Toggle("", isOn: Binding(get: { h.on }, set: { v in Task { await data.setHealth(k.0, on: v, every: h.every) } })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
+            }.padding(.horizontal, 12).padding(.vertical, 8).background(RoundedRectangle(cornerRadius: 12).fill(NS.card))
+        }
+    }
+}
+
+struct HabitsPage: View {
+    @ObservedObject private var data = ZuffiData.shared
+    @State private var new = ""
+    @State private var target = 1
+    @State private var tips = ""
+    @State private var loading = false
+    var body: some View {
+        HStack(spacing: 6) {
+            NSField(placeholder: "New habit (e.g. Read 20 minutes)", text: $new) { add() }
+            Stepper("\(target)×", value: $target, in: 1...20).font(.system(size: 11)).foregroundColor(.white).fixedSize()
+            NSPill(title: "Add", primary: true, color: "#FF9F5A") { add() }
+        }
+        let habits = data.of(["habit"])
+        if habits.isEmpty { Text("Add habits you want to keep. Zuffi remembers them, cheers you on and finds tips and news for them.").font(.system(size: 12)).foregroundColor(NS.soft) }
+        ForEach(habits) { h in
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(h.title).font(.system(size: 12.5)).foregroundColor(.white)
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.08))
+                            Capsule().fill(Color(hex: "#FF9F5A")).frame(width: g.size.width * min(1, CGFloat(h.count) / CGFloat(max(1, h.target))))
+                        }
+                    }.frame(height: 5)
+                }
+                Text("\(h.count)/\(max(1, h.target))").font(.system(size: 11.5).monospacedDigit()).foregroundColor(NS.soft)
+                NSIconButton(icon: "plus.circle.fill", tint: Color(hex: "#FF9F5A"), help: "Done one more") { Task { await data.bump(h.id) } }
+                NSIconButton(icon: "trash", help: "Delete") { Task { await data.remove(h.id) } }
+            }.padding(.horizontal, 12).padding(.vertical, 9).background(RoundedRectangle(cornerRadius: 12).fill(NS.card))
+        }
+        if !habits.isEmpty {
+            NSPill(title: loading ? "Finding…" : "Tips & news for my habits", primary: true, color: "#F2F1F6") { Task { await findTips(habits.map(\.title)) } }
+        }
+        if !tips.isEmpty { NSCard { Text(tips).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).textSelection(.enabled) } }
+    }
+    private func add() { let t = new.trimmingCharacters(in: .whitespaces); guard !t.isEmpty else { return }; new = ""; let n = target; target = 1; Task { await data.add("habit", title: t, target: n) } }
+    private func findTips(_ titles: [String]) async {
+        loading = true; defer { loading = false }
+        let r = await AIService.shared.oneShot("My habits: \(titles.joined(separator: ", ")). Give me 3 short, practical tips to keep them up this week, and 1–2 recent, genuinely useful findings or news related to them (only if you're sure; say if you can't check today's news). Warm and short, in \(ZuffiAsk.shared.userLanguage).",
+                                               system: "You are Zuffi, a friendly helper.\n" + ZuffiVoice.style) ?? ""
+        tips = r.isEmpty ? ZuffiAsk.noBrainLine : r.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct TodayPage: View {
+    let go: (String?) -> Void
+    @ObservedObject private var data = ZuffiData.shared
+    @ObservedObject private var day = DashToday.shared
+    @ObservedObject private var inbox = NotchInbox.shared
+    var body: some View {
+        let today = data.items.filter { !$0.done && $0.when.map { Calendar.current.isDateInToday($0) } == true && $0.type != "note" }.sorted { $0.when! < $1.when! }
+        let undated = data.of(["task"]).filter { $0.when == nil }
+        if today.isEmpty && day.events.isEmpty && undated.isEmpty { Text("Nothing planned today. Enjoy it! Add a task or reminder any time.").font(.system(size: 12.5)).foregroundColor(NS.soft) }
+        ForEach(today) { i in NSRow(title: i.title, detail: i.when!.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#F5A524")) }
+        ForEach(day.events.prefix(4)) { e in NSRow(title: e.title, detail: e.allDay ? "all day" : e.start.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#B79CFF")) }
+        if !undated.isEmpty { NSLabel(t: "TASKS"); ForEach(undated.prefix(4)) { t in NSRow(title: t.title, detail: "to do") } }
+        let habits = data.of(["habit"])
+        if !habits.isEmpty { NSLabel(t: "HABITS"); ForEach(habits.prefix(4)) { h in NSRow(title: h.title, detail: "\(h.count)/\(max(1, h.target))", tint: Color(hex: "#FF9F5A")) } }
+        if !inbox.notes.isEmpty { NSPill(title: "\(inbox.notes.count) message\(inbox.notes.count == 1 ? "" : "s") waiting", primary: true, color: "#25D366") { go("whatsapp") } }
+    }
+}
+
+struct WeekPage: View {
+    @ObservedObject private var data = ZuffiData.shared
+    var body: some View {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let events = Planner.shared.eventItems(from: start, days: 7)
+        ForEach(0..<7, id: \.self) { i in
+            let d = cal.date(byAdding: .day, value: i, to: start)!
+            let items = data.items.filter { !$0.done && $0.type != "note" && $0.when.map { cal.isDate($0, inSameDayAs: d) } == true }
+            let evs = events.filter { cal.isDate($0.start, inSameDayAs: d) }
+            if !items.isEmpty || !evs.isEmpty || i == 0 {
+                NSLabel(t: i == 0 ? "TODAY" : i == 1 ? "TOMORROW" : d.formatted(.dateTime.weekday(.wide)).uppercased())
+                if items.isEmpty && evs.isEmpty { Text("Free").font(.system(size: 12)).foregroundColor(NS.soft) }
+                ForEach(items) { it in NSRow(title: it.title, detail: it.when!.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#F5A524")) }
+                ForEach(evs) { e in NSRow(title: e.title, detail: e.allDay ? "all day" : e.start.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#B79CFF")) }
+            }
+        }
+    }
+}
+
+struct FocusPage: View {
+    @ObservedObject private var focus = FocusTimer.shared
+    var body: some View {
+        if let end = focus.endsAt, end > Date() {
+            NSCard {
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    let left = max(0, Int(end.timeIntervalSinceNow))
+                    Text(String(format: "%02d:%02d", left / 60, left % 60)).font(.system(size: 40, weight: .bold).monospacedDigit()).foregroundColor(.white)
+                }
+                Text("Focus time. Zuffi keeps quiet and tells you when it's break time.").font(.system(size: 12)).foregroundColor(NS.soft)
+                NSPill(title: "Stop") { focus.stop() }
+            }
+        } else {
+            Text("Pick how long you want to focus.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+            HStack(spacing: 6) {
+                ForEach([15, 25, 50], id: \.self) { m in NSPill(title: "\(m) min", primary: m == 25, color: "#38BDF8") { focus.start(m) } }
+            }
+        }
+        NSRow(title: "Focus sessions today", detail: "\(focus.doneToday)")
+    }
+}
+
+struct HomePage: View {
+    let go: (String?) -> Void
+    let ask: (String) -> Void
+    @ObservedObject private var data = ZuffiData.shared
+    @ObservedObject private var inbox = NotchInbox.shared
+    var body: some View {
+        let h = Calendar.current.component(.hour, from: Date())
+        let first = (ZuffiPlan.shared.profile["name"] ?? "").components(separatedBy: " ").first ?? ""
+        Text("\(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening")\(first.isEmpty ? "" : ", \(first)")!").font(.system(size: 17, weight: .bold)).foregroundColor(.white)
+        let next = data.of(["reminder", "meeting", "task"]).filter { ($0.when ?? .distantPast) > Date() }.min { $0.when! < $1.when! }
+        if let n = next { NSRow(title: "Next: \(n.title)", detail: nsWhen(n.when), tint: Color(hex: "#F5A524")) }
+        HStack(spacing: 8) {
+            NSCard { Text("\(data.of(["task"]).count)").font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("tasks").font(.system(size: 10.5)).foregroundColor(NS.soft) }
+            NSCard { Text("\(inbox.notes.count)").font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("messages").font(.system(size: 10.5)).foregroundColor(NS.soft) }
+            NSCard { Text("\(data.of(["habit"]).filter { $0.count >= max(1, $0.target) }.count)/\(data.of(["habit"]).count)").font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("habits done").font(.system(size: 10.5)).foregroundColor(NS.soft) }
+        }
+        NSLabel(t: "QUICK")
+        HStack(spacing: 6) {
+            NSPill(title: "+ Task") { go("tasks") }
+            NSPill(title: "+ Note") { go("notes") }
+            NSPill(title: "+ Reminder") { go("reminders") }
+            NSPill(title: "Focus 25", primary: true, color: "#38BDF8") { FocusTimer.shared.start(25); go("focus") }
+        }
+    }
+}
+
+struct WhatsAppPage: View {
+    @ObservedObject private var inbox = NotchInbox.shared
+    @State private var replying: UUID?
+    @State private var text = ""
+    @State private var sent = ""
+    var body: some View {
+        let msgs = inbox.notes.filter { $0.action == "whatsapp" || $0.head.hasPrefix("WhatsApp") }
+        if msgs.isEmpty { Text("No new WhatsApp messages. Link WhatsApp in All settings to see them here.").font(.system(size: 12.5)).foregroundColor(NS.soft) }
+        if !sent.isEmpty { Text(sent).font(.system(size: 11.5)).foregroundColor(Color(hex: "#7CE0A3")) }
+        ForEach(msgs) { n in
+            NSCard {
+                Text(n.head).font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#25D366")).lineLimit(1)
+                Text(n.body).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(3)
+                if replying == n.id {
+                    NSField(placeholder: "Your reply…", text: $text) { send(n) }
+                    HStack(spacing: 6) {
+                        NSPill(title: "Send", primary: true, color: "#25D366") { send(n) }
+                        NSPill(title: "Write it for me") { Task { await writeForMe(n) } }
+                        NSPill(title: "Cancel") { replying = nil }
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        NSPill(title: "Reply", primary: true, color: "#25D366") { replying = n.id; text = "" }
+                        NSPill(title: "Explain") { Task { await ZuffiAsk.shared.act("explain", n.body) } }
+                        NSPill(title: "Read it") { VoiceEngine.shared.speak(n.head.replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from ") + ". " + n.body) }
+                    }
+                }
+            }
+        }
+    }
+    private func who(_ n: NotchInbox.Note) -> String { n.head.components(separatedBy: " · ").dropFirst().joined(separator: " · ") }
+    private func send(_ n: NotchInbox.Note) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !t.isEmpty else { return }
+        let to = who(n); replying = nil; text = ""
+        Task { @MainActor in
+            let ok = await WhatsAppLink.shared.send(to: to, text: t)
+            if !ok { _ = await WhatsAppAgent.shared.sendScheduled(to: to, text: t) }
+            sent = "Sent to \(to) ✓"
+        }
+    }
+    private func writeForMe(_ n: NotchInbox.Note) async {
+        let r = await AIService.shared.oneShot("Write a short, natural WhatsApp reply to this message from \(who(n)): \"\(n.body)\". Same language and tone. Reply with the message text only.",
+                                               system: "You write short replies for the user. Text only, no quotes.") ?? ""
+        text = r.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+    }
+}
+
+struct SettingsPage: View {
+    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var voice = VoiceEngine.shared
+    @AppStorage("notchShowsAurora") private var showsAurora = true
+    @AppStorage("readNotifications") private var readAloud = true
+    @AppStorage("trackDay") private var trackDay = true
+    @State private var name = ZuffiPlan.shared.profile["name"] ?? ""
+    @State private var city = ZuffiPlan.shared.profile["city"] ?? ""
+    @State private var job = ZuffiPlan.shared.profile["job"] ?? ""
+    @State private var lang = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
+    @State private var saved = false
+    var body: some View {
+        NSLabel(t: "PROFILE")
+        NSField(placeholder: "Your name", text: $name)
+        HStack(spacing: 6) { NSField(placeholder: "City", text: $city); NSField(placeholder: "What you do", text: $job) }
+        HStack(spacing: 6) {
+            Picker("", selection: $lang) { ForEach(["English", "Urdu", "Hindi", "Punjabi", "Arabic", "Spanish", "French", "German", "Turkish", "Chinese"], id: \.self) { Text($0).tag($0) } }
+                .labelsHidden().frame(width: 140).colorScheme(.dark)
+            NSPill(title: saved ? "Saved ✓" : "Save profile", primary: true, color: "#B79CFF") { saveProfile() }
+        }
+        NSLabel(t: "AI MODEL")
+        HStack { Text("Answers come from").font(.system(size: 12.5)).foregroundColor(.white); Spacer(); ProviderMenu(state: state, tint: .white) }
+        NSPill(title: "Add or change AI keys") { UserDefaults.standard.set("AI models", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+        NSLabel(t: "GENERAL")
+        HStack(spacing: 6) {
+            Text("The notch shows").font(.system(size: 12.5)).foregroundColor(.white); Spacer()
+            NSPill(title: "Aurora", primary: showsAurora) { showsAurora = true }
+            NSPill(title: "Just the text field", primary: !showsAurora) { showsAurora = false }
+        }
+        toggle("“Hey Zuffi” (mic on)", Binding(get: { voice.micEnabled }, set: { VoiceEngine.shared.setMic($0) }))
+        toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
+        toggle("Her natural voice", Binding(get: { UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "neuralVoice") }))
+        toggle("Read notifications out loud (messages, mail…)", Binding(get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
+                                                                       set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
+        toggle("Say reminders out loud (off = just show them)", $readAloud)
+        NSLabel(t: "HEALTH")
+        HealthRows()
+        NSLabel(t: "PRIVACY")
+        toggle("Count my day (only on this Mac)", $trackDay)
+        HStack(spacing: 6) {
+            NSPill(title: "All settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+            NSPill(title: "Start fresh…") { ZuffiReset.confirmAndRun() }
+        }
+    }
+    private func toggle(_ t: String, _ on: Binding<Bool>) -> some View {
+        Toggle(isOn: on) { Text(t).font(.system(size: 12.5)).foregroundColor(.white) }.toggleStyle(.switch).controlSize(.small)
+    }
+    private func saveProfile() {
+        var p: [String: Any] = ZuffiPlan.shared.profile
+        p["name"] = name; p["city"] = city; p["job"] = job
+        ZuffiPlan.shared.saveProfile(p)
+        UserDefaults.standard.set(lang, forKey: "zuffiLanguage")
+        saved = true
+    }
+}
+
+struct ToolsPage: View {
+    let ask: (String) -> Void
+    @ObservedObject private var state = AppState.shared
+    @State private var formats: [String] = []
+    @State private var status = ""
+    var body: some View {
+        if let f = state.droppedFile {
+            NSCard {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.fill").foregroundColor(Color(hex: "#9FB4FF"))
+                    Text(f.name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    NSIconButton(icon: "xmark", help: "Remove") { state.droppedFile = nil; formats = []; status = "" }
+                }
+                Text("What should I do with it?").font(.system(size: 12)).foregroundColor(NS.soft)
+                HStack(spacing: 6) {
+                    NSPill(title: "Summarise", primary: true, color: "#9FB4FF") { Task { await summarise(f.url, f.name) } }
+                    NSPill(title: "Translate") { Task { await translate(f.url) } }
+                    NSPill(title: "Ask about it") { state.promptContext = .file(name: f.name, fileURL: f.url); NotchNav.shared.page = "chat"; ask("") }
+                }
+                if !formats.isEmpty {
+                    Text("Convert to").font(.system(size: 11)).foregroundColor(NS.soft)
+                    HStack(spacing: 6) { ForEach(formats, id: \.self) { fmt in NSPill(title: ChooseView.label(fmt)) { Task { await convert(f, to: fmt) } } } }
+                }
+            }
+            if !status.isEmpty { Text(status).font(.system(size: 12)).foregroundColor(Color(hex: "#CFCBD8")).textSelection(.enabled) }
+        } else {
+            NSCard {
+                Text("Drop a file or picture on the notch, or choose one. Then convert it (PDF, Word, JPG, PNG…), sum it up, translate it or ask about it.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                NSPill(title: "Choose a file", primary: true, color: "#9FB4FF") { pick() }
+            }
+        }
+        EmptyView().task(id: state.droppedFile?.url) { await loadFormats() }
+    }
+    private func pick() {
+        let p = NSOpenPanel(); p.allowsMultipleSelection = false
+        guard p.runModal() == .OK, let u = p.url else { return }
+        state.droppedFile = DroppedFile(url: u, name: u.lastPathComponent)
+    }
+    private func loadFormats() async {
+        guard let f = state.droppedFile else { formats = []; return }
+        var r = NativeConvert.formats(for: f.url)
+        if r.isEmpty { r = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.formatsFor ? window.Sparrow.formatsFor(n) : []", ["n": f.name]) as? [String] ?? [] }
+        formats = Array(r.prefix(5))
+    }
+    private func convert(_ f: DroppedFile, to fmt: String) async {
+        status = "Converting to \(ChooseView.label(fmt))…"
+        var made: (Data, String)?
+        if let native = NativeConvert.convert(f.url, to: fmt) {
+            switch native { case .success(let m): made = (m.data, m.name); case .failure(let e): status = e.localizedDescription; return }
+        } else if let data = try? Data(contentsOf: f.url) {
+            let r = await WebHub.shared.callJS("return await window.Sparrow.convertB64(n, b, t)", ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any]
+            if let n = r?["name"] as? String, let b = r?["b64"] as? String, let d = Data(base64Encoded: b) { made = (d, n) } else { status = (r?["error"] as? String) ?? "That didn't work — try another format."; return }
+        }
+        guard let (out, name) = made else { return }
+        let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        var dest = dir.appendingPathComponent(name), n = 2
+        while FileManager.default.fileExists(atPath: dest.path) { dest = dir.appendingPathComponent("\((name as NSString).deletingPathExtension) \(n).\((name as NSString).pathExtension)"); n += 1 }
+        do { try out.write(to: dest); NSWorkspace.shared.activateFileViewerSelecting([dest]); status = "✓ \(dest.lastPathComponent) is in your Downloads." } catch { status = "I couldn't save it in Downloads." }
+    }
+    private func summarise(_ u: URL, _ name: String) async {
+        status = "Reading it…"
+        let text = await StudyText.extract(u)
+        let r = await AIService.shared.oneShot("Here is a file called \(name):\n\"\"\"\n\(text.prefix(12000))\n\"\"\"\nSum it up simply in \(ZuffiAsk.shared.userLanguage): what it is, the key points, and anything the reader must do (and by when).",
+                                               system: "You are Zuffi, a friendly helper.\n" + ZuffiVoice.style) ?? ""
+        status = r.isEmpty ? ZuffiAsk.noBrainLine : r
+    }
+    private func translate(_ u: URL) async {
+        status = "Translating…"
+        let text = await StudyText.extract(u)
+        let r = await AIService.shared.oneShot("Translate this into \(ZuffiAsk.shared.userLanguage) (if it is already in it, into English). Keep it clear:\n\(text.prefix(8000))", system: "You translate accurately.") ?? ""
+        status = r.isEmpty ? ZuffiAsk.noBrainLine : r
+    }
+}
+
+struct ScreenPage: View {
+    let ask: (String) -> Void
+    var body: some View {
+        NSCard {
+            Text("Zuffi looks at your screen and explains it, or shows you where to click. Tip: select text first, then hold Z and ask.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+            HStack(spacing: 6) {
+                NSPill(title: "Explain my screen", primary: true, color: "#FF8FB1") { Task { await ZuffiAsk.shared.answer("Explain what's on my screen", about: ZuffiAsk.selectedText()) } }
+                NSPill(title: "Where do I click…") { ask("Where do I click to ") }
+                NSPill(title: "Translate selection") { if let s = ZuffiAsk.selectedText(), !s.isEmpty { Task { await ZuffiAsk.shared.act("translate", s) } } else { ask("Translate: ") } }
+            }
+        }
+    }
+}
+
+struct MeetingPage: View {
+    @ObservedObject private var meeting = MeetingHelper.shared
+    var body: some View {
+        NSCard {
+            Text("A small private window that follows the call: what they said, the same in your language, and a short answer you could give. It isn't shown when you share your screen.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+            NSPill(title: meeting.on ? "Stop meeting helper" : "Start meeting helper", primary: true, color: "#C9B8FF") { meeting.toggle() }
+        }
+    }
+}
+
+struct DayPage: View {
+    @ObservedObject private var usage = AppUsage.shared
+    @ObservedObject private var log = ZuffiHelpLog.shared
+    @AppStorage("trackDay") private var trackDay = true
+    var body: some View {
+        let t = usage.today
+        let active = t.apps.values.reduce(0, +)
+        HStack(spacing: 8) {
+            NSCard { Text(NotchScreenUtil.hm(active)).font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("active today").font(.system(size: 10.5)).foregroundColor(NS.soft) }
+            NSCard { Text("\(log.today.count)").font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("helps today").font(.system(size: 10.5)).foregroundColor(NS.soft) }
+        }
+        NSCard {
+            Text(usage.bestWindow.map { "You're usually most active \($0)" } ?? "Zuffi learns when you work best over the next days.").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+            HStack(alignment: .bottom, spacing: 3) {
+                let mx = max(1, t.hours[7..<23].max() ?? 1)
+                ForEach(7..<23, id: \.self) { i in RoundedRectangle(cornerRadius: 3).fill(Color(hex: "#B79CFF")).frame(height: max(3, 60 * CGFloat(t.hours[i]) / CGFloat(mx))) }
+            }.frame(height: 62)
+            HStack { Text("07:00"); Spacer(); Text("12:00"); Spacer(); Text("17:00"); Spacer(); Text("22:00") }.font(.system(size: 9.5)).foregroundColor(NS.soft)
+        }
+        ForEach(Array(t.apps.sorted { $0.value > $1.value }.prefix(5).enumerated()), id: \.offset) { _, a in NSRow(title: a.key, detail: NotchScreenUtil.hm(a.value)) }
+        Toggle(isOn: $trackDay) { Text("Count my day (only on this Mac)").font(.system(size: 12.5)).foregroundColor(.white) }.toggleStyle(.switch).controlSize(.small)
+    }
+}
+
+enum NotchScreenUtil { static func hm(_ m: Int) -> String { m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m" } }
+
+
+/// Which page of the notch's small screen is open — anything (a voice command, a dropped file) can open one.
+@MainActor
+final class NotchNav: ObservableObject {
+    static let shared = NotchNav()
+    @Published var page: String?
+    /// "open my chat history" → the Chat page opens on History.
+    var wantsHistory = false
+    /// "ask the lawyer agent …" → this question is sent in the chat once it's open.
+    @Published var pendingChat: String?
+    /// After a voice change, keep the page in step if it's the one showing.
+    func openIfShowing(_ p: String) { if page == p { Task { await ZuffiData.shared.refresh() } } }
+    /// Open the notch on this page ("tasks", "notes", "tools"…).
+    func open(_ p: String) {
+        page = p
+        if !(AppState.shared.mode == .expanded && IslandConst.isWideHome(AppState.shared.view)) { ZuffiNav.go(.overview) }
     }
 }

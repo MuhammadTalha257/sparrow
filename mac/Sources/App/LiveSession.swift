@@ -285,6 +285,7 @@ final class LiveSession: NSObject {
         - Detect the language they speak and ALWAYS answer in that same language: Urdu → Urdu, Roman Urdu/Hindi mix → the same mix, Punjabi, Hindi, Arabic, Spanish, French, Brazilian Portuguese, Turkish, English… If they switch, you switch.
         - If they ask you to translate, say the translation clearly (and slowly enough to repeat).
         - They may interrupt you: stop and listen. If you didn't understand, ask one short question.
+        - Be a warm friend with real feelings: when they only say your name, answer "Hey\(name.isEmpty ? "" : " " + name)! What's up?" (or a similar friendly hello). Laugh a little when something is funny ("haha", "hehe"), say "ahan" or "mm-hm" when you follow, "oh!" when surprised, "aww" for sweet or sad things. One small reaction at a time, never forced.
 
         HOW YOU ACT
         - When they ask for something, call the right tool immediately — even mid-sentence. For several steps ("open Notes and make a note called hello, then open x.com"), do each step as soon as it's clear, in order.
@@ -574,7 +575,7 @@ enum LiveTools {
     private static let str: (String) -> [String: Any] = { ["type": "STRING", "description": $0] }
 
     static let declarations: [[String: Any]] = [
-        fn("run_command", "Do something on the Mac with Zuffi's agents. Write one clear English command, e.g. 'open Spotify', 'play music', 'volume 40', 'turn off wifi', 'open Notes and create a note titled hello', 'search google for Norbert Wiener', 'open x.com', 'what's the weather', 'prayer times', 'start meeting notes', 'lock screen', 'put Safari on the left and Notes on the right'.",
+        fn("run_command", "Do something on the Mac with Zuffi's agents. Write one clear English command, e.g. 'open Spotify', 'play music', 'volume 40', 'turn off wifi', 'open Notes and create a note titled hello', 'search google for Norbert Wiener', 'open x.com', 'what's the weather', 'prayer times', 'start meeting notes', 'lock screen', 'put Safari on the left and Notes on the right'. It also runs Zuffi's own pages and data: 'open tasks', 'open my chat history', 'open the lawyer agent', 'delete the task call Ali', 'mark buy milk done', 'rename note X to Y', 'move the dentist reminder to 5pm tomorrow', 'start focus for 25 minutes'.",
            ["command": str("The command in plain English.")], required: ["command"]),
         fn("add_reminder", "Create a reminder, task or meeting at an exact time.",
            ["title": str("What to remind about, short."), "when": str("ISO 8601 local date-time, e.g. 2026-10-12T10:00:00"),
@@ -623,7 +624,8 @@ enum LiveTools {
         case "run_command":
             let cmd = s("command")
             guard !cmd.isEmpty else { return ok(nil) }
-            var r = await AgentRouter.shared.handle(cmd)
+            var r = await ZuffiCommand.handle(cmd)
+            if r == nil { r = await AgentRouter.shared.handle(cmd) }
             if r == nil { r = await WebHub.shared.ask(cmd) }
             if MeetingNotes.shared.active { LiveSession.shared.stop("meeting notes") }     // meeting notes take over the mic
             return ok(r)

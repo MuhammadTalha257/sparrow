@@ -109,10 +109,10 @@ enum IslandConst {
     static let tabDrop: CGFloat = 60
     /// The open notch: one short, wide strip (face + ask bar) that grows down only while an answer shows.
     static let homeW: CGFloat = 470
-    static let homeShortH: CGFloat = 112
-    static let homeTallH: CGFloat = 330
+    static let homeShortH: CGFloat = 178
+    static let homeTallH: CGFloat = 420
     nonisolated(unsafe) static var homeTallNow = false
-    static let homeBigH: CGFloat = 600
+    static let homeBigH: CGFloat = 660
     nonisolated(unsafe) static var homeBigNow = false
     static let compactCorner: CGFloat = 19
     /// Closed island when parked on the left / right edge of the screen.
@@ -123,7 +123,7 @@ enum IslandConst {
     static var viewLayouts: [IslandView: ViewLayout] {
         guard NotchDesign.on else { return baseLayouts }
         var l = baseLayouts
-        l[.overview] = ViewLayout(height: 112, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
+        l[.overview] = ViewLayout(height: 178, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
         return l
     }
     static let baseLayouts: [IslandView: ViewLayout] = [

@@ -126,6 +126,11 @@ final class IslandWindowController: NSWindowController {
             Task { @MainActor in
                 let iLoc = self?.windowToIsland(loc) ?? CGPoint(x: 320, y: 88)
                 AppState.shared.fileDragOver = true
+                // The notch: open it on Tools so you can see where to drop (no extra upload screen).
+                if NotchDesign.on {
+                    if NotchNav.shared.page != "tools" { NotchNav.shared.open("tools") }
+                    return
+                }
                 // enterZone sets isActive=true BEFORE hookExpand triggers re-render,
                 // so IslandContainer sees isActive=true when state.view becomes .upload.
                 UploadSequenceEngine.shared.enterZone(x: iLoc.x, y: iLoc.y)
@@ -142,6 +147,7 @@ final class IslandWindowController: NSWindowController {
         dropView.onDragExited = {
             Task { @MainActor in
                 AppState.shared.fileDragOver = false
+                if NotchDesign.on { return }
                 // Do NOT collapse — drag session still active; island stays open.
                 NotificationCenter.default.post(name: .botMorphTo, object: CGFloat(0))
                 UploadSequenceEngine.shared.exitZone()

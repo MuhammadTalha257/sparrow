@@ -47,6 +47,15 @@ enum FileDropHandler {
     static func handle(urls: [URL], state: AppState) async {
         guard let url = urls.first else { return }
         let name = url.lastPathComponent
+        // The notch: a dropped file or picture opens Tools, where you pick what to do with it.
+        if NotchDesign.on {
+            state.droppedFile = DroppedFile(url: url, name: name)
+            state.fileDragOver = false
+            state.chooseMode = nil
+            state.promptContext = .file(name: name, fileURL: url)
+            NotchNav.shared.open("tools")
+            return
+        }
 
         // Start animation immediately — do NOT block on file copy.
         // Use original URL first; swap to inbox copy once background copy finishes.

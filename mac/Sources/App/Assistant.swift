@@ -423,7 +423,8 @@ final class VoiceEngine: NSObject, ObservableObject {
     func offlineHello() {
         liveEndedAt = .distantPast                 // so it really listens after speaking
         listenAfterSpeech = true
-        speak("Yes?")
+        let first = AssistantPrefs.displayName.components(separatedBy: " ").first ?? ""
+        speak(first.isEmpty ? "Hey! Yes?" : "Hey \(first)! What's up?")
     }
 
     func listenOffline() {
@@ -770,7 +771,9 @@ final class VoiceEngine: NSObject, ObservableObject {
             NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.surprised)
             liveEndedAt = .distantPast
             listenAfterSpeech = true
-            speak(["Yes?", "Yes?", "I'm here.", "Mm-hm?"].randomElement()!)
+            let first = AssistantPrefs.displayName.components(separatedBy: " ").first ?? ""
+            speak(first.isEmpty ? ["Hey! Yes?", "Hi! I'm here.", "Mm-hm? I'm listening."].randomElement()!
+                                : ["Hey \(first)!", "Hey \(first)! What's up?", "Hi \(first)! I'm listening.", "Yes, \(first)?"].randomElement()!)
             status = "Listening…"
             return
         }
@@ -816,6 +819,18 @@ enum Assistant {
             await ZuffiAsk.shared.answer(hit.0, about: hit.1)
             return
         }
+        // Her own pages and your data: "open tasks", "delete the note …", "open the lawyer agent and ask …"
+        if let r = await ZuffiCommand.handle(text) {
+            if !r.isEmpty {
+                if NotchDesign.on { ZuffiAsk.shared.show(r, title: text, speak: spoken) } else if spoken { VoiceEngine.shared.speak(r) }
+            }
+            return
+        }
+        // On the notch's Chat page a question goes into that chat (to Zuffi or the agent you picked)
+        if spoken, ZuffiAsk.notchOpen, NotchNav.shared.page == "chat", text.split(separator: " ").count > 2, !ZuffiTeam.looksLikeCommand(text) {
+            NotchNav.shared.pendingChat = text
+            return
+        }
         // "Zuffi, help me in this meeting" → the private meeting helper
         if text.lowercased().range(of: #"\b(meeting|call) (helper|help)\b|help me (in|with|during) (this|the) (meeting|call)"#, options: .regularExpression) != nil {
             MeetingHelper.shared.toggle()
@@ -834,18 +849,23 @@ enum Assistant {
                 VoiceEngine.shared.speak(reply)              // …and always say it, so you know it heard you
             } else {
                 // Information (time, battery, problems…) is spoken and shown.
-                state.noteMessage = reply
-                NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
-                VoiceEngine.shared.speak(reply)
+                if NotchDesign.on { ZuffiAsk.shared.show(reply, title: text) }      // in the notch, not a second window
+                else {
+                    state.noteMessage = reply
+                    NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+                    VoiceEngine.shared.speak(reply)
+                }
             }
             return
         }
         if spoken {
             func say(_ reply: String) {
-                state.noteMessage = reply
-                NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
                 NotificationCenter.default.post(name: .petSay, object: reply)
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
+                Task { await ZuffiData.shared.refresh() }
+                if NotchDesign.on { ZuffiAsk.shared.show(reply, title: text); return }   // one place: the notch
+                state.noteMessage = reply
+                NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
                 VoiceEngine.shared.speak(reply)
             }
             let short = text.split(separator: " ").count <= 6
@@ -859,6 +879,9 @@ enum Assistant {
             // Anything else, any language: the smart planner turns it into actions and answers like a person
             if let plan = await SmartPlanner.shared.plan(text) {
                 if plan.commands.isEmpty && plan.say.isEmpty { askAgain(); return }
+                if plan.commands.isEmpty, plan.say.count > 260, NotchDesign.on {
+                    ZuffiAsk.shared.show(plan.say, title: text); return
+                }
                 if plan.commands.isEmpty, plan.say.count > 260 {
                     // a long answer belongs in the chat
                     state.chatHistory.append(ChatMessage(role: .user, content: text))
@@ -883,17 +906,17 @@ enum Assistant {
                 askAgain(); return
             }
         }
-        if spoken, ZuffiAsk.notchOpen {
+        if spoken, NotchDesign.on {
             BunnyFaceCenter.shared.show(.thinking, for: 8)
             let r = await AIService.shared.oneShot("The user asks (by voice): \"\(text)\"\nAnswer like a kind, clever friend talking out loud: short and clear (under 90 words), in the language they spoke. Plain text, no symbols.",
-                                                   system: "You are Zuffi, a friendly helper that lives on the user's Mac.\n" + ZuffiVoice.style) ?? ""
+                                                   system: ZuffiVoice.persona + "\n" + ZuffiVoice.style) ?? ""
             let out = r.trimmingCharacters(in: .whitespacesAndNewlines)
             ZuffiAsk.shared.show(out.isEmpty ? ZuffiAsk.noBrainLine : out, title: text)
             return
         }
         state.chatHistory.append(ChatMessage(role: .user, content: text))
         state.stateOverride = .thinking
-        NotificationCenter.default.post(name: .hookExpand, object: IslandView.prompt)
+        if NotchDesign.on { NotchNav.shared.open("chat") } else { NotificationCenter.default.post(name: .hookExpand, object: IslandView.prompt) }
         let before = state.chatHistory.count
         await AIService.shared.chat(query: text, context: nil, state: state)
         if spoken && (UserDefaults.standard.bool(forKey: AssistantPrefs.speakReplies) || !NetStatus.shared.online),   // offline it talks back like the live voice

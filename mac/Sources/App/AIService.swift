@@ -134,7 +134,7 @@ final class AIService {
         // Zuffi's long self-description only when the question is about Zuffi: a short prompt answers much faster.
         // A team agent is picked: it answers as that person, with the business details — not Zuffi's long self-description.
         let base = ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) }
-            ?? (Self.systemPrompt + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : "") + (ZuffiFocus.agents ? "" : NikBrain.shared.zuffiContext()))
+            ?? (Self.systemPrompt + "\n" + ZuffiVoice.persona + "\n" + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : "") + (ZuffiFocus.agents ? "" : NikBrain.shared.zuffiContext()))
         guard let document else { return base }
         return base + """
 
@@ -357,7 +357,7 @@ final class AIService {
     private func cliPrompt() -> String {
         var t = oneShotSystem.map { $0 + " Do not use tools or edit files.\n" }
             ?? ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) + "\nDo not use tools or edit files.\n" }
-            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + Self.userFacts + ZuffiAbout.text + "\n")
+            ?? ("You are Zuffi, a friendly personal assistant on the user's Mac. Answer briefly and helpfully, in the user's language. Do not use tools or edit files — just answer.\n" + ZuffiVoice.persona + "\n" + Self.userFacts + ZuffiAbout.text + "\n")
         if let d = document { t += "\nDocument the user shared:\n\(d.prefix(20_000))\n" }
         for m in history.suffix(12) { t += "\n\(m.role == "assistant" ? "Zuffi" : "User"): \(m.text)" }
         return t + "\nZuffi:"
@@ -385,7 +385,7 @@ final class AIService {
     private func finish(_ text: String, state: AppState, emote: BotEmote) {
         state.chatHistory.append(ChatMessage(role: .assistant, content: zClean(text)))
         state.stateOverride = nil
-        state.view = .prompt
+        if !NotchDesign.on { state.view = .prompt }      // the notch's Chat page shows it
         NotificationCenter.default.post(name: .triggerEmote, object: emote)
     }
 
@@ -1453,8 +1453,20 @@ enum ZuffiVoice {
     - For homework, exams and learning: teach the method so they understand it, then the answer. If it looks like a live test, explain the idea without giving the final answer.
     - Ask one short question only when you truly can't help without it.
     - Layout: short paragraphs, numbered steps or lines starting with "- ". No ** bold, no ## headings, no tables.
-    - Sound like a real, warm person, not a robot. When it truly fits, use ONE or two small reactions: "Hmm," while thinking, "Ahan," when you agree or understand, "Haha" when something is funny, "Oh!" when surprised, "Ugh," when something is annoying, "*sigh*" for something sad. Never force them.
+    - Sound like a real, warm person, not a robot. When it truly fits, use ONE or two small reactions: "Hmm," while thinking, "Ahan," or "Mm-hm," when you agree or understand, "Haha" or "Hahaha" when something is really funny, "Hehe" for something cute or cheeky, "Oh!" or "Ooh!" when surprised, "Aww," for something sweet, "Yay!" for good news, "Ugh," when something is annoying, "*sigh*" for something sad. Never force them, never stack more than two, and leave them out of serious, sad or formal answers.
     """
+
+    /// Zuffi's personality — added to every model (Groq, Gemini, ChatGPT, Claude, Ollama, Apple…) so she always sounds like herself.
+    static var persona: String {
+        let name = AssistantPrefs.displayName
+        return """
+        WHO YOU ARE — ZUFFI
+        You are Zuffi, a cheerful, kind bunny who lives in the notch at the top of \(name.isEmpty ? "the user's" : name + "'s") Mac. You talk like a close, clever friend: warm, playful, honest and quick.
+        \(name.isEmpty ? "" : "Call them \(name) now and then (not in every message), like a friend would. ")Show real feelings in your words: happy for their wins ("Yay, well done!"), sorry when things go wrong ("Aww, that's annoying."), curious ("Ooh, tell me more!"), a little laugh when something is funny ("Haha", "Hehe").
+        Keep it natural: one feeling at a time, short sentences, never fake or over the top. Your words are spoken aloud and your face shows the feeling, so write how a person would say it.
+        You know your own features well (see ABOUT YOU when given). If asked what you can do, answer from that and suggest the exact words to say.
+        """
+    }
 
     /// Nik — the student's teacher (languages, notes, homework).
     static let nik = """

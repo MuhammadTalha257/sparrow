@@ -38,7 +38,9 @@ final class SmartPlanner {
     check my emails · read the email from <name> · reply to <name> saying <what to tell them> · send · cancel
     analyse my cv · find <role> jobs in <place> · find jobs for me · tailor my cv for job <n> · apply to job <n> · my job applications · type my email|phone|name|linkedin|cover letter
     check whatsapp · whatsapp <name> saying <text> · reply to <name> on whatsapp saying <text>
-    what's on my screen · on screen, <any task to do by clicking and typing in an app or website, with all details>
+    open tasks|notes|reminders|habits|today|this week|focus|home|whatsapp|settings|tools|chat|chat history|my screen|meeting helper|your day · open the <agent role> agent · ask the <agent role> agent <question> · back to zuffi
+    delete task|note|reminder|habit <title> · mark <task> done · rename task|note <old title> to <new title> · move reminder <title> to <time> <day> · start focus for <n> minutes · stop focus · what are my tasks|reminders|habits|notes
+        what's on my screen · on screen, <any task to do by clicking and typing in an app or website, with all details>
     """
 
     private func systemPrompt() -> String {
@@ -145,9 +147,10 @@ final class SmartPlanner {
     func run(_ plan: Plan) async -> String {
         var results: [String] = []
         for (i, c) in plan.commands.enumerated() {
-            var r = await AgentRouter.shared.handle(c)
+            var r = await ZuffiCommand.handle(c)
+            if r == nil { r = await AgentRouter.shared.handle(c) }
             if r == nil { r = await WebHub.shared.ask(c) }
-            if let r { results.append(r) }
+            if let r, !r.isEmpty { results.append(r) }
             if i < plan.commands.count - 1, c.lowercased().hasPrefix("open") { try? await Task.sleep(nanoseconds: 900_000_000) }
         }
         // Information answers (time, weather, numbers…) are worth saying; plain confirmations are covered by "say".
