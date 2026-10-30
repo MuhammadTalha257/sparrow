@@ -1539,10 +1539,18 @@ D?.onEvent?.(ev => {
   if (ev.type === 'meeting-start' && !$('#live')) askAlert(`Looks like you’re in a ${ev.app} call`, 'Shall I take notes? You get a summary and to-dos when it ends.', 'Take notes', 'Not now', () => { meetingByUs = true; startMeetingNotes(); });
   if (ev.type === 'meeting-end' && meetingByUs && $('#live')) { meetingByUs = false; stopMeetingNotes(); }
 });
+// What Zuffi SAYS is exactly what the card SHOWS (with your name in front), so voice and screen never disagree.
+function sayCard(shown, sub) {
+  const plain = t => String(t || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}⏳⏰]/gu, '').replace(/\bIn (\d+) min\b/, (m, n) => `In ${n} minute${n > 1 ? 's' : ''}`).replace(/\bNow:/, 'Now,').trim();
+  const head = plain(shown), tail = plain(sub);
+  const body = head ? head.charAt(0).toLowerCase() + head.slice(1) : '';
+  return `${who()}${body}${/[.!?]$/.test(body) ? '' : '.'}${tail ? ' ' + tail : ''}`;
+}
 function alertNow(spoken, shown, tag, itemId) {
-  chime(); showAlert(shown, itemId ? 'Or say “snooze”' : '', itemId); birdMood('happy');
+  const sub = itemId ? 'Or say “snooze”' : '';
+  chime(); showAlert(shown, sub, itemId); birdMood('happy');
   if (itemId) setLastAlert(itemId);
-  if (!N) { speakSoon(spoken); notify(shown, tag); }
+  if (!N) { speakSoon(sayCard(shown, sub)); notify(shown, tag); }
 }
 const who = () => S().name ? S().name + ', ' : '';
 async function checkDue() {
@@ -1638,7 +1646,7 @@ function checkHealth() {
     h.last = Date.now(); store.save();
     const def = HEALTH[kind], shown = typeof def.show === 'function' ? def.show(h) : def.show;
     if (M) M.post('health', { kind, text: shown });      // the Mac: the pet sparrow flies in carrying it
-    chime(); showAlert(`${def.icon} ${shown}`, def.sub); $('#alert').dataset.health = kind; speakSoon(def.say(who(), h));
+    chime(); showAlert(`${def.icon} ${shown}`, def.sub); $('#alert').dataset.health = kind; speakSoon(sayCard(shown, def.sub));
   }
 }
 function renderHealthSettings(hl) {

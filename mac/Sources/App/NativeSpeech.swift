@@ -17,6 +17,7 @@ final class NativeSpeech {
     private(set) var failures = 0
     private var slowStreak = 0
     private var restarting = false
+    private var startedAt = Date.distantPast
 
     static let voices: [String: (sid: Int, label: String)] = [
         "af_heart": (3, "Heart (warm, American)"), "af_bella": (2, "Bella (bright, American)"), "af_nicole": (6, "Nicole (soft, American)"),
@@ -58,6 +59,7 @@ final class NativeSpeech {
         do {
             try p.run()
             proc = p
+            startedAt = Date()
             input = inPipe.fileHandleForWriting
             send(["cmd": "warm", "model": "kokoro", "sid": sid(), "phrases": Self.common])
             appendAppLog("voice.log", "natural voice engine started")
@@ -72,7 +74,11 @@ final class NativeSpeech {
 
     private func died() {
         proc = nil; input = nil
-        if restarting { restarting = false } else { failures += 1 }
+        if restarting {
+            restarting = false
+            // start again right away in the background, so the next sentence is in HER voice (not the Mac's)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { MainActor.assumeIsolated { NativeSpeech.shared.start() } }
+        } else { failures += 1 }
         appendAppLog("voice.log", "natural voice engine stopped (\(failures))")
         startWaiter?.resume(returning: false); startWaiter = nil
         let end = onEnd; onEnd = nil; end?()
@@ -153,8 +159,10 @@ final class NativeSpeech {
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
         send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny ? speed * 1.06 : speed, "pitch": bunny ? 450.0 : 0.0])
         let id = currentId
-        // Never wait long: if the first words aren't ready in 5 s, use the instant voice instead.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+        // Never wait long: if the first words aren't ready, use the instant voice instead. Just after it starts it is still
+        // loading her voice, so it gets longer then — otherwise the first reminder would come out in the Mac's voice.
+        let patience: Double = Date().timeIntervalSince(startedAt) < 25 ? 14 : 6
+        DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
             MainActor.assumeIsolated {
                 if id == NativeSpeech.shared.currentId, let w = NativeSpeech.shared.startWaiter {
                     NativeSpeech.shared.startWaiter = nil
