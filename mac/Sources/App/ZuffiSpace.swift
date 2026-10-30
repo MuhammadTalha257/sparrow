@@ -3,6 +3,7 @@ import AppKit
 import WebKit
 import ApplicationServices
 import UniformTypeIdentifiers
+import PDFKit
 
 // =====================================================================
 // MARK: - The new Zuffi design (from the hand-drawn sketch)
@@ -962,7 +963,7 @@ struct ZuffiProfilePanel: View {
                         Text(plan.isBusiness ? "Business plan" : plan.isPaid ? "Pro plan" : "Free").font(.system(size: 10.5, weight: .semibold)).foregroundColor(.white.opacity(0.6))
                     }
                     Spacer()
-                    Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
+                    Button { ZuffiSettings.open(); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
                         Label("Edit", systemImage: "pencil").font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
                             .padding(.horizontal, 10).frame(height: 26).background(Capsule().fill(Color.white.opacity(0.14)))
                     }.buttonStyle(.plain)
@@ -1075,11 +1076,12 @@ struct NotchHomeView: View {
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
                         .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
-                        .help("Double-click Aurora to talk"))
+                        .gesture(SpatialTapGesture().onEnded { v in AuroraMoves.poke(ear: v.location.y < 26) })
+                        .help("Click Aurora to play (try her ears) · double-click to talk"))
             }
         }
         .frame(width: tabW, height: tabH)
-        .contentShape(Rectangle()).movesIsland()
+        .contentShape(Rectangle())
     }
 
     private var bar: some View {
@@ -1090,12 +1092,9 @@ struct NotchHomeView: View {
 
     @ViewBuilder private var below: some View {
         if let p = page {
-            VStack(spacing: 8) {
-                if answering && p != "chat" { replyLine }
-                NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { nav.page = target } },
-                            ask: { text in ask = text; askFocus = true })
-            }
-                .frame(width: W - 24)
+            NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { nav.page = target } },
+                        ask: { text in ask = text; askFocus = true })
+                .frame(width: W - 24, height: max(240, H - tabH - 44 - 30))
                 .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
                 .padding(.bottom, 10)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -1261,7 +1260,7 @@ struct NotchHomeView: View {
             Text(todayLine).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.55)).lineLimit(1)
             HStack(spacing: 8) {
                 pill("Dashboard") { ZuffiHub.shared.show(.home) }
-                pill("Settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+                pill("Settings") { ZuffiSettings.open() }
             }
         }
     }
@@ -1321,7 +1320,7 @@ struct NotchHomeView: View {
                     chip("square.grid.2x2.fill", "Dashboard") { ZuffiHub.shared.show(.home) }
                     chip("sparkles", "Features") { ZuffiNav.go(.features) }
                     chip("hare.fill", "Pet") { PetController.shared.toggle() }
-                    Button { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) } label: {
+                    Button { ZuffiSettings.open() } label: {
                         HStack(spacing: 4) {
                             ProfileAvatar(size: 18)
                             Text((ZuffiPlan.shared.profile["name"] ?? "Me").components(separatedBy: " ").first ?? "Me").font(.system(size: 10.5, weight: .medium)).lineLimit(1)
@@ -1402,40 +1401,19 @@ struct NotchHomeView: View {
         guard !q.isEmpty else { return }
         ask = ""
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
-        // On the Chat page everything goes into the chat (with the agent you picked)
-        if page == "chat" { sendChat(q, spoken: false); return }
         // about the screen ("where do I click", "explain this page") → Zuffi looks at the screen
-        if let hit = ZuffiAsk.shared.takeIfAboutScreen(q) {
+        if page != "chat", let hit = ZuffiAsk.shared.takeIfAboutScreen(q) {
             Task { await ZuffiAsk.shared.answer(hit.0, about: hit.1) }; return
         }
-        let before = askedQ.isEmpty || reply.isEmpty ? "" : "Earlier they asked: \"\(askedQ)\" and you said: \"\(reply)\"\n"
-        askedQ = q; reply = ""; thinking = true
-        BunnyFaceCenter.shared.show(.thinking, for: 8)
         Task { @MainActor in
-            // 1 · her own pages and your data: open / edit / delete / done / move
+            // her own pages and your data: "open tasks", "delete the note …", "mark … done" — the page shows the change
             if let r = await ZuffiCommand.handle(q) {
-                thinking = false
-                if r.isEmpty { askedQ = "" } else { reply = r }
-                BunnyFaceCenter.shared.show(.happy, for: 2)
+                if !r.isEmpty { askedQ = q; reply = r; BunnyFaceCenter.shared.show(.happy, for: 2); if nav.page != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { MainActor.assumeIsolated { reply = ""; askedQ = "" } } } }
                 return
             }
-            // 2 · reminders, tasks, notes, habits, apps, music… (same brain as when you talk)
-            let short = q.split(separator: " ").count <= 6
-            if short, let r = await WebHub.shared.ask(q) { done(r); return }
-            if let plan = await SmartPlanner.shared.plan(q), !plan.commands.isEmpty {
-                done(await SmartPlanner.shared.run(plan)); return
-            }
-            if !short, let r = await WebHub.shared.ask(q) { done(r); return }
-            // 3 · a question: a short, friendly answer
-            let r = await AIService.shared.oneShot("""
-                \(before)The user asks: "\(q)"
-                Answer like a kind, clever friend: short and clear (under 110 words), in the language they wrote in. Plain text, no symbols or lists unless really needed. \
-                You may begin with ONE small natural reaction when it truly fits — "Oh!", "Ah,", "Hmm," or "Haha,".
-                """, system: ZuffiVoice.persona + "\n" + ZuffiVoice.style) ?? ""
-            let out = r.trimmingCharacters(in: .whitespacesAndNewlines)
-            thinking = false
-            reply = out.isEmpty ? ZuffiAsk.noBrainLine : out
-            if !out.isEmpty { ZuffiHelpLog.shared.add("Answered", out); BunnyFaceCenter.shared.show(.happy, for: 2) }
+            // everything else is a conversation: the Chat screen opens and the answer appears there
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { nav.page = "chat" }
+            sendChat(q, spoken: false)
         }
     }
     private func done(_ r: String) {
@@ -1452,6 +1430,21 @@ struct NotchHomeView: View {
         BunnyFaceCenter.shared.show(.thinking, for: 8)
         Task { @MainActor in
             let before = state.chatHistory.count
+            // "remind me…", "add task…", "open Safari", "play music"… are done for real, then she says so in the chat
+            let short = q.split(separator: " ").count <= 6
+            var did: String? = nil
+            if state.promptContext == nil {
+                if short { did = await WebHub.shared.ask(q) }
+                if did == nil, ZuffiTeam.looksLikeCommand(q), let plan = await SmartPlanner.shared.plan(q), !plan.commands.isEmpty { did = await SmartPlanner.shared.run(plan) }
+            }
+            if let did, !did.isEmpty {
+                state.chatHistory.append(ChatMessage(role: .assistant, content: did))
+                state.stateOverride = nil
+                BunnyFaceCenter.shared.show(.happy, for: 2)
+                if spoken { VoiceEngine.shared.speak(did) }
+                await NotchData.shared.refresh()
+                return
+            }
             await AIService.shared.chat(query: q, context: state.promptContext, state: state)
             state.stateOverride = nil
             if state.chatHistory.count >= before, let last = state.chatHistory.last, last.role == .assistant {
@@ -1460,19 +1453,6 @@ struct NotchHomeView: View {
             }
         }
     }
-    /// A one-line answer above an open page ("Done — I deleted …").
-    private var replyLine: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if thinking { ProgressView().controlSize(.mini).tint(.white) }
-            Text(thinking ? "Hmm, one sec…" : reply).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-            Button { reply = ""; askedQ = ""; thinking = false } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(NS.soft) }.buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(hex: "#1B1922")))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.08)))
-    }
-
     // MARK: row 2 — notifications
     private var noteBar: some View {
         let n = inbox.notes.first
@@ -1543,7 +1523,7 @@ struct NotchHomeView: View {
             shortcut("sparkles", "Features") { ZuffiNav.go(.features) }
             shortcut("hare.fill", PetController.shared.isShown ? "Hide pet" : "Show pet") { PetController.shared.toggle() }
             shortcut(voice.micEnabled ? "mic.fill" : "mic.slash.fill", voice.micEnabled ? "Mic on" : "Mic off") { VoiceEngine.shared.setMic(!voice.micEnabled) }
-            shortcut("gearshape.fill", "Settings") { ZuffiHub.shared.show(.settings) }
+            shortcut("gearshape.fill", "Settings") { ZuffiSettings.open() }
         }
     }
     private func shortcut(_ icon: String, _ label: String, _ go: @escaping () -> Void) -> some View {
@@ -1723,6 +1703,7 @@ struct AuroraFace: NSViewRepresentable {
         case .some(.thinking), .some(.busy): return "thinking"
         case .some(.listening): return "listening"
         case .some(.sleepy): return "sleepy"
+        case .some(.wink): return "wink"
         default: return "idle"
         }
     }
@@ -2323,7 +2304,7 @@ struct CompactAuroraTab: View {
     let notchH: CGFloat
     var body: some View {
         // her head close-up; the ear tips tuck behind the notch, the face shows below it
-        let side = max(60, (height - notchH) * 1.9)
+        let side = min(150, max(60, (min(height, notchH + 80) - notchH) * 1.9))
         if UserDefaults.standard.object(forKey: "notchShowsAurora") as? Bool ?? true {
         Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face,
                      expression: RealAuroraIcon.feeling(AuroraFace.mood(voice, state)), speaking: voice.speaking || tutor.speaking)
@@ -2353,6 +2334,7 @@ struct RealAuroraIcon: View {
         case "surprised": return .surprised
         case "oops": return .sad
         case "sleepy": return .sleepy
+        case "wink": return .wink
         default: return .smile
         }
     }
@@ -2537,9 +2519,11 @@ struct NSPill: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundColor(primary ? NS.ink : .white).lineLimit(1)
-                .padding(.horizontal, 12).frame(height: 28)
-                .background(Capsule().fill(primary ? Color(hex: color) : Color.white.opacity(0.09)))
+            // one look for every button: white = the main action, soft grey = the others
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundColor(primary ? NS.ink : .white).lineLimit(1)
+                .padding(.horizontal, 13).frame(minHeight: 30)
+                .background(Capsule().fill(primary ? Color(hex: "#F2F1F6") : Color.white.opacity(0.1)))
+                .contentShape(Capsule())
         }.buttonStyle(.plain)
     }
 }
@@ -2631,8 +2615,9 @@ struct NotchScreen: View {
                     Text(Self.menu.first { $0.id == page }?.name ?? "").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                     Spacer()
                 }
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 8) { pageView }.frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, 8).padding(.bottom, 12)
                 }
             }
         }
@@ -3010,54 +2995,75 @@ struct HomePage: View {
 
 struct WhatsAppPage: View {
     @ObservedObject private var inbox = NotchInbox.shared
-    @State private var replying: UUID?
+    @ObservedObject private var link = WhatsAppLink.shared
+    @State private var replying: String?
     @State private var text = ""
     @State private var sent = ""
+    struct Msg: Identifiable { let id: String; let who: String; let body: String; let at: Date }
+    private var msgs: [Msg] {
+        var out: [Msg] = link.recent.map { Msg(id: $0.id.uuidString, who: $0.name.isEmpty ? $0.phone : $0.name, body: $0.body, at: $0.at) }
+        for n in inbox.notes where n.action == "whatsapp" || n.head.hasPrefix("WhatsApp") {
+            let who = n.head.components(separatedBy: " · ").dropFirst().joined(separator: " · ")
+            if !out.contains(where: { $0.who == who && $0.body == n.body }) { out.append(Msg(id: n.id.uuidString, who: who, body: n.body, at: n.at)) }
+        }
+        return out.sorted { $0.at > $1.at }
+    }
     var body: some View {
-        let msgs = inbox.notes.filter { $0.action == "whatsapp" || $0.head.hasPrefix("WhatsApp") }
-        if msgs.isEmpty { Text("No new WhatsApp messages. Link WhatsApp in All settings to see them here.").font(.system(size: 12.5)).foregroundColor(NS.soft) }
-        if !sent.isEmpty { Text(sent).font(.system(size: 11.5)).foregroundColor(Color(hex: "#7CE0A3")) }
-        ForEach(msgs) { n in
+        if !link.ready {
             NSCard {
-                Text(n.head).font(.system(size: 11, weight: .bold)).foregroundColor(Color(hex: "#25D366")).lineLimit(1)
-                Text(n.body).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(3)
-                if replying == n.id {
-                    NSField(placeholder: "Your reply…", text: $text) { send(n) }
+                Text(link.state == "loading" ? "Connecting to WhatsApp…" : link.state == "qr" ? "Scan the code in the WhatsApp window with your phone: WhatsApp → Settings → Linked devices → Link a device." : "Link your WhatsApp once to see your messages here, reply, or ask Zuffi to write a reply.")
+                    .font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                NSPill(title: link.state == "qr" ? "Show the code" : "Link WhatsApp", primary: true) { link.enabled = true; link.start() }
+            }
+        }
+        if !sent.isEmpty { Text(sent).font(.system(size: 11.5)).foregroundColor(Color(hex: "#7CE0A3")) }
+        if link.ready && msgs.isEmpty { Text("No new messages. New ones show up here.").font(.system(size: 12.5)).foregroundColor(NS.soft) }
+        ForEach(msgs.prefix(20)) { m in
+            NSCard {
+                HStack {
+                    Text(m.who).font(.system(size: 12, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                    Spacer()
+                    Text(m.at.formatted(date: .omitted, time: .shortened)).font(.system(size: 10.5)).foregroundColor(NS.soft)
+                }
+                Text(m.body).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).lineLimit(4).textSelection(.enabled)
+                if replying == m.id {
+                    NSField(placeholder: "Your reply…", text: $text) { send(m) }
                     HStack(spacing: 6) {
-                        NSPill(title: "Send", primary: true, color: "#25D366") { send(n) }
-                        NSPill(title: "Write it for me") { Task { await writeForMe(n) } }
+                        NSPill(title: "Send", primary: true) { send(m) }
+                        NSPill(title: "Write it for me") { Task { await writeForMe(m) } }
                         NSPill(title: "Cancel") { replying = nil }
                     }
                 } else {
                     HStack(spacing: 6) {
-                        NSPill(title: "Reply", primary: true, color: "#25D366") { replying = n.id; text = "" }
-                        NSPill(title: "Explain") { Task { await ZuffiAsk.shared.act("explain", n.body) } }
-                        NSPill(title: "Read it") { VoiceEngine.shared.speak(n.head.replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from ") + ". " + n.body) }
+                        NSPill(title: "Reply", primary: true) { replying = m.id; text = "" }
+                        NSPill(title: "Ask Zuffi") { NotchNav.shared.page = "chat"; NotchNav.shared.pendingChat = "WhatsApp from \(m.who): \"\(m.body)\" — what do they want, and what should I reply?" }
+                        NSPill(title: "Read it") { VoiceEngine.shared.speak("WhatsApp from \(m.who). \(m.body)") }
                     }
                 }
             }
         }
     }
-    private func who(_ n: NotchInbox.Note) -> String { n.head.components(separatedBy: " · ").dropFirst().joined(separator: " · ") }
-    private func send(_ n: NotchInbox.Note) {
+    private func send(_ m: Msg) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !t.isEmpty else { return }
-        let to = who(n); replying = nil; text = ""
+        replying = nil; text = ""
         Task { @MainActor in
-            let ok = await WhatsAppLink.shared.send(to: to, text: t)
-            if !ok { _ = await WhatsAppAgent.shared.sendScheduled(to: to, text: t) }
-            sent = "Sent to \(to) ✓"
+            let ok = await WhatsAppLink.shared.send(to: m.who, text: t)
+            if !ok { _ = await WhatsAppAgent.shared.sendScheduled(to: m.who, text: t) }
+            sent = "Sent to \(m.who) ✓"
         }
     }
-    private func writeForMe(_ n: NotchInbox.Note) async {
-        let r = await AIService.shared.oneShot("Write a short, natural WhatsApp reply to this message from \(who(n)): \"\(n.body)\". Same language and tone. Reply with the message text only.",
+    private func writeForMe(_ m: Msg) async {
+        let r = await AIService.shared.oneShot("Write a short, natural WhatsApp reply to this message from \(m.who): \"\(m.body)\". Same language and tone. Reply with the message text only.",
                                                system: "You write short replies for the user. Text only, no quotes.") ?? ""
         text = r.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
     }
 }
 
+/// Settings live in the notch: Profile, AI models and Privacy. Nothing opens a separate window.
 struct SettingsPage: View {
     @ObservedObject private var state = AppState.shared
     @ObservedObject private var voice = VoiceEngine.shared
+    @AppStorage("notchSettingsTab") private var tab = "Profile"
     @AppStorage("notchShowsAurora") private var showsAurora = true
     @AppStorage("readNotifications") private var readAloud = true
     @AppStorage("trackDay") private var trackDay = true
@@ -3066,41 +3072,107 @@ struct SettingsPage: View {
     @State private var job = ZuffiPlan.shared.profile["job"] ?? ""
     @State private var lang = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
     @State private var saved = false
+    @State private var editingKey: String?
+    @State private var keyText = ""
+    @State private var keyTick = 0
+    @State private var keysRemoved = false
+
     var body: some View {
-        NSLabel(t: "PROFILE")
+        HStack(spacing: 6) {
+            ForEach(["Profile", "AI models", "Privacy"], id: \.self) { t in NSPill(title: t, primary: tab == t) { tab = t } }
+        }
+        switch tab {
+        case "AI models": models
+        case "Privacy": privacy
+        default: profile
+        }
+    }
+
+    // MARK: profile
+    @ViewBuilder private var profile: some View {
+        NSLabel(t: "YOU")
         NSField(placeholder: "Your name", text: $name)
         HStack(spacing: 6) { NSField(placeholder: "City", text: $city); NSField(placeholder: "What you do", text: $job) }
-        HStack(spacing: 6) {
-            Picker("", selection: $lang) { ForEach(["English", "Urdu", "Hindi", "Punjabi", "Arabic", "Spanish", "French", "German", "Turkish", "Chinese"], id: \.self) { Text($0).tag($0) } }
-                .labelsHidden().frame(width: 140).colorScheme(.dark)
-            NSPill(title: saved ? "Saved ✓" : "Save profile", primary: true, color: "#B79CFF") { saveProfile() }
+        HStack(spacing: 8) {
+            Text("Language").font(.system(size: 12.5)).foregroundColor(.white)
+            Picker("", selection: $lang) { ForEach(NSLangs.all, id: \.self) { Text($0).tag($0) } }
+                .labelsHidden().frame(width: 150).colorScheme(.dark)
+            Spacer()
+            NSPill(title: saved ? "Saved ✓" : "Save", primary: true) { saveProfile() }
         }
-        NSLabel(t: "AI MODEL")
-        HStack { Text("Answers come from").font(.system(size: 12.5)).foregroundColor(.white); Spacer(); ProviderMenu(state: state, tint: .white) }
-        NSPill(title: "Add or change AI keys") { UserDefaults.standard.set("AI models", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
-        NSLabel(t: "GENERAL")
+        NSLabel(t: "YOUR ZUFFI")
         HStack(spacing: 6) {
             Text("The notch shows").font(.system(size: 12.5)).foregroundColor(.white); Spacer()
             NSPill(title: "Aurora", primary: showsAurora) { showsAurora = true }
             NSPill(title: "Just the text field", primary: !showsAurora) { showsAurora = false }
         }
+        toggle("Her natural voice", Binding(get: { UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "neuralVoice") }))
+        Text("See Aurora's faces and moves (she does each one in the notch):").font(.system(size: 11.5)).foregroundColor(NS.soft)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 6)], alignment: .leading, spacing: 6) {
+            ForEach(AuroraMoves.list, id: \.0) { m in NSPill(title: m.0) { AuroraMoves.play(m.1) } }
+        }
+    }
+
+    // MARK: AI models
+    @ViewBuilder private var models: some View {
+        let _ = keyTick
+        NSLabel(t: "ANSWERS COME FROM")
+        HStack { Text(AIProvider(rawValue: state.aiProvider)?.label ?? "Auto").font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white); Spacer(); ProviderMenu(state: state, tint: .white) }
+        NSLabel(t: "YOUR AI KEYS (STAY ON THIS MAC)")
+        ForEach(AIProvider.allCases.filter { $0.keychainKey != nil }, id: \.rawValue) { p in
+            let k = p.keychainKey!
+            let has = !(KeychainStore.shared.get(k) ?? "").isEmpty
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: p.icon).font(.system(size: 11)).foregroundColor(.white).frame(width: 16)
+                    Text(p.label).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(1)
+                    Spacer()
+                    Text(has ? "Key saved ✓" : "No key").font(.system(size: 11)).foregroundColor(has ? Color(hex: "#7CE0A3") : NS.soft)
+                    if has { NSPill(title: "Use") { state.aiProvider = p.rawValue } }
+                    NSPill(title: has ? "Change" : "Add key", primary: !has) { editingKey = k; keyText = "" }
+                }
+                if editingKey == k {
+                    SecureField("", text: $keyText, prompt: Text("Paste your \(p.label) key").foregroundColor(NS.soft.opacity(0.8)))
+                        .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
+                        .padding(.horizontal, 12).frame(height: 34)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+                    HStack(spacing: 6) {
+                        NSPill(title: "Save", primary: true) {
+                            let v = keyText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !v.isEmpty { KeychainStore.shared.set(k, value: v); state.aiProvider = p.rawValue }
+                            editingKey = nil; keyText = ""; keyTick += 1
+                        }
+                        if has { NSPill(title: "Remove key") { KeychainStore.shared.set(k, value: ""); editingKey = nil; keyTick += 1 } }
+                        NSPill(title: "Cancel") { editingKey = nil; keyText = "" }
+                    }
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NS.card))
+        }
+        Text("No key? Zuffi AI (included in your plan) and Ollama on this Mac work without one.").font(.system(size: 11)).foregroundColor(NS.soft)
+    }
+
+    // MARK: privacy
+    @ViewBuilder private var privacy: some View {
+        NSLabel(t: "LISTENING AND SPEAKING")
         toggle("“Hey Zuffi” (mic on)", Binding(get: { voice.micEnabled }, set: { VoiceEngine.shared.setMic($0) }))
         toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
-        toggle("Her natural voice", Binding(get: { UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "neuralVoice") }))
         toggle("Read notifications out loud (messages, mail…)", Binding(get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
                                                                        set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
         toggle("Say reminders out loud (off = just show them)", $readAloud)
-        NSLabel(t: "HEALTH")
-        HealthRows()
-        NSLabel(t: "PRIVACY")
+        NSLabel(t: "YOUR DATA")
         toggle("Count my day (only on this Mac)", $trackDay)
+        Text("Your notes, tasks, reminders and chats stay on this Mac. What you ask the AI is never stored on Zuffi's servers.").font(.system(size: 11.5)).foregroundColor(NS.soft)
         HStack(spacing: 6) {
-            NSPill(title: "All settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+            NSPill(title: keysRemoved ? "Keys removed ✓" : "Remove all AI keys") { KeychainStore.shared.removeAll(onlyAI: true); keysRemoved = true }
             NSPill(title: "Start fresh…") { ZuffiReset.confirmAndRun() }
         }
     }
+
     private func toggle(_ t: String, _ on: Binding<Bool>) -> some View {
-        Toggle(isOn: on) { Text(t).font(.system(size: 12.5)).foregroundColor(.white) }.toggleStyle(.switch).controlSize(.small)
+        Toggle(isOn: on) { Text(t).font(.system(size: 12.5)).foregroundColor(.white).frame(maxWidth: .infinity, alignment: .leading) }
+            .toggleStyle(.switch).controlSize(.small).tint(Color(hex: "#B79CFF"))
     }
     private func saveProfile() {
         var p: [String: Any] = ZuffiPlan.shared.profile
@@ -3111,78 +3183,144 @@ struct SettingsPage: View {
     }
 }
 
+enum NSLangs {
+    static let all = ["English", "Urdu", "Roman Urdu", "Hindi", "Punjabi", "Arabic", "Spanish", "French", "German", "Italian", "Portuguese", "Turkish", "Chinese", "Japanese", "Korean", "Russian", "Bengali", "Persian", "Indonesian", "Malay", "Dutch", "Polish"]
+}
+
+/// Aurora's faces and moves, to try from Settings (she does each one in the notch for a few seconds).
+enum AuroraMoves {
+    static let list: [(String, BunnyMood)] = [("Happy hop", .happy), ("Giggle", .laugh), ("Love", .love), ("Wink", .wink), ("Surprised", .surprised),
+                                              ("Thinking", .thinking), ("Listening", .listening), ("Sad", .sad), ("Cross", .cross), ("Sleepy", .sleepy)]
+    @MainActor static func play(_ m: BunnyMood) {
+        BunnyFaceCenter.shared.show(m, for: m == .sleepy ? 6 : 4)
+        let say: [BunnyMood: String] = [.happy: "Yay!", .laugh: "Hehehe!", .love: "Aww!", .wink: "Hehe.", .surprised: "Oh!", .thinking: "Hmm…",
+                                        .sad: "Aww…", .cross: "Hmph!", .sleepy: "Yawn… so sleepy."]
+        if let s = say[m] { VoiceEngine.shared.speak(s) }
+    }
+    /// You clicked her: she giggles, smiles, winks… Touch her ears and they flick.
+    @MainActor static func poke(ear: Bool) {
+        Aurora3DRig.poke(ear: ear)
+        let moods: [BunnyMood] = ear ? [.surprised, .laugh, .cross] : [.laugh, .happy, .love, .wink]
+        let m = moods[Int.random(in: 0..<moods.count)]
+        BunnyFaceCenter.shared.show(m, for: 2.5)
+        let lines: [BunnyMood: [String]] = [.laugh: ["Hehe, that tickles!", "Hahaha!"], .happy: ["Hi!", "Yay, hello!"], .love: ["Aww!"], .wink: ["Hehe."],
+                                            .surprised: ["Oh! My ears!", "Eep!"], .cross: ["Hey, not my ears!", "Hmph!"]]
+        if !VoiceEngine.shared.speaking, let l = lines[m]?.randomElement() { VoiceEngine.shared.speak(l) }
+    }
+}
+
 struct ToolsPage: View {
     let ask: (String) -> Void
     @ObservedObject private var state = AppState.shared
     @State private var formats: [String] = []
     @State private var status = ""
+    @State private var working = false
+    @State private var choosingLang = false
+    @State private var toLang = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
     var body: some View {
         if let f = state.droppedFile {
             NSCard {
                 HStack(spacing: 8) {
-                    Image(systemName: "doc.fill").foregroundColor(Color(hex: "#9FB4FF"))
+                    Image(systemName: f.url.pathExtension.lowercased() == "pdf" ? "doc.richtext.fill" : NativeConvert.imageExts.contains(f.url.pathExtension.lowercased()) ? "photo.fill" : "doc.fill").foregroundColor(.white)
                     Text(f.name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     NSIconButton(icon: "xmark", help: "Remove") { state.droppedFile = nil; formats = []; status = "" }
                 }
                 Text("What should I do with it?").font(.system(size: 12)).foregroundColor(NS.soft)
                 HStack(spacing: 6) {
-                    NSPill(title: "Summarise", primary: true, color: "#9FB4FF") { Task { await summarise(f.url, f.name) } }
-                    NSPill(title: "Translate") { Task { await translate(f.url) } }
+                    NSPill(title: "Sum it up", primary: true) { Task { await summarise(f.url, f.name) } }
+                    NSPill(title: "Translate…", primary: choosingLang) { choosingLang.toggle() }
                     NSPill(title: "Ask about it") { state.promptContext = .file(name: f.name, fileURL: f.url); NotchNav.shared.page = "chat"; ask("") }
                 }
+                if choosingLang {
+                    HStack(spacing: 8) {
+                        Text("Into").font(.system(size: 12)).foregroundColor(.white)
+                        Picker("", selection: $toLang) { ForEach(NSLangs.all, id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(width: 150).colorScheme(.dark)
+                        NSPill(title: "Translate", primary: true) { choosingLang = false; Task { await translate(f.url, to: toLang) } }
+                    }
+                }
                 if !formats.isEmpty {
-                    Text("Convert to").font(.system(size: 11)).foregroundColor(NS.soft)
-                    HStack(spacing: 6) { ForEach(formats, id: \.self) { fmt in NSPill(title: ChooseView.label(fmt)) { Task { await convert(f, to: fmt) } } } }
+                    Text("Convert to").font(.system(size: 11.5)).foregroundColor(NS.soft)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
+                        ForEach(formats, id: \.self) { fmt in NSPill(title: ChooseView.label(fmt)) { Task { await convert(f, to: fmt) } } }
+                    }
                 }
             }
-            if !status.isEmpty { Text(status).font(.system(size: 12)).foregroundColor(Color(hex: "#CFCBD8")).textSelection(.enabled) }
+            if working { HStack(spacing: 8) { ProgressView().controlSize(.small); Text(status).font(.system(size: 12)).foregroundColor(Color(hex: "#CFCBD8")) } }
+            else if !status.isEmpty { NSCard { Text(status).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).textSelection(.enabled) } }
         } else {
             NSCard {
-                Text("Drop a file or picture on the notch, or choose one. Then convert it (PDF, Word, JPG, PNG…), sum it up, translate it or ask about it.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                NSPill(title: "Choose a file", primary: true, color: "#9FB4FF") { pick() }
+                Text(state.fileDragOver ? "Drop it here ✨" : "Drop a file or picture on the notch, or choose one. Then convert it (PDF, Word, JPG, PNG, text…), sum it up, translate it into any language or ask about it.")
+                    .font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                NSPill(title: "Choose a file", primary: true) { pick() }
             }
         }
         EmptyView().task(id: state.droppedFile?.url) { await loadFormats() }
     }
     private func pick() {
         let p = NSOpenPanel(); p.allowsMultipleSelection = false
+        p.level = .popUpMenu
         guard p.runModal() == .OK, let u = p.url else { return }
         state.droppedFile = DroppedFile(url: u, name: u.lastPathComponent)
+        NotchNav.shared.open("tools")
     }
     private func loadFormats() async {
         guard let f = state.droppedFile else { formats = []; return }
         var r = NativeConvert.formats(for: f.url)
         if r.isEmpty { r = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.formatsFor ? window.Sparrow.formatsFor(n) : []", ["n": f.name]) as? [String] ?? [] }
-        formats = Array(r.prefix(5))
+        if f.url.pathExtension.lowercased() == "pdf" { for x in ["txt", "jpg", "png"] where !r.contains(x) { r.append(x) } }   // PDF → text or pictures, done here
+        formats = Array(r.prefix(8))
     }
-    private func convert(_ f: DroppedFile, to fmt: String) async {
-        status = "Converting to \(ChooseView.label(fmt))…"
-        var made: (Data, String)?
-        if let native = NativeConvert.convert(f.url, to: fmt) {
-            switch native { case .success(let m): made = (m.data, m.name); case .failure(let e): status = e.localizedDescription; return }
-        } else if let data = try? Data(contentsOf: f.url) {
-            let r = await WebHub.shared.callJS("return await window.Sparrow.convertB64(n, b, t)", ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any]
-            if let n = r?["name"] as? String, let b = r?["b64"] as? String, let d = Data(base64Encoded: b) { made = (d, n) } else { status = (r?["error"] as? String) ?? "That didn't work — try another format."; return }
-        }
-        guard let (out, name) = made else { return }
+    private func save(_ out: Data, _ name: String) -> URL? {
         let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         var dest = dir.appendingPathComponent(name), n = 2
         while FileManager.default.fileExists(atPath: dest.path) { dest = dir.appendingPathComponent("\((name as NSString).deletingPathExtension) \(n).\((name as NSString).pathExtension)"); n += 1 }
-        do { try out.write(to: dest); NSWorkspace.shared.activateFileViewerSelecting([dest]); status = "✓ \(dest.lastPathComponent) is in your Downloads." } catch { status = "I couldn't save it in Downloads." }
+        do { try out.write(to: dest); return dest } catch { return nil }
+    }
+    private func convert(_ f: DroppedFile, to fmt: String) async {
+        working = true; status = "Converting to \(ChooseView.label(fmt))…"; defer { working = false }
+        let base = (f.name as NSString).deletingPathExtension
+        var made: [(Data, String)] = []
+        if f.url.pathExtension.lowercased() == "pdf", ["txt", "jpg", "png"].contains(fmt), let doc = PDFDocument(url: f.url) {
+            if fmt == "txt" { made = [(Data((doc.string ?? "").utf8), base + ".txt")] }
+            else {
+                for i in 0..<min(doc.pageCount, 30) {
+                    guard let pg = doc.page(at: i) else { continue }
+                    let b = pg.bounds(for: .mediaBox); let img = pg.thumbnail(of: NSSize(width: b.width * 2, height: b.height * 2), for: .mediaBox)
+                    guard let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+                          let d = rep.representation(using: fmt == "png" ? .png : .jpeg, properties: [.compressionFactor: 0.9]) else { continue }
+                    made.append((d, doc.pageCount == 1 ? "\(base).\(fmt)" : "\(base) page \(i + 1).\(fmt)"))
+                }
+            }
+        } else if let native = NativeConvert.convert(f.url, to: fmt) {
+            switch native { case .success(let m): made = [(m.data, m.name)]; case .failure(let e): status = e.localizedDescription; return }
+        } else if let data = try? Data(contentsOf: f.url) {
+            let r = await WebHub.shared.callJS("return await window.Sparrow.convertB64(n, b, t)", ["n": f.name, "b": data.base64EncodedString(), "t": fmt]) as? [String: Any]
+            if let n = r?["name"] as? String, let b = r?["b64"] as? String, let d = Data(base64Encoded: b) { made = [(d, n)] }
+            else { status = (r?["error"] as? String) ?? "That didn't work. Try another format."; return }
+        }
+        let urls = made.compactMap { save($0.0, $0.1) }
+        guard let first = urls.first else { status = "I couldn't make that file."; return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+        status = urls.count == 1 ? "Done! \(first.lastPathComponent) is in your Downloads." : "Done! \(urls.count) pictures are in your Downloads."
+        BunnyFaceCenter.shared.show(.happy, for: 2)
     }
     private func summarise(_ u: URL, _ name: String) async {
-        status = "Reading it…"
+        working = true; status = "Reading it…"; defer { working = false }
         let text = await StudyText.extract(u)
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { status = "I couldn't find any words in this file."; return }
         let r = await AIService.shared.oneShot("Here is a file called \(name):\n\"\"\"\n\(text.prefix(12000))\n\"\"\"\nSum it up simply in \(ZuffiAsk.shared.userLanguage): what it is, the key points, and anything the reader must do (and by when).",
-                                               system: "You are Zuffi, a friendly helper.\n" + ZuffiVoice.style) ?? ""
+                                               system: ZuffiVoice.persona + "\n" + ZuffiVoice.style) ?? ""
         status = r.isEmpty ? ZuffiAsk.noBrainLine : r
     }
-    private func translate(_ u: URL) async {
-        status = "Translating…"
+    private func translate(_ u: URL, to lang: String) async {
+        working = true; status = "Translating into \(lang)…"; defer { working = false }
         let text = await StudyText.extract(u)
-        let r = await AIService.shared.oneShot("Translate this into \(ZuffiAsk.shared.userLanguage) (if it is already in it, into English). Keep it clear:\n\(text.prefix(8000))", system: "You translate accurately.") ?? ""
-        status = r.isEmpty ? ZuffiAsk.noBrainLine : r
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { status = "I couldn't find any words in this file to translate."; return }
+        let r = await AIService.shared.oneShot("Translate this into \(lang). Keep the meaning, names and numbers exact, and keep it clear:\n\(text.prefix(8000))", system: "You are a professional translator. Reply with the translation only.") ?? ""
+        guard !r.isEmpty else { status = ZuffiAsk.noBrainLine; return }
+        status = r
+        if let url = save(Data(r.utf8), (u.deletingPathExtension().lastPathComponent) + " (\(lang)).txt") { status = "Saved as \(url.lastPathComponent) in Downloads.\n\n" + r }
     }
 }
 
@@ -3491,4 +3629,16 @@ enum ZuffiCommand {
         if d < Date(), !t.lowercased().contains("today") { d = Calendar.current.date(byAdding: .day, value: 1, to: d) ?? d }
         return d
     }
+}
+
+
+/// Settings open in the notch (Profile · AI models · Privacy). The old big window is only used with the old notch design.
+@MainActor
+enum ZuffiSettings {
+    static func open(_ tab: String = "Profile") {
+        guard NotchDesign.on else { UserDefaults.standard.set(tab, forKey: "settingsTab"); ZuffiHub.shared.show(.settings); return }
+        UserDefaults.standard.set(tab, forKey: "notchSettingsTab")
+        NotchNav.shared.open("settings")
+    }
+    static func openAIModels() { open("AI models") }
 }

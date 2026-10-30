@@ -407,7 +407,7 @@ final class RoomListener: ObservableObject {
 
     func start() {
         guard !on else { return }
-        SFSpeechRecognizer.requestAuthorization { st in
+        SFSpeechRecognizer.requestAuthorization { @Sendable st in
             Task { @MainActor in
                 guard st == .authorized else { RoomListener.shared.note = "Allow Speech Recognition for Zuffi in System Settings → Privacy & Security."; return }
                 RoomListener.shared.begin()

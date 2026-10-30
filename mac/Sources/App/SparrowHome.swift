@@ -299,9 +299,10 @@ enum IslandDrag {
 extension View {
     /// Drag this area to move the whole island anywhere on screen.
     func movesIsland() -> some View {
+        // The notch design stays under the notch: it isn't dragged around (and can't get stuck on a side).
         gesture(DragGesture(minimumDistance: 3)
             .onChanged { _ in MainActor.assumeIsolated { IslandDrag.changed() } }
-            .onEnded { _ in MainActor.assumeIsolated { IslandDrag.ended() } })
+            .onEnded { _ in MainActor.assumeIsolated { IslandDrag.ended() } }, including: NotchDesign.on ? .subviews : .all)
     }
 }
 

@@ -59,7 +59,7 @@ final class IslandWindowController: NSWindowController {
         let nH = geometry.height
 
         let panelW: CGFloat = 720
-        let panelH: CGFloat = 500
+        let panelH: CGFloat = 720        // tall enough for the notch's small screen
         let sf = screen.frame
         let menuBarH = max(sf.maxY - screen.visibleFrame.maxY, NSStatusBar.system.thickness)
         let defaultX: CGFloat

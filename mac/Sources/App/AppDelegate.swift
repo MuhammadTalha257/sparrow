@@ -21,6 +21,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // One look everywhere: the dark dashboard and the new black notch.
         UserDefaults.standard.set(false, forKey: "hubLight")
         UserDefaults.standard.set(true, forKey: "notchWide")
+        // The notch design always sits under the notch: undo an old drag to a side of the screen.
+        if IslandDock.side != .none || UserDefaults.standard.string(forKey: "islandOrigin") != nil {
+            IslandDock.side = .none
+            UserDefaults.standard.removeObject(forKey: "islandDock"); UserDefaults.standard.removeObject(forKey: "islandOrigin")
+            AppState.shared.dockSide = IslandDock.none.rawValue
+        }
         // Offline brain ready before you need it (loaded once, then kept warm while you're offline).
         Task { try? await Task.sleep(nanoseconds: 8_000_000_000); await AIService.warmOllama() }
         AppUsage.shared.start()      // "Your day" in the small screen (kept only on this Mac)
@@ -90,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         // The island floats above every window; fold it away so it can't cover Settings.
+        if NotchDesign.on { NotchNav.shared.open("settings"); return }     // settings live in the notch
         if AppState.shared.mode == .expanded { islandController?.collapse() }
         if ZuffiHub.oneWindow { ZuffiHub.shared.show(.settings); return }
 

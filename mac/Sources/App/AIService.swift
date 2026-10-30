@@ -1046,12 +1046,12 @@ struct ProviderMenu: View {
             if !need.isEmpty {
                 Section("Add a key first") {
                     ForEach(need) { p in
-                        Button { UserDefaults.standard.set("AI models", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) } label: { Label(p.label, systemImage: p.icon) }
+                        Button { ZuffiSettings.openAIModels() } label: { Label(p.label, systemImage: p.icon) }
                     }
                 }
             }
             Divider()
-            Button("AI model settings…") { UserDefaults.standard.set("AI models", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+            Button("AI model settings…") { ZuffiSettings.openAIModels() }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: current.icon).font(.system(size: big ? 11 : 9, weight: .semibold))

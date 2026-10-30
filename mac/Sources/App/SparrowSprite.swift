@@ -871,6 +871,10 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     private var philtrum: SCNNode?, tongue: SCNNode?
     private var laughE: CGFloat = 0, loveE: CGFloat = 0, listenE: CGFloat = 0
     private var surpriseKick: CGFloat = 0, lastExpr: BunnyMood = .smile, exprAt: CGFloat = 0, lookX: CGFloat = 0, lookY: CGFloat = 0
+    /// You clicked her (or her ears): a quick flick and a little jump, then the feeling shows.
+    nonisolated(unsafe) static var pokeAt = Date.distantPast
+    nonisolated(unsafe) static var pokeEar = false
+    static func poke(ear: Bool) { pokeEar = ear; pokeAt = Date() }
     func setTalk(_ on: Bool, text: String, startedAt: Date) { lock.lock(); talking = on; talkText = text; talkStart = startedAt; lock.unlock() }
     /// How open the mouth is for the letter being said right now (vowels open, m/b/p closed).
     static func mouthOpen(_ text: String, since: Double) -> CGFloat {
@@ -1248,12 +1252,15 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         let yawn: CGFloat = (sleepE > 0.5 && yp < 1) ? sin(.pi * yp) * sleepE : 0
         let nod = sleepE * (1 - yawn) * (0.5 + 0.5 * sin(t * 1.3))
 
+        let pk = CGFloat(Date().timeIntervalSince(Self.pokeAt))
+        let poke: CGFloat = pk < 0.9 ? (1 - pk / 0.9) : 0
+        let earPoke: CGFloat = Self.pokeEar ? poke : poke * 0.4
         let STAND: CGFloat = 1.12
         let jump = cheer * max(0, sin(t * 9)) * 0.22          // happy pose: little jumps
         stance.eulerAngles.x = -STAND * stand - 0.18 * kick
         stance.eulerAngles.y = 0.55 * bTwist
         stance.eulerAngles.z = 0.12 * bTwist
-        stance.position.y = 0.06 + 0.16 * air + jump + 0.32 * bAir + 0.025 * gig + 0.18 * jolt
+        stance.position.y = 0.06 + 0.16 * air + jump + 0.32 * bAir + 0.025 * gig + 0.18 * jolt + 0.12 * poke * abs(sin(pk * 12))
         for th in thighs { th.eulerAngles.x = 0.95 * kick - 0.6 * bAir }
         let stomp = max(crossAmt, crossE) * max(0, sin(t * 9.5)) * 0.35      // cross: stomps one foot
         for (i, f) in feet.enumerated() { f.eulerAngles.x = STAND * stand - 0.9 * kick - (i == 1 ? stomp : 0) + 0.7 * bAir }
@@ -1329,6 +1336,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             e.eulerAngles.z = -0.12 * s - twitch * s + 0.25 * s * fl - 0.08 * s * max(cheer, happyE) - 0.75 * s * sadE - 0.35 * s * sleepE
                 - 0.1 * s * surpriseE - 0.08 * s * listenE + (i == 1 ? 1.0 * s * earFlop : 0) + 0.08 * s * loveE * sin(t * 2.2)
             e.eulerAngles.y = 0.35 * s * lookAround * sin(ie * 1.7 + CGFloat(i)) - 0.35 * s * max(listen, listenE)   // ears turn to listen
+            if earPoke > 0 { e.eulerAngles.z += 0.45 * s * earPoke * sin(pk * 34 + CGFloat(i)); e.eulerAngles.x -= 0.5 * earPoke }   // ears flick when touched
         }
 
         // EYES: blink, glance, and the right shape for each feeling
