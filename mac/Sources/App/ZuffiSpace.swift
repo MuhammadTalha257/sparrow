@@ -1075,7 +1075,7 @@ struct NotchHomeView: View {
 
     @ViewBuilder private var below: some View {
                 if let p = page {
-                    NotchScreen(page: p, go: { withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { page = $0 } },
+                    NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { page = target } },
                                 ask: { text in ask = text; askFocus = true })
                         .padding(.bottom, 12)
                         .transition(.move(edge: .top).combined(with: .opacity))
