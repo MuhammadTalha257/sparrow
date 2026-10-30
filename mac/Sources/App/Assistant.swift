@@ -862,7 +862,7 @@ enum Assistant {
             func say(_ reply: String) {
                 NotificationCenter.default.post(name: .petSay, object: reply)
                 NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
-                Task { await ZuffiData.shared.refresh() }
+                Task { await NotchData.shared.refresh() }
                 if NotchDesign.on { ZuffiAsk.shared.show(reply, title: text); return }   // one place: the notch
                 state.noteMessage = reply
                 NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
