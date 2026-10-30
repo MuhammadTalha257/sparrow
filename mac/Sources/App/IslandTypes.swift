@@ -112,6 +112,8 @@ enum IslandConst {
     static let homeShortH: CGFloat = 112
     static let homeTallH: CGFloat = 330
     nonisolated(unsafe) static var homeTallNow = false
+    static let homeBigH: CGFloat = 600
+    nonisolated(unsafe) static var homeBigNow = false
     static let compactCorner: CGFloat = 19
     /// Closed island when parked on the left / right edge of the screen.
     static let dockedCompact = CGSize(width: 50, height: 58)

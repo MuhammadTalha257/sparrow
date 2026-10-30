@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import WebKit
 import ApplicationServices
+import UniformTypeIdentifiers
 
 // =====================================================================
 // MARK: - The new Zuffi design (from the hand-drawn sketch)
@@ -1046,9 +1047,12 @@ struct NotchHomeView: View {
     @State private var askedQ = ""
     @State private var reply = ""
     @State private var thinking = false
+    /// The small screen under the bar: nil = closed, "grid" = all features, or one feature's page.
+    @State private var page: String?
+    @AppStorage("notchShowsAurora") private var showsAurora = true
 
     private let W: CGFloat = IslandConst.homeW
-    private var H: CGFloat { state.homeTall ? IslandConst.homeTallH : IslandConst.homeShortH }
+    private var H: CGFloat { state.homeBig ? IslandConst.homeBigH : state.homeTall ? IslandConst.homeTallH : IslandConst.homeShortH }
     private var agents: [TeamAgent] { [ZuffiTeam.manager] + team.hiredAgents.filter { $0.id != ZuffiTeam.manager.id } }
     private let pillFill = Color.white.opacity(0.10), pillLine = Color.white.opacity(0.22)
     private var listening: Bool { voice.isListening && (voice.pushToTalk || voice.status.hasPrefix("Listening")) }
@@ -1062,15 +1066,22 @@ struct NotchHomeView: View {
             // under the notch. Only when there's an answer does a card drop below it (and it folds back after).
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
+                    if showsAurora {
                     RealAuroraIcon(size: 62, mood: mood, speaking: voice.speaking || tutor.speaking)
                         .frame(width: 62, height: 62)
                         .overlay(Color.clear.contentShape(Rectangle())
                             .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
                             .help("Double-click Aurora to talk"))
                         .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
+                    }
                     if listening { listenStrip } else { askBar }
                 }
-                if answering { answerCard.transition(.move(edge: .top).combined(with: .opacity)) }
+                if let p = page {
+                    NotchScreen(page: p, go: { withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { page = $0 } },
+                                ask: { text in ask = text; askFocus = true })
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else if answering { answerCard.transition(.move(edge: .top).combined(with: .opacity)) }
             }
             .padding(.top, max(30, state.notchHeight + 2))
             .padding(.horizontal, 12)
@@ -1089,8 +1100,12 @@ struct NotchHomeView: View {
             waving = true      // she says hi with a little wave
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { MainActor.assumeIsolated { waving = false } }
         }
-        .onDisappear { shown = false; risen = false; state.homeTall = false }
-        .onChange(of: answering) { _, a in withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeTall = a } }
+        .onDisappear { shown = false; risen = false; state.homeTall = false; state.homeBig = false; page = nil }
+        .onChange(of: answering) { _, a in
+            if a { page = nil }                 // an answer takes the screen
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeTall = a }
+        }
+        .onChange(of: page) { _, p in withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeBig = p != nil } }
         // what you said shows straight away; Zuffi's answer (spoken or written) lands in the card
         .onChange(of: voice.lastHeard) { _, h in
             guard !h.isEmpty else { return }
@@ -1123,17 +1138,10 @@ struct NotchHomeView: View {
     // the slim ask bar: menu · text · model · mic
     private var askBar: some View {
         HStack(spacing: 8) {
-            Menu {
-                Button("Dashboard") { ZuffiHub.shared.show(.home) }
-                Button("Settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
-                Divider()
-                Button(PetController.shared.isShown ? "Hide Aurora on the desktop" : "Aurora on the desktop") { PetController.shared.toggle() }
-                Button(voice.micEnabled ? "Turn “Hey Zuffi” off" : "Turn “Hey Zuffi” on") { VoiceEngine.shared.setMic(!voice.micEnabled) }
-                Button(MeetingHelper.shared.on ? "Stop meeting helper" : "Meeting helper") { MeetingHelper.shared.toggle() }
-            } label: {
-                Image(systemName: "square.grid.2x2").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#C9C3DA"))
-            }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().help("Dashboard, settings and more")
+            Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { page = page == nil ? "grid" : nil } } label: {
+                Image(systemName: page == nil ? "square.grid.2x2" : "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#E9E5F2"))
+                    .frame(width: 30, height: 30).background(Circle().fill(page == nil ? Color.clear : Color(hex: "#B79CFF").opacity(0.25)))
+            }.buttonStyle(.plain).help("Everything Zuffi can do")
             TextField("", text: $ask, prompt: Text(answering ? "Ask a follow-up…" : "Ask Zuffi anything…").foregroundColor(.white.opacity(0.45)))
                 .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
                 .focused($askFocus).onSubmit { send() }
@@ -2232,6 +2240,7 @@ struct CompactAuroraTab: View {
     var body: some View {
         // her head close-up; the ear tips tuck behind the notch, the face shows below it
         let side = max(60, (height - notchH) * 1.9)
+        if UserDefaults.standard.object(forKey: "notchShowsAurora") as? Bool ?? true {
         Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face,
                      expression: RealAuroraIcon.feeling(AuroraFace.mood(voice, state)), speaking: voice.speaking || tutor.speaking)
             .frame(width: side, height: side)
@@ -2239,6 +2248,7 @@ struct CompactAuroraTab: View {
             .frame(width: width, height: height, alignment: .top)
             .clipped()
             .allowsHitTesting(false)
+        }
     }
 }
 
@@ -2278,5 +2288,301 @@ struct RealAuroraIcon: View {
         Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face, expression: Self.feeling(mood), speaking: speaking)
             .frame(width: size, height: size)
             .allowsHitTesting(false)
+    }
+}
+
+// MARK: - The small screen under the notch (like Taby): every feature as a tile, each opening right here
+
+/// Which apps you used and when — counted once a minute while you're at the Mac, kept only on this Mac.
+@MainActor
+final class AppUsage: ObservableObject {
+    static let shared = AppUsage()
+    struct Day: Codable { var apps: [String: Int] = [:]; var hours: [Int] = Array(repeating: 0, count: 24) }
+    @Published private(set) var days: [String: Day] = TeamStore.load("app-usage", [String: Day]())
+    private var timer: Timer?
+    static var on: Bool { UserDefaults.standard.object(forKey: "trackDay") as? Bool ?? true }
+    static func key(_ d: Date = Date()) -> String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: d) }
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in MainActor.assumeIsolated { AppUsage.shared.tick() } }
+    }
+    private func tick() {
+        guard Self.on else { return }
+        // only while you're really there (a key or the mouse in the last 2 minutes)
+        let idle = min(CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .mouseMoved),
+                       CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown))
+        guard idle < 120, let app = NSWorkspace.shared.frontmostApplication?.localizedName else { return }
+        let k = Self.key()
+        var d = days[k] ?? Day()
+        d.apps[app, default: 0] += 1
+        d.hours[Calendar.current.component(.hour, from: Date())] += 1
+        days[k] = d
+        if days.count > 14 { for old in days.keys.sorted().prefix(days.count - 14) { days[old] = nil } }
+        TeamStore.save("app-usage", days)
+    }
+    var today: Day { days[Self.key()] ?? Day() }
+    /// The two-to-eight hour window you're usually most active in (over the last two weeks).
+    var bestWindow: String? {
+        var h = Array(repeating: 0, count: 24)
+        for d in days.values { for i in 0..<24 { h[i] += d.hours[i] } }
+        guard h.reduce(0, +) > 30 else { return nil }
+        var best = (0, 0), bestSum = -1
+        for len in [4, 6, 8] { for s in 0...(24 - len) { let sum = h[s..<(s + len)].reduce(0, +) * 10 / len; if sum > bestSum { bestSum = sum; best = (s, s + len) } } }
+        return String(format: "%02d:00–%02d:00", best.0, best.1)
+    }
+    func clear() { days = [:]; TeamStore.save("app-usage", days) }
+}
+
+struct NotchScreen: View {
+    let page: String
+    let go: (String?) -> Void
+    let ask: (String) -> Void
+    @ObservedObject private var inbox = NotchInbox.shared
+    @ObservedObject private var log = ZuffiHelpLog.shared
+    @ObservedObject private var day = DashToday.shared
+    @ObservedObject private var archive = ChatArchive.shared
+    @ObservedObject private var usage = AppUsage.shared
+    @ObservedObject private var voice = VoiceEngine.shared
+    @ObservedObject private var meeting = MeetingHelper.shared
+    @ObservedObject private var state = AppState.shared
+    @ObservedObject private var study = StudyHub.shared
+    @AppStorage("notchShowsAurora") private var showsAurora = true
+    @AppStorage("trackDay") private var trackDay = true
+
+    struct Tile: Identifiable { let id: String; let name: String; let sub: String; let icon: String; let color: String }
+    static let tiles: [Tile] = [
+        Tile(id: "today", name: "Today", sub: "what needs you", icon: "sun.max.fill", color: "#B79CFF"),
+        Tile(id: "chat", name: "Chat", sub: "and past chats", icon: "bubble.left.and.bubble.right.fill", color: "#F2F1F6"),
+        Tile(id: "reminders", name: "Reminders", sub: "water, meetings", icon: "bell.fill", color: "#F5A524"),
+        Tile(id: "messages", name: "Messages", sub: "WhatsApp · Mail", icon: "ellipsis.message.fill", color: "#25D366"),
+        Tile(id: "day", name: "Your day", sub: "activity", icon: "chart.bar.fill", color: "#38BDF8"),
+        Tile(id: "screen", name: "My screen", sub: "explain · click", icon: "eye.fill", color: "#FF8FB1"),
+        Tile(id: "translate", name: "Translate", sub: "any language", icon: "character.bubble.fill", color: "#7CE0A3"),
+        Tile(id: "meeting", name: "Meeting helper", sub: "only you see it", icon: "person.2.wave.2.fill", color: "#C9B8FF"),
+        Tile(id: "notes", name: "Notes", sub: "find · write", icon: "note.text", color: "#FFD479"),
+        Tile(id: "files", name: "Files", sub: "read · convert", icon: "doc.fill", color: "#9FB4FF"),
+        Tile(id: "aurora", name: "Aurora", sub: "pet & look", icon: "hare.fill", color: "#FFFFFF"),
+        Tile(id: "settings", name: "Settings", sub: "voice · AI · mic", icon: "gearshape.fill", color: "#8E89A0"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if page == "grid" { grid } else {
+                HStack(spacing: 8) {
+                    Button { go("grid") } label: { Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#B9B4C6")).frame(width: 26, height: 26) }
+                        .buttonStyle(.plain).help("All features")
+                    Text(Self.tiles.first { $0.id == page }?.name ?? "").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Spacer()
+                }
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 8) { content }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color(hex: "#0F0E13")))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08)))
+        .task { await day.refresh() }
+    }
+
+    private var grid: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack { Text("Everything Zuffi can do").font(.system(size: 15, weight: .bold)).foregroundColor(.white); Spacer(); Text("tap one").font(.system(size: 11.5)).foregroundColor(soft) }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                ForEach(Self.tiles) { t in
+                    Button { go(t.id) } label: {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Image(systemName: t.icon).font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#0B0A0E"))
+                                .frame(width: 28, height: 28).background(RoundedRectangle(cornerRadius: 9).fill(Color(hex: t.color)))
+                            Spacer(minLength: 6)
+                            Text(t.name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                            Text(t.sub).font(.system(size: 10.5)).foregroundColor(soft).lineLimit(1)
+                        }
+                        .padding(11).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: "#16141B")))
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private let soft = Color(hex: "#9E99AC")
+    private func card<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 6, content: c)
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(hex: "#16141B")))
+    }
+    private func pill(_ t: String, primary: Bool = false, color: String = "#F2F1F6", _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(t).font(.system(size: 11.5, weight: .semibold)).foregroundColor(primary ? Color(hex: "#141218") : .white)
+                .padding(.horizontal, 12).frame(height: 28)
+                .background(Capsule().fill(primary ? Color(hex: color) : Color.white.opacity(0.09)))
+        }.buttonStyle(.plain)
+    }
+    private func row(_ a: String, _ b: String, tint: Color? = nil) -> some View {
+        HStack { Text(a).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(1); Spacer(); Text(b).font(.system(size: 11.5)).foregroundColor(tint ?? soft) }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: "#16141B")))
+    }
+    private func label(_ t: String) -> some View { Text(t).font(.system(size: 10.5, weight: .bold)).tracking(1).foregroundColor(Color(hex: "#6F6A80")).padding(.top, 4) }
+    private func toggle(_ t: String, _ on: Binding<Bool>) -> some View {
+        Toggle(isOn: on) { Text(t).font(.system(size: 12.5)).foregroundColor(.white) }.toggleStyle(.switch).controlSize(.small).tint(Color(hex: "#8E7CFF"))
+    }
+    private func noteRow(_ n: NotchInbox.Note) -> some View {
+        card {
+            Text(n.head).font(.system(size: 11, weight: .bold)).foregroundColor(n.action == "whatsapp" ? Color(hex: "#25D366") : Color(hex: "#7EA6FF")).lineLimit(1)
+            Text(n.body).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(2)
+            HStack(spacing: 6) {
+                pill("Reply", primary: true, color: n.action == "whatsapp" ? "#25D366" : "#7EA6FF") { Task { await ZuffiAsk.shared.act("reply", n.body) } }
+                pill("Explain") { Task { await ZuffiAsk.shared.act("explain", n.body) } }
+                pill("Read it") { VoiceEngine.shared.speak(n.head + ". " + n.body) }
+            }
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch page {
+        case "today":
+            let h = Calendar.current.component(.hour, from: Date())
+            let first = (ZuffiPlan.shared.profile["name"] ?? "").components(separatedBy: " ").first ?? ""
+            Text("\(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening")\(first.isEmpty ? "" : ", \(first)"). \(inbox.notes.count + day.events.count + day.tasks.count == 0 ? "Nothing needs you right now." : "Here's what needs you.")")
+                .font(.system(size: 13)).foregroundColor(Color(hex: "#CFCBD8"))
+            ForEach(inbox.notes.prefix(2)) { noteRow($0) }
+            ForEach(day.events.prefix(3)) { e in row(e.title, e.allDay ? "all day" : e.start.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#F5A524")) }
+            ForEach(day.tasks.prefix(3)) { r in row(r.title, r.due.map { $0.formatted(date: .omitted, time: .shortened) } ?? "to do") }
+            if !log.items.isEmpty {
+                label("RECENT HELP")
+                ForEach(log.items.prefix(3)) { i in card { Text("\(i.kind) · \(i.at.formatted(date: .omitted, time: .shortened))").font(.system(size: 10.5)).foregroundColor(soft); Text(i.text).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(2) } }
+            }
+        case "chat":
+            if state.chatHistory.isEmpty {
+                Text("Ask anything in the bar above, or hold Z and talk. Your chats are kept here.").font(.system(size: 12.5)).foregroundColor(soft)
+            } else {
+                ForEach(state.chatHistory.suffix(4)) { m in
+                    if m.role == .user {
+                        HStack { Spacer(minLength: 50); Text(m.content).font(.system(size: 12.5)).foregroundColor(Color(hex: "#141218")).padding(.horizontal, 11).padding(.vertical, 7).background(RoundedRectangle(cornerRadius: 13).fill(Color(hex: "#F2F1F6"))) }
+                    } else {
+                        Text(m.content).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).lineLimit(6).textSelection(.enabled)
+                    }
+                }
+                HStack(spacing: 6) { pill("Open full chat", primary: true) { ZuffiChat.shared.open() }; pill("New chat") { state.newChat() } }
+            }
+            if !archive.chats.isEmpty {
+                label("PAST CHATS")
+                ForEach(archive.chats.prefix(6)) { c in
+                    Button { ZuffiChat.shared.openPast(c) } label: { row(c.title, c.date.formatted(.dateTime.day().month(.abbreviated))) }.buttonStyle(.plain)
+                }
+            }
+        case "reminders":
+            HStack(spacing: 6) { pill("+ Remind me…", primary: true, color: "#F5A524") { ask("Remind me to ") }; pill("Water every 2 h") { ask("Remind me to drink water every 2 hours") } }
+            if day.tasks.isEmpty && day.events.isEmpty && study.deadlines.filter({ !$0.done }).isEmpty {
+                Text("No reminders yet. Type or say “remind me to call Ali at 5”.").font(.system(size: 12.5)).foregroundColor(soft)
+            }
+            ForEach(day.events.prefix(4)) { e in row(e.title, e.allDay ? "all day" : e.start.formatted(date: .omitted, time: .shortened), tint: Color(hex: "#F5A524")) }
+            ForEach(day.tasks.prefix(5)) { r in row(r.title, r.due.map { $0.formatted(date: .omitted, time: .shortened) } ?? "to do") }
+            ForEach(study.deadlines.filter { !$0.done }.sorted { $0.date < $1.date }.prefix(3)) { d in row(d.title, d.date.formatted(.dateTime.weekday(.wide)), tint: Color(hex: "#F5B963")) }
+            Text("When one is due, Zuffi tells you. Say “snooze” for 10 more minutes.").font(.system(size: 11)).foregroundColor(soft)
+        case "messages":
+            if inbox.notes.isEmpty { Text("No new messages. WhatsApp and email land here.").font(.system(size: 12.5)).foregroundColor(soft) }
+            ForEach(inbox.notes.prefix(6)) { noteRow($0) }
+        case "day":
+            let t = usage.today
+            let active = t.apps.values.reduce(0, +)
+            HStack(spacing: 8) {
+                card { Text(Self.hm(active)).font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("active today").font(.system(size: 10.5)).foregroundColor(soft) }
+                card { Text("\(log.today.count)").font(.system(size: 17, weight: .bold)).foregroundColor(.white); Text("helps today").font(.system(size: 10.5)).foregroundColor(soft) }
+            }
+            card {
+                Text(usage.bestWindow.map { "You're usually most active \($0)" } ?? "Zuffi learns when you work best over the next days.").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                HStack(alignment: .bottom, spacing: 3) {
+                    let mx = max(1, t.hours[7..<23].max() ?? 1)
+                    ForEach(7..<23, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 3).fill(Color(hex: "#B79CFF")).frame(height: max(3, 60 * CGFloat(t.hours[i]) / CGFloat(mx)))
+                    }
+                }.frame(height: 62)
+                HStack { Text("07:00"); Spacer(); Text("12:00"); Spacer(); Text("17:00"); Spacer(); Text("22:00") }.font(.system(size: 9.5)).foregroundColor(soft)
+            }
+            ForEach(Array(t.apps.sorted { $0.value > $1.value }.prefix(5).enumerated()), id: \.offset) { _, a in row(a.key, Self.hm(a.value)) }
+            toggle("Count my day (only on this Mac)", $trackDay)
+        case "screen":
+            card {
+                Text("Zuffi looks at your screen and explains it, or shows you where to click.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                HStack(spacing: 6) {
+                    pill("Explain my screen", primary: true, color: "#FF8FB1") { Task { await ZuffiAsk.shared.answer("Explain what's on my screen", about: ZuffiAsk.selectedText()) } }
+                    pill("Where do I click…") { ask("Where do I click to ") }
+                }
+            }
+            Text("Tip: select text first, then hold Z and ask about it.").font(.system(size: 11)).foregroundColor(soft)
+        case "translate":
+            card {
+                Text("Select text anywhere, then translate it here. Or hold Z and talk in your language.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                HStack(spacing: 6) {
+                    pill("Translate selection", primary: true, color: "#7CE0A3") {
+                        if let s = ZuffiAsk.selectedText(), !s.isEmpty { Task { await ZuffiAsk.shared.act("translate", s) } } else { ask("Translate: ") }
+                    }
+                    pill("Type to translate") { ask("Translate to English: ") }
+                }
+            }
+            Text("Answers come back in \(ZuffiAsk.shared.userLanguage).").font(.system(size: 11)).foregroundColor(soft)
+        case "meeting":
+            card {
+                Text("A small private window that follows the call: what they said, the same in your language, and a short answer you could give. It isn't shown when you share your screen.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                pill(meeting.on ? "Stop meeting helper" : "Start meeting helper", primary: true, color: "#C9B8FF") { meeting.toggle() }
+            }
+        case "notes":
+            card {
+                Text("Ask to find a note, or save one in a sentence. Works offline.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                HStack(spacing: 6) { pill("Save a note", primary: true, color: "#FFD479") { ask("Save a note: ") }; pill("Find a note") { ask("Find my note about ") } }
+            }
+        case "files":
+            card {
+                Text("Pick a PDF, Word file or a photo of notes. Zuffi reads it and sums it up.").font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                pill("Choose a file", primary: true, color: "#9FB4FF") { pickFile() }
+            }
+        case "aurora":
+            card {
+                toggle("Aurora on the desktop", Binding(get: { PetController.shared.isShown }, set: { $0 ? PetController.shared.show() : PetController.shared.hide() }))
+                toggle("She brings reminders to the front", Binding(get: { ZuffiWalk.petBringsReminders }, set: { UserDefaults.standard.set($0, forKey: "petReminders") }))
+            }
+            Text("Her outfit changes by itself for the season and special days.").font(.system(size: 11)).foregroundColor(soft)
+        case "settings":
+            label("WHAT THE NOTCH SHOWS")
+            HStack(spacing: 6) {
+                pill("Aurora", primary: showsAurora) { showsAurora = true }
+                pill("Just the text field", primary: !showsAurora) { showsAurora = false }
+            }
+            label("TALKING")
+            card {
+                toggle("“Hey Zuffi” (mic on)", Binding(get: { voice.micEnabled }, set: { VoiceEngine.shared.setMic($0) }))
+                toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
+                toggle("Her natural voice", Binding(get: { UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "neuralVoice") }))
+                HStack { Text("AI model").font(.system(size: 12.5)).foregroundColor(.white); Spacer(); ProviderMenu(state: state, tint: .white) }
+            }
+            label("MORE")
+            HStack(spacing: 6) {
+                pill("All settings") { UserDefaults.standard.set("Profile", forKey: "settingsTab"); ZuffiHub.shared.show(.settings) }
+                pill("Start fresh…") { ZuffiReset.confirmAndRun() }
+            }
+            Text("Drag the black notch to move it, or park it on the left or right edge.").font(.system(size: 11)).foregroundColor(soft)
+        default: EmptyView()
+        }
+    }
+
+    static func hm(_ m: Int) -> String { m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m" }
+
+    private func pickFile() {
+        let p = NSOpenPanel(); p.allowsMultipleSelection = false
+        p.allowedContentTypes = [.pdf, .image, .plainText, .rtf, .item]
+        guard p.runModal() == .OK, let u = p.url else { return }
+        Task { @MainActor in
+            BunnyFaceCenter.shared.show(.thinking, for: 10)
+            let text = await StudyText.extract(u)
+            let r = await AIService.shared.oneShot("Here is a file called \(u.lastPathComponent):\n\"\"\"\n\(text.prefix(12000))\n\"\"\"\nSum it up simply in \(ZuffiAsk.shared.userLanguage): what it is, the key points, and anything the reader must do (and by when).",
+                                                   system: "You are Zuffi, a friendly helper.\n" + ZuffiVoice.style) ?? ""
+            ZuffiAsk.shared.show(r.isEmpty ? ZuffiAsk.noBrainLine : r, title: "Summary of \(u.lastPathComponent)", speak: false)
+        }
     }
 }

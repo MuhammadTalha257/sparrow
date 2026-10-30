@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(true, forKey: "notchWide")
         // Offline brain ready before you need it (loaded once, then kept warm while you're offline).
         Task { try? await Task.sleep(nanoseconds: 8_000_000_000); await AIService.warmOllama() }
+        AppUsage.shared.start()      // "Your day" in the small screen (kept only on this Mac)
         Timer.scheduledTimer(withTimeInterval: 1200, repeats: true) { _ in if !NetStatus.shared.online { Task { await AIService.warmOllama() } } }
         // Warm up Keychain cache on main thread BEFORE any poller or view touches it
         _ = KeychainStore.shared

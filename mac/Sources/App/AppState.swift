@@ -123,6 +123,8 @@ final class AppState: ObservableObject {
     // Short note message (shown in NoteView)
     /// The open notch is showing an answer card (taller); otherwise it stays a short strip.
     @Published var homeTall = false { didSet { IslandConst.homeTallNow = homeTall } }
+    /// The small screen (all features) is open under the bar: the tallest notch.
+    @Published var homeBig = false { didSet { IslandConst.homeBigNow = homeBig } }
     @Published var noteMessage: String? = nil
     /// The note is a reminder / prayer alert: show Done and Later in the notch.
     @Published var noteIsAlert = false
