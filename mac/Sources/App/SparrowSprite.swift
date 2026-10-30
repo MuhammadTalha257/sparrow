@@ -866,6 +866,11 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     private var idleKind = 0, idleStart: CGFloat = -100, nextIdle: CGFloat = 5
     private var groom: CGFloat = 0, lookAround: CGFloat = 0, earFlop: CGFloat = 0, sniff: CGFloat = 0
     private var nose: SCNNode?, whiskers: [SCNNode] = [], eyeRims: [SCNNode] = []
+    // v2 face: eye sockets (glances), "^" lids, lashes, puffy cheeks, hearts, tongue
+    private var sockets: [SCNNode] = [], lids: [SCNNode] = [], lashes: [[SCNNode]] = [], cheeks: [SCNNode] = [], hearts: [SCNNode] = []
+    private var philtrum: SCNNode?, tongue: SCNNode?
+    private var laughE: CGFloat = 0, loveE: CGFloat = 0, listenE: CGFloat = 0
+    private var surpriseKick: CGFloat = 0, lastExpr: BunnyMood = .smile, exprAt: CGFloat = 0, lookX: CGFloat = 0, lookY: CGFloat = 0
     func setTalk(_ on: Bool, text: String, startedAt: Date) { lock.lock(); talking = on; talkText = text; talkStart = startedAt; lock.unlock() }
     /// How open the mouth is for the letter being said right now (vowels open, m/b/p closed).
     static func mouthOpen(_ text: String, since: Double) -> CGFloat {
@@ -1032,48 +1037,68 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         neck.position = SCNVector3(0, 0.36, 0.22); chest.addChildNode(neck)
         head.position = SCNVector3(0, 0.22, 0.06); head.scale = SCNVector3(1.24, 1.24, 1.24); neck.addChildNode(head)
         head.addChildNode(fur(0.35, 0.33, 0.37, cream, len: 0.11, density: 70))
-        for s in [-1.0, 1.0] as [CGFloat] { head.addChildNode(fur(0.19, 0.15, 0.16, bib, len: 0.09, at: SCNVector3(0.15 * s, -0.12, 0.2))) }   // chubby cheeks
+        for s in [-1.0, 1.0] as [CGFloat] {   // chubby cheeks (they puff up when she's cross)
+            let c = fur(0.19, 0.15, 0.16, bib, len: 0.09, at: SCNVector3(0.15 * s, -0.12, 0.2)); head.addChildNode(c); cheeks.append(c)
+        }
         head.addChildNode(fur(0.13, 0.1, 0.1, bib, len: 0.04, at: SCNVector3(0, -0.11, 0.3)))
+        head.addChildNode(fur(0.12, 0.08, 0.1, .white, len: 0.08, density: 36, at: SCNVector3(0, 0.29, 0.14)))   // a fluffy tuft on top
         for s in [-1.0, 1.0] as [CGFloat] {
             let e = SCNNode(); e.position = SCNVector3(0.12 * s, 0.26, -0.06); e.eulerAngles.z = -0.1 * s; head.addChildNode(e); ears.append(e)
             e.addChildNode(fur(0.11, 0.4, 0.05, cream, len: 0.06, density: 40, at: SCNVector3(0, 0.4, 0)))
             // inside of the ear: thin, warm pink, lit from behind like a real rabbit's
             let inner = SCNMaterial(); inner.lightingModel = .lambert
-            inner.diffuse.contents = Self.rgb(238, 168, 156); inner.emission.contents = Self.rgb(120, 52, 44)
+            inner.diffuse.contents = Self.rgb(240, 175, 164); inner.emission.contents = Self.rgb(122, 58, 50)
             let inEar = SCNNode(geometry: SCNSphere(radius: 1)); inEar.geometry?.materials = [inner]
             inEar.scale = SCNVector3(0.066, 0.33, 0.022); inEar.position = SCNVector3(0, 0.39, 0.04)
             e.addChildNode(inEar)
         }
-        // face, on top of the fur
+        // face, on top of the fur. Each eye sits in a socket so the whole eye (rim, lashes, sparkles) glances together.
         let eyeM = SCNMaterial(); eyeM.lightingModel = .physicallyBased
-        eyeM.diffuse.contents = Self.rgb(16, 10, 9); eyeM.roughness.contents = 0.04; eyeM.clearCoat.contents = 1; eyeM.clearCoatRoughness.contents = 0.02
+        eyeM.diffuse.contents = Self.rgb(18, 11, 10); eyeM.roughness.contents = 0.04; eyeM.clearCoat.contents = 1; eyeM.clearCoatRoughness.contents = 0.02
+        let ink = Self.rgb(42, 27, 24)
         for s in [-1.0, 1.0] as [CGFloat] {
-            // real rabbit eyes: dark, glossy, on the sides of the head, with a thin pink rim
-            let rim = faceBit(SCNSphere(radius: 1), flat(Self.rgb(226, 150, 150)), SCNVector3(0.19 * s, 0.03, 0.35), scale: SCNVector3(0.098, 0.106, 0.03))
-            rim.eulerAngles.y = 0.5 * s; rim.renderingOrder = 98
-            head.addChildNode(rim); faceBits.append(rim); eyeRims.append(rim)
-            let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3(0.19 * s, 0.03, 0.36), scale: SCNVector3(0.086, 0.096, 0.035))   // big, cute eyes
-            e.eulerAngles.y = 0.5 * s
-            let hl = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(0.3 * s, 0.4, 0.9), scale: SCNVector3(0.26, 0.23, 0.2))
-            let hl2 = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(-0.35 * s, -0.4, 0.9), scale: SCNVector3(0.11, 0.1, 0.1))
-            e.addChildNode(hl); e.addChildNode(hl2)
-            let iris = faceBit(SCNSphere(radius: 1), flat(Self.rgb(58, 40, 36)), SCNVector3(0, -0.1, -0.15), scale: SCNVector3(1.04, 1.03, 0.6))
-            iris.renderingOrder = 99
-            e.addChildNode(iris)
-            head.addChildNode(e); eyes.append(e); faceBits.append(e)
-            let blush = faceBit(SCNSphere(radius: 1), flat(NSColor(calibratedRed: 0.96, green: 0.66, blue: 0.7, alpha: 0.55)), SCNVector3(0.22 * s, -0.11, 0.37), scale: SCNVector3(0.06, 0.035, 0.02))
-            head.addChildNode(blush); faceBits.append(blush); blushes.append(blush)
-            let tear = faceBit(SCNSphere(radius: 1), flat(NSColor(calibratedRed: 0.55, green: 0.78, blue: 0.95, alpha: 0.95)), SCNVector3(0.2 * s, -0.08, 0.41), scale: SCNVector3(0.018, 0.028, 0.012))
-            tear.opacity = 0; head.addChildNode(tear); tears.append(tear)
-            let brow = faceBit(SCNCapsule(capRadius: 0.012, height: 0.12), flat(Self.rgb(150, 110, 100)), SCNVector3(0.16 * s, 0.14, 0.4))
-            brow.eulerAngles.z = .pi / 2 + 0.45 * s; brow.opacity = 0
+            let so = SCNNode(); so.position = SCNVector3(0.19 * s, 0.035, 0.36); so.eulerAngles.y = 0.5 * s; head.addChildNode(so); sockets.append(so)
+            let rim = faceBit(SCNSphere(radius: 1), flat(Self.rgb(226, 154, 152)), SCNVector3(0, 0, -0.01), scale: SCNVector3(0.102, 0.112, 0.03))
+            rim.renderingOrder = 98; so.addChildNode(rim); eyeRims.append(rim)
+            let e = faceBit(SCNSphere(radius: 1), eyeM.copy() as! SCNMaterial, SCNVector3Zero, scale: SCNVector3(0.092, 0.104, 0.035))   // big, sparkly eyes
+            e.renderingOrder = 99
+            // warm brown glow low in the eye (reads as an iris), a big sparkle, a small one and a tiny star
+            let glow = faceBit(SCNSphere(radius: 1), flat(NSColor(calibratedRed: 107 / 255, green: 64 / 255, blue: 54 / 255, alpha: 0.75)), SCNVector3(0, -0.5, 0.7), scale: SCNVector3(0.5, 0.26, 0.1))
+            let hl = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(0.3 * s, 0.38, 0.9), scale: SCNVector3(0.3, 0.26, 0.2))
+            let hl2 = faceBit(SCNSphere(radius: 1), flat(.white), SCNVector3(-0.32 * s, -0.42, 0.9), scale: SCNVector3(0.12, 0.11, 0.1))
+            let hl3 = faceBit(SCNSphere(radius: 1), flat(NSColor(white: 1, alpha: 0.9)), SCNVector3(-0.05 * s, 0.5, 0.92), scale: SCNVector3(0.06, 0.06, 0.06))
+            glow.renderingOrder = 100; for h in [hl, hl2, hl3] { h.renderingOrder = 101 }
+            for c in [glow, hl, hl2, hl3] { e.addChildNode(c) }
+            so.addChildNode(e); eyes.append(e)
+            // "^" closed happy eye, shown when she laughs (and on the winking eye)
+            let lid = faceBit(Self.arc(r: 0.055, w: 0.016, spread: 1.05), flat(ink), SCNVector3(0, -0.035, 0.02))
+            lid.renderingOrder = 102; lid.opacity = 0; so.addChildNode(lid); lids.append(lid)
+            // two little lashes at the outer corner
+            var lg: [SCNNode] = []
+            for (k, ang) in [(0, 0.75), (1, 0.35)] as [(Int, CGFloat)] {
+                let l = faceBit(SCNCapsule(capRadius: 0.0055, height: 0.041), flat(ink), SCNVector3(0.072 * s, 0.07 - CGFloat(k) * 0.022, 0.01))
+                l.eulerAngles.z = -ang * s; so.addChildNode(l); lg.append(l)
+            }
+            lashes.append(lg)
+            let blush = faceBit(SCNSphere(radius: 1), flat(Self.rgb(247, 161, 176)), SCNVector3(0.225 * s, -0.115, 0.37), scale: SCNVector3(0.068, 0.04, 0.02))
+            blush.renderingOrder = 97; head.addChildNode(blush); blushes.append(blush)
+            let tear = faceBit(SCNSphere(radius: 1), flat(Self.rgb(142, 200, 242)), SCNVector3(0.2 * s, -0.08, 0.41), scale: SCNVector3(0.018, 0.028, 0.012))
+            tear.renderingOrder = 103; tear.opacity = 0; head.addChildNode(tear); tears.append(tear)
+            let brow = faceBit(SCNCapsule(capRadius: 0.012, height: 0.124), flat(Self.rgb(169, 139, 131)), SCNVector3(0.16 * s, 0.155, 0.4))
+            brow.eulerAngles.z = .pi / 2; brow.opacity = 0
             head.addChildNode(brow); brows.append(brow)
         }
-        let noseM = SCNMaterial(); noseM.lightingModel = .physicallyBased; noseM.diffuse.contents = Self.rgb(232, 160, 165); noseM.roughness.contents = 0.35
-        let nose = faceBit(SCNSphere(radius: 1), noseM, SCNVector3(0, -0.06, 0.45), scale: SCNVector3(0.03, 0.02, 0.02))
+        let noseM = SCNMaterial(); noseM.lightingModel = .physicallyBased; noseM.diffuse.contents = Self.rgb(235, 160, 168); noseM.roughness.contents = 0.35
+        let nose = faceBit(SCNSphere(radius: 1), noseM, SCNVector3(0, -0.06, 0.45), scale: SCNVector3(0.032, 0.022, 0.02))
+        nose.renderingOrder = 101
+        let noseHl = faceBit(SCNSphere(radius: 1), flat(NSColor(white: 1, alpha: 0.7)), SCNVector3(-0.25, 0.35, 0.8), scale: SCNVector3(0.3, 0.22, 0.2))
+        noseHl.renderingOrder = 102; nose.addChildNode(noseHl)
         head.addChildNode(nose); faceBits.append(nose); self.nose = nose
+        // the little line from nose to mouth (the bunny "Y")
+        let ph = faceBit(SCNCapsule(capRadius: 0.005, height: 0.04), flat(Self.rgb(176, 124, 115)), SCNVector3(0, -0.088, 0.44))
+        head.addChildNode(ph); philtrum = ph
         // whiskers: thin, pale, three each side
-        let wm = SCNMaterial(); wm.lightingModel = .constant; wm.diffuse.contents = NSColor(white: 0.92, alpha: 0.8)
+        let wm = SCNMaterial(); wm.lightingModel = .constant; wm.diffuse.contents = NSColor(white: 0.93, alpha: 0.8)
         for s in [-1.0, 1.0] as [CGFloat] {
             for k in 0..<3 {
                 let w = SCNNode(geometry: SCNCylinder(radius: 0.0035, height: 0.42)); w.geometry?.materials = [wm]
@@ -1083,13 +1108,23 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             }
         }
         for s in [-1.0, 1.0] as [CGFloat] {
-            let m = faceBit(SCNCapsule(capRadius: 0.006, height: 0.05), flat(Self.rgb(155, 111, 102)), SCNVector3(0.022 * s, -0.112, 0.425))
+            let m = faceBit(SCNCapsule(capRadius: 0.0055, height: 0.056), flat(Self.rgb(155, 111, 102)), SCNVector3(0.022 * s, -0.112, 0.425))
             m.eulerAngles.z = .pi / 2 - 0.45 * s
-            head.addChildNode(m); faceBits.append(m)
+            head.addChildNode(m)
             if s < 0 { mouthL = m } else { mouthR = m }
         }
-        let mo = faceBit(SCNSphere(radius: 1), flat(Self.rgb(201, 84, 95)), SCNVector3(0, -0.125, 0.425), scale: SCNVector3(0.03, 0.025, 0.01))
+        let mo = faceBit(SCNSphere(radius: 1), flat(Self.rgb(184, 66, 79)), SCNVector3(0, -0.125, 0.425), scale: SCNVector3(0.03, 0.025, 0.01))
         mo.opacity = 0; head.addChildNode(mo); mouthO = mo
+        let tg = faceBit(SCNSphere(radius: 1), flat(Self.rgb(244, 140, 156)), SCNVector3(0, -0.138, 0.43), scale: SCNVector3(0.018, 0.011, 0.01))
+        tg.renderingOrder = 101; tg.opacity = 0; head.addChildNode(tg); tongue = tg
+        // little hearts that float up when she feels love
+        let heartM = SCNMaterial(); heartM.lightingModel = .constant; heartM.diffuse.contents = Self.heartImage()
+        heartM.readsFromDepthBuffer = false; heartM.writesToDepthBuffer = false; heartM.isDoubleSided = true
+        for _ in 0..<3 {
+            let p = SCNPlane(width: 0.16, height: 0.16); p.materials = [heartM]
+            let h = SCNNode(geometry: p); h.renderingOrder = 110; h.opacity = 0; h.constraints = [SCNBillboardConstraint()]
+            scene.rootNode.addChildNode(h); hearts.append(h)
+        }
         dressUp(ZuffiSeasons.activeId())
     }
 
@@ -1125,6 +1160,33 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         }
     }
 
+    /// "^" happy-eye arc, built big and scaled down so the curve stays smooth.
+    private static func arc(r: CGFloat, w: CGFloat, spread: CGFloat) -> SCNGeometry {
+        let k: CGFloat = 100
+        let a0 = 90 - spread * 180 / .pi, a1 = 90 + spread * 180 / .pi
+        let p = NSBezierPath()
+        p.appendArc(withCenter: .zero, radius: (r + w) * k, startAngle: a0, endAngle: a1, clockwise: false)
+        p.appendArc(withCenter: .zero, radius: r * k, startAngle: a1, endAngle: a0, clockwise: true)
+        p.close(); p.flatness = 0.3
+        let s = SCNShape(path: p, extrusionDepth: 0.2)
+        let holder = SCNNode(geometry: s); holder.scale = SCNVector3(1 / k, 1 / k, 1 / k)
+        return holder.flattenedClone().geometry ?? s
+    }
+    private static func heartImage() -> NSImage {
+        let img = NSImage(size: NSSize(width: 128, height: 128)); img.lockFocus()
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: 64, y: 16))
+        p.curve(to: NSPoint(x: 38, y: 106), controlPoint1: NSPoint(x: 10, y: 56), controlPoint2: NSPoint(x: 8, y: 98))
+        p.curve(to: NSPoint(x: 64, y: 88), controlPoint1: NSPoint(x: 54, y: 110), controlPoint2: NSPoint(x: 62, y: 98))
+        p.curve(to: NSPoint(x: 90, y: 106), controlPoint1: NSPoint(x: 66, y: 98), controlPoint2: NSPoint(x: 74, y: 110))
+        p.curve(to: NSPoint(x: 64, y: 16), controlPoint1: NSPoint(x: 120, y: 98), controlPoint2: NSPoint(x: 118, y: 56))
+        p.close()
+        NSColor(calibratedRed: 1, green: 0.5, blue: 0.63, alpha: 1).setFill(); p.fill()
+        NSColor(white: 1, alpha: 0.55).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 33, y: 80, width: 18, height: 12)).fill()
+        img.unlockFocus(); return img
+    }
+
     // MARK: moving (every frame)
 
     func renderer(_ renderer: any SCNSceneRenderer, updateAtTime time: TimeInterval) {
@@ -1133,6 +1195,23 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         if framing == .face { for b in bodyParts where !b.isHidden { b.isHidden = true } }
         let dt = CGFloat(last == 0 ? 1.0 / 60 : min(0.05, time - last)); last = time; t += dt
         func ease(_ v: inout CGFloat, _ to: CGFloat, _ rate: CGFloat = 5) { v += (to - v) * (1 - exp(-dt * rate)) }
+        func clamp(_ v: CGFloat, _ a: CGFloat = 0, _ b: CGFloat = 1) -> CGFloat { max(a, min(b, v)) }
+
+        // feelings: each one eases in and out on its own
+        if ex != lastExpr { lastExpr = ex; exprAt = t; if ex == .surprised { surpriseKick = 1 } }
+        let since = t - exprAt
+        ease(&happyE, ex == .happy ? 1 : 0, 7)
+        ease(&laughE, ex == .laugh ? 1 : 0, 9)
+        ease(&loveE, ex == .love ? 1 : 0, 6)
+        ease(&crossE, ex == .cross ? 1 : 0, 8)
+        ease(&sadE, ex == .sad ? 1 : 0, 5)
+        ease(&surpriseE, ex == .surprised ? 1 : 0, 10)
+        ease(&sleepE, ex == .sleepy ? 1 : 0, 3.5)
+        ease(&winkE, ex == .wink ? 1 : 0, 10)
+        ease(&thinkE, [.thinking, .busy].contains(ex) ? 1 : 0, 6)
+        ease(&listenE, ex == .listening ? 1 : 0, 6)
+        surpriseKick = max(0, surpriseKick - dt * 2.2)
+        let joy = max(happyE, laughE, loveE)
 
         let hopping = p == .hop
         ease(&hopAmt, hopping ? 1 : 0, 6)
@@ -1141,7 +1220,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         ease(&crossAmt, p == .cross ? 1 : 0, 6)
         ease(&listen, p == .listen ? 1 : 0, 4)
         ease(&waveAmt, p == .wave ? 1 : 0, 7)
-        let wantStand: CGFloat = hopping ? 0 : p == .hold ? 1 : p == .happy ? 0.85 : p == .wave ? 0.78 : 0.62
+        let wantStand: CGFloat = hopping ? 0 : p == .hold ? 1 : p == .happy ? 0.85 : p == .wave ? 0.78 : 0.62 + 0.1 * surpriseE + 0.08 * listenE
         ease(&stand, wantStand, 3.5)
         ease(&turn, hopping ? (left ? -.pi / 2 : .pi / 2) : 0, 6)
         root.eulerAngles.y = turn
@@ -1153,23 +1232,37 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         let air: CGFloat = (pp < 0.55 ? sin(.pi * pp / 0.55) : 0) * hopAmt
         let landSquash: CGFloat = (pp >= 0.55 && pp < 0.78 ? sin(.pi * (pp - 0.55) / 0.23) : 0) * hopAmt
         hips.scale = SCNVector3(1, 1 - 0.08 * air - 0.1 * landSquash, 1 + 0.15 * air + 0.05 * landSquash)
-        let hop = air
         let kick = sin(ph) * hopAmt
-        let STAND: CGFloat = 1.12
-        // happy: little jumps
-        let jump = cheer * max(0, sin(t * 9)) * 0.22
-        stance.eulerAngles.x = -STAND * stand - 0.18 * kick
-        stance.position.y = 0.06 + 0.16 * hop + jump
-        for th in thighs { th.eulerAngles.x = 0.95 * kick }
-        // cross: stomps one foot
-        let stomp = crossAmt * max(0, sin(t * 10)) * 0.35
-        for (i, f) in feet.enumerated() { f.eulerAngles.x = STAND * stand - 0.9 * kick - (i == 1 ? stomp : 0) }
+        let still = p == .sit && !hopping
+        // BINKY (happy): a real bunny's joy jump — up, a twist in the air, a kick — every 2.6 s
+        let bp = since.truncatingRemainder(dividingBy: 2.6) / 0.62
+        let binky = still && happyE > 0.5 && bp < 1
+        let bAir: CGFloat = binky ? sin(.pi * bp) * happyE : 0
+        let bTwist: CGFloat = binky ? sin(.pi * 2 * bp) * happyE : 0
+        // GIGGLE (laugh): quick little shakes
+        let gig = laughE * abs(sin(t * 17))
+        // SURPRISE: a jolt up the moment it happens
+        let jolt: CGFloat = surpriseKick > 0 ? sin((1 - surpriseKick) * .pi) * 0.5 : 0
+        // SLEEPY: a big yawn every 5 s, slow nods in between
+        let yp = since.truncatingRemainder(dividingBy: 5) / 1.4
+        let yawn: CGFloat = (sleepE > 0.5 && yp < 1) ? sin(.pi * yp) * sleepE : 0
+        let nod = sleepE * (1 - yawn) * (0.5 + 0.5 * sin(t * 1.3))
 
-        let br = 1 + 0.018 * sin(t * 2.4)
+        let STAND: CGFloat = 1.12
+        let jump = cheer * max(0, sin(t * 9)) * 0.22          // happy pose: little jumps
+        stance.eulerAngles.x = -STAND * stand - 0.18 * kick
+        stance.eulerAngles.y = 0.55 * bTwist
+        stance.eulerAngles.z = 0.12 * bTwist
+        stance.position.y = 0.06 + 0.16 * air + jump + 0.32 * bAir + 0.025 * gig + 0.18 * jolt
+        for th in thighs { th.eulerAngles.x = 0.95 * kick - 0.6 * bAir }
+        let stomp = max(crossAmt, crossE) * max(0, sin(t * 9.5)) * 0.35      // cross: stomps one foot
+        for (i, f) in feet.enumerated() { f.eulerAngles.x = STAND * stand - 0.9 * kick - (i == 1 ? stomp : 0) + 0.7 * bAir }
+        let slow = max(sadE, sleepE)
+        let br = 1 + (0.018 + 0.03 * sadE + 0.02 * sleepE) * sin(t * (2.4 - 1.0 * slow))     // deeper, slower breaths when sad or sleepy
         chest.scale = SCNVector3(br, br, br)
 
         // real-rabbit habits while she sits quietly: washes her face, looks around, flops an ear, sniffs
-        let calm = p == .sit && !talkOn && (ex == .smile || ex == .wink)
+        let calm = still && !talkOn && ex == .smile
         if calm && t > nextIdle {
             idleKind = (idleKind + 1 + Int(t * 7) % 3) % 4; idleStart = t
             nextIdle = t + 7 + CGFloat(Int(t * 13) % 6)
@@ -1185,106 +1278,145 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         ease(&talkAmt, talkOn ? 1 : 0, 6)
         if let n = nose {
             let tw: CGFloat = (sniff > 0.1 || sin(t * 0.7) > 0.93) ? 0.3 * max(0, sin(t * 22)) : 0
-            n.scale = SCNVector3(0.03, 0.02 * (1 + tw), 0.02)
+            n.scale = SCNVector3(0.032, 0.022 * (1 + tw), 0.02)
         }
 
-        // arms: hop swing / folded when sitting / held out for the card / up when cheering
-        let swing = -1.0 * sin(ph + .pi + 0.6) * hopAmt      // front paws reach forward in the air, land first
+        // ARMS: hop swing / folded when sitting / card / cheering — and each feeling has its own paws
+        let swing = -1.0 * sin(ph + .pi + 0.6) * hopAmt
         let sitArms: CGFloat = 0.9 * (1 - hopAmt) * (1 - holdAmt) * (1 - cheer)
         let holdArms: CGFloat = -0.16 * holdAmt
         let cheerArms: CGFloat = (-2.04 + 0.25 * sin(t * 12)) * cheer
+        let feel = still ? CGFloat(1) : 0
         for (i, a) in arms.enumerated() {
             let s: CGFloat = i == 0 ? -1 : 1
-            a.eulerAngles.x = swing + sitArms + holdArms + cheerArms
-                + groom * (-1.75 - sitArms + 0.22 * sin(t * 13 + CGFloat(i)))                 // paws up to wash her face
-                + talkAmt * (-0.45 - 0.5 * max(0, sin(t * 3.4 + CGFloat(i) * 1.7)))            // explaining with her paws
-            a.eulerAngles.z = -0.15 * s * sitArms / 0.9 + 0.35 * s * cheer - 0.35 * s * groom
+            var x = swing + sitArms + holdArms + cheerArms
+            var z = -0.15 * s * sitArms / 0.9 + 0.35 * s * cheer
+            x += groom * (-1.75 - sitArms + 0.22 * sin(t * 13 + CGFloat(i))); z += -0.35 * s * groom       // washing her face
+            x += talkAmt * (-0.45 - 0.5 * max(0, sin(t * 3.4 + CGFloat(i) * 1.7)))                          // explaining with her paws
+            x += feel * laughE * (-1.55 - sitArms + 0.12 * sin(t * 17 + CGFloat(i))); z += feel * laughE * -0.38 * s   // paws to her mouth, giggling
+            x += feel * loveE * (-0.75 - sitArms * 0.4); z += feel * loveE * -0.42 * s                     // paws together at her chest
+            x += feel * crossE * (-1.05 - sitArms * 0.5); z += feel * crossE * -0.75 * s                   // arms crossed
+            x += feel * surpriseE * (-0.9 + 0.2 * jolt); z += feel * surpriseE * 0.55 * s                  // paws out: "oh!"
+            x += bAir * -1.6; z += bAir * 0.4 * s                                                           // paws fly up in the binky
+            if i == 1 { x += feel * thinkE * (-1.85 - sitArms * 0.6); z += feel * thinkE * -0.42 }          // right paw to her chin
+            x += feel * yawn * (-2.3 - sitArms * 0.5); z += feel * yawn * 0.35 * s                         // a big stretch with the yawn
+            x += feel * sadE * 0.25                                                                         // paws hang
             if i == 1 && waveAmt > 0.01 {
-                // hello: the right paw goes up and waves side to side
-                a.eulerAngles.x = a.eulerAngles.x * (1 - waveAmt) + (-2.4) * waveAmt
-                a.eulerAngles.z = a.eulerAngles.z * (1 - waveAmt) + (0.45 + 0.4 * sin(t * 9)) * waveAmt
+                x = x * (1 - waveAmt) + (-2.4) * waveAmt
+                z = z * (1 - waveAmt) + (0.45 + 0.4 * sin(t * 9)) * waveAmt
             }
+            a.eulerAngles.x = x; a.eulerAngles.z = z
         }
 
-        // head: level face when standing, follows the mouse, tilts when listening, shakes when cross
+        // HEAD: level face when standing, follows the mouse, and moves with the feeling
         ease(&yaw, hopping ? 0 : ty, 5); ease(&pitch, hopping ? 0 : tp, 5)
         neck.eulerAngles.x = STAND * stand * 0.85 + 0.08 * sin(ph + 1) * hopAmt + pitch + 0.32 * groom + 0.06 * talkAmt * sin(t * 5.2) - 0.1 * sniff
-        head.eulerAngles = SCNVector3(0.12 * sadE + 0.1 * sleepE - 0.08 * thinkE + 0.1 * groom * sin(t * 6),
-                                      yaw + crossAmt * 0.12 * sin(t * 14) + 0.85 * lookAround * sin(ie * 1.7),
-                                      0.2 * max(listen, thinkE) + 0.03 * sin(t * 0.9) + 0.05 * talkAmt * sin(t * 2.3))
+            + 0.12 * sadE + 0.28 * nod - 0.18 * yawn - 0.1 * laughE - 0.05 * gig + 0.08 * listenE - 0.1 * surpriseE
+        head.eulerAngles = SCNVector3(
+            0.05 * sadE - 0.1 * thinkE + 0.1 * groom * sin(t * 6) - 0.06 * surpriseE - 0.05 * sin(t * 17) * laughE,
+            yaw + max(crossAmt, crossE) * 0.11 * sin(t * 13) + 0.85 * lookAround * sin(ie * 1.7) - 0.15 * thinkE,
+            0.2 * max(listen, listenE, thinkE) + 0.03 * sin(t * 0.9) + 0.05 * talkAmt * sin(t * 2.3) + 0.16 * loveE * sin(t * 2.2) + 0.12 * winkE - 0.08 * sadE)
+        for c in cheeks { let k = 1 + 0.14 * crossE; c.scale = SCNVector3(0.19 * k, 0.15 * k, 0.16 * k) }     // cheeks puff when cross
 
-        // ears: lag behind the hop, perk up when happy, flatten back when cross
+        // EARS: lag behind the hop, perk up when surprised or listening, flatten when cross, droop when sad
         for (i, e) in ears.enumerated() {
             let s: CGFloat = i == 0 ? -1 : 1
             let twitch: CGFloat = sin(t * 0.9 + CGFloat(i) * 2) > 0.97 ? 0.25 : 0
-            let flat = max(crossAmt, crossE)
-            e.eulerAngles.x = -0.25 * kick + 0.04 * sin(t * 3 + CGFloat(i)) - 0.15 * stand - 1.1 * flat - 0.6 * sadE - 0.5 * sleepE + 0.12 * surpriseE
+            let fl = max(crossAmt, crossE)
+            e.eulerAngles.x = -0.25 * kick + 0.04 * sin(t * 3 + CGFloat(i)) - 0.15 * stand - 0.75 * fl - 0.45 * sadE - 0.55 * sleepE + 0.28 * surpriseE + 0.22 * listenE
                 - 0.5 * groom - (i == 0 ? 0.35 * earFlop : 0) + 0.06 * talkAmt * sin(t * 5.2 + CGFloat(i))
-                - 0.55 * air + 0.25 * landSquash      // ears stream back in the air, flop forward on landing
-            e.eulerAngles.z = -0.12 * s - twitch * s + 0.25 * s * flat - 0.08 * s * cheer + 0.5 * s * sadE + 0.25 * s * sleepE
-                + (i == 1 ? 1.0 * s * earFlop : 0)
-            e.eulerAngles.y = 0.35 * s * lookAround * sin(ie * 1.7 + CGFloat(i))      // ears turn to listen, like a real rabbit
+                - 0.55 * air + 0.25 * landSquash - 0.9 * bAir + (i == 0 ? -0.45 * thinkE : 0) + 0.1 * laughE * sin(t * 17 + CGFloat(i))
+            e.eulerAngles.z = -0.12 * s - twitch * s + 0.25 * s * fl - 0.08 * s * max(cheer, happyE) - 0.75 * s * sadE - 0.35 * s * sleepE
+                - 0.1 * s * surpriseE - 0.08 * s * listenE + (i == 1 ? 1.0 * s * earFlop : 0) + 0.08 * s * loveE * sin(t * 2.2)
+            e.eulerAngles.y = 0.35 * s * lookAround * sin(ie * 1.7 + CGFloat(i)) - 0.35 * s * max(listen, listenE)   // ears turn to listen
         }
 
-        // eyes: blink, squint when happy, narrow when cross
+        // EYES: blink, glance, and the right shape for each feeling
         if t > nextBlink + 0.16 { nextBlink = t + 2.5 + CGFloat((sin(t * 3.7) + 1) * 1.5) }
-        let blink: CGFloat = (t > nextBlink && t < nextBlink + 0.16) ? 0.12 : 1
-        // feelings (notch face and pet)
-        ease(&happyE, [.happy, .laugh, .love].contains(ex) ? 1 : 0, 8)
-        ease(&crossE, ex == .cross ? 1 : 0, 8)
-        ease(&sadE, ex == .sad ? 1 : 0, 6)
-        ease(&surpriseE, [.surprised, .listening].contains(ex) ? 1 : 0, 8)
-        ease(&sleepE, ex == .sleepy ? 1 : 0, 4)
-        ease(&winkE, ex == .wink ? 1 : 0, 10)
-        ease(&thinkE, [.thinking, .busy].contains(ex) ? 1 : 0, 6)
-        ease(&openE, [.laugh, .surprised].contains(ex) ? 1 : 0, 10)
+        let blink: CGFloat = (t > nextBlink && t < nextBlink + 0.16) ? 0.1 : 1
+        ease(&lookX, 0.012 * thinkE + 0.006 * sin(t * 0.37) * (1 - thinkE), 4)          // eyes drift; look up and aside when thinking
+        ease(&lookY, 0.012 * thinkE - 0.012 * sadE - 0.008 * loveE, 4)
         let squint = max(happyE, cheer)
+        var eyeOpen: [CGFloat] = []
         for (i, e) in eyes.enumerated() {
-            var y = 0.096 * blink * (1 - 0.45 * squint) * (1 - 0.3 * max(crossAmt, crossE)) * (1 - 0.88 * sleepE) * (1 + 0.18 * surpriseE)
-            if i == 1 { y *= (1 - 0.85 * winkE) }
+            let s: CGFloat = i == 0 ? -1 : 1
+            var y = 0.104 * blink * (1 - 0.42 * squint) * (1 - 0.35 * loveE) * (1 - 0.3 * max(crossAmt, crossE))
+                * (1 - 0.9 * sleepE * (0.5 + 0.5 * max(nod, yawn * 2))) * (1 + 0.22 * surpriseE) * (1 - 0.15 * sadE) * (1 - laughE)
+            if i == 1 { y *= (1 - 0.92 * winkE) }
+            y = max(0.004, y)
             e.scale.y += (y - e.scale.y) * min(1, dt * 22)
-            if i < eyeRims.count { eyeRims[i].scale.y = e.scale.y * (0.106 / 0.096) }   // the pink rim closes with the eye
+            let w = 0.092 * (1 + 0.12 * surpriseE); e.scale.x = w
+            if i < sockets.count { sockets[i].position = SCNVector3(0.19 * s + lookX, 0.035 + lookY, 0.36) }
+            if i < eyeRims.count { eyeRims[i].scale = SCNVector3(w * (0.102 / 0.092), e.scale.y * (0.112 / 0.104), 0.03) }
+            if i < lashes.count {
+                let closed = max(laughE, i == 1 ? winkE : 0)
+                for (k, l) in lashes[i].enumerated() {
+                    l.position.y = closed > 0.5 ? 0.02 - CGFloat(k) * 0.01 : e.scale.y * 0.72 - CGFloat(k) * 0.022 * (e.scale.y / 0.104)
+                }
+            }
+            eyeOpen.append(e.scale.y)
         }
-        let browOn = max(crossAmt, crossE, sadE, thinkE * 0.8, surpriseE * 0.8)
+        let browOn = max(crossAmt, crossE, sadE, thinkE * 0.8, surpriseE * 0.85)
         for (i, b) in brows.enumerated() {
             let s: CGFloat = i == 0 ? -1 : 1
-            // cross: slanted down to the middle · sad: up in the middle · surprised: high and flat · thinking: one raised
-            let tilt = 0.45 * max(crossAmt, crossE) - 0.4 * sadE + (i == 1 ? -0.25 * thinkE : 0)
+            // cross: slanted down to the middle · sad: up in the middle · surprised: high · thinking: one raised
+            let tilt = 0.5 * max(crossAmt, crossE) - 0.45 * sadE + (i == 1 ? -0.3 * thinkE : 0)
             b.eulerAngles.z = .pi / 2 + tilt * s
-            b.position.y = 0.14 + 0.04 * surpriseE + (i == 1 ? 0.03 * thinkE : 0)
-            b.opacity = browOn
+            b.position.y = 0.155 + 0.05 * surpriseE + (i == 1 ? 0.03 * thinkE : 0) - 0.015 * crossE
         }
-        for t in tears { t.opacity = sadE }
-        for b in blushes { b.opacity = 0.22 + 0.3 * max(happyE, crossE) }     // a soft pink blush, always a little
-        let smileTilt: CGFloat = 0.45 * (1 - sadE * 2) * (1 - openE)
-        mouthL?.eulerAngles.z = .pi / 2 - smileTilt; mouthR?.eulerAngles.z = .pi / 2 + smileTilt     // a little smile, not a frown
-        mouthL?.opacity = 1 - openE; mouthR?.opacity = 1 - openE
-        let mOpen = max(openE, min(1, talkOpen * talkAmt))
-        mouthL?.opacity = 1 - min(1, mOpen * 2); mouthR?.opacity = 1 - min(1, mOpen * 2)
-        mouthO?.opacity = min(1, mOpen * 2)
-        mouthO?.scale = SCNVector3(0.026 + 0.012 * mOpen + 0.01 * happyE, 0.008 + 0.034 * mOpen, 0.01)
+        for (i, tr) in tears.enumerated() { let c = (t + CGFloat(i) * 0.8).truncatingRemainder(dividingBy: 1.8) / 1.8; tr.position.y = -0.07 - 0.13 * c }   // tears roll down
+        let blushK = 1 + 0.25 * loveE
+        for b in blushes { b.scale = SCNVector3(0.068 * blushK, 0.04 * blushK, 0.02) }
 
-        // hide face parts that turn away from the camera (they're drawn on top of the fur)
+        // MOUTH: lip-sync, a wide laugh, an "o" when surprised or yawning
+        let laughOpen = laughE * (0.55 + 0.35 * abs(sin(t * 17)))
+        let mOpen = max(laughOpen, surpriseE * 0.55, yawn * 1.4, min(1, talkOpen * talkAmt))
+        let smileTilt = (0.45 + 0.2 * joy + 0.15 * winkE) * (1 - sadE * 2) * (1 - crossE * 0.6)
+        mouthL?.eulerAngles.z = .pi / 2 - smileTilt; mouthR?.eulerAngles.z = .pi / 2 + smileTilt
+        let round = surpriseE + yawn
+        mouthO?.scale = SCNVector3(0.026 + 0.012 * mOpen + 0.012 * laughE - 0.006 * round, 0.008 + 0.034 * mOpen, 0.01)
+        tongue?.position.y = -0.125 - 0.02 * mOpen
+
+        // hearts float up around her head
+        let hp = head.presentation.worldPosition
+        for (i, h) in hearts.enumerated() {
+            let c = (t * 0.55 + CGFloat(i) / 3).truncatingRemainder(dividingBy: 1)
+            h.position = SCNVector3(hp.x + (CGFloat(i) - 1) * 0.32 + 0.05 * sin(t * 3 + CGFloat(i)), hp.y + 0.35 + 0.65 * c, hp.z + 0.3)
+            h.opacity = loveE * sin(.pi * c)
+            let k = 0.7 + 0.5 * c; h.scale = SCNVector3(k, k, k)
+        }
+
+        // face parts drawn on top of the fur fade out when they turn away from the camera
         let cam = camNode.worldPosition
-        for f in faceBits + brows {
+        func vis(_ f: SCNNode) -> CGFloat {
             let wp = f.worldPosition
             let toCam = SCNVector3(cam.x - wp.x, cam.y - wp.y, cam.z - wp.z)
             let fwd = f.worldFront          // SceneKit's front is -Z; our face parts look along +Z
             let len = max(0.0001, sqrt(toCam.x * toCam.x + toCam.y * toCam.y + toCam.z * toCam.z))
             let d = -(fwd.x * toCam.x + fwd.y * toCam.y + fwd.z * toCam.z) / len
-            let vis = max(0, min(1, (d - 0.1) / 0.25))
-            if brows.contains(f) { f.opacity = vis * browOn }
-            else if f === mouthO { f.opacity = vis * min(1, mOpen * 2) }
-            else if mouthL === f || mouthR === f { f.opacity = vis * (1 - min(1, mOpen * 2)) }
-            else { f.opacity = vis }
+            return max(0, min(1, (d - 0.1) / 0.25))
         }
+        func show(_ f: SCNNode?, _ want: CGFloat) { if let f { f.opacity = vis(f) * want } }
+        for (i, e) in eyes.enumerated() {
+            show(e, 1)
+            if i < eyeRims.count { show(eyeRims[i], clamp(eyeOpen[i] / 0.03)) }
+            let closed = max(laughE, i == 1 ? winkE : 0)
+            if i < lids.count { show(lids[i], closed) }
+            if i < lashes.count { for l in lashes[i] { show(l, clamp(eyeOpen[i] / 0.05) * (1 - closed) + closed) } }
+        }
+        for b in brows { show(b, browOn) }
+        for (i, tr) in tears.enumerated() { let c = (t + CGFloat(i) * 0.8).truncatingRemainder(dividingBy: 1.8) / 1.8; show(tr, sadE * sin(.pi * c)) }
+        for b in blushes { show(b, 0.28 + 0.3 * joy + 0.35 * loveE + 0.25 * crossE + 0.15 * winkE) }
+        show(nose, 1); show(philtrum, 1)
+        let lineOn = 1 - min(1, mOpen * 2)
+        show(mouthL, lineOn); show(mouthR, lineOn)
+        show(mouthO, min(1, mOpen * 2))
+        show(tongue, min(1, mOpen * 2) * max(laughE, yawn, talkAmt * 0.6))
 
         if framing == .face {
             // a close-up of her head (with the ears)
-            let h = head.presentation.worldPosition
-            // far enough back that the long ears are never cut off
-            let target = SCNVector3(h.x, h.y + 0.42, h.z)
-            camNode.position = SCNVector3(h.x, h.y + 0.46, h.z + 3.95)
+            let target = SCNVector3(hp.x, hp.y + 0.42, hp.z)
+            camNode.position = SCNVector3(hp.x, hp.y + 0.46, hp.z + 3.95)
             camNode.look(at: target)
             return
         }
