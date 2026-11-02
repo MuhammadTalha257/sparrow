@@ -356,6 +356,9 @@ struct PetView: View {
             }
             .frame(width: 140, height: 176)
             .onHover { model.hovering = $0 }
+            .onContinuousHover { phase in            // stroke her slowly → sleepy; a fast swipe → cross
+                switch phase { case .active(let p): AuroraTouch.moved(p); case .ended: AuroraTouch.ended() }
+            }
 
             if model.asking != nil {
                 HStack(spacing: 8) {
@@ -421,6 +424,7 @@ struct PetView: View {
 
     private func petClicked() {
         // A little reaction on every click (four quick clicks = a bit cross), then listen.
+        if AuroraTouch.clicked() { return }          // lots of quick clicks = hitting her → she gets cross
         let now = Date()
         clicks = now.timeIntervalSince(lastClick) < 1.6 ? clicks + 1 : 1
         lastClick = now

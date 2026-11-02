@@ -1076,8 +1076,11 @@ struct NotchHomeView: View {
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
                         .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
-                        .gesture(SpatialTapGesture().onEnded { v in AuroraMoves.poke(ear: v.location.y < 26) })
-                        .help("Click Aurora to play (try her ears) · double-click to talk"))
+                        .gesture(SpatialTapGesture().onEnded { v in if !AuroraTouch.clicked() { AuroraMoves.poke(ear: v.location.y < 26) } })
+                        .onContinuousHover { phase in
+                            switch phase { case .active(let p): AuroraTouch.moved(p); case .ended: AuroraTouch.ended() }
+                        }
+                        .help("Stroke her slowly with the mouse · click to play (try her ears) · double-click to talk"))
             }
         }
         .frame(width: tabW, height: tabH)
@@ -1423,6 +1426,7 @@ struct NotchHomeView: View {
     }
     /// Chat page: the message goes to the chat (Zuffi or the agent you picked) and the answer appears there.
     private func sendChat(_ q: String, spoken: Bool) {
+        AuroraTouch.feel(for: q)
         if page != "chat" { nav.page = "chat" }
         state.chatHistory.append(ChatMessage(role: .user, content: q))
         state.stateOverride = .thinking
@@ -3787,4 +3791,69 @@ enum ZuffiSettings {
         NotchNav.shared.open("settings")
     }
     static func openAIModels() { open("AI models") }
+}
+
+/// How Aurora feels when you touch her with the mouse, and when you say something funny or sweet.
+/// Stroke her slowly → she gets cosy and sleepy. Hit her (a fast swipe or lots of quick clicks) → she gets cross.
+@MainActor
+enum AuroraTouch {
+    private static var lastPoint: CGPoint?
+    private static var lastTime = Date()
+    private static var stroke: CGFloat = 0
+    private static var lastReact = Date.distantPast
+    private static var clickTimes: [Date] = []
+
+    static func moved(_ p: CGPoint) {
+        let now = Date()
+        defer { lastPoint = p; lastTime = now }
+        guard let lp = lastPoint else { return }
+        let dt = now.timeIntervalSince(lastTime)
+        guard dt > 0.001, dt < 0.35 else { stroke = 0; return }
+        let d = hypot(p.x - lp.x, p.y - lp.y), speed = d / CGFloat(dt)
+        if speed > 1500, d > 28 { stroke = 0; hit(); return }              // a fast swipe across her = a smack
+        if speed > 12, speed < 280 { stroke += d }                          // slow and gentle = petting
+        else if speed >= 280 { stroke = max(0, stroke - d) }
+        if stroke > 170 { stroke = 0; petted() }
+    }
+    static func ended() { lastPoint = nil; stroke = 0 }
+
+    /// A click on her. Three or more quick clicks = hitting her.
+    static func clicked() -> Bool {
+        let now = Date()
+        clickTimes = clickTimes.filter { now.timeIntervalSince($0) < 1.3 } + [now]
+        if clickTimes.count >= 3 { clickTimes = []; hit(); return true }
+        return false
+    }
+
+    static func petted() {
+        guard Date().timeIntervalSince(lastReact) > 5 else { BunnyFaceCenter.shared.show(.sleepy, for: 3); return }
+        lastReact = Date()
+        BunnyFaceCenter.shared.show(.sleepy, for: 4.5)
+        NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.love)
+        if !VoiceEngine.shared.speaking { VoiceEngine.shared.speak(["Mmm… that's nice.", "Hehe, so cosy… *yawn*", "Mmm, keep going… I'm getting sleepy."].randomElement()!) }
+    }
+
+    static func hit() {
+        guard Date().timeIntervalSince(lastReact) > 1.5 else { BunnyFaceCenter.shared.show(.cross, for: 3); return }
+        lastReact = Date()
+        Aurora3DRig.poke(ear: false)
+        BunnyFaceCenter.shared.show(.cross, for: 3.5)
+        NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.annoyed)
+        let pet = PetController.shared.model
+        pet.angry = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { PetController.shared.model.angry = false } }
+        VoiceEngine.shared.speak(["Ow! Hey!", "Grrr! That hurt!", "Hmph! Be gentle with me!", "Ouch! Why did you hit me?"].randomElement()!)
+    }
+
+    /// Something funny or sweet in what you said: her face answers before her words do.
+    static func feel(for text: String) {
+        let t = text.lowercased()
+        if t.range(of: #"\b(joke|funny|haha+|hehe+|lol|lmao|make me laugh|tell me something funny|meme)\b|😂|🤣|😆"#, options: .regularExpression) != nil {
+            BunnyFaceCenter.shared.show(.laugh, for: 3)
+        } else if t.range(of: #"\b(i love you|love you|you'?re (so )?(cute|sweet|adorable|the best)|good (girl|bunny)|thank you so much|thanks a lot)\b|❤️|🥰|😍"#, options: .regularExpression) != nil {
+            BunnyFaceCenter.shared.show(.love, for: 3)
+        } else if t.range(of: #"\b(stupid|useless|shut up|i hate you|dumb)\b"#, options: .regularExpression) != nil {
+            BunnyFaceCenter.shared.show(.sad, for: 3)
+        }
+    }
 }

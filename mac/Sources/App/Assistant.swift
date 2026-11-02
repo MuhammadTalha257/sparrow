@@ -836,6 +836,7 @@ enum Assistant {
             await ZuffiAsk.shared.answer(hit.0, about: hit.1)
             return
         }
+        AuroraTouch.feel(for: text)          // something funny or sweet: her face answers first
         // Her own pages and your data: "open tasks", "delete the note …", "open the lawyer agent and ask …"
         if let r = await ZuffiCommand.handle(text) {
             if !r.isEmpty {
