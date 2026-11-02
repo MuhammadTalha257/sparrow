@@ -319,3 +319,104 @@ struct BizSecurityBox: View {
         }
     }
 }
+
+// =====================================================================
+// MARK: - Zuffi lock (Touch ID / your Mac password)
+//
+// Your AI keys, Gmail, WhatsApp and private details are behind your own
+// fingerprint or Mac password:
+//   • Changing or removing a key always asks first.
+//   • With "Lock Zuffi" on (Settings → Privacy), opening Settings, Gmail,
+//     WhatsApp or your details asks too. Once unlocked it stays open for
+//     10 minutes, then locks again (and right away when the Mac sleeps).
+// The check is done by macOS itself — Zuffi never sees your fingerprint or password.
+// =====================================================================
+
+@MainActor
+final class ZuffiLock: ObservableObject {
+    static let shared = ZuffiLock()
+
+    var enabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "zuffiLockOn") }
+        set { objectWillChange.send(); UserDefaults.standard.set(newValue, forKey: "zuffiLockOn") }
+    }
+    @Published private(set) var unlockedUntil = Date.distantPast
+    @Published var message = ""
+    private var asking = false
+
+    var isOpen: Bool { Date() < unlockedUntil }
+
+    private init() {
+        // lock again the moment the Mac sleeps or the screen locks
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { ZuffiLock.shared.lockNow() }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { ZuffiLock.shared.lockNow() }
+        }
+    }
+
+    func lockNow() { unlockedUntil = .distantPast }
+
+    /// Runs `then` once you've proved it's you (Touch ID, Apple Watch or your Mac password).
+    /// `always`: ask even when "Lock Zuffi" is off (used for keys and passwords).
+    func require(_ reason: String, always: Bool = false, then: @escaping @MainActor () -> Void) {
+        if (!enabled && !always) || isOpen { then(); return }
+        guard !asking else { return }
+        let ctx = LAContext()
+        ctx.localizedFallbackTitle = "Use Mac password"
+        var err: NSError?
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
+            // No password set on this Mac at all: nothing to check against.
+            message = "Set a login password on this Mac to protect Zuffi."
+            then(); return
+        }
+        asking = true
+        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { @Sendable ok, _ in
+            Task { @MainActor in
+                let me = ZuffiLock.shared
+                me.asking = false
+                if ok {
+                    me.unlockedUntil = Date().addingTimeInterval(10 * 60)
+                    me.message = ""
+                    then()
+                } else {
+                    me.message = "Not unlocked."
+                }
+            }
+        }
+    }
+
+    /// Turning the lock on (or off) is itself checked first.
+    func setEnabled(_ on: Bool) {
+        require(on ? "turn on the Zuffi lock" : "turn off the Zuffi lock", always: true) {
+            ZuffiLock.shared.enabled = on
+        }
+    }
+}
+
+/// A page that stays covered until you unlock it.
+struct LockedPage<Content: View>: View {
+    let reason: String
+    @ViewBuilder var content: () -> Content
+    @ObservedObject private var lock = ZuffiLock.shared
+    var body: some View {
+        if !lock.enabled || lock.isOpen {
+            content()
+        } else {
+            VStack(spacing: 10) {
+                Image(systemName: "lock.fill").font(.system(size: 22)).foregroundColor(Color(hex: "#B79CFF"))
+                Text("Locked").font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                Text("Unlock with Touch ID or your Mac password.").font(.system(size: 11.5)).foregroundColor(.white.opacity(0.6))
+                Button { lock.require(reason) {} } label: {
+                    Label("Unlock", systemImage: "touchid").font(.system(size: 12.5, weight: .semibold)).foregroundColor(Color(hex: "#141218"))
+                        .padding(.horizontal, 14).frame(height: 30).background(Capsule().fill(Color(hex: "#F2F1F6")))
+                }.buttonStyle(.plain)
+                if !lock.message.isEmpty { Text(lock.message).font(.system(size: 11)).foregroundColor(Color(hex: "#EF6B6B")) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear { lock.require(reason) {} }
+        }
+    }
+}

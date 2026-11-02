@@ -133,10 +133,48 @@ final class ZuffiPlan: ObservableObject {
         AIService.shared.clearConversation()
     }
 
+    /// Phone, email and home address: kept encrypted in the Keychain, answered on this Mac, never put in an AI prompt.
+    static var privateDetails: [String: String] {
+        guard let j = KeychainStore.shared.get("zuffi-private-profile"), let d = j.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [:] }
+        return o
+    }
+    static func savePrivate(_ o: [String: String]) {
+        let clean = o.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
+        let j = (try? JSONSerialization.data(withJSONObject: clean)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        KeychainStore.shared.set("zuffi-private-profile", value: clean.isEmpty ? "" : j)
+    }
+    /// "what's my phone number / email / address?" — answered here from the encrypted details.
+    static func privateAnswer(_ q: String) -> String? {
+        let t = q.lowercased()
+        guard t.range(of: #"\b(my|mera|meri)\b"#, options: .regularExpression) != nil,
+              t.range(of: #"\b(what|what's|whats|tell|give|kya|batao|remind)\b"#, options: .regularExpression) != nil else { return nil }
+        let priv = privateDetails
+        for (pat, k, label) in [(#"\b(phone|mobile|cell|contact) ?(number|no)?\b|\bmy number\b"#, "phone", "number"),
+                                (#"\b(e-?mail|email address)\b"#, "email", "email"),
+                                (#"\b(home )?address\b"#, "address", "address")] where t.range(of: pat, options: .regularExpression) != nil {
+            if let v = priv[k], !v.isEmpty { return "Your \(label) is \(v)." }
+            return "I don’t have your \(label) yet. Add it in Settings → Profile (it stays encrypted on this Mac)."
+        }
+        return nil
+    }
+    /// "14/05/1998", "1998-05-14", "14 May 1998" → "1998-05-14"
+    static func isoDate(_ raw: String) -> String? {
+        let t = raw.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return nil }
+        let out = DateFormatter(); out.dateFormat = "yyyy-MM-dd"; out.locale = Locale(identifier: "en_US_POSIX")
+        for f in ["yyyy-MM-dd", "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "dd.MM.yyyy", "d MMMM yyyy", "d MMM yyyy", "MMMM d, yyyy", "MMM d, yyyy"] {
+            let i = DateFormatter(); i.dateFormat = f; i.locale = Locale(identifier: "en_US_POSIX"); i.isLenient = false
+            if let d = i.date(from: t), let y = Calendar.current.dateComponents([.year], from: d).year, y > 1900, d < Date() { return out.string(from: d) }
+        }
+        return nil
+    }
+
     /// One paragraph for every AI prompt, so Zuffi always knows who she's helping (phone numbers are left out).
     /// "What's my date of birth / name / city?", "what do you know about me?" → the answer from the welcome form (the web part's
     /// answer first, which also knows "remember that…" notes; this Mac's own copy of the form if the page isn't ready).
     func aboutMe(_ q: String) async -> String? {
+        if let r = Self.privateAnswer(q) { return r }
         let js = "(window.zuffiAboutMe && window.zuffiAboutMe(\(Self.jsString(q)))) || ''"
         if WebHub.shared.isReady, let r = await WebHub.shared.evalString(js), !r.isEmpty { return r }
         let t = q.lowercased(), p = profile
@@ -149,6 +187,7 @@ final class ZuffiPlan: ObservableObject {
             return "Your date of birth is \(out.string(from: date))."
         }
         if t.range(of: #"^(what'?s|what is) my name\??$|^who am i\??$"#, options: .regularExpression) != nil, let n = p["name"], !n.isEmpty { return "You’re \(n)." }
+        }
         if t.range(of: #"^where do i live\??$|^(what'?s|what is) my city\??$"#, options: .regularExpression) != nil, let c = p["city"], !c.isEmpty { return "You live in \(c)." }
         return nil
     }

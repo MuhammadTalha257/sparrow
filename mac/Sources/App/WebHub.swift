@@ -68,7 +68,9 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         config.setURLSchemeHandler(scheme, forURLScheme: "app")
         config.userContentController.add(self, name: "sparrow")
         config.userContentController.addUserScript(WKUserScript(source: Self.shim, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        #if DEBUG
+        config.preferences.setValue(true, forKey: "developerExtrasEnabled")     // the web inspector only in test builds (it could show saved keys)
+        #endif
         if #available(macOS 14.0, *) { config.preferences.inactiveSchedulingPolicy = .none }   // keep reminders ticking when hidden
         config.mediaTypesRequiringUserActionForPlayback = []
         let wv = WKWebView(frame: NSRect(x: 0, y: 0, width: 440, height: 700), configuration: config)
@@ -252,6 +254,12 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
 
     // MARK: messages from the page
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        // Only Zuffi's own page may talk to the Mac side: never a frame inside it, never another website.
+        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol == "app",
+              message.webView?.url?.scheme == "app" else {
+            appendAppLog("security.log", "blocked a message from \(message.frameInfo.securityOrigin.protocol)://\(message.frameInfo.securityOrigin.host)")
+            return
+        }
         guard let o = message.body as? [String: Any], let cmd = o["cmd"] as? String else { return }
         let id = o["id"] as? Int ?? 0
         switch cmd {
@@ -259,7 +267,13 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             ready = true
         case "speak":
             // "Say reminders out loud" off (Settings) → reminders still show, quietly.
-            if let t = o["text"] as? String, UserDefaults.standard.object(forKey: "speakReminders") as? Bool ?? true { VoiceEngine.shared.speak(t) }
+            // Messages and emails are read out only with "Read notifications out loud" on; reminders follow "Say reminders out loud".
+            if let t = o["text"] as? String {
+                let isMessage = t.range(of: #"^(whats ?app|email|e-mail|mail|message|new message|new email|sms|text) (from|by)\b|^new (notification|message|email)"#,
+                                        options: [.regularExpression, .caseInsensitive]) != nil
+                if isMessage { if UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) { VoiceEngine.shared.announce(t) } }
+                else if UserDefaults.standard.object(forKey: "speakReminders") as? Bool ?? true { VoiceEngine.shared.announce(t) }
+            }
         case "listen":
             VoiceEngine.shared.listenOnce()
         case "meeting":

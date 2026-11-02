@@ -309,7 +309,7 @@ final class Routine {
         NotificationCenter.default.post(name: .hookReveal, object: nil)
         NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
         SoundEngine.shared.play("greet")
-        VoiceEngine.shared.speak(text)
+        VoiceEngine.shared.announce(text)
     }
 
     func nightCheckIn() async {
@@ -337,7 +337,7 @@ final class Routine {
         } else {
             CheckInWindow.shared.show()
         }
-        VoiceEngine.shared.speak(text)
+        VoiceEngine.shared.announce(text)
     }
 }
 

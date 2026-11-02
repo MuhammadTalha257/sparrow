@@ -70,6 +70,7 @@ final class KeychainStore: @unchecked Sendable {
         "calcom-api-key",
         "notion-api-key",
         "groq-api-key", "xai-api-key", "deepseek-api-key", "mistral-api-key", "perplexity-api-key", "openrouter-api-key",
+        "fish-api-key", "gmail-app-password", "zuffi-server-key", "zuffi-private-profile",
     ]
 
     private init() {
@@ -79,9 +80,18 @@ final class KeychainStore: @unchecked Sendable {
         }
     }
 
-    /// Thread-safe read — never touches the Keychain.
+    /// Thread-safe read from the cache; a key that wasn't loaded at launch is read from the Keychain once.
     func get(_ key: String) -> String? {
-        lock.withLock { cache[key] }
+        if let v = lock.withLock({ cache[key] }) { return v.isEmpty ? nil : v }
+        let v = Keychain.load(key: key) ?? ""        // remembered either way, so a missing key isn't looked up again and again
+        lock.withLock { cache[key] = v }
+        return v.isEmpty ? nil : v
+    }
+
+    /// For showing on screen: never the key itself, only that one is saved (and its last 4 characters).
+    func masked(_ key: String) -> String {
+        guard let v = get(key), !v.isEmpty else { return "" }
+        return "••••" + String(v.suffix(4))
     }
 
     /// Updates cache + persists to Keychain.
@@ -96,7 +106,7 @@ final class KeychainStore: @unchecked Sendable {
 
     /// Forget every key and token Zuffi saved on this Mac (Settings → Start fresh / Remove my keys).
     func removeAll(onlyAI: Bool = false) {
-        let keys = onlyAI ? Self.aiKeys : Array(Set(Self.allKeys + Self.aiKeys + ["zuffi-server-key"]))
+        let keys = onlyAI ? Self.aiKeys + ["fish-api-key"] : Array(Set(Self.allKeys + Self.aiKeys + ["zuffi-server-key"]))
         for k in keys { lock.withLock { cache[k] = nil }; Keychain.delete(key: k) }
     }
 

@@ -106,13 +106,13 @@ enum IslandConst {
     /// How far the closed island reaches below the notch to show Zuffi's face.
     static let compactDrop: CGFloat = 38
     /// How far Aurora's resting tab hangs below the notch (eyes to chin show; ears tuck behind the notch).
-    static let tabDrop: CGFloat = 46
+    static let tabDrop: CGFloat = 42
     /// The open notch: one short, wide strip (face + ask bar) that grows down only while an answer shows.
-    static let homeW: CGFloat = 400
-    static let homeShortH: CGFloat = 140
-    static let homeTallH: CGFloat = 360
+    static let homeW: CGFloat = 360
+    static let homeShortH: CGFloat = 126
+    static let homeTallH: CGFloat = 320
     nonisolated(unsafe) static var homeTallNow = false
-    static let homeBigH: CGFloat = 540
+    static let homeBigH: CGFloat = 480
     nonisolated(unsafe) static var homeBigNow = false
     static let compactCorner: CGFloat = 19
     /// Closed island when parked on the left / right edge of the screen.
@@ -123,7 +123,7 @@ enum IslandConst {
     static var viewLayouts: [IslandView: ViewLayout] {
         guard NotchDesign.on else { return baseLayouts }
         var l = baseLayouts
-        l[.overview] = ViewLayout(height: 140, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
+        l[.overview] = ViewLayout(height: 126, botX: 150, botY: 100, botDiameter: 0, agentMode: .pills)
         return l
     }
     static let baseLayouts: [IslandView: ViewLayout] = [

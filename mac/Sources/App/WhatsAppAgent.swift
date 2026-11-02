@@ -20,7 +20,8 @@ import SwiftUI
 final class WhatsAppAgent {
     static let shared = WhatsAppAgent()
 
-    struct Draft { let name: String; let phone: String; var text: String; let made: Date }
+    struct Media { let data: Data; let mime: String; let name: String; let what: String }
+    struct Draft { let name: String; let phone: String; var text: String; let made: Date; var media: Media? = nil }
     private(set) var draft: Draft?
     private var lastName: String?
 
@@ -37,6 +38,9 @@ final class WhatsAppAgent {
     private static let checkRE = #"^(?:check|read|show|open)?\s*(?:my |any |the |new |unread |latest )*(?:whats ?app|whatsapp)(?: messages?| chats?| texts?)?(?:\s+(?:messages?|now|today))?\??$|^(?:any|do i have|have i got|got any)\s+(?:new |unread )*(?:whats ?app|whatsapp)(?: messages?| chats?)?\??$|^(?:any )?(?:new |unread )*(?:messages?|msgs?) (?:on|in) (?:whats ?app|whatsapp)\??$|^who (?:messaged|texted) me(?: on whats ?app)?\??$"#
     private static let sendRE = #"^(?:send\s+)?(?:a\s+)?(?:whats ?app|whatsapp|message|msg|text|reply(?: to)?|respond to|write to|tell)\s+(?:to\s+)?(.+?)(?:\s+(?:on|via|in) (?:whats ?app|whatsapp))?\s*(?:saying|that|and say|and tell (?:him|her|them)|to say|ke|keh do|bolo|:|,)\s*(.+)$"#
 
+    /// "send this picture to Ahmed on WhatsApp", "send my screenshot to Sara", "WhatsApp this file to Ali"
+    private static let mediaRE = #"^(?:send|share|whats ?app|whatsapp|forward)\s+(?:this|that|the|my|a|it|current)?\s*(picture|pic|photo|image|screenshot|screen|file|document|doc|pdf)?\s*(?:to|with)\s+(.+?)(?:\s+(?:on|via|in|by) (?:whats ?app|whatsapp))?(?:\s+(?:saying|with caption|caption|and say)\s+(.+))?$"#
+
     private static func clean(_ raw: String, keepCase: Bool = false) -> String {
         let s = Translit.toCommand(raw.replacingOccurrences(of: "’", with: "'"))
             .replacingOccurrences(of: #"^(?:can you|could you|please|will you)\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
@@ -49,6 +53,7 @@ final class WhatsAppAgent {
         let t = Self.clean(raw)
         if draft != nil, Self.isSend(t) || Self.isCancel(t) || Self.isChange(t) != nil { return true }
         if t.range(of: Self.checkRE, options: .regularExpression) != nil { return true }
+        if Self.mentionsWA(t), t.range(of: Self.mediaRE, options: .regularExpression) != nil, t.range(of: #"\b(picture|pic|photo|image|screenshot|screen|file|document|doc|pdf|this|it)\b"#, options: .regularExpression) != nil { return true }
         // "WhatsApp Ahmed saying…", "message Ahmed on WhatsApp…", or a reply right after Zuffi read out WhatsApp chats
         if t.range(of: Self.sendRE, options: .regularExpression) != nil {
             return Self.mentionsWA(t) || (AgentRouter.lastChannel == .whatsapp && t.hasPrefix("reply"))
@@ -65,6 +70,10 @@ final class WhatsAppAgent {
             if Self.isChange(t) != nil, let change = Self.isChange(o) { return await redraft(d, change) }
         }
         if t.range(of: Self.checkRE, options: .regularExpression) != nil { return await checkNew() }
+        if Self.mentionsWA(t), t.range(of: #"\b(picture|pic|photo|image|screenshot|screen|file|document|doc|pdf|this|it)\b"#, options: .regularExpression) != nil,
+           let m = Self.match(Self.mediaRE, o) {
+            return await mediaDraft(kind: m[0].lowercased(), to: m[1], caption: m.count > 2 ? m[2] : "")
+        }
         guard let m = Self.match(Self.sendRE, o) else { return nil }
         var who = m[0].replacingOccurrences(of: #"\s+(?:on|via|in) (?:whats ?app|whatsapp)$"#, with: "", options: [.regularExpression, .caseInsensitive])
         if ["him", "her", "them", "back", "it"].contains(who.lowercased()), let l = lastName { who = l }
@@ -116,6 +125,52 @@ final class WhatsAppAgent {
         return present(draft!)
     }
 
+    /// A picture or file for WhatsApp: the file you dropped on Zuffi, else a picture you copied, else a screenshot taken now.
+    private func mediaDraft(kind: String, to who0: String, caption: String) async -> String {
+        AgentRouter.lastChannel = .whatsapp
+        guard WhatsAppLink.shared.ready else { return "To send pictures and files, link WhatsApp first: open the WhatsApp page in the notch and scan the code with your phone." }
+        var who = who0.trimmingCharacters(in: .whitespaces)
+        if ["him", "her", "them"].contains(who.lowercased()), let l = lastName { who = l }
+        var target = await Self.phone(for: who)
+        if target.isEmpty, let c = await WhatsAppLink.shared.lookup(who) { target = c.chatId.isEmpty ? c.phone : c.chatId }
+        if target.isEmpty { target = who }                    // the linked WhatsApp finds the chat by name
+        var media: Media? = nil
+        let wantsScreen = kind.hasPrefix("screen")
+        if !wantsScreen, let f = AppState.shared.droppedFile, let d = try? Data(contentsOf: f.url), d.count < 60_000_000 {
+            media = Media(data: d, mime: Self.mime(f.url.pathExtension), name: f.name, what: "\"\(f.name)\"")
+        } else if !wantsScreen, let img = NSPasteboard.general.data(forType: .png) ?? NSPasteboard.general.data(forType: .tiff).flatMap({ NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }) {
+            media = Media(data: img, mime: "image/png", name: "picture.png", what: "the picture you copied")
+        } else if let shot = await Self.screenshot() {
+            media = Media(data: shot, mime: "image/png", name: "screenshot.png", what: "a screenshot of your screen")
+        }
+        guard let media else { return "I couldn't find a picture to send. Drop it on Zuffi or copy it first, then ask again." }
+        lastName = who
+        MailAgent.shared.dropDraft()
+        draft = Draft(name: who.capitalized, phone: target, text: caption.trimmingCharacters(in: .whitespacesAndNewlines), made: Date(), media: media)
+        VoiceEngine.shared.listenAfterSpeech = true
+        return "Send \(media.what) to \(who.capitalized) on WhatsApp\(caption.isEmpty ? "" : " with \"\(caption)\"")? Say send, or cancel."
+    }
+    private static func mime(_ ext: String) -> String {
+        switch ext.lowercased() {
+        case "png": return "image/png"; case "jpg", "jpeg": return "image/jpeg"; case "gif": return "image/gif"; case "heic": return "image/heic"
+        case "pdf": return "application/pdf"; case "mp4": return "video/mp4"; case "mov": return "video/quicktime"
+        case "doc": return "application/msword"; case "docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        default: return "application/octet-stream"
+        }
+    }
+    private static func screenshot() async -> Data? {
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("zuffi-shot-\(UUID().uuidString).png")
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            p.arguments = ["-x", "-t", "png", out.path]
+            p.terminationHandler = { _ in c.resume() }
+            do { try p.run() } catch { c.resume() }
+        }
+        defer { try? FileManager.default.removeItem(at: out) }
+        return try? Data(contentsOf: out)
+    }
+
     private func redraft(_ d: Draft, _ change: String) async -> String {
         var text = d.text
         if SmartPlanner.shared.isAvailable,
@@ -124,7 +179,7 @@ final class WhatsAppAgent {
         } else if let extra = Self.match(#"^(?:also (?:say|tell|add|mention)|add)\s+(?:that\s+)?(.+)$"#, change)?.first {
             text += " " + extra
         }
-        draft = Draft(name: d.name, phone: d.phone, text: text, made: Date())
+        draft = Draft(name: d.name, phone: d.phone, text: text, made: Date(), media: d.media)
         return present(draft!)
     }
 
@@ -134,6 +189,14 @@ final class WhatsAppAgent {
     }
 
     private func send(_ d: Draft) async -> String {
+        if let m = d.media {
+            draft = nil
+            if await WhatsAppLink.shared.sendMedia(to: d.phone.isEmpty ? d.name : d.phone, data: m.data, mime: m.mime, name: m.name, caption: d.text) {
+                appendAppLog("agents.log", "whatsapp (linked): sent a \(m.mime) to \(d.name)")
+                return "Sent to \(d.name) on WhatsApp! ✅"
+            }
+            return "I couldn't send it to \(d.name). Check WhatsApp is linked (the WhatsApp page in the notch) and try again."
+        }
         if d.phone.contains("@") && !WhatsAppLink.shared.ready { return "WhatsApp isn't linked right now — link it in Business → Connect & devices." }
         // Linked WhatsApp: sent in the background, instantly, without opening anything.
         if WhatsAppLink.shared.ready, await WhatsAppLink.shared.send(to: d.phone.isEmpty ? d.name : d.phone, text: d.text) {   // phone may be a chat id
@@ -390,7 +453,7 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
         // the notch: a small card + light round the edge
         AppState.shared.noteRef = chatId        // Reply in the notch goes straight back to this chat
         MacStatus.shared.toast("WhatsApp · \(name)", String(text.prefix(140)), icon: "message.fill", action: "whatsapp")
-        if readAloud { VoiceEngine.shared.speak("WhatsApp from \(name): \(text.prefix(200))") }
+        if readAloud, UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) { VoiceEngine.shared.announce("WhatsApp from \(name): \(text.prefix(200))") }
         // Business: every chat becomes a lead, and with auto-reply Zuffi answers here — no typing on your screen.
         let crm = ZuffiCRM.shared
         if ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal, crm.isOn(.watchWhatsApp) {
@@ -445,7 +508,10 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
     func sendMedia(to: String, data: Data, mime: String, name: String, caption: String) async -> Bool {
         guard ready, let wv = web else { return false }
         let key = to.lowercased()
-        let target = to.contains("@") ? to : (chatIds[key] ?? chatIds[to.filter(\.isNumber)] ?? recent.first { $0.name.lowercased() == key }?.chatId ?? to)
+        var target = to.contains("@") ? to : (chatIds[key] ?? chatIds[to.filter(\.isNumber)]
+            ?? recent.first { $0.name.lowercased() == key }?.chatId
+            ?? recent.first { $0.name.lowercased().hasPrefix(key) || key.hasPrefix($0.name.lowercased()) }?.chatId ?? to)
+        if !target.contains("@"), target.filter(\.isNumber).count < 7, let c = await lookup(target) { target = c.chatId.isEmpty ? c.phone : c.chatId }
         let r = try? await wv.callAsyncJavaScript("return await window.ZuffiWA.sendMedia(t, b, m, n, c)",
                                                   arguments: ["t": target, "b": data.base64EncodedString(), "m": mime, "n": name, "c": caption], in: nil, contentWorld: .page)
         return ((r as? [String: Any])?["ok"] as? Bool) == true

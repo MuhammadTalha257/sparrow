@@ -376,7 +376,8 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     fileprivate func speechFinished() {
         speaking = false
-        if conversation { listenAfterSpeech = false; resumeAfterSpeech = false; conversationNext(); return }
+        if conversation { listenAfterSpeech = false; resumeAfterSpeech = false; if takeWaitingNote() { return }; conversationNext(); return }
+        if !waitingNotes.isEmpty, !listenAfterSpeech { _ = takeWaitingNote() }
         if listenAfterSpeech {
             listenAfterSpeech = false
             resumeAfterSpeech = false
@@ -553,6 +554,36 @@ final class VoiceEngine: NSObject, ObservableObject {
     @Published var lastSpoken = ""
     var lastSpokenAt = Date.distantPast
     @Published var missedAt = Date.distantPast { didSet { conversationMissed() } }
+
+    // MARK: Reminders while you're talking: never cut you off
+    private var waitingNotes: [String] = []
+    /// A reminder or alert to say out loud. While you're in a conversation (or she's speaking / listening to you)
+    /// it waits for the end of her current sentence instead of cutting in.
+    func announce(_ text: String) {
+        if conversation || speaking || (isListening && (oneShot || pushToTalk)) {
+            if !waitingNotes.contains(text) { waitingNotes.append(text) }
+            if !conversation && !speaking { retryNotes(after: 4) }          // only listening for a moment: try again soon
+            return
+        }
+        speak(text)
+    }
+    private func retryNotes(after d: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + d) {
+            MainActor.assumeIsolated {
+                let v = VoiceEngine.shared
+                guard !v.waitingNotes.isEmpty, !v.conversation, !v.speaking else { return }
+                if v.isListening && (v.oneShot || v.pushToTalk) { v.retryNotes(after: 4); return }
+                v.speak(v.waitingNotes.removeFirst())
+            }
+        }
+    }
+    /// After her turn: a waiting reminder is said first ("By the way — …"), then the conversation carries on.
+    private func takeWaitingNote() -> Bool {
+        guard !waitingNotes.isEmpty else { return false }
+        let t = waitingNotes.removeFirst()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { MainActor.assumeIsolated { VoiceEngine.shared.speak("By the way — " + t) } }
+        return true
+    }
 
     // MARK: Conversation (like ChatGPT voice): tap once — talk back and forth; tap again — she stops.
     @Published private(set) var conversation = false
@@ -1304,6 +1335,10 @@ final class NotificationReader {
 
     func setEnabled(_ on: Bool) {
         speakOn = on
+        if !on {            // one switch for everything read out: WhatsApp and email too
+            WhatsAppLink.shared.readAloud = false
+            WebHub.shared.run("try { const s = window.Sparrow && window.Sparrow.store; if (s && s.state) { s.state.waReadAloud = false; s.save && s.save(); } } catch (e) {}")
+        }
         if on, !Self.hasAccess { Self.askAccess() }
         refresh()
     }
@@ -1340,8 +1375,8 @@ final class NotificationReader {
         guard !new.isEmpty, new.count <= 3 else { return }
         for b in new { ZuffiCRM.shared.fromNotification(b.texts, descriptions: b.descs) }
         if let first = new.first { EdgeGlow.shared.flash(.notify(first.texts.first ?? "Notification"), seconds: 2.6) }   // light round the notch
-        if speakOn, let first = new.first, new.count <= 2, first.joined.count < 400 {
-            VoiceEngine.shared.speak("New notification. " + first.joined)
+        if speakOn, UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes), let first = new.first, new.count <= 2, first.joined.count < 400 {
+            VoiceEngine.shared.announce("New notification. " + first.joined)
         }
     }
 

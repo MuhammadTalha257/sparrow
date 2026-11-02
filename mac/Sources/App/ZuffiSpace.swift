@@ -629,7 +629,8 @@ struct ZuffiQuickSettings: View {
                 row("bell.badge", "Notifications at the notch (email, battery, devices)", on: Binding(get: { MacStatus.shared.toastsOn }, set: { MacStatus.shared.toastsOn = $0 }))
                 if ZuffiFocus.whatsapp && ZuffiPlan.shared.isBusiness && !ZuffiPlan.shared.isPersonal {
                     row("message.fill", "WhatsApp linked to Zuffi (new messages instantly)", on: Binding(get: { WhatsAppLink.shared.enabled }, set: { $0 ? WhatsAppLink.shared.showWindow() : (WhatsAppLink.shared.enabled = false) }))
-                    row("speaker.wave.2.bubble.left.fill", "Read new WhatsApp messages out loud", on: Binding(get: { WhatsAppLink.shared.readAloud }, set: { WhatsAppLink.shared.readAloud = $0 }))
+                    row("speaker.wave.2.bubble.left.fill", "Read new WhatsApp messages out loud", on: Binding(get: { WhatsAppLink.shared.readAloud && UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
+                                                                                                  set: { WhatsAppLink.shared.readAloud = $0; if $0 { UserDefaults.standard.set(true, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled(true) } }))
                     row("arrowshape.turn.up.left.2.fill", "Auto-reply to customers on WhatsApp", on: Binding(get: { ZuffiCRM.shared.isOn(.autopilot) }, set: { ZuffiCRM.shared.set(.autopilot, $0) }))
                 }
                 row("person.3.sequence.fill", "Room mode — follow the conversation (nothing saved)", on: Binding(get: { RoomListener.shared.on }, set: { $0 ? RoomListener.shared.start() : RoomListener.shared.stop() }))
@@ -1064,14 +1065,14 @@ struct NotchHomeView: View {
     /// Like Taby: three separate pieces — the small black tab with Aurora's face under the notch, the chat bar
     /// floating just below it, and (only when needed) the panel or answer card below that. Nothing else covers the screen.
     private var tabW: CGFloat { max(state.notchWidth + 8, 168) }
-    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 52 : max(state.notchHeight, 24) + 4 }
+    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 46 : max(state.notchHeight, 24) + 4 }
     private var faceTab: some View {
         ZStack(alignment: .bottom) {
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 24, bottomTrailing: 24, topTrailing: 0), style: .continuous)
                 .fill(Color.black)
             if showsAurora {
-                RealAuroraIcon(size: 58, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
-                    .frame(width: 58, height: 52).clipped()
+                RealAuroraIcon(size: 52, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
+                    .frame(width: 52, height: 46).clipped()
                     .padding(.bottom, 2)
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
@@ -1100,7 +1101,7 @@ struct NotchHomeView: View {
         if let p = page {
             NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { nav.page = target } },
                         ask: { text in ask = text; askFocus = true })
-                .frame(width: W - 24, height: max(220, H - tabH - 38 - 26))
+                .frame(width: W - 24, height: max(200, H - tabH - 34 - 26))
                 .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
                 .padding(.bottom, 10)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -1114,6 +1115,7 @@ struct NotchHomeView: View {
         VStack(spacing: 6) {
             faceTab
             bar
+            if let b = nav.banner { reminderBanner(b).transition(.move(edge: .top).combined(with: .opacity)) }
             below
         }
         .frame(width: W, height: H, alignment: .top)
@@ -1135,7 +1137,10 @@ struct NotchHomeView: View {
         }
         .onDisappear { shown = false; risen = false; state.homeTall = false; state.homeBig = false; nav.page = nil }
         .onChange(of: answering) { _, a in
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeTall = a }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeTall = a || nav.banner != nil }
+        }
+        .onChange(of: nav.banner) { _, b in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeTall = answering || b != nil }
         }
         .onChange(of: nav.page) { _, p in withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeBig = p != nil } }
         // what you said shows straight away; Zuffi's answer (spoken or written) lands in the card
@@ -1174,6 +1179,22 @@ struct NotchHomeView: View {
         }
     }
 
+    // a reminder that arrived while you were busy: small, on top, never closes your chat
+    private func reminderBanner(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "bell.fill").font(.system(size: 11, weight: .semibold)).foregroundColor(Color(hex: "#F5B963"))
+            Text(text.replacingOccurrences(of: "\n", with: " · ")).font(.system(size: 12, weight: .medium)).foregroundColor(.white).lineLimit(2)
+            Spacer(minLength: 4)
+            Button("Got it") { withAnimation { nav.banner = nil } }
+                .buttonStyle(.plain).font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#141218"))
+                .padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color(hex: "#F5B963")))
+        }
+        .padding(.horizontal, 12).frame(minHeight: 34)
+        .frame(width: W - 24)
+        .background(Capsule().fill(Color(hex: "#141218")))
+        .overlay(Capsule().stroke(Color(hex: "#F5B963").opacity(0.5)))
+    }
+
     // the slim ask bar: menu · text · model · mic
     private var askBar: some View {
         HStack(spacing: 8) {
@@ -1191,7 +1212,7 @@ struct NotchHomeView: View {
                     .frame(width: 26, height: 26).background(Circle().fill(Color(hex: "#F2F1F6")))
             }.buttonStyle(.plain).help("Talk with Zuffi — tap to start, tap again to stop (or hold Z)")
         }
-        .padding(.leading, 12).padding(.trailing, 5).frame(height: 38)
+        .padding(.leading, 12).padding(.trailing, 4).frame(height: 34)
         .background(Capsule().fill(Color(hex: "#141218")))
         .overlay(Capsule().stroke(Color.white.opacity(0.10)))
     }
@@ -1214,10 +1235,10 @@ struct NotchHomeView: View {
             Spacer(minLength: 0)
             Button { if voice.conversation { VoiceEngine.shared.endConversation() } else { VoiceEngine.shared.pushToTalkUp() } } label: {
                 RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 10, height: 10)
-                    .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#E5484D")))
+                    .frame(width: 26, height: 26).background(Circle().fill(Color(hex: "#E5484D")))
             }.buttonStyle(.plain).help(voice.conversation ? "End the conversation" : "Stop")
         }
-        .padding(.leading, 14).padding(.trailing, 5).frame(height: 38)
+        .padding(.leading, 14).padding(.trailing, 4).frame(height: 34)
         .background(Capsule().fill(Color(hex: "#141218")))
     }
 
@@ -1445,7 +1466,10 @@ struct NotchHomeView: View {
             var did: String? = nil
             var agentPicked = false
             if case .agent = ZuffiChat.shared.who { agentPicked = true }
-            if state.promptContext == nil, !agentPicked || ZuffiTeam.looksLikeCommand(q) {     // talking to an agent: it answers, not the quick commands
+            // WhatsApp from the chat too: "send this picture to Ahmed on WhatsApp", "WhatsApp Sara saying …", then "send"
+            if let r = ZuffiPlan.privateAnswer(q) { did = r }          // your number / email / address: answered here, not by the AI
+            if did == nil, WhatsAppAgent.shared.claims(q) { did = await WhatsAppAgent.shared.handle(q) }
+            if did == nil, state.promptContext == nil, !agentPicked || ZuffiTeam.looksLikeCommand(q) {     // talking to an agent: it answers, not the quick commands
                 if short { did = await WebHub.shared.ask(q) }
                 if did == nil, ZuffiTeam.looksLikeCommand(q), let plan = await SmartPlanner.shared.plan(q), !plan.commands.isEmpty { did = await SmartPlanner.shared.run(plan) }
             }
@@ -2657,9 +2681,9 @@ struct NotchScreen: View {
         case "week": WeekPage()
         case "focus": FocusPage()
         case "home": HomePage(go: go, ask: ask)
-        case "whatsapp": WhatsAppPage()
-        case "gmail": GmailPage()
-        case "settings": SettingsPage()
+        case "whatsapp": LockedPage(reason: "open your WhatsApp in Zuffi") { WhatsAppPage() }
+        case "gmail": LockedPage(reason: "open your Gmail in Zuffi") { GmailPage() }
+        case "settings": LockedPage(reason: "open Zuffi's settings") { SettingsPage() }
         case "tools": ToolsPage(ask: ask)
         case "screen": ScreenPage(ask: ask)
         case "meeting": MeetingPage()
@@ -3187,6 +3211,7 @@ struct GmailPage: View {
 struct SettingsPage: View {
     @ObservedObject private var state = AppState.shared
     @ObservedObject private var voice = VoiceEngine.shared
+    @ObservedObject private var lock = ZuffiLock.shared
     @AppStorage("notchSettingsTab") private var tab = "Profile"
     @AppStorage("notchShowsAurora") private var showsAurora = true
     @AppStorage("speakReminders") private var speakReminders = true
@@ -3194,6 +3219,15 @@ struct SettingsPage: View {
     @State private var name = ZuffiPlan.shared.profile["name"] ?? ""
     @State private var city = ZuffiPlan.shared.profile["city"] ?? ""
     @State private var job = ZuffiPlan.shared.profile["job"] ?? ""
+    @State private var dob = ZuffiPlan.shared.profile["dob"] ?? ""
+    @State private var family = ZuffiPlan.shared.profile["family"] ?? ""
+    @State private var hobbies = ZuffiPlan.shared.profile["hobbies"] ?? ""
+    @State private var fav = ZuffiPlan.shared.profile["fav"] ?? ""
+    @State private var notes = ZuffiPlan.shared.profile["notes"] ?? ""
+    @State private var phone = ZuffiPlan.privateDetails["phone"] ?? ""
+    @State private var email = ZuffiPlan.privateDetails["email"] ?? ""
+    @State private var address = ZuffiPlan.privateDetails["address"] ?? ""
+    @State private var dobWrong = false
     @State private var lang = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
     @State private var saved = false
     @State private var editingKey: String?
@@ -3206,10 +3240,11 @@ struct SettingsPage: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(["Profile", "AI models", "Privacy"], id: \.self) { t in NSPill(title: t, primary: tab == t) { tab = t } }
+            ForEach(["Profile", "AI models", "Plan", "Privacy"], id: \.self) { t in NSPill(title: t, primary: tab == t) { tab = t } }
         }
         switch tab {
         case "AI models": models
+        case "Plan": PlanSection()
         case "Privacy": privacy
         default: profile
         }
@@ -3219,7 +3254,17 @@ struct SettingsPage: View {
     @ViewBuilder private var profile: some View {
         NSLabel(t: "YOU")
         NSField(placeholder: "Your name", text: $name)
-        HStack(spacing: 6) { NSField(placeholder: "City", text: $city); NSField(placeholder: "What you do", text: $job) }
+        HStack(spacing: 6) { NSField(placeholder: "City", text: $city); NSField(placeholder: "What you do (job / studies)", text: $job) }
+        NSField(placeholder: "Birthday — e.g. 14/05/1998", text: $dob)
+        if dobWrong { Text("Write your birthday like 14/05/1998.").font(.system(size: 11)).foregroundColor(Color(hex: "#EF6B6B")) }
+        NSField(placeholder: "Family (e.g. wife Sara, son Ali 5)", text: $family)
+        HStack(spacing: 6) { NSField(placeholder: "Hobbies", text: $hobbies); NSField(placeholder: "Favourite food, colour, team…", text: $fav) }
+        NSField(placeholder: "Anything else Zuffi should always remember", text: $notes)
+        NSLabel(t: "PRIVATE — ENCRYPTED, NEVER SENT TO THE AI")
+        HStack(spacing: 6) { NSField(placeholder: "Phone number", text: $phone); NSField(placeholder: "Email", text: $email) }
+        NSField(placeholder: "Home address", text: $address)
+        Text("Ask “what's my number / email / address?” and she answers from here, on this Mac. Your birthday, family and likes help her talk to you like a friend.")
+            .font(.system(size: 11)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
         HStack(spacing: 8) {
             Text("Language").font(.system(size: 12.5)).foregroundColor(.white)
             Picker("", selection: $lang) { ForEach(NSLangs.all, id: \.self) { Text($0).tag($0) } }
@@ -3254,9 +3299,13 @@ struct SettingsPage: View {
                     Image(systemName: p.icon).font(.system(size: 11)).foregroundColor(.white).frame(width: 16)
                     Text(p.label).font(.system(size: 12.5)).foregroundColor(.white).lineLimit(1)
                     Spacer()
-                    Text(has ? "Key saved ✓" : "No key").font(.system(size: 11)).foregroundColor(has ? Color(hex: "#7CE0A3") : NS.soft)
+                    Text(has ? "Saved \(KeychainStore.shared.masked(k))" : "No key").font(.system(size: 11, design: .monospaced)).foregroundColor(has ? Color(hex: "#7CE0A3") : NS.soft)
+                        .help(has ? "Locked in this Mac's Keychain (encrypted). Zuffi never shows the full key." : "")
                     if has { NSPill(title: "Use") { state.aiProvider = p.rawValue } }
-                    NSPill(title: has ? "Change" : "Add key", primary: !has) { editingKey = k; keyText = "" }
+                    NSPill(title: has ? "Change" : "Add key", primary: !has) {
+                        if has { ZuffiLock.shared.require("change your \(p.label) key", always: true) { editingKey = k; keyText = "" } }
+                        else { editingKey = k; keyText = "" }
+                    }
                 }
                 if editingKey == k {
                     SecureField("", text: $keyText, prompt: Text("Paste your \(p.label) key").foregroundColor(NS.soft.opacity(0.8)))
@@ -3269,7 +3318,7 @@ struct SettingsPage: View {
                             if !v.isEmpty { KeychainStore.shared.set(k, value: v); state.aiProvider = p.rawValue }
                             editingKey = nil; keyText = ""; keyTick += 1
                         }
-                        if has { NSPill(title: "Remove key") { KeychainStore.shared.set(k, value: ""); editingKey = nil; keyTick += 1 } }
+                        if has { NSPill(title: "Remove key") { ZuffiLock.shared.require("remove your \(p.label) key", always: true) { KeychainStore.shared.set(k, value: ""); editingKey = nil; keyTick += 1 } } }
                         NSPill(title: "Cancel") { editingKey = nil; keyText = "" }
                     }
                 }
@@ -3302,7 +3351,7 @@ struct SettingsPage: View {
                     VoiceEngine.shared.speak("Hehe, this is my new voice! Do you like it?")
                 }
                 NSPill(title: "Try her feelings") { VoiceEngine.shared.speak("Hahaha, that's so funny! Grrr, that makes me angry. *sniff* that's so sad. WOW, WE DID IT!") }
-                if hasFish { NSPill(title: "Remove key") { KeychainStore.shared.set("fish-api-key", value: ""); keyTick += 1 } }
+                if hasFish { NSPill(title: "Remove key") { ZuffiLock.shared.require("remove your Fish Audio key", always: true) { KeychainStore.shared.set("fish-api-key", value: ""); keyTick += 1 } } }
             }
         }
     }
@@ -3315,12 +3364,17 @@ struct SettingsPage: View {
         toggle("Read notifications out loud (messages, mail…)", Binding(get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
                                                                        set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
         toggle("Say reminders out loud (off = just show them)", $speakReminders)
+        NSLabel(t: "SECURITY")
+        toggle("Lock Zuffi with Touch ID or my Mac password", Binding(get: { lock.enabled }, set: { ZuffiLock.shared.setEnabled($0) }))
+        Text("Settings, Gmail, WhatsApp and your details then open only for you. Changing or removing a key always asks. Your keys and passwords are kept encrypted in this Mac's Keychain — never in plain files, never shown in full, never sent to Zuffi's servers.")
+            .font(.system(size: 11)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
+        if lock.enabled { NSPill(title: "Lock now") { ZuffiLock.shared.lockNow() } }
         NSLabel(t: "YOUR DATA")
         toggle("Count my day (only on this Mac)", $trackDay)
         Text("Your notes, tasks, reminders and chats stay on this Mac. What you ask the AI is never stored on Zuffi's servers.").font(.system(size: 11.5)).foregroundColor(NS.soft)
         HStack(spacing: 6) {
-            NSPill(title: keysRemoved ? "Keys removed ✓" : "Remove all AI keys") { KeychainStore.shared.removeAll(onlyAI: true); keysRemoved = true }
-            NSPill(title: "Start fresh…") { ZuffiReset.confirmAndRun() }
+            NSPill(title: keysRemoved ? "Keys removed ✓" : "Remove all AI keys") { ZuffiLock.shared.require("remove all your AI keys", always: true) { KeychainStore.shared.removeAll(onlyAI: true); keysRemoved = true } }
+            NSPill(title: "Start fresh…") { ZuffiLock.shared.require("erase Zuffi on this Mac", always: true) { ZuffiReset.confirmAndRun() } }
         }
     }
 
@@ -3331,7 +3385,12 @@ struct SettingsPage: View {
     private func saveProfile() {
         var p: [String: Any] = ZuffiPlan.shared.profile
         p["name"] = name; p["city"] = city; p["job"] = job
+        p["family"] = family; p["hobbies"] = hobbies; p["fav"] = fav; p["notes"] = notes
+        let d = ZuffiPlan.isoDate(dob)
+        dobWrong = !dob.trimmingCharacters(in: .whitespaces).isEmpty && d == nil
+        p["dob"] = d ?? (dob.trimmingCharacters(in: .whitespaces).isEmpty ? "" : (ZuffiPlan.shared.profile["dob"] ?? ""))
         ZuffiPlan.shared.saveProfile(p)
+        ZuffiPlan.savePrivate(["phone": phone, "email": email, "address": address])
         UserDefaults.standard.set(lang, forKey: "zuffiLanguage")
         saved = true
     }
@@ -3538,6 +3597,20 @@ final class NotchNav: ObservableObject {
     var wantsHistory = false
     /// "ask the lawyer agent …" → this question is sent in the chat once it's open.
     @Published var pendingChat: String?
+    /// A reminder that came while you were busy in the notch: a small banner, not a new screen.
+    @Published var banner: String?
+    private var bannerSerial = 0
+    func showBanner(_ text: String, alert: Bool) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        banner = t
+        bannerSerial += 1
+        let my = bannerSerial
+        SoundEngine.shared.play("chime")
+        DispatchQueue.main.asyncAfter(deadline: .now() + (alert ? 45 : 12)) {
+            MainActor.assumeIsolated { if NotchNav.shared.bannerSerial == my { NotchNav.shared.banner = nil } }
+        }
+    }
     /// After a voice change, keep the page in step if it's the one showing.
     func openIfShowing(_ p: String) { if page == p { Task { await NotchData.shared.refresh() } } }
     /// Open the notch on this page ("tasks", "notes", "tools"…).
@@ -3862,5 +3935,61 @@ enum AuroraTouch {
         } else if t.range(of: #"\b(stupid|useless|shut up|i hate you|dumb)\b"#, options: .regularExpression) != nil {
             BunnyFaceCenter.shared.show(.sad, for: 3)
         }
+    }
+}
+
+
+/// Settings → Plan: your plan, upgrade, and your payment method (card, PayPal…) — changed on the payment provider's
+/// own secure page in your browser. Zuffi never sees or stores card numbers.
+struct PlanSection: View {
+    @ObservedObject private var plan = ZuffiPlan.shared
+    @State private var busy = ""
+    @State private var problem = ""
+    var body: some View {
+        NSLabel(t: "YOUR PLAN")
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(plan.plan == "business" ? "Zuffi Business" : plan.plan == "pro" ? "Zuffi Pro" : plan.plan == "trial" ? "Free trial (everything on)" : "Free")
+                    .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                Text(plan.email.isEmpty ? "Not signed in" : plan.email).font(.system(size: 11)).foregroundColor(NS.soft)
+            }
+            Spacer()
+            if plan.email.isEmpty { NSPill(title: "Sign in", primary: true) { ZuffiPlan.shared.openAccount() } }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NS.card))
+        if plan.plan != "business" {
+            NSLabel(t: "UPGRADE")
+            HStack(spacing: 6) {
+                if plan.plan != "pro" { NSPill(title: busy == "pro" ? "Opening…" : "Get Pro", primary: true) { open("pro") } }
+                NSPill(title: busy == "business" ? "Opening…" : "Get Business", primary: plan.plan == "pro") { open("business") }
+            }
+        }
+        NSLabel(t: "PAYMENT METHOD")
+        Text("Add or change your card, see invoices or cancel — on the secure payment page (opens in your browser). Zuffi never sees or keeps your card details.")
+            .font(.system(size: 11.5)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 6) {
+            NSPill(title: busy == "manage" ? "Opening…" : "Manage payment method", primary: plan.isPaid) { manage() }
+        }
+        if !problem.isEmpty { Text(problem).font(.system(size: 11)).foregroundColor(Color(hex: "#EF6B6B")) }
+    }
+    private func open(_ which: String) {
+        busy = which; problem = ""
+        Task {
+            let r = await WebHub.shared.callJS("return window.zuffiAccount ? await window.zuffiAccount.upgradeUrl(w) : ''", ["w": which]) as? String
+            go(r); busy = ""
+        }
+    }
+    private func manage() {
+        busy = "manage"; problem = ""
+        Task {
+            let r = await WebHub.shared.callJS("return window.zuffiAccount ? await window.zuffiAccount.manageUrl() : ''") as? String
+            go(r); busy = ""
+        }
+    }
+    /// Only ever opens a secure (https) page.
+    private func go(_ s: String?) {
+        guard let s, let u = URL(string: s), u.scheme == "https" else { problem = "Couldn't open the payment page. Check your internet and try again."; return }
+        NSWorkspace.shared.open(u)
     }
 }

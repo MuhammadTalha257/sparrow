@@ -420,6 +420,13 @@ final class IslandWindowController: NSWindowController {
             let view = note.object as? IslandView
             MainActor.assumeIsolated {
                 guard let self, let view else { return }
+                // A reminder or message while you're talking to Zuffi (or using a page in the notch): it shows as a
+                // small banner on top — your chat and the conversation stay where they are.
+                if NotchDesign.on, view == .note,
+                   VoiceEngine.shared.conversation || (self.state.mode == .expanded && self.state.view == .overview) {
+                    NotchNav.shared.showBanner(self.state.noteMessage ?? "", alert: self.state.noteIsAlert)
+                    return
+                }
                 self.expand(to: view)
             }
         }
