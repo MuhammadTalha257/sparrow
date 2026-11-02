@@ -266,8 +266,8 @@ enum IslandDrag {
         let islandScreenX = p.frame.minX + island.minX
         let islandW = island.width
         let mouseX = NSEvent.mouseLocation.x
-        // Where should it live now?
-        let newSide: IslandDock = mouseX < f.minX + 140 || islandScreenX < f.minX + 40 ? .left
+        // Where should it live now? (The notch design floats freely: it stays exactly where you drop it.)
+        let newSide: IslandDock = NotchDesign.on ? .none : mouseX < f.minX + 140 || islandScreenX < f.minX + 40 ? .left
             : mouseX > f.maxX - 140 || islandScreenX + islandW > f.maxX - 40 ? .right : .none
         if newSide != IslandDock.side {
             IslandDock.side = newSide
@@ -302,7 +302,7 @@ extension View {
         // The notch design stays under the notch: it isn't dragged around (and can't get stuck on a side).
         gesture(DragGesture(minimumDistance: 3)
             .onChanged { _ in MainActor.assumeIsolated { IslandDrag.changed() } }
-            .onEnded { _ in MainActor.assumeIsolated { IslandDrag.ended() } }, including: NotchDesign.on ? .subviews : .all)
+            .onEnded { _ in MainActor.assumeIsolated { IslandDrag.ended() } })
     }
 }
 

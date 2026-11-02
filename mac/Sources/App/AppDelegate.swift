@@ -22,9 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(false, forKey: "hubLight")
         UserDefaults.standard.set(true, forKey: "notchWide")
         // The notch design always sits under the notch: undo an old drag to a side of the screen.
-        if IslandDock.side != .none || UserDefaults.standard.string(forKey: "islandOrigin") != nil {
+        // (You can still drag it anywhere — it floats where you leave it — but it's never stuck "parked" on a side.)
+        if IslandDock.side != .none {
             IslandDock.side = .none
-            UserDefaults.standard.removeObject(forKey: "islandDock"); UserDefaults.standard.removeObject(forKey: "islandOrigin")
+            UserDefaults.standard.removeObject(forKey: "islandDock")
             AppState.shared.dockSide = IslandDock.none.rawValue
         }
         // Offline brain ready before you need it (loaded once, then kept warm while you're offline).

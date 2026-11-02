@@ -1082,6 +1082,10 @@ struct NotchHomeView: View {
         }
         .frame(width: tabW, height: tabH)
         .contentShape(Rectangle())
+        .movesIsland()                                   // drag her tab to move Zuffi anywhere on the screen
+        .contextMenu {
+            Button("Put Zuffi back under the notch") { IslandDrag.resetPosition() }
+        }
     }
 
     private var bar: some View {
@@ -3422,6 +3426,9 @@ enum ZuffiCommand {
             .replacingOccurrences(of: #"[.!?]+$"#, with: "", options: .regularExpression)
         let low = text.lowercased()
         guard !low.isEmpty else { return nil }
+        if low.range(of: #"^(go |move |put |come )?(zuffi |yourself |you )?back (to|under) (the )?notch$|^(reset|centre|center) (zuffi|the notch)$"#, options: .regularExpression) != nil {
+            IslandDrag.resetPosition(); return "I'm back under the notch!"
+        }
         if let r = openPage(low) { return r }
         if let r = openAgent(low, original: text) { return r }
         if let r = focus(low) { return r }

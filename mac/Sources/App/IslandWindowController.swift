@@ -71,7 +71,7 @@ final class IslandWindowController: NSWindowController {
         var panelY = position == .notch ? sf.maxY - panelH : sf.maxY - menuBarH - panelH - 4
         var panelX = defaultX
         // Wherever the person dragged it last time
-        if position != .notch || IslandDock.docked, let o = IslandDrag.savedOrigin,
+        if position != .notch || IslandDock.docked || NotchDesign.on, let o = IslandDrag.savedOrigin,
            sf.insetBy(dx: -60, dy: -60).contains(NSPoint(x: o.x + panelW / 2, y: o.y + panelH - 20)) {
             panelX = o.x; panelY = o.y
         }
