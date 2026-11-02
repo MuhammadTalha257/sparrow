@@ -129,12 +129,22 @@ final class AIService {
         q.lowercased().range(of: #"\b(zuffi|sparrow|you|your|yourself|app|plan|plans|pro|business|price|prices|cost|subscription|trial|feature|features|setting|settings|how (do|can|to)|can i|where is|what can|help|lisan)\b"#, options: .regularExpression) != nil
     }
 
+    /// Set while answering something said out loud: the answer is spoken, so it must be short like a real conversation.
+    var voiceTurn = false
+    static let voiceRule = """
+    THIS IS A SPOKEN CONVERSATION (like a phone call). Your answer is read out loud:
+    - Reply in 1 or 2 short sentences (under 30 words), the way a friend talks. Small talk ("how are you") gets one warm line and maybe one short question back.
+    - No lists, no bullet points, no dashes, no headings, no markdown, no emojis, no links.
+    - Don't offer a menu of things you can do. If more detail would help, give the key point and ask if they want more.
+    """
+
     var fullSystemPrompt: String {
         if let o = oneShotSystem { return o }
         // Zuffi's long self-description only when the question is about Zuffi: a short prompt answers much faster.
         // A team agent is picked: it answers as that person, with the business details — not Zuffi's long self-description.
-        let base = ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) }
+        var base = ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) }
             ?? (Self.systemPrompt + "\n" + ZuffiVoice.persona + "\n" + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : "") + (ZuffiFocus.agents ? "" : NikBrain.shared.zuffiContext()))
+        if voiceTurn { base += "\n" + Self.voiceRule }
         guard let document else { return base }
         return base + """
 

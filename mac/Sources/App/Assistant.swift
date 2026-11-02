@@ -210,8 +210,22 @@ final class VoiceEngine: NSObject, ObservableObject {
         let noEmoji = String(String.UnicodeScalarView(text.unicodeScalars.filter {
             !($0.properties.isEmojiPresentation || ($0.properties.isEmoji && $0.value > 0x2000)) && $0.value != 0xFE0F
         }))
-        let clean = noEmoji.replacingOccurrences(of: "•", with: "")
+        var clean = noEmoji.replacingOccurrences(of: "•", with: "")
+            .replacingOccurrences(of: #"(?m)^\s*(?:[-*]|\d+[.)])\s+"#, with: "", options: .regularExpression)     // list marks aren't read out
+            .replacingOccurrences(of: #"\s+[-–—]\s+"#, with: ", ", options: .regularExpression)                      // " - " is a pause, not "dash"
+            .replacingOccurrences(of: #"[*#_`]+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"https?://\S+"#, with: "the link", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // A long written answer: say the first part, the rest stays in the chat (like a real conversation).
+        if clean.count > 360 {
+            var head = ""
+            clean.enumerateSubstrings(in: clean.startIndex..<clean.endIndex, options: .bySentences) { sub, _, _, stop in
+                guard let sub else { return }
+                if head.count + sub.count > 300, !head.isEmpty { stop = true; return }
+                head += sub
+            }
+            if !head.isEmpty, head.count < clean.count - 40 { clean = head.trimmingCharacters(in: .whitespacesAndNewlines) + " The rest is in the chat." }
+        }
         guard !clean.isEmpty else { return }
         // Only ever one voice: the live conversation is already talking, so don't talk over it.
         if LiveSession.shared.active { appendAppLog("voice.log", "skip speak (live voice is on): \(clean.prefix(40))"); return }
@@ -606,7 +620,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         status = ""
     }
     /// Her turn is over: listen for yours.
-    private func conversationNext(after delay: Double = 0.3) {
+    private func conversationNext(after delay: Double = 0.6) {      // a short beat, so the mic doesn't hear the end of her own voice
         guard conversation else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             MainActor.assumeIsolated {
@@ -723,6 +737,7 @@ final class VoiceEngine: NSObject, ObservableObject {
                     appendAppLog("voice.log", "one-shot: nothing heard in 9s — back to \"Zuffi…\" listening")
                     me.oneShot = false
                     me.status = ""
+                    if me.conversation { me.stopRecognition(); me.conversationMissed(); return }     // quiet turn: listen again (3 → the conversation ends)
                     if UserDefaults.standard.bool(forKey: AssistantPrefs.wakeWord) { me.startRecognition() } else { me.stopRecognition() }
                 }
             }
@@ -777,7 +792,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         if let cmd = extractCommand(heard), !cmd.isEmpty {
             wait = complete(cmd) ? 0.35 : 0.85       // a clear command runs the moment you stop
         } else if oneShot, !heard.isEmpty {
-            wait = complete(heard) ? 0.4 : 0.8
+            wait = conversation ? (complete(heard) ? 0.95 : 1.4) : (complete(heard) ? 0.4 : 0.8)   // in a conversation: let you finish your thought
         } else if extractCommand(heard) == "" {
             wait = 1.3   // just "Zuffi" — give a moment to say the rest in the same breath
         }

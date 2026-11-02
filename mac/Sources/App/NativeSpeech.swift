@@ -138,8 +138,38 @@ final class NativeSpeech {
         return "kokoro"
     }
 
+    /// Her voices: each is a natural voice + its own pitch and pace. Her feelings (happy, angry, sad, excited…)
+    /// then colour whichever one you pick.
+    struct Preset { let id: String; let name: String; let sid: Int; let pitch: Double; let speed: Double }
+    static let presets: [Preset] = [
+        Preset(id: "sweet", name: "Sweet (Zuffi)", sid: 3, pitch: 200, speed: 1.06),
+        Preset(id: "light", name: "Light & airy", sid: 10, pitch: 220, speed: 1.05),
+        Preset(id: "bright", name: "Bright & happy", sid: 7, pitch: 120, speed: 1.1),
+        Preset(id: "soft", name: "Soft & calm", sid: 6, pitch: 40, speed: 0.96),
+        Preset(id: "bold", name: "Bold & strong", sid: 5, pitch: -60, speed: 1.0),
+        Preset(id: "warm", name: "Warm & natural", sid: 3, pitch: 0, speed: 1.05),
+        Preset(id: "story", name: "Storyteller", sid: 9, pitch: 0, speed: 0.98),
+        Preset(id: "british", name: "British", sid: 21, pitch: 60, speed: 1.04),
+        Preset(id: "britsoft", name: "British, gentle", sid: 23, pitch: 80, speed: 1.0),
+        Preset(id: "deep", name: "Deep & heavy (male)", sid: 17, pitch: -120, speed: 0.97),
+        Preset(id: "calm-m", name: "Calm (male)", sid: 16, pitch: 0, speed: 1.02),
+        Preset(id: "fun-m", name: "Playful (male)", sid: 18, pitch: 40, speed: 1.08),
+        Preset(id: "brit-m", name: "British (male)", sid: 26, pitch: 0, speed: 1.02),
+    ]
+    static var preset: Preset {
+        let id = UserDefaults.standard.string(forKey: "voicePreset") ?? "sweet"
+        return presets.first { $0.id == id } ?? presets[0]
+    }
+
+    /// A new voice picked: prepare her everyday phrases in it, so they stay instant.
+    func rewarm() {
+        guard proc?.isRunning == true else { return }
+        send(["cmd": "warm", "model": "kokoro", "sid": sid(), "phrases": Self.common])
+    }
+
     private func sid() -> Int {
         let ud = UserDefaults.standard
+        if ud.string(forKey: "voicePreset") != nil { return Self.preset.sid }
         if let v = ud.string(forKey: "voiceName"), let s = Self.voices[v] { return s.sid }
         return (ud.string(forKey: AssistantPrefs.voiceGender) ?? "female") == "male" ? 26 : 3
     }
@@ -154,10 +184,12 @@ final class NativeSpeech {
         let lang = UserDefaults.standard.string(forKey: "sparrowLang") ?? "en"
         let model = Self.model(for: text, lang: lang)
         let rate = UserDefaults.standard.double(forKey: AssistantPrefs.voiceRate)
-        let speed = (rate == 0 ? 1.0 : max(0.8, min(1.3, rate / 0.5))) * ZuffiExpress.speed(ZuffiExpress.mood(text))
+        let preset = Self.preset
+        let speed = (rate == 0 ? 1.0 : max(0.8, min(1.4, rate / 0.5))) * ZuffiExpress.speed(ZuffiExpress.mood(text)) * preset.speed
         onEnd = ended
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
-        send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny ? speed * 1.06 : speed, "pitch": (bunny ? 200.0 : 0.0) + ZuffiExpress.cents(ZuffiExpress.mood(text))])   // a lighter lift sounds natural, not robotic
+        send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny && preset.id == "sweet" ? speed * 1.06 : speed,
+                   "pitch": (bunny && preset.id == "sweet" ? 200.0 : preset.pitch) + ZuffiExpress.cents(ZuffiExpress.mood(text))])   // a lighter lift sounds natural, not robotic
         let id = currentId
         // Never wait long: if the first words aren't ready, use the instant voice instead. Just after it starts it is still
         // loading her voice, so it gets longer then — otherwise the first reminder would come out in the Mac's voice.

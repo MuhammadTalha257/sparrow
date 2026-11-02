@@ -21,7 +21,7 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
     struct Profile: Identifiable, Hashable { let id: String; let name: String; let language: String; let kind: String }
 
     /// "auto" (VoiceStudio, else Voicebox, if one is running), "voicestudio", "voicebox" or "builtin".
-    static var mode: String { UserDefaults.standard.string(forKey: "offlineVoice") ?? (UserDefaults.standard.bool(forKey: "voiceboxVoice") ? "voicebox" : "auto") }
+    static var mode: String { UserDefaults.standard.string(forKey: "offlineVoice") ?? (UserDefaults.standard.bool(forKey: "voiceboxVoice") ? "voicebox" : "builtin") }
     /// True when an offline voice studio is running and allowed — checked every 30 s, so speaking never waits for it.
     static var enabled: Bool { mode != "builtin" && (shared.studioUp && mode != "voicebox" || shared.boxUp && mode != "voicestudio") }
     static let studioBase = URL(string: "http://127.0.0.1:3900")!
@@ -160,7 +160,7 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
 // MARK: - Settings → Voice
 
 struct VoiceboxSettings: View {
-    @AppStorage("offlineVoice") private var mode = "auto"
+    @AppStorage("offlineVoice") private var mode = "builtin"
     @AppStorage("voiceboxProfile") private var profile = ""
     @AppStorage("voicestudioVoice") private var studioVoice = ""
     @AppStorage("bunnyVoice") private var bunny = true
@@ -382,7 +382,8 @@ enum ZuffiExpress {
 final class FishVoice: NSObject, AVAudioPlayerDelegate {
     static let shared = FishVoice()
     static var key: String { KeychainStore.shared.get("fish-api-key") ?? "" }
-    static var usable: Bool { UserDefaults.standard.string(forKey: "voiceEngine") == "fish" && !key.isEmpty && NetStatus.shared.online }
+    /// Switched off: online voices wait for the whole sentence to come back over the internet, which sounded slow and choppy.
+    static var usable: Bool { false }
     private var player: AVAudioPlayer?
     private var onEnd: (() -> Void)?
     private var turn = 0

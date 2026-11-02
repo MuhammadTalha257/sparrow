@@ -1481,7 +1481,9 @@ struct NotchHomeView: View {
                 await NotchData.shared.refresh()
                 return
             }
+            AIService.shared.voiceTurn = spoken || VoiceEngine.shared.conversation     // spoken → a short, chatty answer
             await AIService.shared.chat(query: q, context: state.promptContext, state: state)
+            AIService.shared.voiceTurn = false
             state.stateOverride = nil
             if state.chatHistory.count >= before, let last = state.chatHistory.last, last.role == .assistant {
                 BunnyFaceCenter.shared.show(.happy, for: 2)
@@ -3235,6 +3237,8 @@ struct SettingsPage: View {
     @State private var keyTick = 0
     @State private var keysRemoved = false
     @AppStorage("voiceEngine") private var voiceEngine = "builtin"
+    @AppStorage("voicePreset") private var voicePreset = "sweet"
+    @AppStorage(AssistantPrefs.voiceRate) private var voiceRate = 0.5
     @State private var fishKey = ""
     @State private var fishVoice = UserDefaults.standard.string(forKey: "fishVoiceId") ?? ""
 
@@ -3329,30 +3333,22 @@ struct SettingsPage: View {
         Text("No key? Zuffi AI (included in your plan) and Ollama on this Mac work without one.").font(.system(size: 11)).foregroundColor(NS.soft)
         Text("Voice and chat use the same AI you pick here.").font(.system(size: 11)).foregroundColor(NS.soft)
         NSLabel(t: "HER VOICE")
-        HStack(spacing: 6) {
-            NSPill(title: "Built-in (works offline)", primary: voiceEngine != "fish") { voiceEngine = "builtin" }
-            NSPill(title: "Fish Audio (most natural)", primary: voiceEngine == "fish") { voiceEngine = "fish" }
-        }
-        if voiceEngine == "fish" {
-            let hasFish = !(KeychainStore.shared.get("fish-api-key") ?? "").isEmpty
-            Text(hasFish ? "Fish Audio key saved ✓ — she laughs, sobs, gets angry and shouts for real. With no internet her built-in voice speaks." : "Paste your Fish Audio API key (fish.audio → API keys). It stays on this Mac.")
-                .font(.system(size: 11.5)).foregroundColor(hasFish ? Color(hex: "#7CE0A3") : NS.soft)
-            SecureField("", text: $fishKey, prompt: Text(hasFish ? "Replace the key" : "Fish Audio API key").foregroundColor(NS.soft.opacity(0.8)))
-                .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
-                .padding(.horizontal, 12).frame(height: 34)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
-            NSField(placeholder: "Voice ID (optional — a voice from the Fish Audio library)", text: $fishVoice)
-            HStack(spacing: 6) {
-                NSPill(title: "Save", primary: true) {
-                    let k = fishKey.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !k.isEmpty { KeychainStore.shared.set("fish-api-key", value: k) }
-                    UserDefaults.standard.set(fishVoice.trimmingCharacters(in: .whitespaces), forKey: "fishVoiceId")
-                    fishKey = ""; keyTick += 1
-                    VoiceEngine.shared.speak("Hehe, this is my new voice! Do you like it?")
+        Text("Pick her voice — it works offline and starts instantly. Her feelings (happy, angry, sad, excited) colour whichever voice you pick.")
+            .font(.system(size: 11.5)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 6)], alignment: .leading, spacing: 6) {
+            ForEach(NativeSpeech.presets, id: \.id) { v in
+                NSPill(title: v.name, primary: voicePreset == v.id) {
+                    voicePreset = v.id
+                    voiceEngine = "builtin"
+                    NativeSpeech.shared.rewarm()
+                    VoiceEngine.shared.speak("Hi! This is how I sound now. Do you like it?")
                 }
-                NSPill(title: "Try her feelings") { VoiceEngine.shared.speak("Hahaha, that's so funny! Grrr, that makes me angry. *sniff* that's so sad. WOW, WE DID IT!") }
-                if hasFish { NSPill(title: "Remove key") { ZuffiLock.shared.require("remove your Fish Audio key", always: true) { KeychainStore.shared.set("fish-api-key", value: ""); keyTick += 1 } } }
             }
+        }
+        HStack(spacing: 6) {
+            Text("Speed").font(.system(size: 12.5)).foregroundColor(.white)
+            Slider(value: $voiceRate, in: 0.4...0.7).controlSize(.small).tint(Color(hex: "#B79CFF"))
+            NSPill(title: "Try her feelings") { VoiceEngine.shared.speak("Hahaha, that's so funny! Grrr, that makes me angry. Aww, that's so sad. WOW, WE DID IT!") }
         }
     }
 
