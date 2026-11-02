@@ -1063,15 +1063,15 @@ struct NotchHomeView: View {
 
     /// Like Taby: three separate pieces — the small black tab with Aurora's face under the notch, the chat bar
     /// floating just below it, and (only when needed) the panel or answer card below that. Nothing else covers the screen.
-    private var tabW: CGFloat { max(state.notchWidth + 24, 196) }
-    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 72 : max(state.notchHeight, 24) + 6 }
+    private var tabW: CGFloat { max(state.notchWidth + 8, 168) }
+    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 52 : max(state.notchHeight, 24) + 4 }
     private var faceTab: some View {
         ZStack(alignment: .bottom) {
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 24, bottomTrailing: 24, topTrailing: 0), style: .continuous)
                 .fill(Color.black)
             if showsAurora {
-                RealAuroraIcon(size: 76, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
-                    .frame(width: 76, height: 70).clipped()
+                RealAuroraIcon(size: 58, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
+                    .frame(width: 58, height: 52).clipped()
                     .padding(.bottom, 2)
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
@@ -1101,7 +1101,7 @@ struct NotchHomeView: View {
         if let p = page {
             NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { nav.page = target } },
                         ask: { text in ask = text; askFocus = true })
-                .frame(width: W - 24, height: max(240, H - tabH - 44 - 30))
+                .frame(width: W - 24, height: max(220, H - tabH - 38 - 26))
                 .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
                 .padding(.bottom, 10)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -1112,7 +1112,7 @@ struct NotchHomeView: View {
     }
 
     private var core: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             faceTab
             bar
             below
@@ -1180,19 +1180,19 @@ struct NotchHomeView: View {
         HStack(spacing: 8) {
             Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { nav.page = nav.page == nil ? "grid" : nil } } label: {
                 Image(systemName: page == nil ? "square.grid.2x2" : "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#E9E5F2"))
-                    .frame(width: 30, height: 30).background(Circle().fill(page == nil ? Color.clear : Color(hex: "#B79CFF").opacity(0.25)))
+                    .frame(width: 26, height: 26).background(Circle().fill(page == nil ? Color.clear : Color(hex: "#B79CFF").opacity(0.25)))
             }.buttonStyle(.plain).help("Everything Zuffi can do")
             TextField("", text: $ask, prompt: Text(answering ? "Ask a follow-up…" : "Ask Zuffi anything…").foregroundColor(.white.opacity(0.45)))
-                .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
+                .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
                 .focused($askFocus).onSubmit { send() }
             ProviderMenu(state: state, tint: .white)
             // talk now
             Button { ZuffiAsk.shared.listenOnce() } label: {
                 Image(systemName: "waveform").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#141218"))
-                    .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#F2F1F6")))
+                    .frame(width: 26, height: 26).background(Circle().fill(Color(hex: "#F2F1F6")))
             }.buttonStyle(.plain).help("Talk to Zuffi now (or hold Z)")
         }
-        .padding(.leading, 14).padding(.trailing, 6).frame(height: 44)
+        .padding(.leading, 12).padding(.trailing, 5).frame(height: 38)
         .background(Capsule().fill(Color(hex: "#141218")))
         .overlay(Capsule().stroke(Color.white.opacity(0.10)))
     }
@@ -1215,7 +1215,7 @@ struct NotchHomeView: View {
                     .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#E5484D")))
             }.buttonStyle(.plain).help("Stop")
         }
-        .padding(.leading, 16).padding(.trailing, 6).frame(height: 44)
+        .padding(.leading, 14).padding(.trailing, 5).frame(height: 38)
         .background(Capsule().fill(Color(hex: "#141218")))
     }
 

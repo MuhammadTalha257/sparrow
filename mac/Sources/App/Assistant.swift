@@ -255,9 +255,25 @@ final class VoiceEngine: NSObject, ObservableObject {
             speaking = true
             neuralTurn += 1
             let turn = neuralTurn
-            // Sentence by sentence: the first short sentence is ready almost at once, so she starts talking quickly
-            // (even offline), and the rest follows while she speaks.
-            sayChunk(Self.chunks(String(clean.prefix(1600))), 0, turn: turn)
+            // The whole answer goes to her voice at once: it speaks the first few words almost immediately and prepares
+            // the next sentences WHILE she talks (no waiting between sentences, no gap at the start).
+            let piece = String(clean.prefix(1600))
+            Task { @MainActor in
+                let ok = await NativeSpeech.shared.say(ZuffiExpress.spoken(piece)) {
+                    let v = VoiceEngine.shared
+                    guard turn == v.neuralTurn else { return }
+                    v.neuralEnded()
+                }
+                guard turn == self.neuralTurn else { return }
+                if !ok { self.appleSpeak(piece); return }
+                self.lipText = piece
+                self.audioStartedAt = Date()          // her lips follow the words from here
+                ZuffiExpress.face(for: piece)          // and her face follows the feelings in it
+                let secs = 8.0 + Double(piece.count) / 9.0      // safety net: never leave the mic paused
+                DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
+                    MainActor.assumeIsolated { VoiceEngine.shared.neuralTimeout(turn) }
+                }
+            }
             return
         }
         appleSpeak(clean)
