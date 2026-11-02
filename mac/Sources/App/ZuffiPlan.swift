@@ -180,14 +180,13 @@ final class ZuffiPlan: ObservableObject {
         let t = q.lowercased(), p = profile
         let mine = t.range(of: #"\b(my|i|me|mera|meri)\b"#, options: .regularExpression) != nil
         if mine, t.range(of: #"date of birth|\bdob\b|birthday|when was i born|salgirah"#, options: .regularExpression) != nil {
-            guard let d = p["dob"], d.count == 10 else { return "I don’t have your date of birth yet. Add it in Settings → You → Edit my details." }
+            guard let d = p["dob"], d.count == 10 else { return "I don’t have your date of birth yet. Add it in Settings → Profile." }
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
             guard let date = f.date(from: d) else { return "Your date of birth is \(d)." }
             let out = DateFormatter(); out.dateStyle = .long
             return "Your date of birth is \(out.string(from: date))."
         }
         if t.range(of: #"^(what'?s|what is) my name\??$|^who am i\??$"#, options: .regularExpression) != nil, let n = p["name"], !n.isEmpty { return "You’re \(n)." }
-        }
         if t.range(of: #"^where do i live\??$|^(what'?s|what is) my city\??$"#, options: .regularExpression) != nil, let c = p["city"], !c.isEmpty { return "You live in \(c)." }
         return nil
     }
