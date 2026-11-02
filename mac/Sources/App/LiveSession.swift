@@ -65,7 +65,8 @@ final class LiveSession: NSObject {
     /// Jarvis mode is on (default), there's internet and a Gemini key.
     private var disabledUntil = Date.distantPast
     var usable: Bool {
-        (UserDefaults.standard.object(forKey: "liveMode") as? Bool ?? true) && NetStatus.shared.online && key != nil && Date() > disabledUntil
+        // The notch design talks with the SAME AI you picked in the chat bar (and her own voice), so the live voice model stays off there.
+        !NotchDesign.on && (UserDefaults.standard.object(forKey: "liveMode") as? Bool ?? true) && NetStatus.shared.online && key != nil && Date() > disabledUntil
     }
 
     // MARK: Start / stop

@@ -637,6 +637,7 @@ enum ZuffiSelf {
         switch action {
         case "open_business": BusinessDashboard.shared.show(); return "Opening your business page."
         case "open_whatsapp":
+            if NotchDesign.on { NotchNav.shared.open("whatsapp"); return "Here are your WhatsApp messages." }
             if ZuffiPlan.shared.isBusiness, WhatsAppLink.shared.enabled { WhatsAppLink.shared.showWindow(); return "Here's WhatsApp." }
             if let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "net.whatsapp.WhatsApp") ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "desktop.WhatsApp") {
                 NSWorkspace.shared.openApplication(at: u, configuration: .init()); return "Opening WhatsApp."

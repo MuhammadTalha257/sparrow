@@ -452,6 +452,21 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
     }
 
     /// "Read my WhatsApp messages" — the unread chats with their last few messages.
+    struct ChatSummary: Identifiable, Hashable { let id: String; let name: String; let unread: Int; let at: Date; let msgs: [(me: Bool, text: String)]
+        static func == (a: ChatSummary, b: ChatSummary) -> Bool { a.id == b.id && a.at == b.at && a.unread == b.unread }
+        func hash(into h: inout Hasher) { h.combine(id) } }
+    /// Your latest chats with their last messages (for the notch's WhatsApp page).
+    func recentChats() async -> [ChatSummary] {
+        guard let wv = web, ready else { return [] }
+        let r = (try? await wv.callAsyncJavaScript("return await window.ZuffiWA.recent(20)", arguments: [:], in: nil, contentWorld: .page)) as? [[String: Any]] ?? []
+        return r.compactMap { c in
+            guard let id = c["chatId"] as? String else { return nil }
+            let msgs = ((c["msgs"] as? [[String: Any]]) ?? []).map { (me: ($0["me"] as? Bool) ?? false, text: ($0["text"] as? String) ?? "") }
+            let at = (c["at"] as? Double) ?? Double((c["at"] as? Int) ?? 0)
+            return ChatSummary(id: id, name: (c["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? id.replacingOccurrences(of: "@c.us", with: ""),
+                               unread: (c["unread"] as? Int) ?? 0, at: Date(timeIntervalSince1970: at / 1000), msgs: msgs)
+        }
+    }
     func readUnread() async -> String {
         guard let wv = web, ready else { return "WhatsApp isn’t linked yet. Say “link WhatsApp” and scan the code with your phone." }
         let r = (try? await wv.callAsyncJavaScript("return await window.ZuffiWA.unread()", arguments: [:], in: nil, contentWorld: .page)) as? [[String: Any]] ?? []

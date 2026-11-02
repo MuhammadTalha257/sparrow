@@ -1163,6 +1163,7 @@ struct NotchHomeView: View {
         .onChange(of: nav.pendingChat) { _, q in
             guard let q, !q.isEmpty else { return }
             nav.pendingChat = nil
+            thinking = false; askedQ = ""; reply = ""          // the answer comes in the chat
             sendChat(q, spoken: true)
         }
         .onChange(of: voice.missedAt) { _, _ in
@@ -1182,12 +1183,6 @@ struct NotchHomeView: View {
                 .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
                 .focused($askFocus).onSubmit { send() }
             ProviderMenu(state: state, tint: .white)
-            // mic on / off: "Hey Zuffi" listening
-            Button { VoiceEngine.shared.setMic(!voice.micEnabled) } label: {
-                Image(systemName: voice.micEnabled ? "mic.fill" : "mic.slash.fill").font(.system(size: 11, weight: .bold))
-                    .foregroundColor(voice.micEnabled ? Color(hex: "#7CE0A3") : Color(hex: "#FF7A7A"))
-                    .frame(width: 26, height: 26).background(Circle().fill(Color.white.opacity(0.08)))
-            }.buttonStyle(.plain).help(voice.micEnabled ? "Mic on — Zuffi hears “Hey Zuffi”. Click to turn off." : "Mic off — click to turn on")
             // talk now
             Button { ZuffiAsk.shared.listenOnce() } label: {
                 Image(systemName: "waveform").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#141218"))
@@ -2599,6 +2594,7 @@ struct NotchScreen: View {
         Item(id: "habits", name: "Habits", icon: "flame"), Item(id: "today", name: "Today", icon: "calendar"),
         Item(id: "week", name: "This week", icon: "calendar.day.timeline.left"), Item(id: "focus", name: "Focus", icon: "timer"),
         Item(id: "home", name: "Home", icon: "house"), Item(id: "whatsapp", name: "WhatsApp", icon: "message"),
+        Item(id: "gmail", name: "Gmail", icon: "envelope"),
         Item(id: "settings", name: "Settings", icon: "gearshape"), Item(id: "tools", name: "Tools", icon: "wrench.and.screwdriver"),
         Item(id: "screen", name: "My screen", icon: "eye"), Item(id: "meeting", name: "Meeting helper", icon: "person.2.wave.2"),
         Item(id: "day", name: "Your day", icon: "chart.bar"),
@@ -2651,6 +2647,7 @@ struct NotchScreen: View {
         case "focus": FocusPage()
         case "home": HomePage(go: go, ask: ask)
         case "whatsapp": WhatsAppPage()
+        case "gmail": GmailPage()
         case "settings": SettingsPage()
         case "tools": ToolsPage(ask: ask)
         case "screen": ScreenPage(ask: ask)
@@ -3005,68 +3002,173 @@ struct HomePage: View {
 }
 
 struct WhatsAppPage: View {
-    @ObservedObject private var inbox = NotchInbox.shared
     @ObservedObject private var link = WhatsAppLink.shared
-    @State private var replying: String?
+    @State private var chats: [WhatsAppLink.ChatSummary] = []
+    @State private var open: String?
     @State private var text = ""
     @State private var sent = ""
-    struct Msg: Identifiable { let id: String; let who: String; let body: String; let at: Date }
-    private var msgs: [Msg] {
-        var out: [Msg] = link.recent.map { Msg(id: $0.id.uuidString, who: $0.name.isEmpty ? $0.phone : $0.name, body: $0.body, at: $0.at) }
-        for n in inbox.notes where n.action == "whatsapp" || n.head.hasPrefix("WhatsApp") {
-            let who = n.head.components(separatedBy: " · ").dropFirst().joined(separator: " · ")
-            if !out.contains(where: { $0.who == who && $0.body == n.body }) { out.append(Msg(id: n.id.uuidString, who: who, body: n.body, at: n.at)) }
-        }
-        return out.sorted { $0.at > $1.at }
-    }
+    @State private var loading = false
     var body: some View {
         if !link.ready {
             NSCard {
-                Text(link.state == "loading" ? "Connecting to WhatsApp…" : link.state == "qr" ? "Scan the code in the WhatsApp window with your phone: WhatsApp → Settings → Linked devices → Link a device." : "Link your WhatsApp once to see your messages here, reply, or ask Zuffi to write a reply.")
+                Text(link.state == "loading" ? "Connecting to WhatsApp…" : link.state == "qr" ? "Scan the code in the WhatsApp window with your phone: WhatsApp → Settings → Linked devices → Link a device." : "Link your WhatsApp once to see your chats here, reply, or ask Zuffi to write a reply.")
                     .font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                NSPill(title: link.state == "qr" ? "Show the code" : "Link WhatsApp", primary: true) { link.enabled = true; link.start() }
+                if link.state != "loading" { NSPill(title: link.state == "qr" ? "Show the code" : "Link WhatsApp", primary: true) { link.enabled = true; link.start() } }
+            }
+        } else {
+            HStack {
+                Text(loading ? "Updating…" : "\(chats.count) chats").font(.system(size: 11)).foregroundColor(NS.soft)
+                Spacer()
+                NSPill(title: "Refresh") { Task { await load() } }
+            }
+            if !sent.isEmpty { Text(sent).font(.system(size: 11.5)).foregroundColor(Color(hex: "#7CE0A3")) }
+            if chats.isEmpty && !loading { Text("No chats yet.").font(.system(size: 12.5)).foregroundColor(NS.soft) }
+            ForEach(chats) { c in
+                VStack(alignment: .leading, spacing: 6) {
+                    Button { withAnimation { open = open == c.id ? nil : c.id; text = "" } } label: {
+                        HStack(spacing: 8) {
+                            Text(c.name).font(.system(size: 12.5, weight: c.unread > 0 ? .bold : .semibold)).foregroundColor(.white).lineLimit(1)
+                            if c.unread > 0 { Text("\(c.unread)").font(.system(size: 10, weight: .bold)).foregroundColor(NS.ink).padding(.horizontal, 6).frame(height: 18).background(Capsule().fill(Color(hex: "#7CE0A3"))) }
+                            Spacer()
+                            Text(c.at.formatted(date: Calendar.current.isDateInToday(c.at) ? .omitted : .abbreviated, time: .shortened)).font(.system(size: 10.5)).foregroundColor(NS.soft)
+                        }
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    if open == c.id {
+                        ForEach(Array(c.msgs.enumerated()), id: \.offset) { _, m in
+                            HStack {
+                                if m.me { Spacer(minLength: 40) }
+                                Text(m.text).font(.system(size: 12)).foregroundColor(m.me ? NS.ink : .white).padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(RoundedRectangle(cornerRadius: 12).fill(m.me ? Color(hex: "#F2F1F6") : Color.white.opacity(0.08))).textSelection(.enabled)
+                                if !m.me { Spacer(minLength: 40) }
+                            }
+                        }
+                        NSField(placeholder: "Your reply…", text: $text) { send(c) }
+                        HStack(spacing: 6) {
+                            NSPill(title: "Send", primary: true) { send(c) }
+                            NSPill(title: "Write it for me") { Task { await writeForMe(c) } }
+                            NSPill(title: "Ask Zuffi") { NotchNav.shared.page = "chat"; NotchNav.shared.pendingChat = "WhatsApp chat with \(c.name):\n" + c.msgs.map { ($0.me ? "Me: " : "\(c.name): ") + $0.text }.joined(separator: "\n") + "\nWhat do they want, and what should I reply?" }
+                        }
+                    } else if let last = c.msgs.last {
+                        Text((last.me ? "You: " : "") + last.text).font(.system(size: 11.5)).foregroundColor(NS.soft).lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NS.card))
             }
         }
-        if !sent.isEmpty { Text(sent).font(.system(size: 11.5)).foregroundColor(Color(hex: "#7CE0A3")) }
-        if link.ready && msgs.isEmpty { Text("No new messages. New ones show up here.").font(.system(size: 12.5)).foregroundColor(NS.soft) }
-        ForEach(msgs.prefix(20)) { m in
-            NSCard {
-                HStack {
-                    Text(m.who).font(.system(size: 12, weight: .bold)).foregroundColor(.white).lineLimit(1)
-                    Spacer()
-                    Text(m.at.formatted(date: .omitted, time: .shortened)).font(.system(size: 10.5)).foregroundColor(NS.soft)
-                }
-                Text(m.body).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).lineLimit(4).textSelection(.enabled)
-                if replying == m.id {
-                    NSField(placeholder: "Your reply…", text: $text) { send(m) }
-                    HStack(spacing: 6) {
-                        NSPill(title: "Send", primary: true) { send(m) }
-                        NSPill(title: "Write it for me") { Task { await writeForMe(m) } }
-                        NSPill(title: "Cancel") { replying = nil }
-                    }
-                } else {
-                    HStack(spacing: 6) {
-                        NSPill(title: "Reply", primary: true) { replying = m.id; text = "" }
-                        NSPill(title: "Ask Zuffi") { NotchNav.shared.page = "chat"; NotchNav.shared.pendingChat = "WhatsApp from \(m.who): \"\(m.body)\" — what do they want, and what should I reply?" }
-                        NSPill(title: "Read it") { VoiceEngine.shared.speak("WhatsApp from \(m.who). \(m.body)") }
-                    }
-                }
-            }
-        }
+        EmptyView().task(id: link.ready) { await load() }
     }
-    private func send(_ m: Msg) {
+    private func load() async {
+        guard link.ready else { return }
+        loading = true; chats = await link.recentChats(); loading = false
+    }
+    private func send(_ c: WhatsAppLink.ChatSummary) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !t.isEmpty else { return }
-        replying = nil; text = ""
+        text = ""
         Task { @MainActor in
-            let ok = await WhatsAppLink.shared.send(to: m.who, text: t)
-            if !ok { _ = await WhatsAppAgent.shared.sendScheduled(to: m.who, text: t) }
-            sent = "Sent to \(m.who) ✓"
+            let ok = await WhatsAppLink.shared.send(to: c.id, text: t)
+            sent = ok ? "Sent to \(c.name) ✓" : "Couldn't send. Check WhatsApp is still linked."
+            await load()
         }
     }
-    private func writeForMe(_ m: Msg) async {
-        let r = await AIService.shared.oneShot("Write a short, natural WhatsApp reply to this message from \(m.who): \"\(m.body)\". Same language and tone. Reply with the message text only.",
+    private func writeForMe(_ c: WhatsAppLink.ChatSummary) async {
+        let convo = c.msgs.map { ($0.me ? "Me: " : "\(c.name): ") + $0.text }.joined(separator: "\n")
+        let r = await AIService.shared.oneShot("Write my next WhatsApp message in this chat. Short, natural, same language and tone. Message text only.\n\n\(convo)",
                                                system: "You write short replies for the user. Text only, no quotes.") ?? ""
         text = r.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+    }
+}
+
+/// Gmail, linked straight to Zuffi: your newest emails, explained, with replies written for you (sent only when you press Send).
+struct GmailPage: View {
+    @ObservedObject private var g = GmailLink.shared
+    @State private var addr = UserDefaults.standard.string(forKey: "gmailAddress") ?? ""
+    @State private var pass = ""
+    @State private var open: String?
+    @State private var draft = ""
+    @State private var info = ""
+    @State private var busy = false
+    var body: some View {
+        if !g.linked {
+            NSCard {
+                Text("Link your Gmail").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                Text("Google needs an app password for this (your normal password won't work, and Zuffi never sees it):\n1. Google Account → Security → turn on 2-Step Verification.\n2. Search \"App passwords\", make one called Zuffi.\n3. Paste the 16 letters below.")
+                    .font(.system(size: 11.5)).foregroundColor(Color(hex: "#CFCBD8"))
+                NSField(placeholder: "you@gmail.com", text: $addr)
+                SecureField("", text: $pass, prompt: Text("App password (16 letters)").foregroundColor(NS.soft.opacity(0.8)))
+                    .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
+                    .padding(.horizontal, 12).frame(height: 34)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+                HStack(spacing: 6) {
+                    NSPill(title: busy ? "Checking…" : "Link Gmail", primary: true) { Task { busy = true; if await g.link(address: addr, appPassword: pass) { pass = "" }; busy = false } }
+                    NSPill(title: "Open App passwords") { if let u = URL(string: "https://myaccount.google.com/apppasswords") { NSWorkspace.shared.open(u) } }
+                }
+                if !g.status.isEmpty { Text(g.status).font(.system(size: 11.5)).foregroundColor(NS.soft) }
+            }
+        } else {
+            HStack {
+                Text(g.loading ? "Updating…" : g.address).font(.system(size: 11)).foregroundColor(NS.soft).lineLimit(1)
+                Spacer()
+                NSPill(title: "Refresh") { Task { await g.refresh() } }
+                NSPill(title: "Unlink") { g.unlink() }
+            }
+            if !g.status.isEmpty { Text(g.status).font(.system(size: 11.5)).foregroundColor(NS.soft) }
+            if !info.isEmpty { Text(info).font(.system(size: 11.5)).foregroundColor(Color(hex: "#7CE0A3")) }
+            ForEach(g.mails) { m in
+                VStack(alignment: .leading, spacing: 6) {
+                    Button { withAnimation { open = open == m.id ? nil : m.id; draft = "" } } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(m.from).font(.system(size: 12.5, weight: m.unread ? .bold : .semibold)).foregroundColor(.white).lineLimit(1)
+                                Spacer()
+                                if let d = m.date { Text(d.formatted(date: Calendar.current.isDateInToday(d) ? .omitted : .abbreviated, time: .shortened)).font(.system(size: 10.5)).foregroundColor(NS.soft) }
+                            }
+                            Text(m.subject).font(.system(size: 12)).foregroundColor(m.unread ? .white : NS.soft).lineLimit(1)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    if open == m.id {
+                        HStack(spacing: 6) {
+                            NSPill(title: "Explain") { Task { await explain(m) } }
+                            NSPill(title: "Write a reply", primary: true) { Task { await writeReply(m) } }
+                            NSPill(title: "Open in Gmail") { g.openInGmail(m) }
+                        }
+                        if busy { ProgressView().controlSize(.small) }
+                        if !draft.isEmpty {
+                            TextEditor(text: $draft).font(.system(size: 12.5)).foregroundColor(.white).scrollContentBackground(.hidden)
+                                .padding(6).frame(height: 130).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+                            HStack(spacing: 6) {
+                                NSPill(title: "Send to \(m.fromAddress)", primary: true) { Task { await send(m) } }
+                                NSPill(title: "Cancel") { draft = "" }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NS.card))
+            }
+        }
+        EmptyView().task(id: g.linked) { await g.refresh() }
+    }
+    private func explain(_ m: GmailLink.Mail) async {
+        busy = true; defer { busy = false }
+        let body = await g.body(m)
+        NotchNav.shared.page = "chat"
+        NotchNav.shared.pendingChat = "Explain this email simply: what they want and anything I must do (and by when).\nFrom: \(m.from) <\(m.fromAddress)>\nSubject: \(m.subject)\n\n\(body.prefix(4000))"
+    }
+    private func writeReply(_ m: GmailLink.Mail) async {
+        busy = true; defer { busy = false }
+        let body = await g.body(m)
+        let me = AssistantPrefs.displayName
+        let r = await AIService.shared.oneShot("Write my reply to this email. Polite, clear, same language as the email, ready to send. Body only (no subject line), signed \(me.isEmpty ? "with my name" : me).\nFrom: \(m.from)\nSubject: \(m.subject)\n\n\(body.prefix(4000))",
+                                               system: "You write excellent short emails for the user. Reply with the email body only.") ?? ""
+        draft = r.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.isEmpty { info = "I couldn't write a reply just now. Try again." }
+    }
+    private func send(_ m: GmailLink.Mail) async {
+        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !t.isEmpty else { return }
+        busy = true; defer { busy = false }
+        if await g.reply(to: m, text: t) { info = "Sent to \(m.fromAddress) ✓"; draft = "" } else { info = "Couldn't send: \(g.status)" }
     }
 }
 
@@ -3076,7 +3178,7 @@ struct SettingsPage: View {
     @ObservedObject private var voice = VoiceEngine.shared
     @AppStorage("notchSettingsTab") private var tab = "Profile"
     @AppStorage("notchShowsAurora") private var showsAurora = true
-    @AppStorage("readNotifications") private var readAloud = true
+    @AppStorage("speakReminders") private var speakReminders = true
     @AppStorage("trackDay") private var trackDay = true
     @State private var name = ZuffiPlan.shared.profile["name"] ?? ""
     @State private var city = ZuffiPlan.shared.profile["city"] ?? ""
@@ -3087,6 +3189,9 @@ struct SettingsPage: View {
     @State private var keyText = ""
     @State private var keyTick = 0
     @State private var keysRemoved = false
+    @AppStorage("voiceEngine") private var voiceEngine = "builtin"
+    @State private var fishKey = ""
+    @State private var fishVoice = UserDefaults.standard.string(forKey: "fishVoiceId") ?? ""
 
     var body: some View {
         HStack(spacing: 6) {
@@ -3162,6 +3267,33 @@ struct SettingsPage: View {
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NS.card))
         }
         Text("No key? Zuffi AI (included in your plan) and Ollama on this Mac work without one.").font(.system(size: 11)).foregroundColor(NS.soft)
+        Text("Voice and chat use the same AI you pick here.").font(.system(size: 11)).foregroundColor(NS.soft)
+        NSLabel(t: "HER VOICE")
+        HStack(spacing: 6) {
+            NSPill(title: "Built-in (works offline)", primary: voiceEngine != "fish") { voiceEngine = "builtin" }
+            NSPill(title: "Fish Audio (most natural)", primary: voiceEngine == "fish") { voiceEngine = "fish" }
+        }
+        if voiceEngine == "fish" {
+            let hasFish = !(KeychainStore.shared.get("fish-api-key") ?? "").isEmpty
+            Text(hasFish ? "Fish Audio key saved ✓ — she laughs, sobs, gets angry and shouts for real. With no internet her built-in voice speaks." : "Paste your Fish Audio API key (fish.audio → API keys). It stays on this Mac.")
+                .font(.system(size: 11.5)).foregroundColor(hasFish ? Color(hex: "#7CE0A3") : NS.soft)
+            SecureField("", text: $fishKey, prompt: Text(hasFish ? "Replace the key" : "Fish Audio API key").foregroundColor(NS.soft.opacity(0.8)))
+                .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
+                .padding(.horizontal, 12).frame(height: 34)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+            NSField(placeholder: "Voice ID (optional — a voice from the Fish Audio library)", text: $fishVoice)
+            HStack(spacing: 6) {
+                NSPill(title: "Save", primary: true) {
+                    let k = fishKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !k.isEmpty { KeychainStore.shared.set("fish-api-key", value: k) }
+                    UserDefaults.standard.set(fishVoice.trimmingCharacters(in: .whitespaces), forKey: "fishVoiceId")
+                    fishKey = ""; keyTick += 1
+                    VoiceEngine.shared.speak("Hehe, this is my new voice! Do you like it?")
+                }
+                NSPill(title: "Try her feelings") { VoiceEngine.shared.speak("Hahaha, that's so funny! Grrr, that makes me angry. *sniff* that's so sad. WOW, WE DID IT!") }
+                if hasFish { NSPill(title: "Remove key") { KeychainStore.shared.set("fish-api-key", value: ""); keyTick += 1 } }
+            }
+        }
     }
 
     // MARK: privacy
@@ -3171,7 +3303,7 @@ struct SettingsPage: View {
         toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
         toggle("Read notifications out loud (messages, mail…)", Binding(get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
                                                                        set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
-        toggle("Say reminders out loud (off = just show them)", $readAloud)
+        toggle("Say reminders out loud (off = just show them)", $speakReminders)
         NSLabel(t: "YOUR DATA")
         toggle("Count my day (only on this Mac)", $trackDay)
         Text("Your notes, tasks, reminders and chats stay on this Mac. What you ask the AI is never stored on Zuffi's servers.").font(.system(size: 11.5)).foregroundColor(NS.soft)
@@ -3415,7 +3547,7 @@ enum ZuffiCommand {
         ("chat history", "chat"), ("history", "chat"), ("chats?", "chat"),
         ("tasks?|to ?dos?|to-do list", "tasks"), ("notes?", "notes"), ("reminders?", "reminders"), ("habits?", "habits"),
         ("today|my day plan|agenda", "today"), ("(this )?week|weekly plan", "week"), ("focus( timer| mode)?|pomodoro", "focus"),
-        ("home", "home"), ("whats ?app( messages)?|messages", "whatsapp"), ("settings|preferences", "settings"),
+        ("home", "home"), ("whats ?app( messages)?|messages", "whatsapp"), ("g ?mail|e-?mails?|mail|inbox", "gmail"), ("settings|preferences", "settings"),
         ("tools?|converter|file tools", "tools"), ("my screen|screen help", "screen"), ("meeting helper", "meeting"),
         ("your day|my day|day stats|screen time", "day"), ("menu|all options|everything", "grid"),
     ]

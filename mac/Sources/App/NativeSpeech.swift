@@ -157,7 +157,7 @@ final class NativeSpeech {
         let speed = (rate == 0 ? 1.0 : max(0.8, min(1.3, rate / 0.5))) * ZuffiExpress.speed(ZuffiExpress.mood(text))
         onEnd = ended
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
-        send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny ? speed * 1.06 : speed, "pitch": bunny ? 450.0 : 0.0])
+        send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny ? speed * 1.06 : speed, "pitch": (bunny ? 200.0 : 0.0) + ZuffiExpress.cents(ZuffiExpress.mood(text))])   // a lighter lift sounds natural, not robotic
         let id = currentId
         // Never wait long: if the first words aren't ready, use the instant voice instead. Just after it starts it is still
         // loading her voice, so it gets longer then — otherwise the first reminder would come out in the Mac's voice.

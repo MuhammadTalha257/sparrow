@@ -213,6 +213,22 @@ final class VoiceEngine: NSObject, ObservableObject {
         if TutorVoice.shared.speaking { TutorVoice.shared.stop() }
         lastSpoken = clean; lastSpokenAt = Date()
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        // Fish Audio (optional, online, your key): the most natural voice, with real laughs, sobs, anger and shouting.
+        if FishVoice.usable {
+            if isListening { resumeAfterSpeech = true; pauseRecognition() }
+            speaking = true
+            neuralTurn += 1
+            let turn = neuralTurn
+            let text = String(clean.prefix(1500))
+            Task { @MainActor in
+                let ok = await FishVoice.shared.say(text) {
+                    if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
+                }
+                guard turn == self.neuralTurn else { return }
+                if !ok { self.speakBuiltIn(clean) }
+            }
+            return
+        }
         // Voicebox (if you use it): your own cloned or preset voice, offline, 23 languages.
         if VoiceboxVoice.enabled {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
@@ -316,6 +332,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     func stopSpeaking() {
         synth.stopSpeaking(at: .immediate)
         VoiceboxVoice.shared.stop()
+        FishVoice.shared.stop()
         if speaking, neuralTurn > 0 { NativeSpeech.shared.stop(); neuralEnded() }
     }
 
@@ -869,6 +886,14 @@ enum Assistant {
                 VoiceEngine.shared.speak(reply)
             }
             let short = text.split(separator: " ").count <= 6
+            // The notch design: real requests (reminders, habits, notes, prayer times, timers…) are done instantly;
+            // everything else is a conversation answered by the SAME model you picked in the chat bar.
+            let task = ZuffiTeam.looksLikeCommand(text) || Self.isBrainTask(text)
+            if NotchDesign.on, !task {
+                NotchNav.shared.open("chat")
+                NotchNav.shared.pendingChat = text
+                return
+            }
             // Habits, prayer times, memory, invoices… (Zuffi's offline brain) — instant for short requests
             if short, let reply = await WebHub.shared.ask(text) { say(reply); return }
             // A real question takes a second to think about: a little "hmm" so it feels like talking to someone
@@ -879,8 +904,8 @@ enum Assistant {
             // Anything else, any language: the smart planner turns it into actions and answers like a person
             if let plan = await SmartPlanner.shared.plan(text) {
                 if plan.commands.isEmpty && plan.say.isEmpty { askAgain(); return }
-                if plan.commands.isEmpty, plan.say.count > 260, NotchDesign.on {
-                    ZuffiAsk.shared.show(plan.say, title: text); return
+                if plan.commands.isEmpty, NotchDesign.on {           // just talk → the chat model answers, not the planner
+                    NotchNav.shared.open("chat"); NotchNav.shared.pendingChat = text; return
                 }
                 if plan.commands.isEmpty, plan.say.count > 260 {
                     // a long answer belongs in the chat
@@ -926,6 +951,11 @@ enum Assistant {
         if let last = state.chatHistory.last, last.role == .assistant {
             NotificationCenter.default.post(name: .petSay, object: last.content)
         }
+    }
+
+    /// Things Zuffi's own brain does (not a chat): reminders, notes, tasks, habits, timers, prayer times, memory, money…
+    static func isBrainTask(_ t: String) -> Bool {
+        t.lowercased().range(of: #"\b(remind|reminder|alarm|timer|snooze|note|notes|task|tasks|to ?do|habit|habits|prayer|namaz|azan|remember|forget|spent|expense|invoice|quote|meeting|schedule|calendar|what'?s on|my (day|plan|week|tasks|reminders|habits)|what time|date today|weather|battery|focus)\b"#, options: .regularExpression) != nil
     }
 
     static func start() {

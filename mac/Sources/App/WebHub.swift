@@ -259,7 +259,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             ready = true
         case "speak":
             // "Say reminders out loud" off (Settings) → reminders still show, quietly.
-            if let t = o["text"] as? String, UserDefaults.standard.object(forKey: "readNotifications") as? Bool ?? true { VoiceEngine.shared.speak(t) }
+            if let t = o["text"] as? String, UserDefaults.standard.object(forKey: "speakReminders") as? Bool ?? true { VoiceEngine.shared.speak(t) }
         case "listen":
             VoiceEngine.shared.listenOnce()
         case "meeting":

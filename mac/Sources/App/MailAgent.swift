@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Network
 
 // =====================================================================
 // MARK: - Mail agent: Zuffi reads and answers your email
@@ -408,5 +409,283 @@ final class MailAgent {
                 cont.resume(returning: s)
             }
         }
+    }
+}
+
+// =====================================================================
+// MARK: - Gmail, linked directly (IMAP + SMTP with a Google "app password")
+// The address is kept in Settings, the app password only in the Keychain on this Mac.
+// Zuffi reads your newest emails and sends a reply only when you press Send.
+// =====================================================================
+
+enum MailLinkError: LocalizedError {
+    case closed, timeout, login(String), server(String)
+    var errorDescription: String? {
+        switch self {
+        case .closed: return "The connection to Gmail closed."
+        case .timeout: return "Gmail took too long to answer."
+        case .login(let s): return "Gmail didn't accept the sign-in. Check the address and the app password. (\(s))"
+        case .server(let s): return "Gmail said: \(s)"
+        }
+    }
+}
+
+/// A tiny TLS text connection (IMAP / SMTP speak in lines).
+final class MailWire: @unchecked Sendable {
+    private let conn: NWConnection
+    private let q = DispatchQueue(label: "zuffi.mail.wire")
+    private let lock = NSLock()
+    private var buffer = Data()
+    init(host: String, port: UInt16) {
+        conn = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: .tls)
+    }
+    func open(timeout: Double = 15) async throws {
+        final class Once: @unchecked Sendable { var done = false; let l = NSLock()
+            func fire() -> Bool { l.lock(); defer { l.unlock() }; if done { return false }; done = true; return true } }
+        let once = Once()
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            conn.stateUpdateHandler = { st in
+                switch st {
+                case .ready: if once.fire() { c.resume() }
+                case .failed(let e): if once.fire() { c.resume(throwing: e) }
+                case .cancelled: if once.fire() { c.resume(throwing: MailLinkError.closed) }
+                default: break
+                }
+            }
+            conn.start(queue: q)
+            q.asyncAfter(deadline: .now() + timeout) { if once.fire() { c.resume(throwing: MailLinkError.timeout) } }
+        }
+    }
+    func close() { conn.cancel() }
+    func send(_ s: String) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            conn.send(content: Data(s.utf8), completion: .contentProcessed { e in if let e { c.resume(throwing: e) } else { c.resume() } })
+        }
+    }
+    private func receiveOnce() async throws -> Data {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Data, Error>) in
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 262_144) { data, _, complete, e in
+                if let e { c.resume(throwing: e) } else if let data, !data.isEmpty { c.resume(returning: data) }
+                else if complete { c.resume(throwing: MailLinkError.closed) } else { c.resume(returning: Data()) }
+            }
+        }
+    }
+    /// Reads until `done(text so far)` says the answer is complete; returns that text and keeps anything after it.
+    func read(until done: (String) -> Range<String.Index>?, timeout: Double = 25) async throws -> String {
+        let start = Date()
+        while true {
+            let text = String(decoding: buffer, as: UTF8.self)
+            if let r = done(text) {
+                let out = String(text[..<r.upperBound])
+                buffer = Data(text[r.upperBound...].utf8)
+                return out
+            }
+            if Date().timeIntervalSince(start) > timeout { throw MailLinkError.timeout }
+            buffer.append(try await receiveOnce())
+        }
+    }
+}
+
+@MainActor
+final class GmailLink: ObservableObject {
+    static let shared = GmailLink()
+    struct Mail: Identifiable, Hashable { let id: String; let uid: String; let from: String; let fromAddress: String; let subject: String; let date: Date?; let unread: Bool; let messageId: String; let gmailId: String }
+    @Published private(set) var address = UserDefaults.standard.string(forKey: "gmailAddress") ?? ""
+    @Published private(set) var mails: [Mail] = []
+    @Published private(set) var status = ""
+    @Published private(set) var loading = false
+    var linked: Bool { !address.isEmpty && !(KeychainStore.shared.get("gmail-app-password") ?? "").isEmpty }
+
+    /// Saves the address and app password after checking they work.
+    func link(address a: String, appPassword p: String) async -> Bool {
+        let addr = a.trimmingCharacters(in: .whitespaces), pass = p.replacingOccurrences(of: " ", with: "")
+        guard addr.contains("@"), pass.count >= 12 else { status = "Enter your Gmail address and the 16-letter app password."; return false }
+        status = "Checking with Gmail…"
+        do {
+            let w = try await imapLogin(addr, pass); w.close()
+            UserDefaults.standard.set(addr, forKey: "gmailAddress"); address = addr
+            KeychainStore.shared.set("gmail-app-password", value: pass)
+            status = "Gmail linked ✓"
+            await refresh()
+            return true
+        } catch { status = error.localizedDescription; return false }
+    }
+    func unlink() {
+        KeychainStore.shared.set("gmail-app-password", value: "")
+        UserDefaults.standard.removeObject(forKey: "gmailAddress"); address = ""; mails = []; status = "Gmail unlinked."
+    }
+
+    private var tagN = 0
+    private func tag() -> String { tagN += 1; return "z\(tagN)" }
+    private func imapLogin(_ addr: String, _ pass: String) async throws -> MailWire {
+        let w = MailWire(host: "imap.gmail.com", port: 993)
+        try await w.open()
+        _ = try await w.read(until: { $0.range(of: "\r\n") })
+        let t = tag()
+        try await w.send("\(t) LOGIN \(Self.quote(addr)) \(Self.quote(pass))\r\n")
+        let r = try await w.read(until: { Self.tagged($0, t) })
+        guard Self.ok(r, t) else { w.close(); throw MailLinkError.login(Self.lastLine(r)) }
+        return w
+    }
+    private func command(_ w: MailWire, _ cmd: String) async throws -> String {
+        let t = tag()
+        try await w.send("\(t) \(cmd)\r\n")
+        let r = try await w.read(until: { Self.tagged($0, t) })
+        guard Self.ok(r, t) else { throw MailLinkError.server(Self.lastLine(r)) }
+        return r
+    }
+
+    /// The newest 15 emails in the inbox.
+    func refresh() async {
+        guard linked, !loading else { return }
+        loading = true; defer { loading = false }
+        do {
+            let w = try await imapLogin(address, KeychainStore.shared.get("gmail-app-password") ?? "")
+            defer { w.close() }
+            let sel = try await command(w, "SELECT INBOX")
+            let total = Int(sel.range(of: #"\* (\d+) EXISTS"#, options: .regularExpression).map { sel[$0].filter(\.isNumber) } ?? "0") ?? 0
+            guard total > 0 else { mails = []; status = "Your inbox is empty."; return }
+            let from = max(1, total - 14)
+            let r = try await command(w, "FETCH \(from):\(total) (UID FLAGS X-GM-MSGID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
+            mails = Self.parse(r).sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+            status = ""
+        } catch { status = error.localizedDescription }
+    }
+
+    /// The text of one email (for "Explain" and "Write a reply").
+    func body(_ m: Mail) async -> String {
+        guard linked else { return "" }
+        do {
+            let w = try await imapLogin(address, KeychainStore.shared.get("gmail-app-password") ?? "")
+            defer { w.close() }
+            _ = try await command(w, "SELECT INBOX")
+            let r = try await command(w, "UID FETCH \(m.uid) (BODY.PEEK[TEXT]<0.20000>)")
+            return Self.readable(r)
+        } catch { return "" }
+    }
+
+    /// Sends a reply (only when you press Send).
+    func reply(to m: Mail, text: String) async -> Bool {
+        guard linked else { return false }
+        let pass = KeychainStore.shared.get("gmail-app-password") ?? ""
+        do {
+            let w = MailWire(host: "smtp.gmail.com", port: 465)
+            try await w.open(); defer { w.close() }
+            func code(_ expect: String) async throws {
+                let r = try await w.read(until: { $0.range(of: #"(^|\r\n)\d{3} [^\r\n]*\r\n"#, options: .regularExpression) })
+                guard r.range(of: #"(^|\r\n)\#(expect)\d\d "#, options: .regularExpression) != nil else { throw MailLinkError.server(Self.lastLine(r)) }
+            }
+            try await code("2")
+            try await w.send("EHLO zuffi.local\r\n"); try await code("2")
+            let auth = Data("\u{0}\(address)\u{0}\(pass)".utf8).base64EncodedString()
+            try await w.send("AUTH PLAIN \(auth)\r\n"); try await code("2")
+            try await w.send("MAIL FROM:<\(address)>\r\n"); try await code("2")
+            try await w.send("RCPT TO:<\(m.fromAddress)>\r\n"); try await code("2")
+            try await w.send("DATA\r\n"); try await code("3")
+            let subj = m.subject.lowercased().hasPrefix("re:") ? m.subject : "Re: " + m.subject
+            var msg = "From: <\(address)>\r\nTo: <\(m.fromAddress)>\r\nSubject: =?UTF-8?B?\(Data(subj.utf8).base64EncodedString())?=\r\n"
+            if !m.messageId.isEmpty { msg += "In-Reply-To: \(m.messageId)\r\nReferences: \(m.messageId)\r\n" }
+            msg += "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+            msg += Data(text.utf8).base64EncodedString(options: [.lineLength76Characters, .endLineWithCarriageReturn, .endLineWithLineFeed]) + "\r\n.\r\n"
+            try await w.send(msg); try await code("2")
+            try? await w.send("QUIT\r\n")
+            return true
+        } catch { status = error.localizedDescription; return false }
+    }
+
+    func openInGmail(_ m: Mail) {
+        let hex = UInt64(m.gmailId).map { String($0, radix: 16) } ?? ""
+        let url = hex.isEmpty ? "https://mail.google.com/mail/u/0/#inbox" : "https://mail.google.com/mail/u/0/#inbox/\(hex)"
+        if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+    }
+
+    // MARK: parsing
+    nonisolated static func quote(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
+    nonisolated static func tagged(_ t: String, _ tag: String) -> Range<String.Index>? {
+        t.range(of: "(^|\r\n)\(tag) (OK|NO|BAD)[^\r\n]*\r\n", options: .regularExpression)
+    }
+    nonisolated static func ok(_ t: String, _ tag: String) -> Bool { t.range(of: "(^|\r\n)\(tag) OK", options: .regularExpression) != nil }
+    nonisolated static func lastLine(_ t: String) -> String { t.split(separator: "\r\n").last.map(String.init) ?? t }
+
+    /// "=?UTF-8?B?…?=" and "=?UTF-8?Q?…?=" → readable text.
+    nonisolated static func decodeWords(_ s: String) -> String {
+        guard let re = try? NSRegularExpression(pattern: #"=\?([^?]+)\?([BbQq])\?([^?]*)\?="#) else { return s }
+        var out = s
+        for m in re.matches(in: s, range: NSRange(s.startIndex..., in: s)).reversed() {
+            guard let r = Range(m.range, in: s), let er = Range(m.range(at: 2), in: s), let tr = Range(m.range(at: 3), in: s) else { continue }
+            let enc = s[er].uppercased(), txt = String(s[tr])
+            var decoded: String?
+            if enc == "B" { decoded = Data(base64Encoded: txt + String(repeating: "=", count: (4 - txt.count % 4) % 4)).map { String(decoding: $0, as: UTF8.self) } }
+            else { decoded = quotedPrintable(txt.replacingOccurrences(of: "_", with: " ")) }
+            if let decoded { out.replaceSubrange(Range(m.range, in: out) ?? r, with: decoded) }
+        }
+        return out.replacingOccurrences(of: #"\?=\s+=\?"#, with: "", options: .regularExpression)
+    }
+    nonisolated static func quotedPrintable(_ s: String) -> String {
+        let u = Array(s.utf8); var out: [UInt8] = []; var i = 0
+        func hex(_ c: UInt8) -> UInt8? {
+            switch c { case 48...57: return c - 48; case 65...70: return c - 55; case 97...102: return c - 87; default: return nil }
+        }
+        while i < u.count {
+            if u[i] == 61 {                                   // "="
+                if i + 2 < u.count, let a = hex(u[i + 1]), let b = hex(u[i + 2]) { out.append(a << 4 | b); i += 3; continue }
+                if i + 1 < u.count, u[i + 1] == 13 || u[i + 1] == 10 {      // soft line break
+                    i += (i + 2 < u.count && u[i + 1] == 13 && u[i + 2] == 10) ? 3 : 2; continue
+                }
+            }
+            out.append(u[i]); i += 1
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+    nonisolated static func parse(_ r: String) -> [Mail] {
+        var out: [Mail] = []
+        let parts = r.components(separatedBy: "\r\n* ").map { $0.hasPrefix("* ") ? String($0.dropFirst(2)) : $0 }
+        for p in parts where p.contains("FETCH") {
+            func grab(_ pat: String) -> String { p.range(of: pat, options: .regularExpression).map { String(p[$0]) } ?? "" }
+            let uid = grab(#"UID \d+"#).filter(\.isNumber)
+            let gm = grab(#"X-GM-MSGID \d+"#).filter(\.isNumber)
+            let unread = !grab(#"FLAGS \([^)]*\)"#).contains("\\Seen")
+            // header lines (folded lines joined)
+            let unfolded = p.replacingOccurrences(of: #"\r\n[ \t]+"#, with: " ", options: .regularExpression)
+            func header(_ name: String) -> String {
+                guard let r = unfolded.range(of: "(?im)^\(name):[^\r\n]*", options: .regularExpression) else { return "" }
+                return decodeWords(String(unfolded[r].dropFirst(name.count + 1)).trimmingCharacters(in: .whitespaces))
+            }
+            let fromRaw = header("From")
+            let addr = fromRaw.range(of: #"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+"#, options: .regularExpression).map { String(fromRaw[$0]) } ?? fromRaw
+            var name = fromRaw.replacingOccurrences(of: #"<[^>]*>"#, with: "", options: .regularExpression).trimmingCharacters(in: CharacterSet(charactersIn: " \""))
+            if name.isEmpty { name = addr }
+            let df = DateFormatter(); df.locale = Locale(identifier: "en_US_POSIX"); df.dateFormat = "EEE, d MMM yyyy HH:mm:ss Z"
+            let ds = header("Date").replacingOccurrences(of: #"\s*\([^)]*\)$"#, with: "", options: .regularExpression)
+            let date = df.date(from: ds) ?? { df.dateFormat = "d MMM yyyy HH:mm:ss Z"; return df.date(from: ds) }()
+            guard !uid.isEmpty else { continue }
+            out.append(Mail(id: uid, uid: uid, from: name, fromAddress: addr, subject: header("Subject").isEmpty ? "(no subject)" : header("Subject"),
+                            date: date, unread: unread, messageId: header("Message-ID"), gmailId: gm))
+        }
+        return out
+    }
+    /// The readable part of a raw email body (plain text preferred; HTML tags stripped; base64 / quoted-printable decoded).
+    nonisolated static func readable(_ raw: String) -> String {
+        var t = raw
+        if let r = t.range(of: "}\r\n") { t = String(t[r.upperBound...]) }
+        // multipart: prefer the text/plain part
+        if let plain = t.range(of: #"(?is)Content-Type:\s*text/plain.*?\r\n\r\n(.*?)(\r\n--|$)"#, options: .regularExpression) {
+            var part = String(t[plain])
+            let b64 = part.range(of: #"(?i)Content-Transfer-Encoding:\s*base64"#, options: .regularExpression) != nil
+            let qp = part.range(of: #"(?i)Content-Transfer-Encoding:\s*quoted-printable"#, options: .regularExpression) != nil
+            if let h = part.range(of: "\r\n\r\n") { part = String(part[h.upperBound...]) }
+            if let e = part.range(of: "\r\n--") { part = String(part[..<e.lowerBound]) }
+            if b64, let d = Data(base64Encoded: part.replacingOccurrences(of: "\r\n", with: "")) { part = String(decoding: d, as: UTF8.self) }
+            else if qp { part = quotedPrintable(part) }
+            t = part
+        } else if t.range(of: "=\r\n") != nil || t.range(of: #"=[0-9A-F]{2}"#, options: .regularExpression) != nil { t = quotedPrintable(t) }
+        t = t.replacingOccurrences(of: #"(?is)<(script|style)[^>]*>.*?</\1>"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"<br\s*/?>|</p>|</div>"#, with: "\n", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ").replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: #"\r\n\)\r\n.*$"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        return String(t.trimmingCharacters(in: .whitespacesAndNewlines).prefix(6000))
     }
 }

@@ -128,7 +128,10 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
         let picked = UserDefaults.standard.string(forKey: "voicestudioVoice") ?? ""
         var body: [String: Any] = ["model": "tts-1", "input": ZuffiExpress.omni(text), "voice": picked.isEmpty ? "alloy" : picked, "response_format": "wav"]
-        if bunny && picked.isEmpty { body["instructions"] = "female, child, very high pitch" }
+        if bunny && picked.isEmpty {
+            let m = ZuffiExpress.mood(text)
+            body["instructions"] = m == .cry || m == .sad ? "female, young adult, low pitch, whisper" : m == .shout || m == .excited ? "female, young adult, high pitch" : "female, young adult, moderate pitch"
+        }
         var r = URLRequest(url: Self.studioBase.appendingPathComponent("v1/audio/speech"), timeoutInterval: 60)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -261,7 +264,7 @@ struct VoiceboxSettings: View {
 
 @MainActor
 enum ZuffiExpress {
-    enum Mood { case neutral, happy, laugh, thinking, surprised, annoyed, sad, agree }
+    enum Mood { case neutral, happy, laugh, thinking, surprised, annoyed, sad, agree, angry, cry, shout, excited }
 
     private static let rules: [(pattern: String, mood: Mood, omni: String, spoken: String)] = [
         (#"\b(?:ha){2,}h?\b|\bhe(?:he)+\b|\blol\b|😂|🤣"#, .laugh, "[laughter]", "ha ha ha!"),
@@ -272,6 +275,9 @@ enum ZuffiExpress {
         (#"\bwo+w+\b"#, .surprised, "[surprise-wa] wow", "Wow!"),
         (#"\b(?:ugh+|hmph|tsk)\b|😠|😤"#, .annoyed, "[dissatisfaction-hnn]", "hmph."),
         (#"\*?\bsighs?\b\*?|😮‍💨"#, .sad, "[sigh]", "haahh…"),
+        (#"\b(?:grr+|argh+|how dare( you)?|i'?m (so )?(angry|furious|mad))\b|😡|🤬"#, .angry, "[dissatisfaction-hnn]", "Grrr!"),
+        (#"\*\s*(?:sob+s?|sniff+(?:les?)?|cries|crying)\s*\*|\bboo+ ?hoo+\b|\bwa+a+h+\b|😭|😢"#, .cry, "[sigh] sniff…", "sniff… sniff…"),
+        (#"\b(?:ya+y+|woo+ ?hoo+|yippee+|omg)\b|🥳"#, .excited, "[surprise-wa]", "Yaaay!"),
     ]
 
     /// Where each reaction happens in the sentence (letter position) and how she feels there.
@@ -288,6 +294,7 @@ enum ZuffiExpress {
     /// The overall feeling of what she's about to say.
     static func mood(_ t: String) -> Mood {
         if let first = cues(t).first, first.at < 40 { return first.mood }
+        if isShout(t) { return .shout }
         let l = t.lowercased()
         if l.range(of: #"\b(sorry|sad|unfortunately|afsos|maaf)\b"#, options: .regularExpression) != nil { return .sad }
         if l.range(of: #"\b(great|yay|awesome|congrat|well done|amazing|shabash|mubarak)\b|🎉|😊|!$"#, options: .regularExpression) != nil { return .happy }
@@ -308,10 +315,12 @@ enum ZuffiExpress {
 
     /// Talking speed and pitch for the feeling.
     static func speed(_ m: Mood) -> Double {
-        switch m { case .laugh: return 1.08; case .happy: return 1.05; case .sad: return 0.92; case .thinking: return 0.95; case .annoyed: return 0.97; default: return 1 }
+        switch m { case .laugh: return 1.08; case .happy: return 1.05; case .sad: return 0.92; case .thinking: return 0.95; case .annoyed: return 0.97
+        case .angry: return 1.06; case .cry: return 0.86; case .shout: return 1.08; case .excited: return 1.08; default: return 1 }
     }
     static func pitch(_ m: Mood) -> Float {
-        switch m { case .laugh, .happy: return 1.12; case .surprised: return 1.15; case .sad: return 0.9; case .annoyed: return 0.94; default: return 1 }
+        switch m { case .laugh, .happy: return 1.12; case .surprised: return 1.15; case .sad: return 0.9; case .annoyed: return 0.94
+        case .angry: return 0.92; case .cry: return 0.9; case .shout: return 1.14; case .excited: return 1.16; default: return 1 }
     }
 
     /// Aurora's face follows the voice: she laughs on "haha", thinks on "hmm", looks surprised on "oh!", gets cross on "hmph".
@@ -327,8 +336,45 @@ enum ZuffiExpress {
             }
         }
     }
+    /// Shouting: a word in CAPITALS (not a short acronym) or "!!".
+    static func isShout(_ t: String) -> Bool {
+        if t.contains("!!") { return true }
+        let skip: Set<String> = ["HTML", "JSON", "HTTP", "HTTPS", "UTC", "GMT", "NASA", "UK", "USA", "PDF", "API", "CEO", "FAQ", "ASAP", "OK"]
+        return t.split(whereSeparator: { !$0.isLetter }).contains { w in w.count >= 4 && w == w.uppercased() && w.contains { $0.isLetter } && !skip.contains(String(w)) }
+    }
+    /// Pitch change (cents) for the built-in voice in each feeling.
+    static func cents(_ m: Mood) -> Double {
+        switch m { case .angry: return -80; case .cry, .sad: return -100; case .shout: return 120; case .excited: return 110; case .laugh: return 60; default: return 0 }
+    }
+    /// Fish Audio voice cues: each sentence gets the feeling it has.
+    static func fish(_ t: String) -> String {
+        var out: [String] = []
+        t.enumerateSubstrings(in: t.startIndex..<t.endIndex, options: .bySentences) { s, _, _, _ in
+            guard let s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return }
+            let tag: String
+            switch mood(s) {
+            case .laugh: tag = "[laughing] "
+            case .angry: tag = "[angry] "
+            case .annoyed: tag = "[annoyed] "
+            case .cry: tag = "[sobbing] "
+            case .sad: tag = "[sad] "
+            case .shout: tag = "[shouting] "
+            case .excited: tag = "[excited] "
+            case .surprised: tag = "[surprised] "
+            case .happy: tag = "[happy] "
+            default: tag = ""
+            }
+            let clean = s.replacingOccurrences(of: #"\*[^*]{1,20}\*"#, with: "", options: .regularExpression)
+            out.append(tag + clean)
+        }
+        return out.isEmpty ? t : out.joined(separator: " ")
+    }
     static func bunny(_ m: Mood) -> BunnyMood? {
         switch m {
+        case .angry: return .cross
+        case .cry: return .sad
+        case .shout: return .surprised
+        case .excited: return .happy
         case .laugh: return .laugh
         case .happy, .agree: return .happy
         case .thinking: return .thinking
@@ -337,5 +383,50 @@ enum ZuffiExpress {
         case .sad: return .sad
         case .neutral: return nil
         }
+    }
+}
+
+// MARK: - Fish Audio (online, optional): the most natural voice, with real laughing, crying, anger and shouting
+
+/// Uses your own Fish Audio key (Settings → AI models → Her voice). Offline, or without a key, Zuffi's own voice speaks.
+@MainActor
+final class FishVoice: NSObject, AVAudioPlayerDelegate {
+    static let shared = FishVoice()
+    static var key: String { KeychainStore.shared.get("fish-api-key") ?? "" }
+    static var usable: Bool { UserDefaults.standard.string(forKey: "voiceEngine") == "fish" && !key.isEmpty && NetStatus.shared.online }
+    private var player: AVAudioPlayer?
+    private var onEnd: (() -> Void)?
+    private var turn = 0
+
+    func say(_ text: String, ended: @escaping () -> Void) async -> Bool {
+        stop()
+        turn += 1
+        let my = turn
+        var body: [String: Any] = ["text": ZuffiExpress.fish(text), "format": "mp3", "mp3_bitrate": 128, "latency": "balanced", "normalize": true]
+        let voice = UserDefaults.standard.string(forKey: "fishVoiceId") ?? ""
+        if !voice.isEmpty { body["reference_id"] = voice }
+        body["prosody"] = ["speed": ZuffiExpress.speed(ZuffiExpress.mood(text))]
+        var r = URLRequest(url: URL(string: "https://api.fish.audio/v1/tts")!, timeoutInterval: 30)
+        r.httpMethod = "POST"
+        r.setValue("Bearer \(Self.key)", forHTTPHeaderField: "Authorization")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { appendAppLog("voice.log", "Fish Audio: no answer"); return false }
+        guard (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 200, my == turn, let p = try? AVAudioPlayer(data: d) else {
+            appendAppLog("voice.log", "Fish Audio failed (\((resp as? HTTPURLResponse)?.statusCode ?? 0)) — using Zuffi's own voice")
+            return false
+        }
+        p.delegate = self
+        p.volume = ZuffiExpress.mood(text) == .shout ? 1.0 : 0.95
+        player = p; onEnd = ended
+        p.play()
+        VoiceEngine.shared.audioStartedAt = Date()
+        VoiceEngine.shared.lipText = text.replacingOccurrences(of: #"\[[^\]]{1,24}\]"#, with: "", options: .regularExpression)
+        ZuffiExpress.face(for: text)
+        return true
+    }
+    func stop() { turn += 1; player?.stop(); player = nil; onEnd = nil }
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in let f = FishVoice.shared.onEnd; FishVoice.shared.onEnd = nil; f?() }
     }
 }

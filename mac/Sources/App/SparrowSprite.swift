@@ -868,7 +868,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     private var nose: SCNNode?, whiskers: [SCNNode] = [], eyeRims: [SCNNode] = []
     // v2 face: eye sockets (glances), "^" lids, lashes, puffy cheeks, hearts, tongue
     private var sockets: [SCNNode] = [], lids: [SCNNode] = [], lashes: [[SCNNode]] = [], cheeks: [SCNNode] = [], hearts: [SCNNode] = []
-    private var philtrum: SCNNode?, tongue: SCNNode?
+    private var philtrum: SCNNode?, tongue: SCNNode?, listenPaw: SCNNode?, listenAmt: CGFloat = 0
     private var laughE: CGFloat = 0, loveE: CGFloat = 0, listenE: CGFloat = 0
     private var surpriseKick: CGFloat = 0, lastExpr: BunnyMood = .smile, exprAt: CGFloat = 0, lookX: CGFloat = 0, lookY: CGFloat = 0
     /// You clicked her (or her ears): a quick flick and a little jump, then the feeling shows.
@@ -1060,6 +1060,14 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             inEar.scale = SCNVector3(0.066, 0.33, 0.022); inEar.position = SCNVector3(0, 0.39, 0.04)
             e.addChildNode(inEar)
         }
+        // listening: a little paw cupped behind her right ear (shown in the face close-ups, like "I'm all ears")
+        let lp = SCNNode(); lp.position = SCNVector3(0.33, 0.17, 0.03); lp.eulerAngles = SCNVector3(0.2, -0.5, -0.55)
+        lp.addChildNode(fur(0.075, 0.1, 0.055, cream, len: 0.035, density: 26))
+        let pads = SCNMaterial(); pads.lightingModel = .physicallyBased; pads.diffuse.contents = Self.rgb(244, 179, 189); pads.roughness.contents = 0.6
+        let pad = SCNNode(geometry: SCNSphere(radius: 1)); pad.geometry?.materials = [pads]; pad.scale = SCNVector3(0.035, 0.04, 0.012); pad.position = SCNVector3(-0.02, 0.0, 0.05)
+        lp.addChildNode(pad)
+        lp.scale = SCNVector3(0.001, 0.001, 0.001); lp.isHidden = true
+        head.addChildNode(lp); listenPaw = lp
         // face, on top of the fur. Each eye sits in a socket so the whole eye (rim, lashes, sparkles) glances together.
         let eyeM = SCNMaterial(); eyeM.lightingModel = .physicallyBased
         eyeM.diffuse.contents = Self.rgb(18, 11, 10); eyeM.roughness.contents = 0.04; eyeM.clearCoat.contents = 1; eyeM.clearCoatRoughness.contents = 0.02
@@ -1321,6 +1329,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             x += feel * surpriseE * (-0.9 + 0.2 * jolt); z += feel * surpriseE * 0.55 * s                  // paws out: "oh!"
             x += bAir * -1.6; z += bAir * 0.4 * s                                                           // paws fly up in the binky
             if i == 1 { x += feel * thinkE * (-1.85 - sitArms * 0.6); z += feel * thinkE * -0.42 }          // right paw to her chin
+            if i == 1 { x += feel * listenAmt * (-2.5 - sitArms * 0.6); z += feel * listenAmt * 0.75 }      // right paw cupped behind her ear
             x += feel * yawn * (-2.3 - sitArms * 0.5); z += feel * yawn * 0.35 * s                         // a big stretch with the yawn
             x += feel * sadE * 0.25                                                                         // paws hang
             if i == 1 && waveAmt > 0.01 {
@@ -1339,6 +1348,14 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             yaw + max(crossAmt, crossE) * 0.11 * sin(t * 13) + 0.85 * lookAround * sin(ie * 1.7) - 0.15 * thinkE,
             0.2 * max(listen, listenE, thinkE) + 0.03 * sin(t * 0.9) + 0.05 * talkAmt * sin(t * 2.3) + 0.16 * loveE * sin(t * 2.2) + 0.12 * winkE - 0.08 * sadE)
         for c in cheeks { let k = 1 + 0.14 * crossE; c.scale = SCNVector3(0.19 * k, 0.15 * k, 0.16 * k) }     // cheeks puff when cross
+        ease(&listenAmt, max(listen, listenE) > 0.5 ? 1 : 0, 9)
+        if let lp = listenPaw {
+            let show = framing != .full ? listenAmt : 0
+            lp.isHidden = show < 0.02
+            let k = max(0.001, show * (1 + 0.04 * sin(t * 5)))
+            lp.scale = SCNVector3(k, k, k)
+            lp.eulerAngles.z = -0.55 + 0.08 * sin(t * 2.2)            // a tiny "I'm listening" wiggle
+        }
 
         // EARS: lag behind the hop, perk up when surprised or listening, flatten when cross, droop when sad
         for (i, e) in ears.enumerated() {

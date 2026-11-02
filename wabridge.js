@@ -1912,6 +1912,17 @@ window.ZuffiWA = {
       return { chatId: c.id._serialized, name: c.formattedTitle || c.name || '', count: c.unreadCount, last: msgs.map(m => m.type === 'chat' ? m.body : '[' + m.type + ']') };
     });
   },
+  /** The latest chats (not groups), newest first, with their last few messages — for the Mac notch's WhatsApp page. */
+  recent: async (n = 20) => {
+    if (!hooked) return [];
+    const { Chat } = mod('WAWebCollections');
+    return Chat.getModelsArray().filter(c => !/@g\.us$/.test(c.id._serialized) && !/broadcast|newsletter|status/.test(c.id._serialized))
+      .sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, n).map(c => {
+        const msgs = (c.msgs && c.msgs.getModelsArray ? c.msgs.getModelsArray() : []).slice(-4);
+        return { chatId: c.id._serialized, name: c.formattedTitle || c.name || '', unread: c.unreadCount || 0, at: (c.t || 0) * 1000,
+                 msgs: msgs.map(m => ({ me: !!(m.id && m.id.fromMe), text: m.type === 'chat' ? (m.body || '') : '[' + m.type + ']' })) };
+      });
+  },
   logout: async () => { try { await mod('WAWebSocketModel').Socket.logout(); } catch (e) {} },
 };
 })();

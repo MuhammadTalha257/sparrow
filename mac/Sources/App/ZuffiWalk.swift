@@ -68,6 +68,16 @@ final class ZuffiWalk {
             queue.removeAll { isHealth($0) && $0.kind == kind }                // keep just the newest
             laterWork[kind]?.cancel(); laterWork[kind] = nil
         }
+        // She's already out with another reminder: this one must still come ON TIME, so it shows at the notch right now
+        // (with its own Done / In 10 min) instead of waiting behind the first one.
+        if current != nil, !isHealth(v) {
+            let emoji = ["meeting": "📅", "prayer": "🌙", "task": "✅"][kind] ?? "⏰"
+            AppState.shared.noteIsAlert = true
+            AppState.shared.noteMessage = "\(emoji) \(title)\(sub.isEmpty ? "" : "\n\(sub)")"
+            NotificationCenter.default.post(name: .hookExpand, object: IslandView.note)
+            SoundEngine.shared.play("chime")
+            return
+        }
         queue.append(v)
         if current == nil { next() }
     }
@@ -113,7 +123,7 @@ final class ZuffiWalk {
         SoundEngine.shared.play("greet")
         let inDist = (vf.midX - size.width / 2) - (vf.minX - size.width)
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = max(4, min(11, Double(inDist) / 112))        // a calm bunny stroll, not a dash
+            ctx.duration = max(2.5, min(5, Double(inDist) / 220))       // a quick hop in, so the reminder is on time
             ctx.timingFunction = CAMediaTimingFunction(name: .linear)
             p.animator().setFrame(NSRect(x: vf.midX - size.width / 2, y: y, width: size.width, height: size.height), display: true)
         }, completionHandler: {
