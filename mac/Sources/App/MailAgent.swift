@@ -471,7 +471,7 @@ final class MailWire: @unchecked Sendable {
         }
     }
     /// Reads until `done(text so far)` says the answer is complete; returns that text and keeps anything after it.
-    func read(until done: (String) -> Range<String.Index>?, timeout: Double = 25) async throws -> String {
+    func read(until done: @Sendable (String) -> Range<String.Index>?, timeout: Double = 25) async throws -> String {
         let start = Date()
         while true {
             let text = String(decoding: buffer, as: UTF8.self)
