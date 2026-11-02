@@ -52,7 +52,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     private var silenceTimer: Timer?
     private var restartTimer: Timer?
     private var oneShot = false          // mic button: no wake word needed
-    @Published private(set) var speaking = false { didSet { if speaking != oldValue { speakingSince = speaking ? Date() : .distantFuture } } }
+    @Published private(set) var speaking = false { didSet { Aurora3DRig.liveSpeaking = speaking; if speaking != oldValue { speakingSince = speaking ? Date() : .distantFuture } } }
     private var speakingSince = Date.distantFuture
     /// When the current recognition session last (re)started — a session that goes quiet for too long is restarted.
     private var listenStartedAt = Date.distantPast
@@ -516,9 +516,9 @@ final class VoiceEngine: NSObject, ObservableObject {
     @Published var missedAt = Date.distantPast
     var pttEndedAt = Date.distantPast
     /// When the sound of the current sentence actually started (for lip-sync).
-    var audioStartedAt = Date.distantPast
+    var audioStartedAt = Date.distantPast { didSet { Aurora3DRig.liveStart = audioStartedAt } }
     /// The words being spoken right now (one sentence at a time) — Aurora's lips follow them.
-    @Published var lipText = ""
+    @Published var lipText = "" { didSet { Aurora3DRig.liveText = lipText } }
     func setMic(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: "micOn")
         micEnabled = on

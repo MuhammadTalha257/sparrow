@@ -543,6 +543,7 @@ extension AppState {
         droppedFile = nil
         noteMessage = nil
         ZuffiTeam.shared.newConversation()          // no agent left picked, no old topic carried over
+        ZuffiChat.shared.who = .zuffi                // a new chat always starts with Zuffi herself
         AIService.shared.clearConversation()
         WebHub.shared.run("window.Sparrow && window.Sparrow.newChat && window.Sparrow.newChat(true)")
     }

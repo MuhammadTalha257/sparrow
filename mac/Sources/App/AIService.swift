@@ -170,6 +170,12 @@ final class AIService {
     func chat(query: String, context: PromptContext?, state: AppState) async {
         if ZuffiPlan.shared.isLocked { finish(ZuffiPlan.shared.lockedMessage, state: state, emote: .happy); ZuffiPlan.shared.openAccount(); return }
         var context = context
+        // A pro agent is picked: straight to the AI with its expert instructions — no team routing, web dumps or business data.
+        var pro: TeamAgent? = nil
+        if case .agent(let id) = ZuffiChat.shared.who, let p = ZuffiPros.agent(id) { pro = p; ZuffiTeam.shared.activeIDs = [p.id] }
+        let agentOn = pro != nil
+        var proLinks: [WebLink] = []
+        if pro == nil {
         var who = (!ZuffiFocus.agents && ZuffiChat.shared.who == .nik) ? .zuffi : ZuffiChat.shared.who
         if !ZuffiFocus.agents, case .agent(let id) = who, let a = ZuffiTeam.shared.agent(id), a.division == "business", !ZuffiTeam.isPersonal(a) { who = .zuffi }
         let team = ZuffiTeam.shared
@@ -228,7 +234,6 @@ final class AIService {
             remember(user: query, assistant: r)
             finish(r, state: state, emote: .happy); return
         }
-        let agentOn = false
         // 0) Questions about the user ("what's my date of birth?") — from the welcome form, no AI, works offline.
         if context == nil, let me = await ZuffiPlan.shared.aboutMe(query) { finish(me, state: state, emote: .happy); return }
         // 0b) Your business data — only with Nik (the everyday chat never mixes in the business).
@@ -262,6 +267,7 @@ final class AIService {
             finish(reply, state: state, emote: .happy)
             return
         }
+        }   // end of the plain-Zuffi steps
 
         // 2) Pick an AI model.
         guard let provider = await resolveProvider(state: state) else {
@@ -298,6 +304,15 @@ final class AIService {
                 turn = text + "\n\n" + query
             }
         }
+        // A pro needs today's facts ("latest version of…"): a quick look-up, used quietly, with up to 3 sources shown after.
+        if let pro, ZuffiPros.needsFreshFacts(query), NetStatus.shared.online {
+            state.stateOverride = .thinking
+            let r = await Self.webSearch(query)
+            if !r.notes.isEmpty {
+                turn += "\n\n(WEB NOTES looked up just now for \(pro.name) — use only what's relevant, name the source of each fact, ignore the rest:\n\(r.notes.prefix(6000)))"
+                proLinks = Array(r.links.prefix(3))
+            }
+        }
         history.append((role: "user", text: turn))
 
         // Try the chosen AI first; if it fails (old model, no internet, bad key…), quietly try the others that are set up.
@@ -311,7 +326,8 @@ final class AIService {
                 history.append((role: "assistant", text: clean))
                 lastProvider = p
                 if p == .ollama || p == .apple { AIUsage.shared.current = p == .ollama ? "Ollama (offline)" : "Apple (on-device)" }
-                finish(clean, state: state, emote: .happy)
+                let shown = proLinks.isEmpty ? clean : clean + "\n\nSources:\n" + proLinks.map { "- \($0.title.prefix(60)) (\($0.url))" }.joined(separator: "\n")
+                finish(shown, state: state, emote: .happy)
                 return
             } catch {
                 lastError = error

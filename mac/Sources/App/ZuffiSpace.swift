@@ -1070,8 +1070,8 @@ struct NotchHomeView: View {
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 24, bottomTrailing: 24, topTrailing: 0), style: .continuous)
                 .fill(Color.black)
             if showsAurora {
-                RealAuroraIcon(size: 76, mood: mood, speaking: voice.speaking || tutor.speaking)
-                    .frame(width: 76, height: 70, alignment: .top).clipped()
+                RealAuroraIcon(size: 76, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
+                    .frame(width: 76, height: 70).clipped()
                     .padding(.bottom, 2)
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
@@ -1433,7 +1433,9 @@ struct NotchHomeView: View {
             // "remind me…", "add task…", "open Safari", "play music"… are done for real, then she says so in the chat
             let short = q.split(separator: " ").count <= 6
             var did: String? = nil
-            if state.promptContext == nil {
+            var agentPicked = false
+            if case .agent = ZuffiChat.shared.who { agentPicked = true }
+            if state.promptContext == nil, !agentPicked || ZuffiTeam.looksLikeCommand(q) {     // talking to an agent: it answers, not the quick commands
                 if short { did = await WebHub.shared.ask(q) }
                 if did == nil, ZuffiTeam.looksLikeCommand(q), let plan = await SmartPlanner.shared.plan(q), !plan.commands.isEmpty { did = await SmartPlanner.shared.run(plan) }
             }
@@ -2350,8 +2352,9 @@ struct RealAuroraIcon: View {
         default: return "idle"
         }
     }
+    var close = false
     var body: some View {
-        Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face, expression: Self.feeling(mood), speaking: speaking)
+        Aurora3DView(pose: .sit, lookAtMouse: true, framing: close ? .closeFace : .face, expression: Self.feeling(mood), speaking: speaking)
             .frame(width: size, height: size)
             .allowsHitTesting(false)
     }

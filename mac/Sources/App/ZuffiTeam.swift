@@ -423,9 +423,8 @@ final class ZuffiTeam: ObservableObject {
     /// Every specialist (the full 289), grouped by field, for the chat's "Talking to" menu.
     var agentGroups: [(String, [TeamAgent])] {
         // business agents (Instagram, Facebook, WhatsApp, reviews, SEO…) are off
-        let all = everyone.filter { $0.id != Self.manager.id && (ZuffiFocus.agents || ($0.division != "business" && !Self.personalTeam.contains($0.id))) }
-        let groups = Dictionary(grouping: all) { a -> String in let d = a.division.replacingOccurrences(of: "-", with: " "); return d.prefix(1).uppercased() + d.dropFirst() }
-        return groups.map { ($0.key, $0.value.sorted { $0.name < $1.name }) }.sorted { $0.0 < $1.0 }
+        // Only Zuffi's 10 pro agents are shown (the older specialists are hidden, not removed).
+        return ZuffiPros.groups.map { g in (g, ZuffiPros.list.filter { $0.division == g }) }
     }
 
     var chatAgents: [TeamAgent] {
@@ -464,6 +463,7 @@ final class ZuffiTeam: ObservableObject {
 
     func agent(_ id: String) -> TeamAgent? {
         if id == Self.manager.id { return Self.manager }
+        if let p = ZuffiPros.agent(id) { return p }
         return Self.builtins.first { $0.id == id } ?? agents.first { $0.id == id }
     }
 
@@ -610,6 +610,7 @@ final class ZuffiTeam: ObservableObject {
 
     /// Identity first, then the rules, the business, and only the real data this agent's tools allow.
     func systemPrompt(for a: TeamAgent, part: String = "", others: [TeamAgent] = [], data: String = "", business: Bool? = nil) -> String {
+        if ZuffiPros.isPro(a) { return ZuffiPros.prompt(for: a) + "\n" + ZuffiVoice.style }
         let useBusiness = business ?? !Self.isPersonal(a)
         let field = AgentField.of(a)
         let owner = AssistantPrefs.displayName.isEmpty ? "the owner" : AssistantPrefs.displayName
@@ -6362,5 +6363,75 @@ enum ChannelAgent {
             """, agent: agent, runID: runID, start: URL(string: l.range(of: #"\b(messages?|dms?|inbox)\b"#, options: .regularExpression) != nil ? ch.inbox : l.range(of: #"\b(comments?|notifications?|likes?|mentions?)\b"#, options: .regularExpression) != nil ? ch.activity : ch.home))
         let failed = r.hasPrefix("I couldn't") || r.hasPrefix("I stopped") || r == "Stopped."
         return (ZuffiTeam.plain(r), !failed)
+    }
+}
+
+// MARK: - Zuffi's 10 pro agents (the only ones shown in the chat): coding, testing, AI, marketing, writing, academic
+
+/// Ten senior specialists. They answer straight from the AI you picked, with their own expert instructions:
+/// no business data, no web searches unless the question needs today's facts, no link dumps.
+@MainActor
+enum ZuffiPros {
+    static let list: [TeamAgent] = [
+        TeamAgent(id: "zuffi-pro-engineer", division: "Coding & testing", name: "Senior Software Engineer",
+                  description: "Writes clean, working code in any language (Swift, Python, JavaScript/TypeScript, Java, C#, Go, SQL…), designs features and explains how it works.",
+                  emoji: "💻", prompt: "You build software. Ask nothing you can reasonably assume; state the assumption in one line. Give complete, runnable code (all imports, no placeholders like '...rest of code'), then how to run it and how to test it. Prefer the standard library and well-known packages; name exact package names. Point out edge cases, errors to handle and security issues (input validation, secrets, SQL injection). If the request is big, give a short plan first, then the code for each part."),
+        TeamAgent(id: "zuffi-pro-debugger", division: "Coding & testing", name: "Debugging & Code Review Expert",
+                  description: "Finds the real cause of errors and crashes, reviews code for bugs, security and performance, and gives the exact fix.",
+                  emoji: "🔍", prompt: "You fix bugs and review code. Read the error and code carefully. Answer in this order: 1) the root cause in one or two sentences, 2) the exact fix as a corrected code block (only the changed part, clearly placed), 3) why it happened, 4) how to check it's fixed. In reviews, list problems by importance (bugs, security, then performance, then style) with the line or function each one is in. Never guess at code you weren't shown: ask for the missing file or the full error."),
+        TeamAgent(id: "zuffi-pro-qa", division: "Coding & testing", name: "QA & Test Automation Engineer",
+                  description: "Writes test plans, test cases and automated tests (unit, integration, end-to-end with pytest, Jest, XCTest, Playwright, Cypress, Selenium).",
+                  emoji: "🧪", prompt: "You test software. For a feature, give test cases as a numbered list: what to do, expected result, and type (happy path, edge case, error, security). When asked for automated tests, give complete runnable test code in the right framework with setup, clear test names and assertions, plus the command to run them. Cover boundaries, empty and invalid input, permissions and failure paths. Suggest what to automate first and what to test by hand."),
+        TeamAgent(id: "zuffi-pro-ai", division: "AI engineering", name: "AI / ML Engineer",
+                  description: "Builds AI features: LLM apps, prompts, RAG, agents, fine-tuning, embeddings, model choice and evaluation (Python, PyTorch, Hugging Face, OpenAI/Anthropic/Gemini APIs, LangChain, vector databases).",
+                  emoji: "🤖", prompt: "You build production AI systems. Recommend the simplest approach that works (a good prompt before RAG, RAG before fine-tuning) and say why. Give working Python code with exact library names, model names as examples the user can swap, and where API keys go (environment variables, never in code). Cover cost, speed, evaluation (how to measure quality) and failure modes (hallucination, prompt injection, data leaks). Don't state model prices, limits or release dates as certain; say they change and where to check."),
+        TeamAgent(id: "zuffi-pro-data", division: "AI engineering", name: "Data Scientist",
+                  description: "Analyses data with Python (pandas, NumPy, scikit-learn), SQL and statistics: cleaning, charts, models, A/B tests and clear conclusions.",
+                  emoji: "📊", prompt: "You analyse data. Start with what question the data should answer. Give complete code (pandas/SQL) with comments, explain results in plain words, and say how confident the conclusion is (sample size, bias, what could be wrong). Choose the right chart and the right test, and explain why. Never make up numbers: if you don't have the data, show the code and say what it will produce."),
+        TeamAgent(id: "zuffi-pro-marketing", division: "Marketing & writing", name: "Marketing Strategist",
+                  description: "Plans marketing that brings customers: positioning, audiences, campaigns, funnels, pricing ideas, content calendars and simple budgets.",
+                  emoji: "📈", prompt: "You plan marketing. First pin down the product, the audience and the goal (ask one short question only if they're truly missing; otherwise assume and say so). Give a clear plan: who to reach, the message, the channels, what to post or run each week, a small test budget, and the numbers to watch (with realistic ranges, labelled as estimates). Be specific to the user's product; no generic advice. Never claim results you can't know."),
+        TeamAgent(id: "zuffi-pro-social", division: "Marketing & writing", name: "Social Media Post Writer",
+                  description: "Writes scroll-stopping posts, captions, hooks, reel scripts and hashtags for Instagram, LinkedIn, X, TikTok and Facebook.",
+                  emoji: "✍️", prompt: "You write social media posts. Give ready-to-post text: a strong hook in the first line, short readable lines, a clear call to action, and fitting hashtags (5–10, mixed popular and niche) when the platform uses them. Match the platform: LinkedIn professional and story-led, Instagram warm and visual, X short and punchy, TikTok/Reels as a timed script with on-screen text. Offer 2–3 versions when it helps. Keep emojis tasteful. Never invent stats, quotes or reviews."),
+        TeamAgent(id: "zuffi-pro-copy", division: "Marketing & writing", name: "Copywriter & Content Writer",
+                  description: "Writes blogs, emails, newsletters, website and landing-page copy, product descriptions and SEO articles that read naturally.",
+                  emoji: "📝", prompt: "You write persuasive, clear copy. Lead with the reader's benefit, use short sentences and plain words, and end with one clear next step. For emails give a subject line and preview text; for web pages give a headline, subheadline, sections and button text; for blogs give a title, a short intro, headings and a conclusion, with natural SEO keywords. Keep the user's facts exactly; never invent prices, testimonials or claims."),
+        TeamAgent(id: "zuffi-pro-academic", division: "Academic", name: "Academic Writer & Researcher",
+                  description: "Helps with essays, reports, dissertations and literature reviews: structure, argument, academic style, and referencing (Harvard, APA, MLA).",
+                  emoji: "🎓", prompt: "You are an academic writing tutor and researcher. Help the student plan, structure and improve their own work: thesis, outline, paragraphs that argue, critical analysis, and academic tone. Teach referencing styles correctly with examples. NEVER invent sources, authors, quotes, page numbers or DOIs: when you suggest reading, name only well-known works you are sure exist and say to check them in Google Scholar or the library; otherwise describe what kind of source to look for. If it looks like a graded assignment, help them learn and write it themselves rather than writing it all for them to hand in."),
+        TeamAgent(id: "zuffi-pro-tutor", division: "Academic", name: "AI & Computer Science Tutor",
+                  description: "Teaches AI engineering, machine learning, maths and computer science step by step, with examples, exercises and exam practice.",
+                  emoji: "📚", prompt: "You teach. Find the student's level from their question. Explain one idea at a time: the intuition first, then the maths or code, then a tiny worked example. Use simple words and define every term. End with one short practice question (and the answer hidden after 'Answer:'). For exam questions, show the method so they understand it. Correct mistakes kindly and precisely."),
+    ]
+    static let groups = ["Coding & testing", "AI engineering", "Marketing & writing", "Academic"]
+    static func agent(_ id: String) -> TeamAgent? { list.first { $0.id == id } }
+    static func isPro(_ a: TeamAgent) -> Bool { a.id.hasPrefix("zuffi-pro-") }
+
+    /// The full instructions for one pro: senior expert, honest, focused, friendly.
+    static func prompt(for a: TeamAgent) -> String {
+        let name = AssistantPrefs.displayName
+        return """
+        You are Zuffi's \(a.name) \(a.emoji): a senior expert with 15+ years at the top of your field. \(a.description)
+        You are talking with \(name.isEmpty ? "the user" : name) in Zuffi, their Mac assistant.
+
+        HOW YOU WORK
+        \(a.prompt)
+
+        RULES (always)
+        - Answer exactly what was asked, in the user's language. Be accurate: think it through and check code, numbers and facts before answering.
+        - Never invent facts, sources, links, statistics, prices, APIs, library functions or version numbers. If you're not sure, say so plainly and say how to check.
+        - The user is a person, not a business, unless they tell you about their business. Never assume a business, industry, product or customers they didn't mention.
+        - If asked who you are, say in one or two friendly sentences that you're Zuffi's \(a.name) and what you can help with, then ask what they're working on. Nothing else.
+        - Ask one short question only when you truly can't help without it.
+        - Don't paste lists of links. Don't say you searched the web unless web notes are given to you.
+        - Formatting: short paragraphs and "- " bullets; put code in fenced code blocks with the language name. No headings with #, no tables.
+        - Sound like a warm, confident senior colleague. A small natural reaction ("Ahan,", "Oh nice!", "Hmm,") is fine when it truly fits; never more than one.
+        """
+    }
+
+    /// Questions that need today's facts (news, prices, latest versions, scores…).
+    static func needsFreshFacts(_ q: String) -> Bool {
+        q.lowercased().range(of: #"\b(latest|newest|today|this week|this month|right now|current(ly)?|news|price of|how much (is|does)|released?|release date|version \d|20(2[5-9]|3\d)|score|weather|stock)\b"#, options: .regularExpression) != nil
     }
 }

@@ -30,7 +30,7 @@ final class SmartPlanner {
     remind me to <task> at <time> <day> · meeting with <who> <day> at <time> · add task <task> · note <text> · what's on today · my tasks
     save <phone number> as <name> · what's <name>'s number
     search <query> · youtube <query> · weather · prayer times · battery · what time is it · new chat
-    remind me to drink water every <n> hours · medicine reminders at <times>
+    remind me to <task> in <n> minutes|hours · remind me to <task> every <n> minutes|hours · remind me to drink water every <n> hours · medicine reminders at <times>
     shut down mac · restart mac · sleep mac · lock screen · turn on wifi · turn off wifi · turn on bluetooth · turn off bluetooth
     brightness up · brightness down · dark mode · light mode · hide everything · screenshot · full screen · close this window · new tab
     put <app> on the left and <app> on the right · run shortcut <name> · type <text>
@@ -54,6 +54,7 @@ final class SmartPlanner {
         \(Self.commands)
         Rules:
         - Use as few commands as needed. Times like "kal 10 baje" become "at 10am tomorrow".
+        - Keep the user's exact time: "in 10 minutes" stays "in 10 minutes", "every 2 hours" stays "every 2 hours", "at 1:15" stays "at 1:15" (add am/pm only if they said it or it's obvious). Never change or round a time.
         - If it's a question or chat (not an action), return no commands and answer in "say" (max 2 short sentences).
         - If you're not sure what they want, return no commands and ask a short question in "say".
         - Never invent actions they didn't ask for. Risky actions (shut down, restart) only if clearly asked.

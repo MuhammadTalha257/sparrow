@@ -810,7 +810,7 @@ enum AuroraColor {
 }
 extension Notification.Name { static let auroraColorChanged = Notification.Name("zuffi.auroraColorChanged") }
 
-enum AuroraFraming { case full, face }
+enum AuroraFraming { case full, face, closeFace }
 
 struct Aurora3DView: NSViewRepresentable {
     var pose: AuroraPose = .sit
@@ -875,6 +875,10 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     nonisolated(unsafe) static var pokeAt = Date.distantPast
     nonisolated(unsafe) static var pokeEar = false
     static func poke(ear: Bool) { pokeEar = ear; pokeAt = Date() }
+    /// What her voice is saying right now (set by the voice engine), so every Aurora's lips follow it without waiting for a redraw.
+    nonisolated(unsafe) static var liveSpeaking = false
+    nonisolated(unsafe) static var liveText = ""
+    nonisolated(unsafe) static var liveStart = Date.distantPast
     func setTalk(_ on: Bool, text: String, startedAt: Date) { lock.lock(); talking = on; talkText = text; talkStart = startedAt; lock.unlock() }
     /// How open the mouth is for the letter being said right now (vowels open, m/b/p closed).
     static func mouthOpen(_ text: String, since: Double) -> CGFloat {
@@ -1194,9 +1198,14 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     // MARK: moving (every frame)
 
     func renderer(_ renderer: any SCNSceneRenderer, updateAtTime time: TimeInterval) {
-        lock.lock(); let p = framing == .face ? AuroraPose.sit : pose, left = faceLeft, ty = targetYaw, tp = targetPitch, ex = expression
-        let talkOn = talking, tText = talkText, tStart = talkStart; lock.unlock()
-        if framing == .face { for b in bodyParts where !b.isHidden { b.isHidden = true } }
+        lock.lock(); let p = framing != .full ? AuroraPose.sit : pose, left = faceLeft, ty = targetYaw, tp = targetPitch, ex = expression
+        let tSelf = talking, tText0 = talkText, tStart0 = talkStart; lock.unlock()
+        // Her voice drives her lips directly (not only when the screen refreshes): every Aurora talks in time.
+        let live = Self.liveSpeaking
+        let talkOn = tSelf || live
+        let tText = live && !Self.liveText.isEmpty ? Self.liveText : tText0
+        let tStart = live && !Self.liveText.isEmpty ? Self.liveStart : tStart0
+        if framing != .full { for b in bodyParts where !b.isHidden { b.isHidden = true } }
         let dt = CGFloat(last == 0 ? 1.0 / 60 : min(0.05, time - last)); last = time; t += dt
         func ease(_ v: inout CGFloat, _ to: CGFloat, _ rate: CGFloat = 5) { v += (to - v) * (1 - exp(-dt * rate)) }
         func clamp(_ v: CGFloat, _ a: CGFloat = 0, _ b: CGFloat = 1) -> CGFloat { max(a, min(b, v)) }
@@ -1281,7 +1290,13 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         ease(&earFlop, calm && idleKind == 2 ? win(3.0) : 0, 6)
         ease(&sniff, calm && idleKind == 3 ? win(2.4) : 0, 8)
         // talking: the mouth follows the words; paws and head move like she's explaining
-        if talkOn { ease(&talkOpen, Self.mouthOpen(tText, since: Date().timeIntervalSince(tStart)), 28) } else { ease(&talkOpen, 0, 18) }
+        if talkOn {
+            // Follow the words; if the text runs out (or is missing) while she's still talking, keep a natural talking rhythm.
+            let since = Date().timeIntervalSince(tStart)
+            let inText = !tText.isEmpty && since >= 0 && since < Double(tText.count) / 14.5
+            let babble = 0.18 + 0.5 * abs(sin(t * 12.5)) * (0.55 + 0.45 * sin(t * 3.3 + 1))
+            ease(&talkOpen, inText ? Self.mouthOpen(tText, since: since) : babble, 28)
+        } else { ease(&talkOpen, 0, 18) }
         ease(&talkAmt, talkOn ? 1 : 0, 6)
         if let n = nose {
             let tw: CGFloat = (sniff > 0.1 || sin(t * 0.7) > 0.93) ? 0.3 * max(0, sin(t * 22)) : 0
@@ -1344,7 +1359,9 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         let blink: CGFloat = (t > nextBlink && t < nextBlink + 0.16) ? 0.1 : 1
         ease(&lookX, 0.012 * thinkE + 0.006 * sin(t * 0.37) * (1 - thinkE), 4)          // eyes drift; look up and aside when thinking
         ease(&lookY, 0.012 * thinkE - 0.012 * sadE - 0.008 * loveE, 4)
-        let squint = max(happyE, cheer)
+        let chatty = talkAmt * (ex == .smile ? 1 : 0.4)
+        let lift = chatty * max(0, sin(t * 2.6)) * max(0, sin(t * 1.1 + 0.5))      // brows go up on the words she stresses
+        let squint = max(happyE, cheer, 0.22 * chatty)
         var eyeOpen: [CGFloat] = []
         for (i, e) in eyes.enumerated() {
             let s: CGFloat = i == 0 ? -1 : 1
@@ -1364,13 +1381,13 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             }
             eyeOpen.append(e.scale.y)
         }
-        let browOn = max(crossAmt, crossE, sadE, thinkE * 0.8, surpriseE * 0.85)
+        let browOn = max(crossAmt, crossE, sadE, thinkE * 0.8, surpriseE * 0.85, 0.7 * lift)
         for (i, b) in brows.enumerated() {
             let s: CGFloat = i == 0 ? -1 : 1
             // cross: slanted down to the middle · sad: up in the middle · surprised: high · thinking: one raised
             let tilt = 0.5 * max(crossAmt, crossE) - 0.45 * sadE + (i == 1 ? -0.3 * thinkE : 0)
             b.eulerAngles.z = .pi / 2 + tilt * s
-            b.position.y = 0.155 + 0.05 * surpriseE + (i == 1 ? 0.03 * thinkE : 0) - 0.015 * crossE
+            b.position.y = 0.155 + 0.05 * surpriseE + (i == 1 ? 0.03 * thinkE : 0) - 0.015 * crossE + 0.03 * lift
         }
         for (i, tr) in tears.enumerated() { let c = (t + CGFloat(i) * 0.8).truncatingRemainder(dividingBy: 1.8) / 1.8; tr.position.y = -0.07 - 0.13 * c }   // tears roll down
         let blushK = 1 + 0.25 * loveE
@@ -1379,7 +1396,7 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         // MOUTH: lip-sync, a wide laugh, an "o" when surprised or yawning
         let laughOpen = laughE * (0.55 + 0.35 * abs(sin(t * 17)))
         let mOpen = max(laughOpen, surpriseE * 0.55, yawn * 1.4, min(1, talkOpen * talkAmt))
-        let smileTilt = (0.45 + 0.2 * joy + 0.15 * winkE) * (1 - sadE * 2) * (1 - crossE * 0.6)
+        let smileTilt = (0.45 + 0.2 * joy + 0.15 * winkE + 0.12 * chatty) * (1 - sadE * 2) * (1 - crossE * 0.6)
         mouthL?.eulerAngles.z = .pi / 2 - smileTilt; mouthR?.eulerAngles.z = .pi / 2 + smileTilt
         let round = surpriseE + yawn
         mouthO?.scale = SCNVector3(0.026 + 0.012 * mOpen + 0.012 * laughE - 0.006 * round, 0.008 + 0.034 * mOpen, 0.01)
@@ -1421,6 +1438,12 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         show(mouthO, min(1, mOpen * 2))
         show(tongue, min(1, mOpen * 2) * max(laughE, yawn, talkAmt * 0.6))
 
+        if framing == .closeFace {
+            // the notch tab: her whole face, big enough to see her lips and feelings (ear tips may tuck out of view)
+            camNode.position = SCNVector3(hp.x, hp.y + 0.12, hp.z + 2.75)
+            camNode.look(at: SCNVector3(hp.x, hp.y + 0.06, hp.z))
+            return
+        }
         if framing == .face {
             // a close-up of her head (with the ears)
             let target = SCNVector3(hp.x, hp.y + 0.42, hp.z)

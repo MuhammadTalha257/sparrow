@@ -41,8 +41,21 @@ function parseWhen(text) {
   const date = p.start.date();
   const hasTime = p.start.isCertain('hour');
   if (!hasTime) date.setHours(9, 0, 0, 0);   // a day with no time → 9 am
-  // "at 5" with no am/pm: people mean 5 pm, not 5 in the morning
-  else if (!p.start.isCertain('meridiem') && date.getHours() >= 1 && date.getHours() <= 6 && !/\b(am|a\.m|morning)\b/i.test(text)) date.setHours(date.getHours() + 12);
+  else if (!p.start.isCertain('meridiem')) {
+    // "at 1:15", "at 9" with no am/pm: the next sensible time. 1–6 means pm ("at 5" = 5 pm) unless they said morning;
+    // with no day given it's today if that time is still ahead, else tomorrow.
+    const h = date.getHours() % 12, mi = date.getMinutes(), now = new Date();
+    const am = /\b(am|a\.m|morning|subah)\b/i.test(text), pm = /\b(pm|p\.m|evening|night|afternoon|tonight|shaam|raat)\b/i.test(text);
+    const dayGiven = p.start.isCertain('day') || p.start.isCertain('weekday');
+    const base = dayGiven ? new Date(date) : new Date(now);
+    const cands = [];
+    for (let k = 0; k < 2; k++) for (const hh of (am ? [h] : pm || (h >= 1 && h <= 6) ? [h + 12] : [h, h + 12])) {
+      const c = new Date(base.getFullYear(), base.getMonth(), base.getDate() + k, hh, mi, 0, 0);
+      if (dayGiven ? k === 0 : c > now) cands.push(c);
+    }
+    cands.sort((a, b) => a - b);
+    if (cands.length) date.setTime(cands[0].getTime());
+  }
   const rest = (text.slice(0, p.index) + ' ' + text.slice(p.index + p.text.length)).replace(/\s+/g, ' ').replace(/\s+(?:on|at|for|by|this|next)$/i, '').trim();
   return { date, rest, hasTime };
 }
@@ -73,7 +86,13 @@ export function dateRange(text) {
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 /** Finds "every day / every Monday / weekdays / monthly …" and returns { rule, rest } */
 function parseRepeat(text) {
-  let m = text.match(/\b(every\s*day|daily|each day|har\s*roz|every\s*(morning|evening|night))\b/i);
+  let m = text.match(/\bevery\s+(?:(\d+(?:\.\d+)?|an?|one|half an?)\s*)?(hours?|hrs?|h|minutes?|mins?|m)\b/i);
+  if (m) {
+    const n = !m[1] ? 1 : /^half/i.test(m[1]) ? 0.5 : /^(an?|one)$/i.test(m[1]) ? 1 : +m[1];
+    const minutes = Math.max(5, Math.round(/^h/i.test(m[2]) ? n * 60 : n));
+    return { rule: { freq: 'interval', minutes }, rest: text.replace(m[0], ' ') };
+  }
+  m = text.match(/\b(every\s*day|daily|each day|har\s*roz|every\s*(morning|evening|night))\b/i);
   if (m) return { rule: { freq: 'daily' }, rest: text.replace(m[0], m[2] ? m[2] : ' ') };
   m = text.match(/\b(every\s*weekday|on\s*weekdays|weekdays|monday\s*to\s*friday)\b/i);
   if (m) return { rule: { freq: 'weekly', days: [1, 2, 3, 4, 5] }, rest: text.replace(m[0], ' ') };
@@ -92,6 +111,11 @@ function parseRepeat(text) {
 }
 /** Next time a repeating item is due, strictly after `after`. */
 export function nextOccurrence(rule, base, after = new Date()) {
+  if (rule.freq === 'interval') {
+    const step = Math.max(5, +rule.minutes || 60) * 60000, b0 = new Date(base).getTime(), a = new Date(after).getTime();
+    if (b0 > a) return new Date(b0);
+    return new Date(b0 + (Math.floor((a - b0) / step) + 1) * step);
+  }
   const b = new Date(base), h = b.getHours(), mi = b.getMinutes();
   const d = new Date(after); d.setSeconds(0, 0);
   for (let i = 0; i < 400; i++) {
@@ -105,6 +129,7 @@ export function nextOccurrence(rule, base, after = new Date()) {
 }
 export function repeatText(rule) {
   if (!rule) return '';
+  if (rule.freq === 'interval') { const m = +rule.minutes || 60; return m % 60 === 0 ? (m === 60 ? 'every hour' : `every ${m / 60} hours`) : `every ${m} minutes`; }
   if (rule.freq === 'daily') return 'every day';
   if (rule.freq === 'monthly') return 'every month';
   const d = rule.days || [];
@@ -484,9 +509,10 @@ export async function handle(input) {
   if (m) {
     const rep = parseRepeat(m[1]);
     let { date, rest } = parseWhen(rep ? rep.rest : m[1]);
-    let title = cap(tidy(rest.replace(/^(to|that|about)\s+/i, ''))) || 'Reminder';
+    let title = cap(tidy(tidy(rest.replace(/^(?:for\s+)?(to|that|about)\s+/i, '')).replace(/^(to|that|about)\s+/i, ''))) || 'Reminder';
     let note = '';
-    if (rep) {
+    if (rep && rep.rule.freq === 'interval') date = date || new Date(Date.now() + rep.rule.minutes * 60000);
+    else if (rep) {
       const base = date || new Date(new Date().setHours(9, 0, 0, 0));
       date = nextOccurrence(rep.rule, base, new Date(Date.now() - 60000));
     }
