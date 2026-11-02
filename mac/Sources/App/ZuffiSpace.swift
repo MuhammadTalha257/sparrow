@@ -1075,12 +1075,11 @@ struct NotchHomeView: View {
                     .padding(.bottom, 2)
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
-                        .onTapGesture(count: 2) { ZuffiAsk.shared.listenOnce() }
                         .gesture(SpatialTapGesture().onEnded { v in if !AuroraTouch.clicked() { AuroraMoves.poke(ear: v.location.y < 26) } })
                         .onContinuousHover { phase in
                             switch phase { case .active(let p): AuroraTouch.moved(p); case .ended: AuroraTouch.ended() }
                         }
-                        .help("Stroke her slowly with the mouse · click to play (try her ears) · double-click to talk"))
+                        .help("Stroke her slowly with the mouse · click to play (try her ears)"))
             }
         }
         .frame(width: tabW, height: tabH)
@@ -1092,7 +1091,7 @@ struct NotchHomeView: View {
     }
 
     private var bar: some View {
-        Group { if listening { listenStrip } else { askBar } }
+        Group { if listening || voice.conversation { listenStrip } else { askBar } }
             .frame(width: W - 24)
             .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
     }
@@ -1186,11 +1185,11 @@ struct NotchHomeView: View {
                 .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
                 .focused($askFocus).onSubmit { send() }
             ProviderMenu(state: state, tint: .white)
-            // talk now
-            Button { ZuffiAsk.shared.listenOnce() } label: {
+            // talk: tap once to start a conversation, tap again (or ■) to end it
+            Button { VoiceEngine.shared.toggleConversation() } label: {
                 Image(systemName: "waveform").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#141218"))
                     .frame(width: 26, height: 26).background(Circle().fill(Color(hex: "#F2F1F6")))
-            }.buttonStyle(.plain).help("Talk to Zuffi now (or hold Z)")
+            }.buttonStyle(.plain).help("Talk with Zuffi — tap to start, tap again to stop (or hold Z)")
         }
         .padding(.leading, 12).padding(.trailing, 5).frame(height: 38)
         .background(Capsule().fill(Color(hex: "#141218")))
@@ -1208,12 +1207,15 @@ struct NotchHomeView: View {
                     }
                 }.frame(height: 18)
             }
-            Text(voice.pushToTalk ? "Listening… let go of Z to send" : "Listening…").font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
+            Text(voice.pushToTalk ? "Listening… let go of Z to send"
+                 : !voice.conversation || listening ? "Listening…"
+                 : voice.speaking || tutor.speaking ? "Zuffi is talking…" : "Thinking…")
+                .font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
             Spacer(minLength: 0)
-            Button { VoiceEngine.shared.pushToTalkUp() } label: {
+            Button { if voice.conversation { VoiceEngine.shared.endConversation() } else { VoiceEngine.shared.pushToTalkUp() } } label: {
                 RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 10, height: 10)
                     .frame(width: 30, height: 30).background(Circle().fill(Color(hex: "#E5484D")))
-            }.buttonStyle(.plain).help("Stop")
+            }.buttonStyle(.plain).help(voice.conversation ? "End the conversation" : "Stop")
         }
         .padding(.leading, 14).padding(.trailing, 5).frame(height: 38)
         .background(Capsule().fill(Color(hex: "#141218")))
@@ -1426,6 +1428,11 @@ struct NotchHomeView: View {
     }
     /// Chat page: the message goes to the chat (Zuffi or the agent you picked) and the answer appears there.
     private func sendChat(_ q: String, spoken: Bool) {
+        if let last = state.chatHistory.last, Date().timeIntervalSince(last.at) > 5 * 60 {
+            let who = ZuffiChat.shared.who
+            state.newChat()                       // the old chat is kept in History
+            ZuffiChat.shared.who = who
+        }
         AuroraTouch.feel(for: q)
         if page != "chat" { nav.page = "chat" }
         state.chatHistory.append(ChatMessage(role: .user, content: q))

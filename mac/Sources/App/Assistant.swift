@@ -21,9 +21,14 @@ enum AssistantPrefs {
     static let readNotes       = "readNotifications"// Bool
 
     static func registerDefaults() {
+        // The mic is never on by itself any more: one time, switch the old always-listening "Zuffi…" off.
+        if !UserDefaults.standard.bool(forKey: "micOffByDefaultV1") {
+            UserDefaults.standard.set(true, forKey: "micOffByDefaultV1")
+            UserDefaults.standard.set(false, forKey: wakeWord)
+        }
         UserDefaults.standard.register(defaults: [
             voiceGender: "female", voiceId: "", voiceRate: 0.5, speakReplies: true,
-            wakeWord: true, greetEnabled: true, greetWeather: true, userName: "",
+            wakeWord: false, greetEnabled: true, greetWeather: true, userName: "",
             weatherCity: "", readNotes: false,
         ])
     }
@@ -371,6 +376,7 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     fileprivate func speechFinished() {
         speaking = false
+        if conversation { listenAfterSpeech = false; resumeAfterSpeech = false; conversationNext(); return }
         if listenAfterSpeech {
             listenAfterSpeech = false
             resumeAfterSpeech = false
@@ -542,11 +548,61 @@ final class VoiceEngine: NSObject, ObservableObject {
     /// Mirrors the switch so every mic button redraws the moment it changes.
     @Published var micEnabled: Bool = VoiceEngine.micOn
     /// What was just heard / said / missed — the notch shows it so you always see what happened.
-    @Published var lastHeard = ""
+    @Published var lastHeard = "" { didSet { if !lastHeard.isEmpty { conversationHeard() } } }
     var lastHeardAt = Date.distantPast
     @Published var lastSpoken = ""
     var lastSpokenAt = Date.distantPast
-    @Published var missedAt = Date.distantPast
+    @Published var missedAt = Date.distantPast { didSet { conversationMissed() } }
+
+    // MARK: Conversation (like ChatGPT voice): tap once — talk back and forth; tap again — she stops.
+    @Published private(set) var conversation = false
+    private var convMisses = 0
+    func toggleConversation() {
+        if conversation { endConversation(); return }
+        if ZuffiPlan.shared.blocked(speak: true) { return }
+        conversation = true; convMisses = 0
+        appendAppLog("voice.log", "conversation started")
+        listenOnce(byButton: true)
+    }
+    func endConversation() {
+        guard conversation else { return }
+        conversation = false
+        appendAppLog("voice.log", "conversation ended")
+        resumeAfterSpeech = false; listenAfterSpeech = false
+        if speaking { stopSpeaking(); speaking = false }
+        oneShot = false
+        stopRecognition()
+        status = ""
+    }
+    /// Her turn is over: listen for yours.
+    private func conversationNext(after delay: Double = 0.3) {
+        guard conversation else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            MainActor.assumeIsolated {
+                let v = VoiceEngine.shared
+                guard v.conversation, !v.speaking, !v.isListening else { return }
+                v.listenOnce(byButton: false)
+            }
+        }
+    }
+    private func conversationMissed() {
+        guard conversation else { return }
+        convMisses += 1
+        if convMisses >= 3 { endConversation() } else { conversationNext(after: 0.2) }
+    }
+    /// You said something: if nothing is spoken back (a quiet action), keep the conversation going anyway.
+    private func conversationHeard() {
+        guard conversation else { return }
+        convMisses = 0
+        let at = Date()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            MainActor.assumeIsolated {
+                let v = VoiceEngine.shared
+                guard v.conversation, !v.speaking, !v.isListening, v.lastSpokenAt < at else { return }
+                v.conversationNext(after: 0)
+            }
+        }
+    }
     var pttEndedAt = Date.distantPast
     /// When the sound of the current sentence actually started (for lip-sync).
     var audioStartedAt = Date.distantPast { didSet { Aurora3DRig.liveStart = audioStartedAt } }
@@ -916,7 +972,7 @@ enum Assistant {
             // A real question takes a second to think about: a little "hmm" so it feels like talking to someone
             let low = text.lowercased()
             if !short || text.hasSuffix("?") || low.range(of: #"^(what|why|how|who|when|where|which|can|could|should|is|are|do|does|explain|tell me)\b"#, options: .regularExpression) != nil {
-                VoiceEngine.shared.speak(["Hmm…", "Hmm, let me think…", "Oh, good question…", "Okay…"].randomElement()!)
+                if !VoiceEngine.shared.conversation { VoiceEngine.shared.speak(["Hmm…", "Hmm, let me think…", "Oh, good question…", "Okay…"].randomElement()!) }
             }
             // Anything else, any language: the smart planner turns it into actions and answers like a person
             if let plan = await SmartPlanner.shared.plan(text) {

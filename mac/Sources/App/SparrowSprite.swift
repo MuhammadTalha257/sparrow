@@ -1416,7 +1416,8 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         let smileTilt = (0.45 + 0.2 * joy + 0.15 * winkE + 0.12 * chatty) * (1 - sadE * 2) * (1 - crossE * 0.6)
         mouthL?.eulerAngles.z = .pi / 2 - smileTilt; mouthR?.eulerAngles.z = .pi / 2 + smileTilt
         let round = surpriseE + yawn
-        mouthO?.scale = SCNVector3(0.026 + 0.012 * mOpen + 0.012 * laughE - 0.006 * round, 0.008 + 0.034 * mOpen, 0.01)
+        let mBig: CGFloat = framing == .closeFace ? 1.7 : 1        // the tiny notch face: bigger lips so you can see her talk
+        mouthO?.scale = SCNVector3((0.026 + 0.012 * mOpen + 0.012 * laughE - 0.006 * round) * mBig, (0.008 + 0.034 * mOpen) * mBig, 0.01)
         tongue?.position.y = -0.125 - 0.02 * mOpen
 
         // hearts float up around her head
@@ -1457,8 +1458,9 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
 
         if framing == .closeFace {
             // the notch tab: her whole face, big enough to see her lips and feelings (ear tips may tuck out of view)
-            camNode.position = SCNVector3(hp.x, hp.y + 0.12, hp.z + 2.75)
-            camNode.look(at: SCNVector3(hp.x, hp.y + 0.06, hp.z))
+            // centred on her nose and mouth, so her lips are always in view (the tab used to cut them off)
+            camNode.position = SCNVector3(hp.x, hp.y + 0.0, hp.z + 3.05)
+            camNode.look(at: SCNVector3(hp.x, hp.y - 0.07, hp.z))
             return
         }
         if framing == .face {

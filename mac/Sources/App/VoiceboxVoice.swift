@@ -82,49 +82,47 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
     }
 
     /// Speaks `text`; returns false (so Zuffi uses its own voice) if Voicebox isn't there.
+    private let clips = ClipQueue()
     func say(_ text: String, ended: @escaping () -> Void) async -> Bool {
         stop()
         turn += 1
         let my = turn
         let m = Self.mode
+        let pieces = ClipQueue.pieces(text)
+        // She starts with the first short phrase while the next ones are made — no waiting for the whole answer.
         if studioUp && (m == "auto" || m == "voicestudio") {
-            if await studioSay(text, my: my, ended: ended) { return true }
+            if await clips.play(pieces, make: { [weak self] t in await self?.studioClip(t) }, ended: ended) { return my == turn }
         }
-        guard boxUp && (m == "auto" || m == "voicebox") else { return false }
+        guard my == turn, boxUp && (m == "auto" || m == "voicebox") else { return false }
         var pid = UserDefaults.standard.string(forKey: "voiceboxProfile") ?? ""
         if pid.isEmpty { pid = await profiles().first?.id ?? "" }
-        guard !pid.isEmpty else { return false }
+        guard !pid.isEmpty, my == turn else { return false }
+        let profile = pid
+        if await clips.play(pieces, make: { [weak self] t in await self?.boxClip(t, profile: profile) }, ended: ended) { return true }
+        appendAppLog("voice.log", "Voicebox didn't answer — using Zuffi's own voice")
+        return false
+    }
+
+    private func boxClip(_ text: String, profile: String) async -> Data? {
         let rec = NLLanguageRecognizer(); rec.processString(text)
         var lang = rec.dominantLanguage?.rawValue.components(separatedBy: "-").first ?? "en"
         if lang == "nb" || lang == "nn" { lang = "no" }
         if !Self.languages.contains(lang) { lang = "en" }
-        var body: [String: Any] = ["profile_id": pid, "text": ZuffiExpress.spoken(text), "language": lang, "normalize": true]
+        var body: [String: Any] = ["profile_id": profile, "text": ZuffiExpress.spoken(text), "language": lang, "normalize": true]
         if UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? false {
             body["effects_chain"] = [["type": "pitch_shift", "enabled": true, "params": ["semitones": 4.5]]]
         }
-        var r = URLRequest(url: Self.base.appendingPathComponent("generate/stream"), timeoutInterval: 90)
+        var r = URLRequest(url: Self.base.appendingPathComponent("generate/stream"), timeoutInterval: 60)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.setValue("zuffi", forHTTPHeaderField: "X-Voicebox-Client-Id")
         r.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        guard let (d, resp) = try? await URLSession.shared.data(for: r),
-              (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 100, my == turn,
-              let p = try? AVAudioPlayer(data: d) else {
-            appendAppLog("voice.log", "Voicebox didn't answer — using Zuffi's own voice")
-            return false
-        }
-        p.delegate = self
-        p.volume = 0.95
-        player = p
-        onEnd = ended
-        p.play()
-        VoiceEngine.shared.audioStartedAt = Date(); VoiceEngine.shared.lipText = text
-        ZuffiExpress.face(for: text)
-        return true
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 100 else { return nil }
+        return d
     }
 
     /// VoiceStudio (OmniVoice): offline, 600+ languages. The bunny voice is designed with its voice tags.
-    private func studioSay(_ text: String, my: Int, ended: @escaping () -> Void) async -> Bool {
+    private func studioClip(_ text: String) async -> Data? {
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
         let picked = UserDefaults.standard.string(forKey: "voicestudioVoice") ?? ""
         var body: [String: Any] = ["model": "tts-1", "input": ZuffiExpress.omni(text), "voice": picked.isEmpty ? "alloy" : picked, "response_format": "wav"]
@@ -132,28 +130,19 @@ final class VoiceboxVoice: NSObject, AVAudioPlayerDelegate {
             let m = ZuffiExpress.mood(text)
             body["instructions"] = m == .cry || m == .sad ? "female, young adult, low pitch, whisper" : m == .shout || m == .excited ? "female, young adult, high pitch" : "female, young adult, moderate pitch"
         }
-        var r = URLRequest(url: Self.studioBase.appendingPathComponent("v1/audio/speech"), timeoutInterval: 60)
+        var r = URLRequest(url: Self.studioBase.appendingPathComponent("v1/audio/speech"), timeoutInterval: 45)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        guard let (d, resp) = try? await URLSession.shared.data(for: r),
-              (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 100, my == turn,
-              let p = try? AVAudioPlayer(data: d) else {
-            appendAppLog("voice.log", "VoiceStudio didn't answer")
-            return false
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 100 else {
+            appendAppLog("voice.log", "VoiceStudio didn't answer"); return nil
         }
-        p.delegate = self
-        p.volume = 0.95
-        player = p
-        onEnd = ended
-        p.play()
-        VoiceEngine.shared.audioStartedAt = Date(); VoiceEngine.shared.lipText = text
-        ZuffiExpress.face(for: text)
-        return true
+        return d
     }
 
     func stop() {
         turn += 1
+        clips.stop()
         player?.stop()
         player = nil
         onEnd = nil
@@ -398,35 +387,124 @@ final class FishVoice: NSObject, AVAudioPlayerDelegate {
     private var onEnd: (() -> Void)?
     private var turn = 0
 
+    private let clips = ClipQueue()
     func say(_ text: String, ended: @escaping () -> Void) async -> Bool {
         stop()
-        turn += 1
-        let my = turn
+        // The first short phrase is made and played at once; the rest is made while she talks.
+        return await clips.play(ClipQueue.pieces(text), make: { t in await FishVoice.clip(t) }, ended: ended)
+    }
+    private static func clip(_ text: String) async -> Data? {
         var body: [String: Any] = ["text": ZuffiExpress.fish(text), "format": "mp3", "mp3_bitrate": 128, "latency": "balanced", "normalize": true]
         let voice = UserDefaults.standard.string(forKey: "fishVoiceId") ?? ""
         if !voice.isEmpty { body["reference_id"] = voice }
         body["prosody"] = ["speed": ZuffiExpress.speed(ZuffiExpress.mood(text))]
-        var r = URLRequest(url: URL(string: "https://api.fish.audio/v1/tts")!, timeoutInterval: 30)
+        var r = URLRequest(url: URL(string: "https://api.fish.audio/v1/tts")!, timeoutInterval: 20)
         r.httpMethod = "POST"
-        r.setValue("Bearer \(Self.key)", forHTTPHeaderField: "Authorization")
+        r.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { appendAppLog("voice.log", "Fish Audio: no answer"); return false }
-        guard (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 200, my == turn, let p = try? AVAudioPlayer(data: d) else {
-            appendAppLog("voice.log", "Fish Audio failed (\((resp as? HTTPURLResponse)?.statusCode ?? 0)) — using Zuffi's own voice")
-            return false
+        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { appendAppLog("voice.log", "Fish Audio: no answer"); return nil }
+        guard (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 200 else {
+            appendAppLog("voice.log", "Fish Audio failed (\((resp as? HTTPURLResponse)?.statusCode ?? 0))"); return nil
         }
-        p.delegate = self
-        p.volume = ZuffiExpress.mood(text) == .shout ? 1.0 : 0.95
-        player = p; onEnd = ended
-        p.play()
-        VoiceEngine.shared.audioStartedAt = Date()
-        VoiceEngine.shared.lipText = text.replacingOccurrences(of: #"\[[^\]]{1,24}\]"#, with: "", options: .regularExpression)
-        ZuffiExpress.face(for: text)
-        return true
+        return d
     }
-    func stop() { turn += 1; player?.stop(); player = nil; onEnd = nil }
+    func stop() { turn += 1; clips.stop(); player?.stop(); player = nil; onEnd = nil }
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in let f = FishVoice.shared.onEnd; FishVoice.shared.onEnd = nil; f?() }
+    }
+}
+
+
+// MARK: - Speaking in pieces: the first short phrase plays at once, the next is made while she talks
+@MainActor
+final class ClipQueue: NSObject, AVAudioPlayerDelegate {
+    private var turn = 0
+    private var player: AVAudioPlayer?
+    private var finished: CheckedContinuation<Void, Never>?
+
+    /// A short first phrase (so her voice starts right away), then whole sentences of a comfortable length.
+    static func pieces(_ text: String) -> [String] {
+        var sentences: [String] = []
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .bySentences) { s, _, _, _ in
+            if let s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty { sentences.append(s) }
+        }
+        if sentences.isEmpty { sentences = [text] }
+        var out: [String] = []
+        // split a long first sentence at its first pause (or after a few words)
+        let first = sentences.removeFirst()
+        if first.count > 48 {
+            let chars = Array(first)
+            var cut: Int? = nil
+            for i in 8..<min(chars.count - 6, 60) where ",;:—–".contains(chars[i]) { cut = i + 1; break }
+            if cut == nil { for i in stride(from: min(chars.count - 6, 38), to: 12, by: -1) where chars[i] == " " { cut = i; break } }
+            if let c = cut {
+                out.append(String(chars[..<c]).trimmingCharacters(in: .whitespaces))
+                out.append(String(chars[c...]).trimmingCharacters(in: .whitespaces))
+            } else { out.append(first) }
+        } else { out.append(first) }
+        var cur = ""
+        for s in sentences {
+            if cur.isEmpty { cur = s } else if cur.count + s.count < 170 { cur += " " + s } else { out.append(cur); cur = s }
+        }
+        if !cur.isEmpty { out.append(cur) }
+        return out.filter { !$0.isEmpty }
+    }
+
+    /// Plays the pieces in order. Returns false only if the very first piece couldn't be made.
+    func play(_ pieces: [String], make: @escaping @MainActor (String) async -> Data?, ended: @escaping () -> Void) async -> Bool {
+        stop()
+        turn += 1
+        let my = turn
+        guard let firstText = pieces.first else { return false }
+        let ahead: Task<Data?, Never>? = pieces.count > 1 ? Task { @MainActor in await make(pieces[1]) } : nil
+        guard let d0 = await make(firstText), my == turn, let p0 = try? AVAudioPlayer(data: d0) else { ahead?.cancel(); return false }
+        start(p0, firstText)
+        Task { @MainActor in
+            var next = ahead
+            var i = 1
+            while i < pieces.count {
+                await self.waitForEnd(my)
+                guard my == self.turn else { return }
+                let d = await next?.value
+                guard my == self.turn else { return }
+                next = i + 1 < pieces.count ? { let t = pieces[i + 1]; return Task { @MainActor in await make(t) } }() : nil
+                if let d, let p = try? AVAudioPlayer(data: d) { self.start(p, pieces[i]) }
+                i += 1
+            }
+            await self.waitForEnd(my)
+            guard my == self.turn else { return }
+            self.player = nil
+            ended()
+        }
+        return true
+    }
+
+    private func start(_ p: AVAudioPlayer, _ text: String) {
+        p.delegate = self
+        p.volume = ZuffiExpress.mood(text) == .shout ? 1.0 : 0.95
+        player = p
+        p.play()
+        VoiceEngine.shared.audioStartedAt = Date()          // her lips follow this piece's words
+        VoiceEngine.shared.lipText = text.replacingOccurrences(of: #"\[[^\]]{1,24}\]"#, with: "", options: .regularExpression)
+        ZuffiExpress.face(for: text)
+    }
+
+    private func waitForEnd(_ my: Int) async {
+        guard my == turn, let p = player, p.isPlaying else { return }
+        await withCheckedContinuation { c in finished = c }
+    }
+
+    func stop() {
+        turn += 1
+        player?.stop(); player = nil
+        if let c = finished { finished = nil; c.resume() }
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in if let c = self.finished { self.finished = nil; c.resume() } }
+    }
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor in if let c = self.finished { self.finished = nil; c.resume() } }
     }
 }
