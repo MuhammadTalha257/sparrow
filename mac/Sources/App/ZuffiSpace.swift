@@ -3404,7 +3404,7 @@ struct SettingsPage: View {
     @ViewBuilder private var privacy: some View {
         NSLabel(t: "LISTENING AND SPEAKING")
         toggle("“Hey Zuffi” (mic on)", Binding(get: { voice.micEnabled }, set: { VoiceEngine.shared.setMic($0) }))
-        toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
+        toggle("Hold Z — in a text box she types what you say; anywhere else you talk to her", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
         toggle("Hold ⌃ Control + ⌥ Option to type what you say (any app)", Binding(get: { UserDefaults.standard.object(forKey: "writeAnywhere") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "writeAnywhere") }))
         toggle("Say reminders out loud (off = just show them)", $speakReminders)
         NSLabel(t: "SECURITY")

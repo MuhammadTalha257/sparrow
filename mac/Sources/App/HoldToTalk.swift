@@ -21,8 +21,10 @@ enum HoldToTalk {
             }
         }
         if let g = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handler) { monitors.append(g) }
-        // Hold Z for a moment (when you're not typing in a box): talk to Zuffi about what's on screen.
-        if let z = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp], handler: { e in
+        // Hold Z: in a text box she types what you say there; anywhere else you're talking to Zuffi.
+        // The key is caught before apps see it (a quick tap still types a normal "z"); without that permission, the old way.
+        if ZKeyTap.start() { appendAppLog("voice.log", "hold Z: ready (types where you are, or talks to Zuffi)") }
+        else if let z = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .keyUp], handler: { e in
             let isDown = e.type == .keyDown, rep = e.isARepeat, code = e.keyCode
             let plain = e.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
             Task { @MainActor in HoldToTalk.zKey(code: code, down: isDown, repeat: rep, plain: plain) }
@@ -57,6 +59,17 @@ enum HoldToTalk {
             zDownAt = nil
             if zActive { zActive = false; VoiceEngine.shared.pushToTalkUp() }
         }
+    }
+
+    // MARK: hold Z (caught by ZKeyTap)
+    private static var zDictating = false
+    static func zHoldBegan() {
+        guard UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true else { return }
+        if ZuffiAsk.isTyping() { zDictating = true; Dictation.shared.begin() }      // in a text box: type what you say right there
+        else { zDictating = false; ZuffiAsk.shared.beginListening() }               // elsewhere: ask Zuffi
+    }
+    static func zHoldEnded() {
+        if zDictating { zDictating = false; Dictation.shared.end() } else { VoiceEngine.shared.pushToTalkUp() }
     }
 
     // MARK: hold ⌃⌥ — write anywhere (types what you say where your cursor is)
@@ -619,4 +632,81 @@ final class Dictation: ObservableObject {
             }
         }
     }
+}
+
+
+// MARK: - The Z key, caught before apps see it
+// Tap Z → a normal "z" is typed. Hold Z (0.4 s) → no z's appear; Zuffi listens until you let go.
+enum ZKeyTap {
+    nonisolated(unsafe) static var tap: CFMachPort?
+    nonisolated(unsafe) static var pending = false, active = false
+    nonisolated(unsafe) static var downSerial = 0
+    nonisolated(unsafe) static var downFlags: CGEventFlags = []
+    static let marker: Int64 = 0x5A5546
+
+    static func start() -> Bool {
+        guard tap == nil else { return true }
+        guard AXIsProcessTrusted() else { return false }
+        let mask = CGEventMask((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue))
+        guard let t = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                        eventsOfInterest: mask, callback: zTapCallback, userInfo: nil) else { return false }
+        let src = CFMachPortCreateRunLoopSource(nil, t, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
+        CGEvent.tapEnable(tap: t, enable: true)
+        tap = t
+        return true
+    }
+    /// Types a real "z" (ours is marked, so we let it through).
+    static func typeZ() {
+        let src = CGEventSource(stateID: .combinedSessionState)
+        for down in [true, false] {
+            guard let e = CGEvent(keyboardEventSource: src, virtualKey: 6, keyDown: down) else { continue }
+            e.flags = downFlags
+            e.setIntegerValueField(.eventSourceUserData, value: marker)
+            e.post(tap: .cgSessionEventTap)
+        }
+    }
+    static func repost(_ event: CGEvent) {
+        guard let e = event.copy() else { return }
+        e.setIntegerValueField(.eventSourceUserData, value: marker)
+        e.post(tap: .cgSessionEventTap)
+    }
+}
+
+private let zTapCallback: CGEventTapCallBack = { _, type, event, _ in
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if let t = ZKeyTap.tap { CGEvent.tapEnable(tap: t, enable: true) }
+        return Unmanaged.passUnretained(event)
+    }
+    if event.getIntegerValueField(.eventSourceUserData) == ZKeyTap.marker { return Unmanaged.passUnretained(event) }
+    guard UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true else { return Unmanaged.passUnretained(event) }
+    let code = event.getIntegerValueField(.keyboardEventKeycode)
+    let mods = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+    if code == 6 && mods.isEmpty {
+        if type == .keyDown {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
+                return (ZKeyTap.pending || ZKeyTap.active) ? nil : Unmanaged.passUnretained(event)
+            }
+            ZKeyTap.pending = true
+            ZKeyTap.downFlags = event.flags
+            ZKeyTap.downSerial += 1
+            let my = ZKeyTap.downSerial
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard ZKeyTap.pending, ZKeyTap.downSerial == my else { return }
+                ZKeyTap.pending = false; ZKeyTap.active = true
+                MainActor.assumeIsolated { HoldToTalk.zHoldBegan() }
+            }
+            return nil
+        }
+        if ZKeyTap.active { ZKeyTap.active = false; DispatchQueue.main.async { MainActor.assumeIsolated { HoldToTalk.zHoldEnded() } }; return nil }
+        if ZKeyTap.pending { ZKeyTap.pending = false; ZKeyTap.typeZ(); return nil }       // just a tap: type the z
+        return Unmanaged.passUnretained(event)
+    }
+    // typing fast ("pizza"): the next key came while Z was still down — type the z first, in the right order
+    if type == .keyDown, ZKeyTap.pending {
+        ZKeyTap.pending = false
+        ZKeyTap.typeZ(); ZKeyTap.repost(event)
+        return nil
+    }
+    return Unmanaged.passUnretained(event)
 }
