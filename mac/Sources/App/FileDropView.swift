@@ -54,6 +54,9 @@ enum FileDropHandler {
             state.chooseMode = nil
             state.promptContext = .file(name: name, fileURL: url)
             NotchNav.shared.open("tools")
+            SoundEngine.shared.play("approve")
+            BunnyFaceCenter.shared.show(.happy, for: 2)
+            if !VoiceEngine.shared.speaking { VoiceEngine.shared.speak("Got it! Do you want to ask about it, or change its format?") }
             return
         }
 

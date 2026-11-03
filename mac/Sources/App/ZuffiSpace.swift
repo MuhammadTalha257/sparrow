@@ -3445,6 +3445,7 @@ struct ToolsPage: View {
     @State private var working = false
     @State private var choosingLang = false
     @State private var toLang = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
+    @State private var showFormats = false
     var body: some View {
         if let f = state.droppedFile {
             NSCard {
@@ -3454,11 +3455,14 @@ struct ToolsPage: View {
                     Spacer()
                     NSIconButton(icon: "xmark", help: "Remove") { state.droppedFile = nil; formats = []; status = "" }
                 }
-                Text("What should I do with it?").font(.system(size: 12)).foregroundColor(NS.soft)
+                Text("Do you want to ask about it, or change its format?").font(.system(size: 12)).foregroundColor(NS.soft)
                 HStack(spacing: 6) {
-                    NSPill(title: "Sum it up", primary: true) { Task { await summarise(f.url, f.name) } }
+                    NSPill(title: "Ask about it", primary: !showFormats) { state.promptContext = .file(name: f.name, fileURL: f.url); NotchNav.shared.page = "chat"; ask("") }
+                    NSPill(title: "Change format", primary: showFormats) { withAnimation { showFormats.toggle() } }
+                }
+                HStack(spacing: 6) {
+                    NSPill(title: "Sum it up") { Task { await summarise(f.url, f.name) } }
                     NSPill(title: "Translate…", primary: choosingLang) { choosingLang.toggle() }
-                    NSPill(title: "Ask about it") { state.promptContext = .file(name: f.name, fileURL: f.url); NotchNav.shared.page = "chat"; ask("") }
                 }
                 if choosingLang {
                     HStack(spacing: 8) {
@@ -3467,8 +3471,11 @@ struct ToolsPage: View {
                         NSPill(title: "Translate", primary: true) { choosingLang = false; Task { await translate(f.url, to: toLang) } }
                     }
                 }
-                if !formats.isEmpty {
-                    Text("Convert to").font(.system(size: 11.5)).foregroundColor(NS.soft)
+                if showFormats && formats.isEmpty {
+                    Text("I can't change this kind of file — but you can ask about it or sum it up.").font(.system(size: 11.5)).foregroundColor(NS.soft)
+                }
+                if showFormats && !formats.isEmpty {
+                    Text("Change it to — the new file goes in your Downloads").font(.system(size: 11.5)).foregroundColor(NS.soft)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
                         ForEach(formats, id: \.self) { fmt in NSPill(title: ChooseView.label(fmt)) { Task { await convert(f, to: fmt) } } }
                     }
@@ -3483,7 +3490,7 @@ struct ToolsPage: View {
                 NSPill(title: "Choose a file", primary: true) { pick() }
             }
         }
-        EmptyView().task(id: state.droppedFile?.url) { await loadFormats() }
+        EmptyView().task(id: state.droppedFile?.url) { showFormats = false; status = ""; await loadFormats() }
     }
     private func pick() {
         let p = NSOpenPanel(); p.allowsMultipleSelection = false

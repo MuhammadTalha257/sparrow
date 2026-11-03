@@ -232,6 +232,7 @@ final class IslandWindowController: NSWindowController {
         RunLoop.main.add(frameTimer!, forMode: .common)
     }
 
+    private var idleDragCount = 0
     private func pollFrame() {
         guard let panel = window as? IslandPanel else { return }
 
@@ -250,7 +251,13 @@ final class IslandWindowController: NSWindowController {
         let inIsland = hoverRect.contains(local)
 
         // Toggle click-through
-        let shouldAcceptMouse = inIsland || inAttachDrag || attachDragStart != nil || IslandDrag.isDragging
+        // A file being dragged from Finder: catch it as soon as it comes near her.
+        let pb = NSPasteboard(name: .drag)
+        if NSEvent.pressedMouseButtons & 1 == 0 { idleDragCount = pb.changeCount }
+        let fileDrag = NSEvent.pressedMouseButtons & 1 != 0 && pb.changeCount != idleDragCount
+            && (pb.types?.contains(.fileURL) ?? false)
+        let nearForDrop = fileDrag && islandRect.insetBy(dx: -60, dy: -60).contains(local)
+        let shouldAcceptMouse = inIsland || nearForDrop || inAttachDrag || attachDragStart != nil || IslandDrag.isDragging
         // Every couple of seconds: if the island ended up off screen, bring it back.
         rescueTick += 1
         if rescueTick % 120 == 0 { IslandDrag.rescueIfLost() }
