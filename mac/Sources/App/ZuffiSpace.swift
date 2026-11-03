@@ -3217,6 +3217,7 @@ struct SettingsPage: View {
     @ObservedObject private var voice = VoiceEngine.shared
     @ObservedObject private var lock = ZuffiLock.shared
     @AppStorage("notchSettingsTab") private var tab = "Profile"
+    @AppStorage("zuffiCharacter") private var character = "aurora"
     @AppStorage("notchShowsAurora") private var showsAurora = true
     @AppStorage("speakReminders") private var speakReminders = true
     @AppStorage("trackDay") private var trackDay = true
@@ -3280,6 +3281,13 @@ struct SettingsPage: View {
             NSPill(title: saved ? "Saved ✓" : "Save", primary: true) { saveProfile() }
         }
         NSLabel(t: "YOUR ZUFFI")
+        Text("Her character").font(.system(size: 12.5)).foregroundColor(.white)
+        HStack(spacing: 6) {
+            ForEach(WobCharacterView.choices, id: \.id) { c in
+                NSPill(title: c.name, primary: character == c.id) { character = c.id; BunnyFaceCenter.shared.show(.happy, for: 2) }
+            }
+        }
+        if character != "aurora" { Text("Characters drawn with Wobnimo (MIT licence).").font(.system(size: 10.5)).foregroundColor(NS.soft) }
         HStack(spacing: 6) {
             Text("The notch shows").font(.system(size: 12.5)).foregroundColor(.white); Spacer()
             NSPill(title: "Aurora", primary: showsAurora) { showsAurora = true }
@@ -3690,6 +3698,17 @@ enum ZuffiCommand {
         guard !low.isEmpty else { return nil }
         if low.range(of: #"^(go |move |put |come )?(zuffi |yourself |you )?back (to|under) (the )?notch$|^(reset|centre|center) (zuffi|the notch)$"#, options: .regularExpression) != nil {
             IslandDrag.resetPosition(); return "I'm back under the notch!"
+        }
+        // "change your character to Boo", "be the panda", "switch to the ghost"
+        if low.range(of: #"^(change|switch|set) (your |the )?(character|look|avatar) (to |into )?|^(be|become|turn into|switch to) (the |a )?(ghost|panda|boo|bao|bunny|aurora|soft bunny)$"#, options: .regularExpression) != nil {
+            let pick: String? = low.contains("boo") || low.contains("ghost") ? "boo" : low.contains("bao") || low.contains("panda") ? "bao"
+                : low.contains("soft") || low.contains("new bunny") ? "zuffi" : low.contains("aurora") || low.contains("bunny") || low.contains("rabbit") ? "aurora" : nil
+            if let pick {
+                UserDefaults.standard.set(pick, forKey: "zuffiCharacter")
+                BunnyFaceCenter.shared.show(.happy, for: 2)
+                return "Ta-da! I'm \(WobCharacterView.choices.first { $0.id == pick }?.name ?? pick) now."
+            }
+            return "I can be Aurora (the 3D bunny), the soft bunny, Boo the ghost or Bao the panda — which one?"
         }
         if let r = openPage(low) { return r }
         if let r = openAgent(low, original: text) { return r }
