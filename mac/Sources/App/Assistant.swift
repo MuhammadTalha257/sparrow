@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import AVFoundation
 import Speech
+import NaturalLanguage
 import ApplicationServices
 import CoreLocation
 import CoreAudio
@@ -263,7 +264,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             return
         }
         // Her AI voice (Groq): the most human, starts in a fraction of a second. No internet / no key → her offline voice.
-        if GroqVoice.usable {
+        if GroqVoice.usable, GroqVoice.fits(clean) {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
             speaking = true
             neuralTurn += 1
@@ -302,7 +303,27 @@ final class VoiceEngine: NSObject, ObservableObject {
         stopSpeaking(); lastSpoken = text; lastSpokenAt = Date(); speakBuiltIn(text)
     }
 
+    /// A language her own voices don't speak (Spanish, French, Arabic, Chinese…): the Mac's voice for that language.
+    static func otherLanguage(_ text: String) -> String? {
+        let lang = UserDefaults.standard.string(forKey: "sparrowLang") ?? "en"
+        let m = NativeSpeech.model(for: text, lang: lang)
+        if m != "kokoro" {                       // Urdu / Hindi / Punjabi / Roman Urdu have their own voices — except Arabic script that isn't Urdu
+            if m == "urd" {
+                let r = NLLanguageRecognizer(); r.processString(text)
+                if let d = r.dominantLanguage, d == .arabic || d == .persian { return d.rawValue }
+            }
+            return nil
+        }
+        guard text.count >= 12 else { return nil }
+        let r = NLLanguageRecognizer(); r.processString(text)
+        guard let d = r.dominantLanguage, d != .english, d != .undetermined,
+              (r.languageHypotheses(withMaximum: 1)[d] ?? 0) > 0.6 else { return nil }
+        return d.rawValue
+    }
+
     private func speakBuiltIn(_ clean: String) {
+        // Another language: the Mac's own voice for it (her English voices would say it with the wrong sounds).
+        if Self.otherLanguage(clean) != nil { appleSpeak(clean); return }
         // Zuffi's built-in natural voice (fast, native). Falls back to Apple's voice instantly if it can't.
         if UserDefaults.standard.object(forKey: "neuralVoice") as? Bool ?? true, NativeSpeech.shared.isAvailable {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
@@ -381,7 +402,12 @@ final class VoiceEngine: NSObject, ObservableObject {
         ZuffiExpress.face(for: clean)
         let feel = ZuffiExpress.mood(clean)
         let u = Self.naturalUtterance(ZuffiExpress.spoken(String(clean.prefix(1200))))
-        let voice = currentVoice()
+        var voice = currentVoice()
+        if let code = Self.otherLanguage(clean) {
+            let all = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(code) }
+            let best = all.sorted { ($0.quality.rawValue, $0.gender == .female ? 1 : 0) > ($1.quality.rawValue, $1.gender == .female ? 1 : 0) }.first
+            if let best { voice = best } else if let v = AVSpeechSynthesisVoice(language: code) { voice = v }
+        }
         u.voice = voice
         let rate = UserDefaults.standard.double(forKey: AssistantPrefs.voiceRate)
         // Basic voices sound less robotic a touch slower; premium ones at a natural pace.

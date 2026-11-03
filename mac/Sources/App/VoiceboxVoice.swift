@@ -535,6 +535,15 @@ final class GroqVoice {
     /// "ai" (default when you have a Groq key) or "builtin" (offline voice only).
     static var wanted: Bool { (UserDefaults.standard.string(forKey: "voiceEngine") ?? "ai") != "builtin" }
     static var usable: Bool { wanted && !key.isEmpty && NetStatus.shared.online && Date() > shared.restUntil }
+    /// Her AI voice speaks English; every other language (Urdu, Hindi, Punjabi, Roman Urdu, Arabic, Spanish…) uses her
+    /// own multi-language voice, exactly like before.
+    static func fits(_ text: String) -> Bool {
+        let lang = UserDefaults.standard.string(forKey: "sparrowLang") ?? "en"
+        guard NativeSpeech.model(for: text, lang: lang) == "kokoro" else { return false }      // Urdu / Hindi / Punjabi / Roman Urdu
+        let r = NLLanguageRecognizer(); r.processString(text)
+        guard let d = r.dominantLanguage else { return true }
+        return d == .english || text.count < 12
+    }
     var lastError = ""
     private var restUntil = Date.distantPast
     private let clips = ClipQueue()

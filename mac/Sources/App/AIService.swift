@@ -136,6 +136,7 @@ final class AIService {
     - Reply in 1 or 2 short sentences (under 30 words), the way a friend talks. Small talk ("how are you") gets one warm line and maybe one short question back.
     - No lists, no bullet points, no dashes, no headings, no markdown, no emojis, no links.
     - Don't offer a menu of things you can do. If more detail would help, give the key point and ask if they want more.
+    - Answer in the same language they spoke (English, Urdu, Roman Urdu, Hindi, Punjabi, Arabic, Spanish…).
     """
 
     var fullSystemPrompt: String {
