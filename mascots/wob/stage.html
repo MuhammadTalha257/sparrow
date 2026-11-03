@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}
+#wrap{position:absolute;inset:0}#wrap.left{transform:scaleX(-1)}
+#stage{position:absolute;left:0;top:0;width:100%;height:100%}</style>
+</head><body><div id="wrap"><div id="stage"></div></div><script src="wob.js"></script>
+<script>
+/* full body, a head close-up, or just the face (the notch tab) — the stage is made bigger, so it stays sharp */
+(function () {
+  var faceY = { zuffi: 0.52, boo: 0.30, bao: 0.36 }, cur = 'zuffi', kind = 'full';
+  function apply() {
+    var s = document.getElementById('stage'), k = kind === 'close' ? 2.4 : kind === 'face' ? 1.7 : 1, fy = faceY[cur] || 0.45;
+    var top = kind === 'full' ? 0 : (kind === 'close' ? 0.56 : 0.5) - fy * k;
+    s.style.width = s.style.height = (k * 100) + '%';
+    s.style.left = (-(k - 1) / 2 * 100) + '%'; s.style.top = (top * 100) + '%';
+  }
+  var show = ZuffiMascot.show;
+  ZuffiMascot.show = function (c) { cur = c; show(c); apply(); };
+  ZuffiMascot.frame = function (k, left) { kind = k; document.getElementById('wrap').className = left ? 'left' : ''; apply(); };
+  var q = new URLSearchParams(location.search); cur = q.get('c') || 'zuffi'; apply();
+})();
+</script></body></html>

@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 import AppKit
 import ImageIO
 import SceneKit
@@ -812,7 +813,26 @@ extension Notification.Name { static let auroraColorChanged = Notification.Name(
 
 enum AuroraFraming { case full, face, closeFace }
 
-struct Aurora3DView: NSViewRepresentable {
+/// Zuffi's character: Aurora (the 3D bunny) or one of the Wobnimo characters picked in Settings — same moods everywhere.
+struct Aurora3DView: View {
+    var pose: AuroraPose = .sit
+    var faceLeft = false
+    var lookAtMouse = true
+    var framing: AuroraFraming = .full
+    var expression: BunnyMood = .smile
+    var speaking = false
+    @AppStorage("zuffiCharacter") private var character = "aurora"
+    var body: some View {
+        if character == "aurora" || !WobCharacterView.available {
+            AuroraSceneView(pose: pose, faceLeft: faceLeft, lookAtMouse: lookAtMouse, framing: framing, expression: expression, speaking: speaking)
+        } else {
+            WobCharacterView(character: character, state: WobCharacterView.state(pose: pose, mood: expression, speaking: speaking || Aurora3DRig.liveSpeaking),
+                             framing: framing, faceLeft: faceLeft)
+        }
+    }
+}
+
+struct AuroraSceneView: NSViewRepresentable {
     var pose: AuroraPose = .sit
     var faceLeft = false
     var lookAtMouse = true
@@ -827,6 +847,69 @@ struct Aurora3DView: NSViewRepresentable {
         context.coordinator.setTalk(speaking, text: ve.lipText, startedAt: ve.audioStartedAt)
     }
     static func dismantleNSView(_ v: SCNView, coordinator: Aurora3DRig) { coordinator.stop() }
+}
+
+/// Boo, Bao and Zuffi's soft bunny — live 3D characters drawn by the Wobnimo engine (MIT, © 2026 Pourya Akhbari).
+struct WobCharacterView: NSViewRepresentable {
+    let character: String
+    let state: String
+    var framing: AuroraFraming = .full
+    var faceLeft = false
+    static let choices: [(id: String, name: String)] = [("aurora", "Aurora (3D bunny)"), ("zuffi", "Soft bunny"), ("boo", "Boo the ghost"), ("bao", "Bao the panda")]
+    static var available: Bool { Bundle.main.resourceURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("web/mascots/wob/wob.js").path) } ?? false }
+
+    /// Her mood → the character's state.
+    static func state(pose: AuroraPose, mood: BunnyMood, speaking: Bool) -> String {
+        if speaking { return "speaking" }
+        switch mood {
+        case .listening: return "listening"
+        case .thinking, .busy: return "thinking"
+        case .sleepy: return "sleeping"
+        case .happy, .laugh, .love, .wink: return "celebrating"
+        case .sad: return "sad"
+        case .cross: return "error"
+        case .surprised: return "surprised"
+        default: return pose == .happy || pose == .wave ? "celebrating" : pose == .listen ? "listening" : "idle"
+        }
+    }
+
+    @MainActor final class Box: NSObject, WKNavigationDelegate {
+        var ready = false, want = (c: "", s: "", f: ""), sent = (c: "", s: "", f: "")
+        weak var web: WKWebView?
+        var lastPoke = Date.distantPast
+        func push() {
+            guard ready, let w = web else { return }
+            var js = ""
+            if want.c != sent.c { js += "ZuffiMascot.show('\(want.c)');" }
+            if want.s != sent.s || want.c != sent.c { js += "ZuffiMascot.state('\(want.s)');" }
+            if want.f != sent.f || want.c != sent.c {
+                let parts = want.f.split(separator: " ")
+                js += "ZuffiMascot.frame('\(parts.first ?? "full")', \(parts.contains("left")));"
+            }
+            if Aurora3DRig.pokeAt > lastPoke { lastPoke = Aurora3DRig.pokeAt; js += "ZuffiMascot.poke();" }
+            sent = want
+            if !js.isEmpty { w.evaluateJavaScript("try{\(js)}catch(e){}", completionHandler: nil) }
+        }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { ready = true; sent = ("", "", ""); push() }
+    }
+    final class PassThroughWeb: WKWebView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
+
+    func makeCoordinator() -> Box { Box() }
+    func makeNSView(context: Context) -> WKWebView {
+        let cfg = WKWebViewConfiguration()
+        cfg.setURLSchemeHandler(SparrowSchemeHandler(), forURLScheme: "app")
+        let w = PassThroughWeb(frame: .zero, configuration: cfg)
+        w.setValue(false, forKey: "drawsBackground")
+        w.navigationDelegate = context.coordinator
+        context.coordinator.web = w
+        w.load(URLRequest(url: URL(string: "app://sparrow/mascots/wob/stage.html?c=\(character)&s=\(state)")!))
+        return w
+    }
+    func updateNSView(_ w: WKWebView, context: Context) {
+        let f = (framing == .closeFace ? "close" : framing == .face ? "face" : "full") + (faceLeft ? " left" : "")
+        context.coordinator.want = (character, state, f)
+        context.coordinator.push()
+    }
 }
 
 /// Maps the pet's older moods to a 3D pose.
