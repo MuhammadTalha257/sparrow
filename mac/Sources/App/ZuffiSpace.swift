@@ -3236,8 +3236,9 @@ struct SettingsPage: View {
     @State private var keyText = ""
     @State private var keyTick = 0
     @State private var keysRemoved = false
-    @AppStorage("voiceEngine") private var voiceEngine = "builtin"
+    @AppStorage("voiceEngine") private var voiceEngine = "ai"
     @AppStorage("voicePreset") private var voicePreset = "sweet"
+    @AppStorage("groqVoice") private var groqVoice = "diana"
     @AppStorage(AssistantPrefs.voiceRate) private var voiceRate = 0.5
     @State private var fishKey = ""
     @State private var fishVoice = UserDefaults.standard.string(forKey: "fishVoiceId") ?? ""
@@ -3333,15 +3334,35 @@ struct SettingsPage: View {
         Text("No key? Zuffi AI (included in your plan) and Ollama on this Mac work without one.").font(.system(size: 11)).foregroundColor(NS.soft)
         Text("Voice and chat use the same AI you pick here.").font(.system(size: 11)).foregroundColor(NS.soft)
         NSLabel(t: "HER VOICE")
-        Text("Pick her voice — it works offline and starts instantly. Her feelings (happy, angry, sad, excited) colour whichever voice you pick.")
-            .font(.system(size: 11.5)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 6) {
+            NSPill(title: "AI voice (most human)", primary: voiceEngine != "builtin") { voiceEngine = "ai"; VoiceEngine.shared.speak("Hi! This is my AI voice. How do I sound?") }
+            NSPill(title: "Offline voice", primary: voiceEngine == "builtin") { voiceEngine = "builtin"; VoiceEngine.shared.speak("Hi! This is my offline voice.") }
+        }
+        if voiceEngine != "builtin" {
+            let hasGroq = !(KeychainStore.shared.get("groq-api-key") ?? "").isEmpty
+            Text(hasGroq ? "Uses your Groq key (Groq's Orpheus voice). With no internet she switches to her offline voice by herself."
+                         : "Add a free Groq key above (console.groq.com → API keys) to turn on her AI voice. Until then her offline voice speaks.")
+                .font(.system(size: 11.5)).foregroundColor(hasGroq ? NS.soft : Color(hex: "#F5B963")).fixedSize(horizontal: false, vertical: true)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 6)], alignment: .leading, spacing: 6) {
+                ForEach(GroqVoice.voices, id: \.id) { v in
+                    NSPill(title: v.label, primary: groqVoice == v.id) {
+                        groqVoice = v.id
+                        VoiceEngine.shared.speak("Hi! This is how I sound now. Do you like it?")
+                    }
+                }
+            }
+            if !GroqVoice.shared.lastError.isEmpty { Text(GroqVoice.shared.lastError).font(.system(size: 11)).foregroundColor(Color(hex: "#EF6B6B")).fixedSize(horizontal: false, vertical: true) }
+            Text("OFFLINE VOICE (no internet)").font(.system(size: 10.5, weight: .semibold)).foregroundColor(NS.soft).padding(.top, 4)
+        } else {
+            Text("Works with no internet. Pick her tone and accent:")
+                .font(.system(size: 11.5)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
+        }
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(NativeSpeech.presets, id: \.id) { v in
                 NSPill(title: v.name, primary: voicePreset == v.id) {
                     voicePreset = v.id
-                    voiceEngine = "builtin"
                     NativeSpeech.shared.rewarm()
-                    VoiceEngine.shared.speak("Hi! This is how I sound now. Do you like it?")
+                    VoiceEngine.shared.speakOffline("Hi! This is how I sound now. Do you like it?")
                 }
             }
         }

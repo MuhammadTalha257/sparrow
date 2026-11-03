@@ -449,7 +449,19 @@ final class ClipQueue: NSObject, AVAudioPlayerDelegate {
             if cur.isEmpty { cur = s } else if cur.count + s.count < 170 { cur += " " + s } else { out.append(cur); cur = s }
         }
         if !cur.isEmpty { out.append(cur) }
-        return out.filter { !$0.isEmpty }
+        // cloud voices take at most ~200 letters at a time: split very long sentences at a comma or space
+        var fit: [String] = []
+        for var p in out {
+            while p.count > 190 {
+                let head = String(p.prefix(190))
+                let cut = head.lastIndex(where: { ",;:".contains($0) }) ?? head.lastIndex(of: " ") ?? head.endIndex
+                let a = String(p[..<cut]).trimmingCharacters(in: .whitespaces)
+                fit.append(a.isEmpty ? head : a)
+                p = String(p[(a.isEmpty ? head.endIndex : cut)...]).trimmingCharacters(in: CharacterSet(charactersIn: " ,;:"))
+            }
+            if !p.isEmpty { fit.append(p) }
+        }
+        return fit.filter { !$0.isEmpty }
     }
 
     /// Plays the pieces in order. Returns false only if the very first piece couldn't be made.
@@ -507,5 +519,65 @@ final class ClipQueue: NSObject, AVAudioPlayerDelegate {
     }
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor in if let c = self.finished { self.finished = nil; c.resume() } }
+    }
+}
+
+
+// MARK: - Her AI voice (Groq · Orpheus): the most human-sounding, fast, uses the Groq key you already have
+@MainActor
+final class GroqVoice {
+    static let shared = GroqVoice()
+    static let voices: [(id: String, label: String)] = [
+        ("diana", "Diana — warm"), ("hannah", "Hannah — bright"), ("autumn", "Autumn — soft"),
+        ("austin", "Austin — friendly (male)"), ("daniel", "Daniel — calm (male)"), ("troy", "Troy — deep (male)"),
+    ]
+    static var key: String { KeychainStore.shared.get("groq-api-key") ?? "" }
+    /// "ai" (default when you have a Groq key) or "builtin" (offline voice only).
+    static var wanted: Bool { (UserDefaults.standard.string(forKey: "voiceEngine") ?? "ai") != "builtin" }
+    static var usable: Bool { wanted && !key.isEmpty && NetStatus.shared.online && Date() > shared.restUntil }
+    var lastError = ""
+    private var restUntil = Date.distantPast
+    private let clips = ClipQueue()
+
+    func say(_ text: String, ended: @escaping () -> Void) async -> Bool {
+        stop()
+        return await clips.play(ClipQueue.pieces(text), make: { t in await GroqVoice.shared.clip(t) }, ended: ended)
+    }
+    func stop() { clips.stop() }
+
+    /// Her feelings as a voice direction for this sentence.
+    private static func direction(_ t: String) -> String {
+        switch ZuffiExpress.mood(t) {
+        case .happy, .laugh, .excited: return "[cheerful] "
+        case .sad, .cry: return "[whisper] "
+        default: return ""
+        }
+    }
+
+    func clip(_ text: String) async -> Data? {
+        let clean = text.replacingOccurrences(of: #"\[[^\]]{1,24}\]|\*[^*]{1,24}\*"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        let voice = UserDefaults.standard.string(forKey: "groqVoice") ?? "diana"
+        let body: [String: Any] = ["model": "canopylabs/orpheus-v1-english", "voice": voice,
+                                   "input": String((Self.direction(clean) + clean).prefix(200)), "response_format": "wav"]
+        var r = URLRequest(url: URL(string: "https://api.groq.com/openai/v1/audio/speech")!, timeoutInterval: 12)
+        r.httpMethod = "POST"
+        r.setValue("Bearer \(Self.key)", forHTTPHeaderField: "Authorization")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { appendAppLog("voice.log", "AI voice: no answer"); return nil }
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200, d.count > 400 else {
+            let msg = (try? JSONSerialization.jsonObject(with: d) as? [String: Any]).flatMap { ($0["error"] as? [String: Any])?["message"] as? String } ?? ""
+            lastError = code == 400 && msg.lowercased().contains("terms") ? "Open console.groq.com → Playground → pick “Orpheus” once and accept its terms, then try again."
+                : code == 429 ? "The AI voice has reached its free limit for now — the offline voice speaks meanwhile." : "AI voice error \(code). \(msg.prefix(120))"
+            appendAppLog("voice.log", "AI voice failed (\(code)): \(msg.prefix(160))")
+            // don't keep trying (and waiting) on every sentence: rest it a while, the offline voice takes over
+            restUntil = Date().addingTimeInterval(code == 429 ? 600 : code == 400 || code == 401 || code == 403 ? 3600 : 60)
+            return nil
+        }
+        lastError = ""
+        return d
     }
 }

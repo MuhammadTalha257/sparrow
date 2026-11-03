@@ -24,6 +24,10 @@ enum AssistantPrefs {
 
     static func registerDefaults() {
         // The mic is never on by itself any more: one time, switch the old always-listening "Zuffi…" off.
+        if !UserDefaults.standard.bool(forKey: "aiVoiceV1") {          // her AI voice is the default now
+            UserDefaults.standard.set(true, forKey: "aiVoiceV1")
+            UserDefaults.standard.set("ai", forKey: "voiceEngine")
+        }
         if !UserDefaults.standard.bool(forKey: "micOffByDefaultV1") {
             UserDefaults.standard.set(true, forKey: "micOffByDefaultV1")
             UserDefaults.standard.set(false, forKey: wakeWord)
@@ -258,6 +262,22 @@ final class VoiceEngine: NSObject, ObservableObject {
             }
             return
         }
+        // Her AI voice (Groq): the most human, starts in a fraction of a second. No internet / no key → her offline voice.
+        if GroqVoice.usable {
+            if isListening { resumeAfterSpeech = true; pauseRecognition() }
+            speaking = true
+            neuralTurn += 1
+            let turn = neuralTurn
+            let text = String(clean.prefix(1500))
+            Task { @MainActor in
+                let ok = await GroqVoice.shared.say(text) {
+                    if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
+                }
+                guard turn == self.neuralTurn else { return }
+                if !ok { self.speakBuiltIn(clean) }
+            }
+            return
+        }
         // Voicebox (if you use it): your own cloned or preset voice, offline, 23 languages.
         if VoiceboxVoice.enabled {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
@@ -275,6 +295,11 @@ final class VoiceEngine: NSObject, ObservableObject {
             return
         }
         speakBuiltIn(clean)
+    }
+
+    /// Try the offline voice (Settings), whatever voice is picked for everyday use.
+    func speakOffline(_ text: String) {
+        stopSpeaking(); lastSpoken = text; lastSpokenAt = Date(); speakBuiltIn(text)
     }
 
     private func speakBuiltIn(_ clean: String) {
@@ -378,6 +403,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         synth.stopSpeaking(at: .immediate)
         VoiceboxVoice.shared.stop()
         FishVoice.shared.stop()
+        GroqVoice.shared.stop()
         if speaking, neuralTurn > 0 { NativeSpeech.shared.stop(); neuralEnded() }
     }
 
@@ -651,7 +677,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         appendAppLog("voice.log", "you cut in: \(mine.joined(separator: " "))")
         neuralTurn += 1                         // her unfinished answer must not "end" and restart listening
         synth.stopSpeaking(at: .immediate)
-        VoiceboxVoice.shared.stop(); FishVoice.shared.stop(); NativeSpeech.shared.stop()
+        VoiceboxVoice.shared.stop(); FishVoice.shared.stop(); GroqVoice.shared.stop(); NativeSpeech.shared.stop()
         speaking = false
         resumeAfterSpeech = false; listenAfterSpeech = false
         status = "Listening…"
