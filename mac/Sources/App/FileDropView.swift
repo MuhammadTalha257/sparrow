@@ -209,10 +209,11 @@ enum ImageStudio {
             guard let r = cutout(img), let d = png(r), let u = save(d, base + " (no background).png") else { return "I couldn't find a clear subject to cut out." }
             reveal(u); return "Background removed — saved in Downloads."
         case .safe, .faces:
-            let boxes = await Task.detached { () -> [[String: Any]] in
-                guard let d = (try? Data(contentsOf: url)) else { return [] }
-                return WebHub.findPrivate(d.base64EncodedString())
+            let json = await Task.detached { () -> String in
+                guard let d = (try? Data(contentsOf: url)) else { return "[]" }
+                return WebHub.findPrivateJSON(d.base64EncodedString())
             }.value
+            let boxes = (try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]]) ?? []
             var hide: [CGRect] = []
             for b in boxes {
                 let k = b["kind"] as? String ?? ""
@@ -220,7 +221,8 @@ enum ImageStudio {
                 let want: Bool
                 if let w = word { want = k == "text" && text.contains(w.lowercased()) }
                 else if job == .faces { want = k == "face" } else { want = ["face", "email", "phone", "name"].contains(k) }
-                if want, let x = b["x"] as? CGFloat, let y = b["y"] as? CGFloat, let w = b["w"] as? CGFloat, let h = b["h"] as? CGFloat {
+                if want, let x = (b["x"] as? NSNumber)?.doubleValue, let y = (b["y"] as? NSNumber)?.doubleValue,
+                   let w = (b["w"] as? NSNumber)?.doubleValue, let h = (b["h"] as? NSNumber)?.doubleValue {
                     hide.append(CGRect(x: x, y: y, width: w, height: h))
                 }
             }
