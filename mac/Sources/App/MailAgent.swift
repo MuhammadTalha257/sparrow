@@ -689,3 +689,112 @@ final class GmailLink: ObservableObject {
         return String(t.trimmingCharacters(in: .whitespacesAndNewlines).prefix(6000))
     }
 }
+
+
+// MARK: - Gmail by voice (when Gmail is linked): "what needs me in my email?", "read the email from Sam",
+// "reply to Sam saying I'll be there at 6" → she writes it, reads it back, and sends only after you say "send".
+@MainActor
+final class GmailVoice {
+    static let shared = GmailVoice()
+    private struct Draft { let mail: GmailLink.Mail; var text: String; let made: Date }
+    private var draft: Draft?
+    private var last: GmailLink.Mail?
+
+    private static let checkRE = #"\b(check|read|any|new|unread|what'?s|what is|whats|what needs|anything)\b.*\b(e-?mails?|mails?|inbox|gmail)\b|\b(e-?mails?|inbox|gmail)\b.*\b(need|important|new|today)\b"#
+    private static let readRE = #"^(?:read|open|show|what does|what did)\s+(?:me\s+)?(?:the\s+)?(?:latest\s+|last\s+|new\s+)?(?:e-?mail|mail|message)\s+from\s+(.+?)(?:\s+say)?\??$"#
+    private static let replyRE = #"^(?:reply|respond|answer|write back|email|mail)\s+(?:to\s+)?(.+?)\s*(?:saying|that|and say|to say|:|,)\s+(.+)$"#
+
+    private static func clean(_ s: String) -> String {
+        s.replacingOccurrences(of: #"^(?:can you|could you|please|zuffi,?)\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: CharacterSet(charactersIn: " .!?"))
+    }
+    private static func isSend(_ t: String) -> Bool { t.range(of: #"^(yes,? )?(send|send it|send now|go ahead|ok send|yes)$"#, options: .regularExpression) != nil }
+    private static func isCancel(_ t: String) -> Bool { t.range(of: #"^(cancel|don'?t send|no|stop|forget it)$"#, options: .regularExpression) != nil }
+
+    func claims(_ raw: String) -> Bool {
+        guard GmailLink.shared.linked else { return false }
+        let t = Self.clean(raw).lowercased()
+        if t.contains("whatsapp") { return false }
+        if draft != nil, Self.isSend(t) || Self.isCancel(t) || t.hasPrefix("change") || t.hasPrefix("make it") { return true }
+        if t.range(of: Self.checkRE, options: .regularExpression) != nil { return true }
+        if t.range(of: Self.readRE, options: .regularExpression) != nil { return true }
+        if let m = t.range(of: Self.replyRE, options: .regularExpression).map({ String(t[$0]) }), !m.isEmpty {
+            return t.contains("email") || t.contains("mail") || sender(Self.match(Self.replyRE, t)?.first ?? "") != nil
+        }
+        return false
+    }
+
+    func handle(_ raw: String) async -> String? {
+        let o = Self.clean(raw), t = o.lowercased()
+        if let d = draft, Date().timeIntervalSince(d.made) > 600 { draft = nil }
+        if let d = draft {
+            if Self.isSend(t) {
+                draft = nil
+                return await GmailLink.shared.reply(to: d.mail, text: d.text) ? "Sent to \(d.mail.from)! ✅" : "I couldn't send it: \(GmailLink.shared.status)"
+            }
+            if Self.isCancel(t) { draft = nil; return "Okay, I won't send it." }
+            if t.hasPrefix("change") || t.hasPrefix("make it") {
+                let new = await AIService.shared.oneShot("Rewrite this email reply as asked: \"\(o)\". Return ONLY the reply.\n\n\(d.text)", system: "You write the user's emails: friendly, clear, short.") ?? ""
+                if !new.isEmpty { draft?.text = new }
+                VoiceEngine.shared.listenAfterSpeech = true
+                return "Here it is now: \"\(draft?.text ?? d.text)\". Say send, change something, or cancel."
+            }
+        }
+        if let m = Self.match(Self.replyRE, o), m.count == 2 {
+            if GmailLink.shared.mails.isEmpty { await GmailLink.shared.refresh() }
+            guard let mail = sender(m[0]) else { return "I couldn't find an email from \(m[0]) in your latest mail." }
+            let body = await GmailLink.shared.body(mail)
+            let text = await AIService.shared.oneShot("""
+                Write the user's reply to this email. What they want to say: "\(m[1])".
+                Keep it short, warm and natural, in the language of the email, signed with their first name (\(AssistantPrefs.displayName.components(separatedBy: " ").first ?? "")) if known.
+                Return ONLY the reply text.
+                EMAIL from \(mail.from) — "\(mail.subject)":
+                \(body.prefix(3000))
+                """, system: "You write the user's emails: friendly, clear, short.") ?? m[1]
+            draft = Draft(mail: mail, text: text.trimmingCharacters(in: .whitespacesAndNewlines), made: Date())
+            last = mail
+            VoiceEngine.shared.listenAfterSpeech = true
+            return "Reply to \(mail.from): \"\(draft!.text)\". Say send, tell me what to change, or cancel."
+        }
+        if let m = Self.match(Self.readRE, t) {
+            if GmailLink.shared.mails.isEmpty { await GmailLink.shared.refresh() }
+            guard let mail = sender(m.first ?? "") else { return "I couldn't find an email from \(m.first ?? "them")." }
+            last = mail
+            let body = await GmailLink.shared.body(mail)
+            let sum = await AIService.shared.oneShot("In 2 short spoken sentences: what does this email say and what (if anything) must the user do, by when?\nFrom \(mail.from) — \(mail.subject)\n\(body.prefix(4000))",
+                                                     system: "You read emails to the user like a helpful friend. Plain sentences, no lists.") ?? ""
+            return "\(mail.from) — \(mail.subject). " + (sum.isEmpty ? String(body.prefix(300)) : sum)
+        }
+        if t.range(of: Self.checkRE, options: .regularExpression) != nil { return await whatNeedsYou() }
+        return nil
+    }
+
+    /// Like Taby: "what needs you" — bills, invitations, deadlines and people waiting for an answer; newsletters skipped.
+    func whatNeedsYou() async -> String {
+        await GmailLink.shared.refresh()
+        let list = GmailLink.shared.mails.prefix(15)
+        guard !list.isEmpty else { return GmailLink.shared.status.isEmpty ? "Your inbox is empty." : GmailLink.shared.status }
+        let lines = list.map { "\($0.unread ? "[new] " : "")\($0.from) — \($0.subject)" }.joined(separator: "\n")
+        let r = await AIService.shared.oneShot("""
+            These are the user's latest emails. Tell them, in 2–3 short spoken sentences, only what needs them: bills, payments, invitations, \
+            deadlines, check-ins, and people waiting for a reply. Skip newsletters, promotions and notifications. If nothing needs them, say so warmly.
+            \(lines)
+            """, system: "You are Zuffi, sorting the user's email like a helpful friend. Plain sentences, no lists, no markdown.") ?? ""
+        if !r.isEmpty { return r.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let unread = list.filter(\.unread)
+        return unread.isEmpty ? "No new emails." : "You have \(unread.count) new: " + unread.prefix(3).map { "\($0.from) about \($0.subject)" }.joined(separator: "; ") + "."
+    }
+
+    private func sender(_ who: String) -> GmailLink.Mail? {
+        let w = who.lowercased().replacingOccurrences(of: #"^(the |my )?(e-?mail|mail|message)\s*(from\s+)?"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        if ["him", "her", "them", "it", "that", "this"].contains(w) { return last }
+        guard w.count >= 2 else { return nil }
+        return GmailLink.shared.mails.first { $0.from.lowercased().contains(w) || $0.fromAddress.lowercased().contains(w) }
+    }
+    private static func match(_ pattern: String, _ s: String) -> [String]? {
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
+        return (1..<m.numberOfRanges).compactMap { Range(m.range(at: $0), in: s).map { String(s[$0]) } }
+    }
+}

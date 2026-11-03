@@ -13,8 +13,12 @@ enum HoldToTalk {
         guard monitors.isEmpty else { return }
         let handler: (NSEvent) -> Void = { e in
             let code = e.keyCode
-            let optionDown = e.modifierFlags.contains(.option)
-            Task { @MainActor in HoldToTalk.flags(code: code, optionDown: optionDown) }
+            let f = e.modifierFlags
+            let optionDown = f.contains(.option), ctrl = f.contains(.control), other = f.contains(.command) || f.contains(.shift)
+            Task { @MainActor in
+                HoldToTalk.dictKeys(ctrl: ctrl, opt: optionDown, other: other)
+                if !ctrl { HoldToTalk.flags(code: code, optionDown: optionDown) }
+            }
         }
         if let g = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handler) { monitors.append(g) }
         // Hold Z for a moment (when you're not typing in a box): talk to Zuffi about what's on screen.
@@ -53,6 +57,15 @@ enum HoldToTalk {
             zDownAt = nil
             if zActive { zActive = false; VoiceEngine.shared.pushToTalkUp() }
         }
+    }
+
+    // MARK: hold ⌃⌥ — write anywhere (types what you say where your cursor is)
+    private static var dictDown = false
+    private static func dictKeys(ctrl: Bool, opt: Bool, other: Bool) {
+        guard UserDefaults.standard.object(forKey: "writeAnywhere") as? Bool ?? true else { return }
+        let both = ctrl && opt && !other
+        if both && !dictDown { dictDown = true; Dictation.shared.begin() }
+        else if !both && dictDown { dictDown = false; Dictation.shared.end() }
     }
 
     private static func flags(code: UInt16, optionDown: Bool) {
@@ -483,4 +496,118 @@ final class ZuffiHelpLog: ObservableObject {
     }
     var today: [Item] { items.filter { Calendar.current.isDateInToday($0.at) } }
     func clear() { items.removeAll(); TeamStore.save("zuffi-help-log", items) }
+}
+
+
+// MARK: - Write anywhere: hold ⌃⌥ (Control + Option), talk, let go — Zuffi types it where your cursor is
+//   • just talk                      → what you said, tidied up (punctuation, "comma", "new line", no "um")
+//   • "reply that I can't come Friday" / "write a thank-you note" → she writes it for you
+//   • select some text first, then "make it shorter" / "translate to Urdu" → she rewrites the selection
+// Never types into a password box. Everything you say is turned into text on this Mac first.
+@MainActor
+final class Dictation: ObservableObject {
+    static let shared = Dictation()
+    @Published private(set) var active = false
+    @Published private(set) var note = ""
+    private var selection: String?
+    private var app: NSRunningApplication?
+
+    func begin() {
+        guard AXIsProcessTrusted() else {
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            return
+        }
+        if Self.inPasswordField() { NSSound.beep(); appendAppLog("voice.log", "write anywhere: not in a password box"); return }
+        app = NSWorkspace.shared.frontmostApplication
+        if app?.bundleIdentifier == Bundle.main.bundleIdentifier { app = nil }
+        selection = ZuffiAsk.selectedText()
+        active = true
+        note = selection == nil ? "Listening… let go to type" : "Listening… say how to change the selected text"
+        BunnyFaceCenter.shared.show(.listening, for: 8)
+        VoiceEngine.shared.dictationSink = { said in Task { @MainActor in await Dictation.shared.finish(said) } }
+        VoiceEngine.shared.pushToTalkDown(forScreen: true)
+    }
+    func end() { VoiceEngine.shared.pushToTalkUp() }
+
+    func finish(_ said: String) async {
+        let s = said.trimmingCharacters(in: .whitespacesAndNewlines)
+        defer { active = false; note = "" }
+        guard !s.isEmpty else { return }
+        let where_ = app?.localizedName ?? "the app"
+        var out = ""
+        if let sel = selection, !sel.isEmpty {
+            note = "Rewriting…"
+            out = await AIService.shared.oneShot("""
+                Change the text below exactly as the user asks. Instruction: "\(s)".
+                Return ONLY the new text — no quotes, no notes.
+                TEXT:
+                \(sel)
+                """, system: "You edit text for the user. Keep their meaning and language unless asked to translate.") ?? ""
+        } else if Self.isWriteForMe(s) {
+            note = "Writing…"
+            out = await AIService.shared.oneShot("""
+                The user is typing in \(where_) and asked (by voice): "\(s)".
+                Write the text they want, ready to drop in where their cursor is (a message, email or document), in the language they spoke.
+                Natural and short unless they asked for more. Return ONLY that text — no quotes, no subject line unless asked.
+                """, system: "You write messages for the user, in their own voice: friendly, clear, human.") ?? ""
+        } else {
+            out = Self.tidy(s)
+        }
+        out = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !out.isEmpty else { NSSound.beep(); return }
+        if let first = out.first, first == "\"", out.last == "\"", out.count > 2 { out = String(out.dropFirst().dropLast()) }
+        Self.paste(out, into: app)
+        ZuffiHelpLog.shared.add("Typed for you", String(out.prefix(80)))
+    }
+
+    static func isWriteForMe(_ s: String) -> Bool {
+        s.lowercased().range(of: #"^(please )?(write|draft|compose|reply|respond|answer|tell (him|her|them)|say (to|that)|make (a|an|it)|create (a|an))\b"#, options: .regularExpression) != nil
+    }
+
+    /// "hello comma how are you question mark new line" → "Hello, how are you?\n"
+    static func tidy(_ raw: String) -> String {
+        var t = " " + raw + " "
+        for (said, mark) in [(" full stop", "."), (" period", "."), (" comma", ","), (" question mark", "?"), (" exclamation mark", "!"),
+                             (" exclamation point", "!"), (" colon", ":"), (" new paragraph", "\n\n"), (" new line", "\n"), (" next line", "\n")] {
+            t = t.replacingOccurrences(of: said + " ", with: mark + " ", options: .caseInsensitive)
+        }
+        t = t.replacingOccurrences(of: #"\b(um+|uh+|erm+|uhm+)\b[,]?\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
+        t = t.replacingOccurrences(of: #"\s+([,.?!:])"#, with: "$1", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"\n "#, with: "\n", options: .regularExpression)
+        t = t.trimmingCharacters(in: .whitespaces)
+        // capital letter at the start of each sentence
+        var out = "", cap = true
+        for ch in t {
+            if cap, ch.isLetter { out.append(contentsOf: ch.uppercased()); cap = false } else { out.append(ch) }
+            if ".?!\n".contains(ch) { cap = true }
+        }
+        if let last = out.last, !".?!,:\n".contains(last), out.split(separator: " ").count >= 4 { out += "." }
+        return out
+    }
+
+    static func inPasswordField() -> Bool {
+        let sys = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &focused) == .success, let f = focused else { return false }
+        var role: CFTypeRef?, sub: CFTypeRef?
+        AXUIElementCopyAttributeValue(f as! AXUIElement, kAXRoleAttribute as CFString, &role)
+        AXUIElementCopyAttributeValue(f as! AXUIElement, kAXSubroleAttribute as CFString, &sub)
+        return (role as? String) == "AXSecureTextField" || (sub as? String) == "AXSecureTextField"
+    }
+
+    /// Puts the text in the app you were in (as if you pasted it), then gives your clipboard back.
+    static func paste(_ text: String, into app: NSRunningApplication?) {
+        let pb = NSPasteboard.general
+        let old = pb.string(forType: .string)
+        pb.clearContents(); pb.setString(text, forType: .string)
+        app?.activate(options: [])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            let src = CGEventSource(stateID: .combinedSessionState)
+            let d = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true); d?.flags = .maskCommand; d?.post(tap: .cghidEventTap)
+            let u = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false); u?.flags = .maskCommand; u?.post(tap: .cghidEventTap)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                if let old { pb.clearContents(); pb.setString(old, forType: .string) }
+            }
+        }
+    }
 }

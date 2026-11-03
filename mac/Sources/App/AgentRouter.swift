@@ -31,6 +31,8 @@ final class AgentRouter {
         // Business jobs said in one breath ("make a post and share it with all clients", "we have 20% off today") stay whole.
         if ZuffiPlan.shared.isBusiness, let r = ZuffiCRM.shared.handle(raw) { return r }
         if WhatsAppAgent.shared.claims(raw), let r = await WhatsAppAgent.shared.handle(raw) { return r }
+        if GmailVoice.shared.claims(raw), let r = await GmailVoice.shared.handle(raw) { return r }    // linked Gmail first
+        if let r = await ImageStudio.voice(raw) { return r }                                          // picture edits / screenshots
         if MailAgent.shared.claims(raw), let r = await MailAgent.shared.handle(raw) { return r }
         let steps = split(raw)
         if steps.count <= 1 {

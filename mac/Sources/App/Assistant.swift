@@ -954,9 +954,18 @@ final class VoiceEngine: NSObject, ObservableObject {
         return nil
     }
 
+    /// Write anywhere (hold ⌃⌥): what you say goes to the typing helper instead of being a command.
+    var dictationSink: ((String) -> Void)?
+
     private func finishUtterance() {
         silenceTimer?.invalidate()
         let said = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let sink = dictationSink {
+            dictationSink = nil; heard = ""; oneShot = false
+            stopRecognition(); status = ""
+            sink(said)
+            return
+        }
         let wasOneShot = oneShot
         if wasOneShot || Date().timeIntervalSince(pttEndedAt) < 3 { if said.isEmpty { missedAt = Date() } else { lastHeard = said; lastHeardAt = Date() } }
         if !said.isEmpty { appendAppLog("voice.log", "heard: \(said)") }

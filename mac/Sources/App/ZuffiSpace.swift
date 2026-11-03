@@ -1225,7 +1225,7 @@ struct NotchHomeView: View {
                     }
                 }.frame(height: 18)
             }
-            Text(voice.pushToTalk ? "Listening… let go of Z to send"
+            Text(voice.pushToTalk ? (Dictation.shared.active ? Dictation.shared.note : "Listening… let go of Z to send")
                  : voice.conversation && (voice.speaking || tutor.speaking) ? "Zuffi is talking… just talk to cut in"
                  : !voice.conversation || listening ? "Listening…" : "Thinking…")
                 .font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
@@ -1468,6 +1468,8 @@ struct NotchHomeView: View {
             // WhatsApp from the chat too: "send this picture to Ahmed on WhatsApp", "WhatsApp Sara saying …", then "send"
             if let r = ZuffiPlan.privateAnswer(q) { did = r }          // your number / email / address: answered here, not by the AI
             if did == nil, WhatsAppAgent.shared.claims(q) { did = await WhatsAppAgent.shared.handle(q) }
+            if did == nil, GmailVoice.shared.claims(q) { did = await GmailVoice.shared.handle(q) }
+            if did == nil { did = await ImageStudio.voice(q) }            // "make it safe to share", "blur the faces", "take a screenshot"…
             if did == nil, state.promptContext == nil, !agentPicked || ZuffiTeam.looksLikeCommand(q) {     // talking to an agent: it answers, not the quick commands
                 if short { did = await WebHub.shared.ask(q) }
                 if did == nil, ZuffiTeam.looksLikeCommand(q), let plan = await SmartPlanner.shared.plan(q), !plan.commands.isEmpty { did = await SmartPlanner.shared.run(plan) }
@@ -3378,6 +3380,7 @@ struct SettingsPage: View {
         NSLabel(t: "LISTENING AND SPEAKING")
         toggle("“Hey Zuffi” (mic on)", Binding(get: { voice.micEnabled }, set: { VoiceEngine.shared.setMic($0) }))
         toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
+        toggle("Hold ⌃ Control + ⌥ Option to type what you say (any app)", Binding(get: { UserDefaults.standard.object(forKey: "writeAnywhere") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "writeAnywhere") }))
         toggle("Say reminders out loud (off = just show them)", $speakReminders)
         NSLabel(t: "SECURITY")
         toggle("Lock Zuffi with Touch ID or my Mac password", Binding(get: { lock.enabled }, set: { ZuffiLock.shared.setEnabled($0) }))
@@ -3464,6 +3467,17 @@ struct ToolsPage: View {
                     NSPill(title: "Sum it up") { Task { await summarise(f.url, f.name) } }
                     NSPill(title: "Translate…", primary: choosingLang) { choosingLang.toggle() }
                 }
+                if ImageStudio.isImage(f.url) {
+                    Text("Edit the picture (stays on this Mac)").font(.system(size: 11.5)).foregroundColor(NS.soft)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 6)], alignment: .leading, spacing: 6) {
+                        ForEach(ImageStudio.Job.allCases, id: \.self) { j in
+                            NSPill(title: j.label, primary: j == .safe) {
+                                Task { working = true; status = "Working on it…"; let r = await ImageStudio.run(j, on: f.url); working = false; status = r }
+                            }
+                        }
+                        NSPill(title: "Mark it up") { ImageStudio.markup(f.url) }
+                    }
+                }
                 if choosingLang {
                     HStack(spacing: 8) {
                         Text("Into").font(.system(size: 12)).foregroundColor(.white)
@@ -3487,7 +3501,10 @@ struct ToolsPage: View {
             NSCard {
                 Text(state.fileDragOver ? "Drop it here ✨" : "Drop a file or picture on the notch, or choose one. Then convert it (PDF, Word, JPG, PNG, text…), sum it up, translate it into any language or ask about it.")
                     .font(.system(size: 12.5)).foregroundColor(Color(hex: "#CFCBD8"))
-                NSPill(title: "Choose a file", primary: true) { pick() }
+                HStack(spacing: 6) {
+                    NSPill(title: "Choose a file", primary: true) { pick() }
+                    NSPill(title: "Take a screenshot") { Task { _ = await ImageStudio.screenshot() } }
+                }
             }
         }
         EmptyView().task(id: state.droppedFile?.url) { showFormats = false; status = ""; await loadFormats() }
