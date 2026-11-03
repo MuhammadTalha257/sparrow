@@ -424,8 +424,9 @@ final class IslandWindowController: NSWindowController {
                 // small banner on top — your chat and the conversation stay where they are.
                 if NotchDesign.on, view == .note,
                    VoiceEngine.shared.conversation || (self.state.mode == .expanded && self.state.view == .overview) {
-                    NotchNav.shared.showBanner(self.state.noteMessage ?? "", alert: self.state.noteIsAlert)
-                    return
+                    let isMessage = ["whatsapp", "mail", "message"].contains(self.state.noteAction ?? "")
+                    if self.state.noteIsAlert && !isMessage { NotchNav.shared.showBanner(self.state.noteMessage ?? "", alert: true) }
+                    return      // a message or info while you're chatting: it waits in the inbox, nothing pops up
                 }
                 self.expand(to: view)
             }

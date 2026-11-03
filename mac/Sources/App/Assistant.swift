@@ -5,6 +5,8 @@ import AVFoundation
 import Speech
 import ApplicationServices
 import CoreLocation
+import CoreAudio
+import AudioToolbox
 
 // MARK: - Settings keys (UserDefaults)
 
@@ -542,6 +544,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         AVCaptureDevice.requestAccess(for: .audio) { cb($0) }
     }
     nonisolated private static func installTap(_ node: AVAudioInputNode, _ req: SFSpeechAudioBufferRecognitionRequest) {
+        MicPick.apply(node)
         let fmt = node.outputFormat(forBus: 0)
         guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return }      // mic busy / not allowed: don't crash
         nonisolated(unsafe) let r = req
@@ -615,6 +618,8 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     fileprivate func startBargeIn() {
         guard conversation, speaking, !isListening, !bargeListening, Self.micOn, !micLent else { return }
+        // AirPods/Bluetooth with no Mac mic to use instead: opening their mic would drop her voice to "phone call" quality.
+        guard !MicPick.wouldUseBluetooth else { return }
         bargeListening = true
         oneShot = true
         startRecognition()
@@ -1451,7 +1456,7 @@ final class NotificationReader {
         guard !new.isEmpty, new.count <= 3 else { return }
         for b in new { ZuffiCRM.shared.fromNotification(b.texts, descriptions: b.descs) }
         if let first = new.first { EdgeGlow.shared.flash(.notify(first.texts.first ?? "Notification"), seconds: 2.6) }   // light round the notch
-        if speakOn, UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes), let first = new.first, new.count <= 2, first.joined.count < 400 {
+        if false, speakOn, let first = new.first, new.count <= 2, first.joined.count < 400 {      // notifications are shown, never read out
             VoiceEngine.shared.announce("New notification. " + first.joined)
         }
     }
@@ -1599,9 +1604,8 @@ struct AssistantSettings: View {
             if parts.contains(.notifications) {
             GroupBox("Notifications") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Read new notifications out loud", isOn: $readNotes)
-                        .onChange(of: readNotes) { _, on in NotificationReader.shared.setEnabled(on) }
-                    if readNotes && !NotificationReader.hasAccess {
+                    Text("New notifications show at the notch. Zuffi doesn't read them out loud.").font(.system(size: 11.5)).foregroundColor(.secondary)
+                    if false && readNotes && !NotificationReader.hasAccess {
                         HStack {
                             Text("Needs Accessibility access.").font(.system(size: 11)).foregroundColor(.orange)
                             Button("Allow…") {
@@ -1770,5 +1774,51 @@ struct AppearanceSettings: View {
         p.arguments = ["-c", "sleep 0.8; open \"\(path)\""]
         try? p.run()
         NSApp.terminate(nil)
+    }
+}
+
+
+// MARK: - Which microphone to listen with
+/// Bluetooth headphones (AirPods…) switch to low "phone call" sound — and pause for a second or two — whenever
+/// their microphone is opened. So when the Mac has its own mic, Zuffi listens with that one, and her voice stays
+/// clear and instant in your headphones.
+enum MicPick {
+    nonisolated static func defaultInput() -> AudioDeviceID {
+        var id = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &id)
+        return id
+    }
+    nonisolated static func transport(_ id: AudioDeviceID) -> UInt32 {
+        var t = UInt32(0), size = UInt32(MemoryLayout<UInt32>.size)
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyTransportType, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &t)
+        return t
+    }
+    nonisolated static func isBluetooth(_ id: AudioDeviceID) -> Bool {
+        let t = transport(id)
+        return t == kAudioDeviceTransportTypeBluetooth || t == kAudioDeviceTransportTypeBluetoothLE
+    }
+    nonisolated static func builtInInput() -> AudioDeviceID? {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr, size > 0 else { return nil }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids) == noErr else { return nil }
+        for id in ids where transport(id) == kAudioDeviceTransportTypeBuiltIn {
+            var sa = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+            var ss = UInt32(0)
+            if AudioObjectGetPropertyDataSize(id, &sa, 0, nil, &ss) == noErr, ss > 0 { return id }
+        }
+        return nil
+    }
+    /// True when listening now would open a Bluetooth headset's mic.
+    nonisolated static var wouldUseBluetooth: Bool { isBluetooth(defaultInput()) && builtInInput() == nil }
+
+    /// Point the listening engine at the Mac's own mic when the default one is Bluetooth.
+    nonisolated static func apply(_ node: AVAudioInputNode) {
+        guard isBluetooth(defaultInput()), var mac = builtInInput(), let au = node.audioUnit else { return }
+        let r = AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &mac, UInt32(MemoryLayout<AudioDeviceID>.size))
+        appendAppLog("voice.log", r == noErr ? "headphones are Bluetooth — listening with the Mac's own mic (keeps her voice clear)" : "couldn't switch to the Mac's mic (\(r))")
     }
 }

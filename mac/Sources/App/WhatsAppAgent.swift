@@ -453,7 +453,7 @@ final class WhatsAppLink: NSObject, ObservableObject, WKScriptMessageHandler, WK
         // the notch: a small card + light round the edge
         AppState.shared.noteRef = chatId        // Reply in the notch goes straight back to this chat
         MacStatus.shared.toast("WhatsApp · \(name)", String(text.prefix(140)), icon: "message.fill", action: "whatsapp")
-        if readAloud, UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) { VoiceEngine.shared.announce("WhatsApp from \(name): \(text.prefix(200))") }
+        if false, readAloud { VoiceEngine.shared.announce("WhatsApp from \(name): \(text.prefix(200))") }
         // Business: every chat becomes a lead, and with auto-reply Zuffi answers here — no typing on your screen.
         let crm = ZuffiCRM.shared
         if ZuffiPlan.shared.isBusiness, !ZuffiPlan.shared.isPersonal, crm.isOn(.watchWhatsApp) {

@@ -271,7 +271,7 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             if let t = o["text"] as? String {
                 let isMessage = t.range(of: #"^(whats ?app|email|e-mail|mail|message|new message|new email|sms|text) (from|by)\b|^new (notification|message|email)"#,
                                         options: [.regularExpression, .caseInsensitive]) != nil
-                if isMessage { if UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) { VoiceEngine.shared.announce(t) } }
+                if isMessage { /* messages and emails are shown, never read out */ }
                 else if UserDefaults.standard.object(forKey: "speakReminders") as? Bool ?? true { VoiceEngine.shared.announce(t) }
             }
         case "listen":

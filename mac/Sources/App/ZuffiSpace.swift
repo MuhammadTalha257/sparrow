@@ -629,15 +629,12 @@ struct ZuffiQuickSettings: View {
                 row("bell.badge", "Notifications at the notch (email, battery, devices)", on: Binding(get: { MacStatus.shared.toastsOn }, set: { MacStatus.shared.toastsOn = $0 }))
                 if ZuffiFocus.whatsapp && ZuffiPlan.shared.isBusiness && !ZuffiPlan.shared.isPersonal {
                     row("message.fill", "WhatsApp linked to Zuffi (new messages instantly)", on: Binding(get: { WhatsAppLink.shared.enabled }, set: { $0 ? WhatsAppLink.shared.showWindow() : (WhatsAppLink.shared.enabled = false) }))
-                    row("speaker.wave.2.bubble.left.fill", "Read new WhatsApp messages out loud", on: Binding(get: { WhatsAppLink.shared.readAloud && UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
-                                                                                                  set: { WhatsAppLink.shared.readAloud = $0; if $0 { UserDefaults.standard.set(true, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled(true) } }))
+                    if false { row("speaker.wave.2.bubble.left.fill", "Read new WhatsApp messages out loud", on: Binding(get: { WhatsAppLink.shared.readAloud && UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
+                                                                                                  set: { WhatsAppLink.shared.readAloud = $0; if $0 { UserDefaults.standard.set(true, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled(true) } })) }
                     row("arrowshape.turn.up.left.2.fill", "Auto-reply to customers on WhatsApp", on: Binding(get: { ZuffiCRM.shared.isOn(.autopilot) }, set: { ZuffiCRM.shared.set(.autopilot, $0) }))
                 }
                 row("person.3.sequence.fill", "Room mode — follow the conversation (nothing saved)", on: Binding(get: { RoomListener.shared.on }, set: { $0 ? RoomListener.shared.start() : RoomListener.shared.stop() }))
                 row("waveform.badge.mic", "Ask to take notes when a call starts", on: Binding(get: { MeetingWatcher.shared.enabled }, set: { MeetingWatcher.shared.enabled = $0 }))
-                row("bell.badge.fill", "Read notifications out loud", on: Binding(
-                    get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
-                    set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
                 row("hare.fill", "Cute bunny voice", on: $bunny)
                 row("light.max", "Glow around the notch", on: $glow.enabled)
                 row("rectangle.topthird.inset.filled", "Show Zuffi by the notch when closed", on: Binding(
@@ -1449,6 +1446,8 @@ struct NotchHomeView: View {
     }
     /// Chat page: the message goes to the chat (Zuffi or the agent you picked) and the answer appears there.
     private func sendChat(_ q: String, spoken: Bool) {
+        // Talking to Zuffi herself: no agent left over from before may answer instead of her.
+        if ZuffiChat.shared.who == .zuffi, !ZuffiTeam.shared.activeIDs.isEmpty { ZuffiTeam.shared.activeIDs = [] }
         if let last = state.chatHistory.last, Date().timeIntervalSince(last.at) > 5 * 60 {
             let who = ZuffiChat.shared.who
             state.newChat()                       // the old chat is kept in History
@@ -3358,8 +3357,6 @@ struct SettingsPage: View {
         NSLabel(t: "LISTENING AND SPEAKING")
         toggle("“Hey Zuffi” (mic on)", Binding(get: { voice.micEnabled }, set: { VoiceEngine.shared.setMic($0) }))
         toggle("Hold Z to talk", Binding(get: { UserDefaults.standard.object(forKey: "holdZ") as? Bool ?? true }, set: { UserDefaults.standard.set($0, forKey: "holdZ") }))
-        toggle("Read notifications out loud (messages, mail…)", Binding(get: { UserDefaults.standard.bool(forKey: AssistantPrefs.readNotes) },
-                                                                       set: { UserDefaults.standard.set($0, forKey: AssistantPrefs.readNotes); NotificationReader.shared.setEnabled($0) }))
         toggle("Say reminders out loud (off = just show them)", $speakReminders)
         NSLabel(t: "SECURITY")
         toggle("Lock Zuffi with Touch ID or my Mac password", Binding(get: { lock.enabled }, set: { ZuffiLock.shared.setEnabled($0) }))

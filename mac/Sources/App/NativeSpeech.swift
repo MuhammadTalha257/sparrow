@@ -188,7 +188,7 @@ final class NativeSpeech {
         let speed = (rate == 0 ? 1.0 : max(0.8, min(1.4, rate / 0.5))) * ZuffiExpress.speed(ZuffiExpress.mood(text)) * preset.speed
         onEnd = ended
         let bunny = UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true
-        send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": bunny && preset.id == "sweet" ? speed * 1.06 : speed,
+        send(["cmd": "say", "id": currentId, "text": text, "model": model, "sid": sid(), "speed": speed,
                    "pitch": (bunny && preset.id == "sweet" ? 200.0 : preset.pitch) + ZuffiExpress.cents(ZuffiExpress.mood(text))])   // a lighter lift sounds natural, not robotic
         let id = currentId
         // Never wait long: if the first words aren't ready, use the instant voice instead. Just after it starts it is still

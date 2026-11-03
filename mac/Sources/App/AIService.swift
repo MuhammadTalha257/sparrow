@@ -186,6 +186,7 @@ final class AIService {
         // A pro agent is picked: straight to the AI with its expert instructions — no team routing, web dumps or business data.
         var pro: TeamAgent? = nil
         if case .agent(let id) = ZuffiChat.shared.who, let p = ZuffiPros.agent(id) { pro = p; ZuffiTeam.shared.activeIDs = [p.id] }
+        else if ZuffiChat.shared.who == .zuffi, !ZuffiTeam.shared.activeIDs.isEmpty { ZuffiTeam.shared.activeIDs = [] }   // stale agent from an old chat
         let agentOn = pro != nil
         var proLinks: [WebLink] = []
         if pro == nil {

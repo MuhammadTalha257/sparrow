@@ -141,17 +141,7 @@ final class Speaker {
             }
             if let last = out.last, last.count < 25 { out[out.count - 1] = last + " " + p } else { out.append(p) }
         }
-        // start talking at once: the first few words are made (in a fraction of a second) and played while the rest is prepared
-        if let f = out.first, f.count > 34 {
-            var cut: String.Index? = nil
-            if let r = f.range(of: #"[,;:—]\s"#, options: .regularExpression), f.distance(from: f.startIndex, to: r.lowerBound) >= 6,
-               f.distance(from: f.startIndex, to: r.lowerBound) <= 40 { cut = r.upperBound }
-            else if let sp = f.prefix(30).lastIndex(of: " "), f.distance(from: f.startIndex, to: sp) >= 10 { cut = f.index(after: sp) }
-            if let cut {
-                out[0] = String(f[..<cut]).trimmingCharacters(in: .whitespaces)
-                out.insert(String(f[cut...]).trimmingCharacters(in: .whitespaces), at: 1)
-            }
-        }
+        // Whole sentences only (cutting the first one short left a gap after its first words while the rest was made).
         return out
     }
 
