@@ -145,6 +145,9 @@ final class AIService {
         var base = ZuffiTeam.shared.active.map { ZuffiTeam.shared.systemPrompt(for: $0) }
             ?? (Self.systemPrompt + "\n" + ZuffiVoice.persona + "\n" + Self.userFacts + "\n" + (wantsAbout ? ZuffiAbout.text + "\n" : "") + (ZuffiFocus.agents ? "" : NikBrain.shared.zuffiContext()))
         if voiceTurn { base += "\n" + Self.voiceRule }
+        if voiceTurn, let cut = VoiceEngine.shared.interruptedNote {
+            base += "\nThey just cut in while you were still talking; the last thing you said was: \"…\(cut)\". If they ask you to carry on / continue, continue from exactly there (don't repeat). If they ask something new, answer the new thing.\n"
+        }
         guard let document else { return base }
         return base + """
 

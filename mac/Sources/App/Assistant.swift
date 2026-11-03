@@ -57,7 +57,15 @@ final class VoiceEngine: NSObject, ObservableObject {
     private var silenceTimer: Timer?
     private var restartTimer: Timer?
     private var oneShot = false          // mic button: no wake word needed
-    @Published private(set) var speaking = false { didSet { Aurora3DRig.liveSpeaking = speaking; if speaking != oldValue { speakingSince = speaking ? Date() : .distantFuture } } }
+    @Published private(set) var speaking = false { didSet {
+        Aurora3DRig.liveSpeaking = speaking
+        if speaking != oldValue { speakingSince = speaking ? Date() : .distantFuture }
+        // In a conversation she keeps one ear open while she talks, so you can cut in (like ChatGPT voice).
+        if speaking, !oldValue, conversation {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { MainActor.assumeIsolated { VoiceEngine.shared.startBargeIn() } }
+        }
+        if !speaking, oldValue, bargeListening { bargeListening = false; pauseRecognition() }
+    } }
     private var speakingSince = Date.distantFuture
     /// When the current recognition session last (re)started — a session that goes quiet for too long is restarted.
     private var listenStartedAt = Date.distantPast
@@ -599,6 +607,52 @@ final class VoiceEngine: NSObject, ObservableObject {
         return true
     }
 
+    // MARK: Cutting in while she talks
+    private(set) var bargeListening = false
+    private var bargeSkip = 0                 // words at the start of the transcript that were her own voice
+    /// What she had said when you cut in — so "carry on" continues from there, and a new question gets a new answer.
+    var interruptedNote: String?
+
+    fileprivate func startBargeIn() {
+        guard conversation, speaking, !isListening, !bargeListening, Self.micOn, !micLent else { return }
+        bargeListening = true
+        oneShot = true
+        startRecognition()
+        if bargeListening { status = "Talking…" }     // she's still talking (the ear is open, but she isn't "listening" yet)
+        appendAppLog("voice.log", "listening while talking (you can cut in)")
+    }
+    private static func words(_ t: String) -> [String] {
+        t.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "'" }.map(String.init)
+    }
+    /// The words in the transcript that are YOU, not her own voice coming back through the mic. nil = only her.
+    private func yourWords(_ said: String) -> (skip: Int, words: [String])? {
+        let all = Self.words(said)
+        guard !all.isEmpty else { return nil }
+        let hers = Set(Self.words(lastSpoken))
+        let stopWords: Set<String> = ["stop", "wait", "zuffi", "zuffy", "sorry", "no", "listen", "hold", "ruko", "suno", "bas"]
+        guard let first = all.firstIndex(where: { !hers.contains($0) }) else { return nil }
+        let mine = Array(all[first...])
+        let new = mine.filter { !hers.contains($0) }.count
+        if new >= 2 || stopWords.contains(mine[0]) { return (first, mine) }
+        return nil
+    }
+    private func cutIn(skip: Int, mine: [String]) {
+        bargeListening = false
+        bargeSkip = skip
+        // what she had already said (her lips follow ~14 letters a second)
+        let sec = Date().timeIntervalSince(audioStartedAt)
+        let saidSoFar = String(lipText.prefix(max(0, Int(sec * 14.5))))
+        if saidSoFar.count > 12 { interruptedNote = String(saidSoFar.suffix(160)) }
+        appendAppLog("voice.log", "you cut in: \(mine.joined(separator: " "))")
+        neuralTurn += 1                         // her unfinished answer must not "end" and restart listening
+        synth.stopSpeaking(at: .immediate)
+        VoiceboxVoice.shared.stop(); FishVoice.shared.stop(); NativeSpeech.shared.stop()
+        speaking = false
+        resumeAfterSpeech = false; listenAfterSpeech = false
+        status = "Listening…"
+        BunnyFaceCenter.shared.show(.listening, for: 3)
+    }
+
     // MARK: Conversation (like ChatGPT voice): tap once — talk back and forth; tap again — she stops.
     @Published private(set) var conversation = false
     private var convMisses = 0
@@ -680,7 +734,8 @@ final class VoiceEngine: NSObject, ObservableObject {
     fileprivate func startRecognition() {
         guard !micLent else { return }
         guard Self.micOn else { status = "Mic is off — turn it on to talk to Zuffi"; return }
-        guard !speaking else { resumeAfterSpeech = true; return }
+        guard !speaking || bargeListening else { resumeAfterSpeech = true; return }
+        bargeSkip = 0
         // Offline: if this language can't be heard on the Mac itself, use a language that can (so voice still works with no internet).
         var hearWith = recognizer
         if !NetStatus.shared.online, !(hearWith?.supportsOnDeviceRecognition ?? false) {
@@ -733,7 +788,7 @@ final class VoiceEngine: NSObject, ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
                 MainActor.assumeIsolated {
                     let me = VoiceEngine.shared
-                    guard me.generation == gen, me.oneShot, !me.pushToTalk, me.heard.isEmpty else { return }
+                    guard me.generation == gen, me.oneShot, !me.pushToTalk, me.heard.isEmpty, !me.bargeListening else { return }
                     appendAppLog("voice.log", "one-shot: nothing heard in 9s — back to \"Zuffi…\" listening")
                     me.oneShot = false
                     me.status = ""
@@ -769,7 +824,13 @@ final class VoiceEngine: NSObject, ObservableObject {
 
     private func onPartial(_ text: String?, ended: Bool, gen: Int) {
         guard gen == generation else { return }   // stale session
-        if let text { heard = text }
+        if bargeListening {
+            // She's talking: only YOUR words (not her own voice in the mic) interrupt her.
+            if ended && speaking { pauseRecognition(); bargeListening = false; DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { VoiceEngine.shared.startBargeIn() } }; return }
+            guard let text, speaking, let you = yourWords(text) else { return }
+            cutIn(skip: you.skip, mine: you.words)
+        }
+        if let text { heard = bargeSkip > 0 ? Self.words(text).dropFirst(bargeSkip).joined(separator: " ") : text }
         if ended && text == nil && heard.isEmpty {
             // Session ended on its own (timeout / error) with nothing heard: quietly start a new one.
             appendAppLog("voice.log", "session ended empty (gen \(gen))")

@@ -1229,8 +1229,8 @@ struct NotchHomeView: View {
                 }.frame(height: 18)
             }
             Text(voice.pushToTalk ? "Listening… let go of Z to send"
-                 : !voice.conversation || listening ? "Listening…"
-                 : voice.speaking || tutor.speaking ? "Zuffi is talking…" : "Thinking…")
+                 : voice.conversation && (voice.speaking || tutor.speaking) ? "Zuffi is talking… just talk to cut in"
+                 : !voice.conversation || listening ? "Listening…" : "Thinking…")
                 .font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
             Spacer(minLength: 0)
             Button { if voice.conversation { VoiceEngine.shared.endConversation() } else { VoiceEngine.shared.pushToTalkUp() } } label: {
@@ -1484,6 +1484,7 @@ struct NotchHomeView: View {
             AIService.shared.voiceTurn = spoken || VoiceEngine.shared.conversation     // spoken → a short, chatty answer
             await AIService.shared.chat(query: q, context: state.promptContext, state: state)
             AIService.shared.voiceTurn = false
+            VoiceEngine.shared.interruptedNote = nil
             state.stateOverride = nil
             if state.chatHistory.count >= before, let last = state.chatHistory.last, last.role == .assistant {
                 BunnyFaceCenter.shared.show(.happy, for: 2)
@@ -1729,7 +1730,7 @@ struct AuroraFace: NSViewRepresentable {
 
     /// Aurora's face from what Zuffi is doing right now.
     @MainActor static func mood(_ voice: VoiceEngine, _ state: AppState) -> String {
-        if voice.isListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) { return "listening" }
+        if voice.isListening && !voice.bargeListening && (voice.status.hasPrefix("Listening") || voice.pushToTalk) { return "listening" }
         if state.stateOverride == .thinking { return "thinking" }
         switch BunnyFaceCenter.shared.flash {
         case .some(.laugh): return "laugh"
