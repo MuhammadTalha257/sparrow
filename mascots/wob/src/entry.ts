@@ -21,6 +21,7 @@ function show(id: string) {
   show,
   state: (s: MascotState) => { m?.setState(s); },
   poke: () => { m?.poke(); },
+  ready: () => !!(m && (m as any).ready),
   pause: () => m?.pause(),
   play: () => m?.play(),
 };

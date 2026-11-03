@@ -23,10 +23,15 @@
   var tries = 0;
   (function check() {
     var c = document.querySelector('#stage canvas');
-    if (c && c.width > 0) {
-      try { var gl = c.getContext('webgl2'); if (gl && !gl.isContextLost()) { tell(true); return; } } catch (e) {}
+    if (ZuffiMascot.ready() && c && c.width > 0) {
+      /* something really painted? (the visible canvas is a 2D copy of the shared 3D one) */
+      try {
+        var g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height).data, seen = 0;
+        for (var i = 3; i < d.length; i += 64) if (d[i] > 10) { seen++; if (seen > 20) break; }
+        if (seen > 20) { tell(true); return; }
+      } catch (e) { tell(true); return; }
     }
-    if (++tries > 40) { tell(false, 'nothing drawn'); return; }
+    if (++tries > 60) { tell(false, ZuffiMascot.ready() ? 'blank picture' : 'never got ready (no frames)'); return; }
     setTimeout(check, 100);
   })();
 })();

@@ -2637,19 +2637,31 @@ struct NotchScreen: View {
         Item(id: "gmail", name: "Gmail", icon: "envelope"),
         Item(id: "settings", name: "Settings", icon: "gearshape"), Item(id: "tools", name: "Tools", icon: "wrench.and.screwdriver"),
         Item(id: "screen", name: "My screen", icon: "eye"), Item(id: "meeting", name: "Meeting helper", icon: "person.2.wave.2"),
-        Item(id: "day", name: "Your day", icon: "chart.bar"),
+        Item(id: "day", name: "Your day", icon: "chart.bar"), Item(id: "pet", name: "Pet on screen", icon: "hare"),
     ]
+    @State private var petOn = PetController.shared.isShown
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if page == "grid" {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], alignment: .leading, spacing: 2) {
                     ForEach(Self.menu) { m in
-                        Button { go(m.id) } label: {
+                        Button {
+                            if m.id == "pet" {      // a switch, not a page: Zuffi walks onto your desktop (or hides)
+                                if PetController.shared.isShown { PetController.shared.hide() }
+                                else { UserDefaults.standard.set(false, forKey: "petNever"); PetController.shared.show() }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { MainActor.assumeIsolated { petOn = PetController.shared.isShown } }
+                            } else { go(m.id) }
+                        } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: m.icon).font(.system(size: 14, weight: .medium)).foregroundColor(.white).frame(width: 20)
                                 Text(m.name).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
                                 Spacer(minLength: 0)
+                                if m.id == "pet" {
+                                    Capsule().fill(petOn ? Color(hex: "#7CE0A3") : Color.white.opacity(0.18)).frame(width: 30, height: 18)
+                                        .overlay(Circle().fill(.white).frame(width: 14, height: 14).offset(x: petOn ? 6 : -6))
+                                        .animation(.spring(response: 0.25), value: petOn)
+                                }
                             }
                             .padding(.horizontal, 10).frame(height: 40).contentShape(Rectangle())
                         }.buttonStyle(NSHover())
