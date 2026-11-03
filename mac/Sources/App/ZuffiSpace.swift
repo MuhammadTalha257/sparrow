@@ -1062,14 +1062,14 @@ struct NotchHomeView: View {
     /// Like Taby: three separate pieces — the small black tab with Aurora's face under the notch, the chat bar
     /// floating just below it, and (only when needed) the panel or answer card below that. Nothing else covers the screen.
     private var tabW: CGFloat { max(state.notchWidth + 8, 168) }
-    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 46 : max(state.notchHeight, 24) + 4 }
+    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 36 : max(state.notchHeight, 24) + 4 }
     private var faceTab: some View {
         ZStack(alignment: .bottom) {
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 24, bottomTrailing: 24, topTrailing: 0), style: .continuous)
                 .fill(Color.black)
             if showsAurora {
-                RealAuroraIcon(size: 52, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
-                    .frame(width: 52, height: 46).clipped()
+                RealAuroraIcon(size: 42, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
+                    .frame(width: 42, height: 36).clipped()
                     .padding(.bottom, 2)
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
@@ -1098,7 +1098,7 @@ struct NotchHomeView: View {
         if let p = page {
             NotchScreen(page: p, go: { target in withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) { nav.page = target } },
                         ask: { text in ask = text; askFocus = true })
-                .frame(width: W - 24, height: max(200, H - tabH - 34 - 26))
+                .frame(width: W - 24, height: max(240, H - tabH - 44 - 26))
                 .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
                 .padding(.bottom, 10)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -1197,21 +1197,21 @@ struct NotchHomeView: View {
         HStack(spacing: 8) {
             Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { nav.page = nav.page == nil ? "grid" : nil } } label: {
                 Image(systemName: page == nil ? "square.grid.2x2" : "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(Color(hex: "#E9E5F2"))
-                    .frame(width: 26, height: 26).background(Circle().fill(page == nil ? Color.clear : Color(hex: "#B79CFF").opacity(0.25)))
+                    .frame(width: 32, height: 32).background(Circle().fill(page == nil ? Color.white.opacity(0.07) : Color(hex: "#B79CFF").opacity(0.28)))
             }.buttonStyle(.plain).help("Everything Zuffi can do")
             TextField("", text: $ask, prompt: Text(answering ? "Ask a follow-up…" : "Ask Zuffi anything…").foregroundColor(.white.opacity(0.45)))
-                .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundColor(.white)
+                .textFieldStyle(.plain).font(.system(size: 14)).foregroundColor(.white)
                 .focused($askFocus).onSubmit { send() }
             ProviderMenu(state: state, tint: .white)
             // talk: tap once to start a conversation, tap again (or ■) to end it
             Button { VoiceEngine.shared.toggleConversation() } label: {
-                Image(systemName: "waveform").font(.system(size: 12, weight: .bold)).foregroundColor(Color(hex: "#141218"))
-                    .frame(width: 26, height: 26).background(Circle().fill(Color(hex: "#F2F1F6")))
+                Image(systemName: "waveform").font(.system(size: 14, weight: .bold)).foregroundColor(Color(hex: "#141218"))
+                    .frame(width: 32, height: 32).background(Circle().fill(LinearGradient(colors: [.white, Color(hex: "#E4DEF5")], startPoint: .top, endPoint: .bottom)))
             }.buttonStyle(.plain).help("Talk with Zuffi — tap to start, tap again to stop (or hold Z)")
         }
-        .padding(.leading, 12).padding(.trailing, 4).frame(height: 34)
-        .background(Capsule().fill(Color(hex: "#141218")))
-        .overlay(Capsule().stroke(Color.white.opacity(0.10)))
+        .padding(.leading, 6).padding(.trailing, 5).frame(height: 44)
+        .background(Capsule().fill(LinearGradient(colors: [Color(hex: "#221E2B"), Color(hex: "#141218")], startPoint: .top, endPoint: .bottom)))
+        .overlay(Capsule().stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     // while you hold Z or say "Hey Zuffi"
@@ -1232,11 +1232,12 @@ struct NotchHomeView: View {
             Spacer(minLength: 0)
             Button { if voice.conversation { VoiceEngine.shared.endConversation() } else { VoiceEngine.shared.pushToTalkUp() } } label: {
                 RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 10, height: 10)
-                    .frame(width: 26, height: 26).background(Circle().fill(Color(hex: "#E5484D")))
+                    .frame(width: 32, height: 32).background(Circle().fill(Color(hex: "#E5484D")))
             }.buttonStyle(.plain).help(voice.conversation ? "End the conversation" : "Stop")
         }
-        .padding(.leading, 14).padding(.trailing, 4).frame(height: 34)
-        .background(Capsule().fill(Color(hex: "#141218")))
+        .padding(.leading, 16).padding(.trailing, 5).frame(height: 44)
+        .background(Capsule().fill(LinearGradient(colors: [Color(hex: "#221E2B"), Color(hex: "#141218")], startPoint: .top, endPoint: .bottom)))
+        .overlay(Capsule().stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 
     // the answer hangs under the bar
@@ -2667,10 +2668,10 @@ struct NotchScreen: View {
                 }
             }
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color(hex: "#0B0A0E")))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.09)))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(LinearGradient(colors: [Color(hex: "#17141F"), Color(hex: "#0B0A0E")], startPoint: .top, endPoint: .bottom)))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
         .task(id: page) { await data.refresh() }
     }
 
@@ -3286,6 +3287,10 @@ struct SettingsPage: View {
             ForEach(WobCharacterView.choices, id: \.id) { c in
                 NSPill(title: c.name, primary: character == c.id) { character = c.id; BunnyFaceCenter.shared.show(.happy, for: 2) }
             }
+        }
+        if !WobCharacterView.failed.isEmpty {
+            Text("\(WobCharacterView.failed.compactMap { id in WobCharacterView.choices.first { $0.id == id }?.name }.joined(separator: ", ")) couldn't be drawn on this Mac, so Aurora is showing.")
+                .font(.system(size: 11)).foregroundColor(Color(hex: "#F5B963")).fixedSize(horizontal: false, vertical: true)
         }
         if character != "aurora" { Text("Characters drawn with Wobnimo (MIT licence).").font(.system(size: 10.5)).foregroundColor(NS.soft) }
         HStack(spacing: 6) {

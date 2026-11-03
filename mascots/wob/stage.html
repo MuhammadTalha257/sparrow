@@ -17,5 +17,17 @@
   ZuffiMascot.show = function (c) { cur = c; show(c); apply(); };
   ZuffiMascot.frame = function (k, left) { kind = k; document.getElementById('wrap').className = left ? 'left' : ''; apply(); };
   var q = new URLSearchParams(location.search); cur = q.get('c') || 'zuffi'; apply();
+  /* tell the Mac whether the character really drew (else it shows Aurora instead) */
+  function tell(ok, why) { try { window.webkit.messageHandlers.wob.postMessage({ ok: ok, why: why || '' }); } catch (e) {} }
+  if (!ZuffiMascot.supported()) { tell(false, 'no WebGL2'); return; }
+  var tries = 0;
+  (function check() {
+    var c = document.querySelector('#stage canvas');
+    if (c && c.width > 0) {
+      try { var gl = c.getContext('webgl2'); if (gl && !gl.isContextLost()) { tell(true); return; } } catch (e) {}
+    }
+    if (++tries > 40) { tell(false, 'nothing drawn'); return; }
+    setTimeout(check, 100);
+  })();
 })();
 </script></body></html>

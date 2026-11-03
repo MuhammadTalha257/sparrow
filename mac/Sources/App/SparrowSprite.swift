@@ -823,7 +823,7 @@ struct Aurora3DView: View {
     var speaking = false
     @AppStorage("zuffiCharacter") private var character = "aurora"
     var body: some View {
-        if character == "aurora" || !WobCharacterView.available {
+        if character == "aurora" || !WobCharacterView.available || WobCharacterView.failed.contains(character) {
             AuroraSceneView(pose: pose, faceLeft: faceLeft, lookAtMouse: lookAtMouse, framing: framing, expression: expression, speaking: speaking)
         } else {
             WobCharacterView(character: character, state: WobCharacterView.state(pose: pose, mood: expression, speaking: speaking || Aurora3DRig.liveSpeaking),
@@ -857,6 +857,8 @@ struct WobCharacterView: NSViewRepresentable {
     var faceLeft = false
     static let choices: [(id: String, name: String)] = [("aurora", "Aurora (3D bunny)"), ("zuffi", "Soft bunny"), ("boo", "Boo the ghost"), ("bao", "Bao the panda")]
     static var available: Bool { Bundle.main.resourceURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("web/mascots/wob/wob.js").path) } ?? false }
+    /// A character that couldn't draw on this Mac (no 3D in the web view): Aurora shows instead, never an empty box.
+    nonisolated(unsafe) static var failed: Set<String> = []
 
     /// Her mood → the character's state.
     static func state(pose: AuroraPose, mood: BunnyMood, speaking: Bool) -> String {
@@ -873,10 +875,30 @@ struct WobCharacterView: NSViewRepresentable {
         }
     }
 
-    @MainActor final class Box: NSObject, WKNavigationDelegate {
+    @MainActor final class Box: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let o = message.body as? [String: Any] else { return }
+            let ok = o["ok"] as? Bool ?? false
+            confirmed = true
+            appendAppLog("voice.log", "character \(want.c): \(ok ? "drawing" : "couldn't draw — \(o["why"] as? String ?? "")")")
+            if !ok, !want.c.isEmpty {
+                WobCharacterView.failed.insert(want.c)
+                UserDefaults.standard.set("aurora", forKey: "zuffiCharacter")       // back to Aurora so she's never missing
+            }
+        }
         var ready = false, want = (c: "", s: "", f: ""), sent = (c: "", s: "", f: "")
         weak var web: WKWebView?
         var lastPoke = Date.distantPast
+        var confirmed = false
+        func giveUp(_ why: String) {
+            guard !confirmed else { return }
+            confirmed = true
+            appendAppLog("voice.log", "character \(want.c): couldn't draw — \(why)")
+            if !want.c.isEmpty { WobCharacterView.failed.insert(want.c); UserDefaults.standard.set("aurora", forKey: "zuffiCharacter") }
+        }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { giveUp(error.localizedDescription) }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { giveUp(error.localizedDescription) }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { giveUp("web view stopped") }
         func push() {
             guard ready, let w = web else { return }
             var js = ""
@@ -898,11 +920,16 @@ struct WobCharacterView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.setURLSchemeHandler(SparrowSchemeHandler(), forURLScheme: "app")
+        cfg.userContentController.add(context.coordinator, name: "wob")
+        if #available(macOS 14.0, *) { cfg.preferences.inactiveSchedulingPolicy = .none }      // keep moving when the notch isn't the active window
         let w = PassThroughWeb(frame: .zero, configuration: cfg)
         w.setValue(false, forKey: "drawsBackground")
         w.navigationDelegate = context.coordinator
         context.coordinator.web = w
+        context.coordinator.want.c = character
         w.load(URLRequest(url: URL(string: "app://sparrow/mascots/wob/stage.html?c=\(character)&s=\(state)")!))
+        let box = context.coordinator
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) { MainActor.assumeIsolated { box.giveUp("no answer in 7 s") } }   // never an empty box
         return w
     }
     func updateNSView(_ w: WKWebView, context: Context) {
