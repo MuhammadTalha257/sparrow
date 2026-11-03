@@ -953,6 +953,11 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
     private var sockets: [SCNNode] = [], lids: [SCNNode] = [], lashes: [[SCNNode]] = [], cheeks: [SCNNode] = [], hearts: [SCNNode] = []
     private var philtrum: SCNNode?, tongue: SCNNode?, listenPaw: SCNNode?, listenAmt: CGFloat = 0
     private var laughE: CGFloat = 0, loveE: CGFloat = 0, listenE: CGFloat = 0
+    // extra life: springy ears (they swing after her head moves), a talking bounce, weight shifts, and little mood effects
+    private var earSpring: [CGFloat] = [0, 0], earVel: [CGFloat] = [0, 0], earSpringX: [CGFloat] = [0, 0], earVelX: [CGFloat] = [0, 0]
+    private var lastYaw: CGFloat = 0, lastPitch: CGFloat = 0, bounce: CGFloat = 0
+    private var fx: [SCNNode] = [], fxKind: [Int] = [], fxBorn: [CGFloat] = [], fxSeed: [CGFloat] = [], nextFx: CGFloat = 0
+    private var fxMats: [SCNMaterial] = []
     private var surpriseKick: CGFloat = 0, lastExpr: BunnyMood = .smile, exprAt: CGFloat = 0, lookX: CGFloat = 0, lookY: CGFloat = 0
     /// You clicked her (or her ears): a quick flick and a little jump, then the feeling shows.
     nonisolated(unsafe) static var pokeAt = Date.distantPast
@@ -1224,6 +1229,18 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
             let h = SCNNode(geometry: p); h.renderingOrder = 110; h.opacity = 0; h.constraints = [SCNBillboardConstraint()]
             scene.rootNode.addChildNode(h); hearts.append(h)
         }
+        // mood effects: 0 sparkle · 1 "z" · 2 "?" · 3 anger puff · 4 confetti · 5 music note
+        for img in [Self.glyph("✦", NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1)), Self.glyph("z", NSColor(calibratedRed: 0.62, green: 0.66, blue: 1, alpha: 1), bold: true),
+                    Self.glyph("?", NSColor(calibratedRed: 0.72, green: 0.61, blue: 1, alpha: 1), bold: true), Self.glyph("💢", .red),
+                    Self.confetti(), Self.glyph("♪", NSColor(calibratedRed: 1, green: 0.56, blue: 0.7, alpha: 1), bold: true)] {
+            let m = SCNMaterial(); m.lightingModel = .constant; m.diffuse.contents = img
+            m.readsFromDepthBuffer = false; m.writesToDepthBuffer = false; m.isDoubleSided = true; fxMats.append(m)
+        }
+        for i in 0..<8 {
+            let p = SCNPlane(width: 0.14, height: 0.14); p.materials = [fxMats[0]]
+            let n = SCNNode(geometry: p); n.renderingOrder = 111; n.opacity = 0; n.constraints = [SCNBillboardConstraint()]
+            scene.rootNode.addChildNode(n); fx.append(n); fxKind.append(0); fxBorn.append(-100); fxSeed.append(CGFloat(i) * 0.37)
+        }
         dressUp(ZuffiSeasons.activeId())
     }
 
@@ -1271,6 +1288,26 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         let holder = SCNNode(geometry: s); holder.scale = SCNVector3(1 / k, 1 / k, 1 / k)
         return holder.flattenedClone().geometry ?? s
     }
+    /// A little symbol drawn as a picture (sparkle, z, ?, a note…) for the mood effects.
+    private static func glyph(_ g: String, _ color: NSColor, bold: Bool = false) -> NSImage {
+        let img = NSImage(size: NSSize(width: 96, height: 96)); img.lockFocus()
+        let font = NSFont.systemFont(ofSize: 72, weight: bold ? .heavy : .regular)
+        let a: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let str = NSAttributedString(string: g, attributes: a), sz = str.size()
+        str.draw(at: NSPoint(x: (96 - sz.width) / 2, y: (96 - sz.height) / 2))
+        img.unlockFocus(); return img
+    }
+    private static func confetti() -> NSImage {
+        let img = NSImage(size: NSSize(width: 64, height: 64)); img.lockFocus()
+        let cols: [NSColor] = [.systemPink, .systemYellow, .systemTeal, .systemPurple]
+        for (i, c) in cols.enumerated() {
+            c.setFill()
+            let r = NSRect(x: 8 + i * 12, y: 14 + (i % 2) * 22, width: 9, height: 18)
+            NSBezierPath(roundedRect: r, xRadius: 3, yRadius: 3).fill()
+        }
+        img.unlockFocus(); return img
+    }
+
     private static func heartImage() -> NSImage {
         let img = NSImage(size: NSSize(width: 128, height: 128)); img.lockFocus()
         let p = NSBezierPath()
@@ -1452,7 +1489,17 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
                 - 0.1 * s * surpriseE - 0.08 * s * listenE + (i == 1 ? 1.0 * s * earFlop : 0) + 0.08 * s * loveE * sin(t * 2.2)
             e.eulerAngles.y = 0.35 * s * lookAround * sin(ie * 1.7 + CGFloat(i)) - 0.35 * s * max(listen, listenE)   // ears turn to listen
             if earPoke > 0 { e.eulerAngles.z += 0.45 * s * earPoke * sin(pk * 34 + CGFloat(i)); e.eulerAngles.x -= 0.5 * earPoke }   // ears flick when touched
+            // springy ears: when her head turns or nods, the ears swing after it and settle (a soft, real follow-through)
+            let dYaw = (yaw - lastYaw) / max(dt, 0.001), dPitch = (pitch - lastPitch) / max(dt, 0.001)
+            let k: CGFloat = 90, damp: CGFloat = 7
+            earVel[i] += (-k * earSpring[i] - damp * earVel[i] - 0.9 * dYaw - 2.2 * air * s) * dt
+            earSpring[i] = max(-0.6, min(0.6, earSpring[i] + earVel[i] * dt))
+            earVelX[i] += (-k * earSpringX[i] - damp * earVelX[i] + 0.7 * dPitch + 1.6 * landSquash) * dt
+            earSpringX[i] = max(-0.5, min(0.5, earSpringX[i] + earVelX[i] * dt))
+            e.eulerAngles.z += earSpring[i] * s * 0.8 + earSpring[i] * 0.4
+            e.eulerAngles.x += earSpringX[i]
         }
+        lastYaw = yaw; lastPitch = pitch
 
         // EYES: blink, glance, and the right shape for each feeling
         if t > nextBlink + 0.16 { nextBlink = t + 2.5 + CGFloat((sin(t * 3.7) + 1) * 1.5) }
@@ -1503,8 +1550,42 @@ final class Aurora3DRig: NSObject, SCNSceneRendererDelegate, @unchecked Sendable
         mouthO?.scale = SCNVector3((0.026 + 0.012 * mOpen + 0.012 * laughE - 0.006 * round) * mBig, (0.008 + 0.034 * mOpen) * mBig, 0.01)
         tongue?.position.y = -0.125 - 0.02 * mOpen
 
+        // talking bounce: her head bobs a little with each word (squash & stretch), and she shifts her weight while idle
+        ease(&bounce, talkAmt * (0.5 + 0.5 * talkOpen), 14)
+        let sq = 0.035 * bounce * sin(t * 11)
+        head.scale = SCNVector3(1.24 * (1 - sq * 0.5), 1.24 * (1 + sq), 1.24 * (1 - sq * 0.5))
+        if calm { stance.eulerAngles.z += 0.035 * sin(t * 0.55) ; stance.position.x = 0.03 * sin(t * 0.55) } else { stance.position.x *= 0.9 }
+
         // hearts float up around her head
         let hp = head.presentation.worldPosition
+        // mood effects: sparkles when happy, confetti when she laughs/cheers, z's when sleepy, ? when thinking,
+        // a puff when cross, notes while she talks — each floats up, drifts and fades
+        let wantKind: Int? = sleepE > 0.5 ? 1 : thinkE > 0.5 ? 2 : max(crossE, crossAmt) > 0.5 ? 3 : (laughE > 0.4 || cheer > 0.5) ? 4
+            : happyE > 0.5 ? 0 : (talkAmt > 0.6 && sin(t * 0.3) > 0.6) ? 5 : nil
+        if let k = wantKind, t > nextFx, let slot = fxBorn.indices.min(by: { fxBorn[$0] < fxBorn[$1] }) {
+            fxKind[slot] = k; fxBorn[slot] = t; fxSeed[slot] = CGFloat.random(in: 0...1)
+            fx[slot].geometry?.materials = [fxMats[k]]
+            nextFx = t + (k == 4 ? 0.18 : k == 1 ? 0.9 : k == 2 ? 1.4 : k == 3 ? 1.1 : k == 5 ? 0.8 : 0.45)
+        }
+        for (i, n) in fx.enumerated() {
+            let life: CGFloat = fxKind[i] == 4 ? 1.4 : 1.8
+            let a = (t - fxBorn[i]) / life
+            guard a >= 0, a < 1 else { n.opacity = 0; continue }
+            let sd = fxSeed[i], side: CGFloat = sd < 0.5 ? -1 : 1
+            var x = hp.x + side * (0.28 + 0.2 * sd), y = hp.y + 0.3 + 0.7 * a, z = hp.z + 0.3
+            switch fxKind[i] {
+            case 1: x = hp.x + 0.3 + 0.25 * a + 0.05 * sin(a * 9); y = hp.y + 0.35 + 0.55 * a          // z's drift up to one side
+            case 2: x = hp.x + 0.34; y = hp.y + 0.5 + 0.12 * a                                          // ? bobs above her head
+            case 3: x = hp.x + 0.32 * side; y = hp.y + 0.45 + 0.08 * sin(a * 20)                       // a puff pulses
+            case 4: x = hp.x + (sd - 0.5) * 1.6 * a; y = hp.y + 0.6 + 0.5 * sin(.pi * a) - 0.6 * a * a; z = hp.z + 0.2 + 0.3 * sd   // confetti burst
+            default: x += 0.06 * sin(t * 4 + sd * 6)
+            }
+            n.position = SCNVector3(x, y, z)
+            let grow = fxKind[i] == 3 ? 0.9 + 0.25 * sin(a * 20) : 0.6 + 0.6 * min(1, a * 3)
+            n.scale = SCNVector3(grow, grow, grow)
+            n.eulerAngles.z = fxKind[i] == 4 ? a * 8 * (sd - 0.5) : 0
+            n.opacity = sin(.pi * a) * (fxKind[i] == 2 ? 1 : 0.95)
+        }
         for (i, h) in hearts.enumerated() {
             let c = (t * 0.55 + CGFloat(i) / 3).truncatingRemainder(dividingBy: 1)
             h.position = SCNVector3(hp.x + (CGFloat(i) - 1) * 0.32 + 0.05 * sin(t * 3 + CGFloat(i)), hp.y + 0.35 + 0.65 * c, hp.z + 0.3)
