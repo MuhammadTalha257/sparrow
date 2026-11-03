@@ -106,7 +106,16 @@ final class ZuffiAsk: ObservableObject {
         AXUIElementCopyAttributeValue(f as! AXUIElement, kAXRoleAttribute as CFString, &role)
         let r = (role as? String) ?? ""
         // only real text boxes count (lists, web pages, Finder… don't): there a held Z means "Zuffi, listen"
-        return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXSecureTextField"].contains(r)
+        if ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXSecureTextField"].contains(r) { return true }
+        // text boxes inside web pages and apps like Claude, Slack or WhatsApp: the text can be changed, or there's a text cursor
+        let el = f as! AXUIElement
+        var settable: DarwinBoolean = false
+        if AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success, settable.boolValue, r != "AXWebArea" { return true }
+        var range: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &range) == .success, range != nil, r != "AXWebArea" { return true }
+        var sub: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXSubroleAttribute as CFString, &sub)
+        return (sub as? String) == "AXContentEditable"
     }
 
     /// Hold Z / double-click: remember what's selected, then listen.
