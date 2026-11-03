@@ -3477,6 +3477,13 @@ struct ToolsPage: View {
                         }
                         NSPill(title: "Mark it up") { ImageStudio.markup(f.url) }
                     }
+                    HStack(spacing: 6) {
+                        ForEach(["Stickers", "AI edits: change style, add objects"], id: \.self) { t in
+                            Text("\(t) · coming soon").font(.system(size: 11, weight: .medium)).foregroundColor(.white.opacity(0.45))
+                                .padding(.horizontal, 10).frame(height: 26)
+                                .background(Capsule().stroke(Color.white.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+                        }
+                    }
                 }
                 if choosingLang {
                     HStack(spacing: 8) {
