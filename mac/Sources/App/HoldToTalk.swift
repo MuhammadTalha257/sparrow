@@ -159,6 +159,18 @@ final class ZuffiAsk: ObservableObject {
         return nil
     }
 
+    /// Can the AI picked in the chat bar look at pictures?
+    static var chatAICanSee: Bool {
+        let st = AppState.shared
+        switch AIProvider(rawValue: st.aiProvider) ?? .auto {
+        case .apple, .deepseek, .perplexity: return false
+        case .ollama:
+            let m = st.ollamaModel.lowercased()
+            return ["llava", "vision", "-vl", "vl:", "gemma3", "minicpm-v", "moondream", "bakllava", "qwen2.5vl", "qwen3-vl", "llama4", "mistral-small3"].contains { m.contains($0) }
+        default: return true
+        }
+    }
+
     var userLanguage: String { NikBrain.shared.profile["own"] ?? (UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English") }
 
     /// Answer a question about the selection (or the screen), out loud, in the user's language.
@@ -173,13 +185,16 @@ final class ZuffiAsk: ObservableObject {
         var context = ""
         if let s = selection, !s.isEmpty { context = "The user selected this text on their screen:\n\"\"\"\n\(s)\n\"\"\"" }
         else if let shot = await ScreenGrab.main() {
-            if NetStatus.shared.online {
+            // The words on the screen are always read here on the Mac (works with every AI, even ones that can't see pictures)
+            var words = ""
+            if let cg = NSImage(data: shot.jpeg)?.cgImage(forProposedRect: nil, context: nil, hints: nil) { words = await StudyText.ocr(cg) }
+            let wordsNote = words.isEmpty ? "" : "\nThe words on their screen (read by the Mac):\n\"\"\"\n\(words.prefix(6000))\n\"\"\""
+            if NetStatus.shared.online, Self.chatAICanSee {
                 image = (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString())
-                context = "A screenshot of the user's screen is attached."
-            } else if let cg = NSImage(data: shot.jpeg)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                // offline: the brain on this Mac can't see pictures, so read the words on the screen here instead
-                let words = await StudyText.ocr(cg)
-                context = "The user is offline. The words on their screen (read by the Mac) are:\n\"\"\"\n\(words.prefix(6000))\n\"\"\""
+                context = "A screenshot of the user's screen is attached." + wordsNote
+            } else {
+                // a brain that can't see pictures (most Ollama models, Apple's): explain from the words on the screen
+                context = "You can't see the picture itself, but this is what's written on the user's screen — explain it from that (which app or page it looks like, what it says, what they could do). Don't say you can't see it." + wordsNote
             }
         }
         let r = await AIService.shared.oneShot("""
