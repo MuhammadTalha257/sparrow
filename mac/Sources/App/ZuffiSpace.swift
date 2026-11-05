@@ -2928,7 +2928,13 @@ struct HabitsPage: View {
     @State private var target = 1
     @State private var tips = ""
     @State private var loading = false
+    @State private var coaching: String?          // the habit she's asking about right now
+    @State private var days = 3
+    @State private var when = "Evening"
+    @State private var why = ""
+    @State private var remind = true
     var body: some View {
+        if let c = coaching { coachCard(c) }
         HStack(spacing: 6) {
             NSField(placeholder: "New habit (e.g. Read 20 minutes)", text: $new) { add() }
             Stepper("\(target)×", value: $target, in: 1...20).font(.system(size: 11)).foregroundColor(.white).fixedSize()
@@ -2940,6 +2946,11 @@ struct HabitsPage: View {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(h.title).font(.system(size: 12.5)).foregroundColor(.white)
+                    if let m = HabitCoach.get(h.title) {
+                        Text(m.summary).font(.system(size: 10.5)).foregroundColor(NS.soft).lineLimit(1)
+                    } else {
+                        Button("Tell Zuffi more →") { startCoach(h.title) }.buttonStyle(.plain).font(.system(size: 10.5, weight: .medium)).foregroundColor(Color(hex: "#FF9F5A"))
+                    }
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.white.opacity(0.08))
@@ -2957,10 +2968,52 @@ struct HabitsPage: View {
         }
         if !tips.isEmpty { NSCard { Text(tips).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).textSelection(.enabled) } }
     }
-    private func add() { let t = new.trimmingCharacters(in: .whitespaces); guard !t.isEmpty else { return }; new = ""; let n = target; target = 1; Task { await data.add("habit", title: t, target: n) } }
+    private func add() {
+        let t = new.trimmingCharacters(in: .whitespaces); guard !t.isEmpty else { return }
+        new = ""; let n = target; target = 1
+        Task { await data.add("habit", title: t, target: n) }
+        startCoach(t)
+    }
+    /// Like a personal assistant: a few quick questions about the new habit (how often, when, why).
+    private func startCoach(_ t: String) {
+        days = 3; when = "Evening"; why = ""; remind = true
+        withAnimation { coaching = t }
+        BunnyFaceCenter.shared.show(.happy, for: 2)
+        VoiceEngine.shared.speak("Ooh, \(t)! Nice. How many days a week do you want to do it, and why does it matter to you?")
+    }
+    @ViewBuilder private func coachCard(_ t: String) -> some View {
+        NSCard {
+            Text("“\(t)” — let's make it stick! 💪").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+            Text("How many days a week?").font(.system(size: 11.5)).foregroundColor(NS.soft)
+            HStack(spacing: 4) { ForEach(1...7, id: \.self) { d in NSPill(title: "\(d)", primary: days == d, color: "#FF9F5A") { days = d } } }
+            Text("When suits you best?").font(.system(size: 11.5)).foregroundColor(NS.soft)
+            HStack(spacing: 4) { ForEach(["Morning", "Afternoon", "Evening", "Any time"], id: \.self) { w in NSPill(title: w, primary: when == w, color: "#FF9F5A") { when = w } } }
+            Text("Why do you want it? (I'll remind you of this on lazy days)").font(.system(size: 11.5)).foregroundColor(NS.soft)
+            NSField(placeholder: "e.g. get fit, more energy, lose 5 kg", text: $why)
+            Toggle(isOn: $remind) { Text("Remind me on those days").font(.system(size: 12)).foregroundColor(.white) }.toggleStyle(.switch).controlSize(.small).tint(Color(hex: "#FF9F5A"))
+            HStack(spacing: 6) {
+                NSPill(title: "Save", primary: true, color: "#FF9F5A") { saveCoach(t) }
+                NSPill(title: "Later") { withAnimation { coaching = nil } }
+            }
+        }
+    }
+    private func saveCoach(_ t: String) {
+        let m = HabitCoach.Meta(days: days, when: when, why: why.trimmingCharacters(in: .whitespacesAndNewlines))
+        HabitCoach.set(t, m)
+        withAnimation { coaching = nil }
+        if remind {
+            let at = ["Morning": "8am", "Afternoon": "1pm", "Evening": "6pm"][when] ?? "6pm"
+            let dayList = HabitCoach.dayNames(days)
+            Task { _ = await WebHub.shared.ask("remind me every \(dayList) at \(at) to \(t)") }
+        }
+        let reply = m.why.isEmpty ? "Saved! \(days) days a week, \(when.lowercased()). I'll cheer you on."
+            : "Saved! \(days) days a week, \(when.lowercased()) — to \(m.why). I'll remind you why on the lazy days!"
+        VoiceEngine.shared.speak(reply)
+        BunnyFaceCenter.shared.show(.happy, for: 2)
+    }
     private func findTips(_ titles: [String]) async {
         loading = true; defer { loading = false }
-        let r = await AIService.shared.oneShot("My habits: \(titles.joined(separator: ", ")). Give me 3 short, practical tips to keep them up this week, and 1–2 recent, genuinely useful findings or news related to them (only if you're sure; say if you can't check today's news). Warm and short, in \(ZuffiAsk.shared.userLanguage).",
+        let r = await AIService.shared.oneShot("My habits: \(titles.map { t in HabitCoach.get(t).map { "\(t) (\($0.summary))" } ?? t }.joined(separator: ", ")). Give me 3 short, practical tips to keep them up this week, and 1–2 recent, genuinely useful findings or news related to them (only if you're sure; say if you can't check today's news). Warm and short, in \(ZuffiAsk.shared.userLanguage).",
                                                system: "You are Zuffi, a friendly helper.\n" + ZuffiVoice.style) ?? ""
         tips = r.isEmpty ? ZuffiAsk.noBrainLine : r.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -4083,5 +4136,33 @@ struct PlanSection: View {
     private func go(_ s: String?) {
         guard let s, let u = URL(string: s), u.scheme == "https" else { problem = "Couldn't open the payment page. Check your internet and try again."; return }
         NSWorkspace.shared.open(u)
+    }
+}
+
+
+/// What you told Zuffi about each habit: how often, when, and why — used for reminders, tips and her chats with you.
+@MainActor
+enum HabitCoach {
+    struct Meta: Codable { var days: Int; var when: String; var why: String
+        var summary: String { "\(days)×/week · \(when.lowercased())" + (why.isEmpty ? "" : " · to \(why)") }
+    }
+    private static var all: [String: Meta] {
+        get { (UserDefaults.standard.data(forKey: "habitCoach").flatMap { try? JSONDecoder().decode([String: Meta].self, from: $0) }) ?? [:] }
+        set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: "habitCoach") }
+    }
+    static func get(_ t: String) -> Meta? { all[t.lowercased()] }
+    static func set(_ t: String, _ m: Meta) { var a = all; a[t.lowercased()] = m; all = a }
+    /// A sensible spread of days: 3 → Monday, Wednesday and Friday.
+    static func dayNames(_ n: Int) -> String {
+        let sets: [Int: [String]] = [1: ["Monday"], 2: ["Monday", "Thursday"], 3: ["Monday", "Wednesday", "Friday"], 4: ["Monday", "Tuesday", "Thursday", "Friday"],
+                                     5: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], 6: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]]
+        guard let d = sets[n] else { return "day" }
+        return d.count == 1 ? d[0] : d.dropLast().joined(separator: ", ") + " and " + d.last!
+    }
+    /// For the AI: so she can ask how it's going and remind you why.
+    static var line: String {
+        let a = all
+        guard !a.isEmpty else { return "" }
+        return "\nTHEIR HABITS (they told you): " + a.map { "\($0.key): \($0.value.summary)" }.joined(separator: "; ") + ". Cheer them on and remind them why when they slip.\n"
     }
 }

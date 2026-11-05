@@ -263,6 +263,22 @@ final class VoiceEngine: NSObject, ObservableObject {
             }
             return
         }
+        // Urdu, Hindi, Arabic… : a clear online voice that speaks that language (your Gemini or OpenAI key)
+        if !GroqVoice.fits(clean), WorldVoice.usable {
+            if isListening { resumeAfterSpeech = true; pauseRecognition() }
+            speaking = true
+            neuralTurn += 1
+            let turn = neuralTurn
+            let text = String(clean.prefix(1500))
+            Task { @MainActor in
+                let ok = await WorldVoice.shared.say(text) {
+                    if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
+                }
+                guard turn == self.neuralTurn else { return }
+                if !ok { self.speakBuiltIn(clean) }
+            }
+            return
+        }
         // Her AI voice (Groq): the most human, starts in a fraction of a second. No internet / no key → her offline voice.
         if GroqVoice.usable, GroqVoice.fits(clean) {
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
@@ -430,7 +446,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         synth.stopSpeaking(at: .immediate)
         VoiceboxVoice.shared.stop()
         FishVoice.shared.stop()
-        GroqVoice.shared.stop()
+        GroqVoice.shared.stop(); WorldVoice.shared.stop()
         if speaking, neuralTurn > 0 { NativeSpeech.shared.stop(); neuralEnded() }
     }
 
@@ -673,6 +689,8 @@ final class VoiceEngine: NSObject, ObservableObject {
         guard conversation, speaking, !isListening, !bargeListening, Self.micOn, !micLent else { return }
         // AirPods/Bluetooth with no Mac mic to use instead: opening their mic would drop her voice to "phone call" quality.
         guard !MicPick.wouldUseBluetooth else { return }
+        // On the Mac's speakers the mic hears her own voice and takes it for yours — so cutting in needs headphones.
+        guard MicPick.outputIsHeadphones else { return }
         bargeListening = true
         oneShot = true
         startRecognition()
@@ -686,12 +704,19 @@ final class VoiceEngine: NSObject, ObservableObject {
     private func yourWords(_ said: String) -> (skip: Int, words: [String])? {
         let all = Self.words(said)
         guard !all.isEmpty else { return nil }
-        let hers = Set(Self.words(lastSpoken))
-        let stopWords: Set<String> = ["stop", "wait", "zuffi", "zuffy", "sorry", "no", "listen", "hold", "ruko", "suno", "bas"]
-        guard let first = all.firstIndex(where: { !hers.contains($0) }) else { return nil }
+        // her own words (and anything that sounds like them, or like her name) are never you
+        let hersList = Self.words(lastSpoken) + ["zuffi", "zuffy", "zoofy", "sophie", "suffi", "zufi", "talha", "taha"]
+        let hers = Set(hersList)
+        func isHers(_ w: String) -> Bool {
+            if hers.contains(w) { return true }
+            let p = String(w.prefix(4))
+            return w.count >= 4 && hersList.contains { $0.count >= 4 && $0.hasPrefix(p) }
+        }
+        let stopWords: Set<String> = ["stop", "wait", "ruko", "suno", "bas"]
+        guard let first = all.firstIndex(where: { !isHers($0) }) else { return nil }
         let mine = Array(all[first...])
-        let new = mine.filter { !hers.contains($0) }.count
-        if new >= 2 || stopWords.contains(mine[0]) { return (first, mine) }
+        let new = mine.filter { !isHers($0) }.count
+        if new >= 3 || (stopWords.contains(mine[0]) && mine.count <= 2) { return (first, mine) }
         return nil
     }
     private func cutIn(skip: Int, mine: [String]) {
@@ -704,7 +729,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         appendAppLog("voice.log", "you cut in: \(mine.joined(separator: " "))")
         neuralTurn += 1                         // her unfinished answer must not "end" and restart listening
         synth.stopSpeaking(at: .immediate)
-        VoiceboxVoice.shared.stop(); FishVoice.shared.stop(); GroqVoice.shared.stop(); NativeSpeech.shared.stop()
+        VoiceboxVoice.shared.stop(); FishVoice.shared.stop(); GroqVoice.shared.stop(); WorldVoice.shared.stop(); NativeSpeech.shared.stop()
         speaking = false
         resumeAfterSpeech = false; listenAfterSpeech = false
         status = "Listening…"
@@ -732,7 +757,7 @@ final class VoiceEngine: NSObject, ObservableObject {
         status = ""
     }
     /// Her turn is over: listen for yours.
-    private func conversationNext(after delay: Double = 0.6) {      // a short beat, so the mic doesn't hear the end of her own voice
+    private func conversationNext(after delay: Double = 0.9) {      // a short beat, so the mic doesn't hear the end of her own voice
         guard conversation else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             MainActor.assumeIsolated {
@@ -1873,6 +1898,17 @@ enum MicPick {
             if AudioObjectGetPropertyDataSize(id, &sa, 0, nil, &ss) == noErr, ss > 0 { return id }
         }
         return nil
+    }
+    /// Is her voice going into headphones (Bluetooth, wired, or the headphone jack) rather than the Mac's speakers?
+    nonisolated static var outputIsHeadphones: Bool {
+        var id = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &id) == noErr else { return false }
+        if isBluetooth(id) || transport(id) == kAudioDeviceTransportTypeUSB { return true }
+        var src = UInt32(0), ss = UInt32(MemoryLayout<UInt32>.size)
+        var sa = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDataSource, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        if AudioObjectGetPropertyData(id, &sa, 0, nil, &ss, &src) == noErr { return src == 0x6864706E }      // 'hdpn' — wired headphones
+        return false
     }
     /// True when listening now would open a Bluetooth headset's mic.
     nonisolated static var wouldUseBluetooth: Bool { isBluetooth(defaultInput()) && builtInInput() == nil }

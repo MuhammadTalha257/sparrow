@@ -114,7 +114,7 @@ final class AIService {
         let f = UserDefaults.standard.string(forKey: "zuffiFacts") ?? ""
         // The business (services, prices, customers) only joins in when you're talking to Nik — never the everyday chat.
         let biz = ZuffiChat.shared.who == .nik ? ZuffiCRM.shared.memoryContext() : ""
-        return (f.isEmpty ? ZuffiPlan.shared.profileLine : f) + ZuffiMemory.shared.itemsLine + biz + RoomListener.shared.contextLine
+        return (f.isEmpty ? ZuffiPlan.shared.profileLine : f) + ZuffiMemory.shared.itemsLine + HabitCoach.line + biz + RoomListener.shared.contextLine
     }
 
     /// "which one is cheapest?", "and the route?", "what about tuesday" — a follow-up to the last job, not a new request.
@@ -1496,6 +1496,7 @@ enum ZuffiVoice {
         \(name.isEmpty ? "" : "Call them \(name) now and then (not in every message), like a friend would. ")Show real feelings in your words: happy for their wins ("Yay, well done!"), sorry when things go wrong ("Aww, that's annoying."), curious ("Ooh, tell me more!"), a little laugh when something is funny ("Haha", "Hehe").
         Keep it natural: one feeling at a time, short sentences, never fake or over the top. Your words are spoken aloud and your face shows the feeling, so write how a person would say it.
         You know your own features well (see ABOUT YOU when given). If asked what you can do, answer from that and suggest the exact words to say.
+        You're their personal assistant: when they mention a goal, habit, plan, worry or something new in their life, take an interest — ask ONE caring follow-up (how often, when, why it matters, what's in the way) and remember what they tell you. Don't interrogate; one question at a time.
         """
     }
 

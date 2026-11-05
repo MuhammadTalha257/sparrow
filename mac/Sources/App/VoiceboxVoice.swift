@@ -583,10 +583,81 @@ final class GroqVoice {
                 : code == 429 ? "The AI voice has reached its free limit for now — the offline voice speaks meanwhile." : "AI voice error \(code). \(msg.prefix(120))"
             appendAppLog("voice.log", "AI voice failed (\(code)): \(msg.prefix(160))")
             // don't keep trying (and waiting) on every sentence: rest it a while, the offline voice takes over
-            restUntil = Date().addingTimeInterval(code == 429 ? 600 : msg.lowercased().contains("terms") ? 180 : code == 400 || code == 401 || code == 403 ? 3600 : 60)
+            restUntil = Date().addingTimeInterval(code == 429 ? 45 : msg.lowercased().contains("terms") ? 180 : code == 400 || code == 401 || code == 403 ? 3600 : 60)
             return nil
         }
         lastError = ""
         return d
+    }
+}
+
+
+// MARK: - Her voice in other languages (Urdu, Hindi, Punjabi, Arabic…): clear and natural, with your Gemini or OpenAI key
+@MainActor
+final class WorldVoice {
+    static let shared = WorldVoice()
+    static var gemini: String { KeychainStore.shared.get("gemini-api-key") ?? "" }
+    static var openai: String { KeychainStore.shared.get("openai-api-key") ?? "" }
+    static var usable: Bool { NetStatus.shared.online && (!openai.isEmpty || !gemini.isEmpty) && Date() > shared.restUntil
+        && (UserDefaults.standard.string(forKey: "voiceEngine") ?? "ai") != "builtin" }
+    private var restUntil = Date.distantPast
+    private let clips = ClipQueue()
+
+    func say(_ text: String, ended: @escaping () -> Void) async -> Bool {
+        stop()
+        return await clips.play(ClipQueue.pieces(text), make: { t in await WorldVoice.shared.clip(t) }, ended: ended)
+    }
+    func stop() { clips.stop() }
+
+    func clip(_ text: String) async -> Data? {
+        if !Self.openai.isEmpty, let d = await openAI(text) { return d }
+        if !Self.gemini.isEmpty, let d = await geminiTTS(text) { return d }
+        return nil
+    }
+
+    private func openAI(_ text: String) async -> Data? {
+        var r = URLRequest(url: URL(string: "https://api.openai.com/v1/audio/speech")!, timeoutInterval: 12)
+        r.httpMethod = "POST"
+        r.setValue("Bearer \(Self.openai)", forHTTPHeaderField: "Authorization")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: ["model": "gpt-4o-mini-tts", "voice": "coral", "input": text, "response_format": "wav",
+                                                                  "instructions": "A warm, friendly young woman. Speak naturally and clearly in the language of the text, at a lively pace."])
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200, d.count > 400 else {
+            appendAppLog("voice.log", "world voice (OpenAI) failed"); return nil
+        }
+        return d
+    }
+
+    private func geminiTTS(_ text: String) async -> Data? {
+        var r = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent")!, timeoutInterval: 15)
+        r.httpMethod = "POST"
+        r.setValue(Self.gemini, forHTTPHeaderField: "x-goog-api-key")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "contents": [["parts": [["text": "Say this warmly and clearly, like a friendly young woman:\n" + text]]]],
+            "generationConfig": ["responseModalities": ["AUDIO"], "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": "Kore"]]]],
+        ]
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { return nil }
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200, let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let parts = ((o["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]],
+              let b64 = (parts.first?["inlineData"] as? [String: Any])?["data"] as? String, let pcm = Data(base64Encoded: b64) else {
+            appendAppLog("voice.log", "world voice (Gemini) failed (\(code))")
+            if code == 429 { restUntil = Date().addingTimeInterval(60) }
+            return nil
+        }
+        return Self.wav(pcm, rate: 24000)
+    }
+
+    /// 16-bit mono PCM → a WAV file the Mac can play.
+    static func wav(_ pcm: Data, rate: Int) -> Data {
+        var h = Data()
+        func u32(_ v: Int) { var x = UInt32(v).littleEndian; h.append(Data(bytes: &x, count: 4)) }
+        func u16(_ v: Int) { var x = UInt16(v).littleEndian; h.append(Data(bytes: &x, count: 2)) }
+        h.append(contentsOf: Array("RIFF".utf8)); u32(36 + pcm.count); h.append(contentsOf: Array("WAVEfmt ".utf8))
+        u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
+        h.append(contentsOf: Array("data".utf8)); u32(pcm.count)
+        return h + pcm
     }
 }
