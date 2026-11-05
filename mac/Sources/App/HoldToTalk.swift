@@ -667,6 +667,7 @@ enum ZKeyTap {
     nonisolated(unsafe) static var pending = false, active = false
     nonisolated(unsafe) static var downSerial = 0
     nonisolated(unsafe) static var downFlags: CGEventFlags = []
+    nonisolated(unsafe) static var downAt = Date.distantPast
     static let marker: Int64 = 0x5A5546
 
     static func start() -> Bool {
@@ -709,10 +710,11 @@ private let zTapCallback: CGEventTapCallBack = { _, type, event, _ in
     let mods = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
     if code == 6 && mods.isEmpty {
         if type == .keyDown {
-            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 {
-                return (ZKeyTap.pending || ZKeyTap.active) ? nil : Unmanaged.passUnretained(event)
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 || ZKeyTap.pending || ZKeyTap.active {
+                return (ZKeyTap.pending || ZKeyTap.active) ? nil : Unmanaged.passUnretained(event)     // still held: never a stray z
             }
             ZKeyTap.pending = true
+            ZKeyTap.downAt = Date()
             ZKeyTap.downFlags = event.flags
             ZKeyTap.downSerial += 1
             let my = ZKeyTap.downSerial
@@ -723,15 +725,19 @@ private let zTapCallback: CGEventTapCallBack = { _, type, event, _ in
             }
             return nil
         }
-        if ZKeyTap.active { ZKeyTap.active = false; DispatchQueue.main.async { MainActor.assumeIsolated { HoldToTalk.zHoldEnded() } }; return nil }
-        if ZKeyTap.pending { ZKeyTap.pending = false; ZKeyTap.typeZ(); return nil }       // just a tap: type the z
+        if ZKeyTap.active { ZKeyTap.active = false; ZKeyTap.pending = false; DispatchQueue.main.async { MainActor.assumeIsolated { HoldToTalk.zHoldEnded() } }; return nil }
+        if ZKeyTap.pending {
+            ZKeyTap.pending = false
+            if Date().timeIntervalSince(ZKeyTap.downAt) < 0.4 { ZKeyTap.typeZ() }      // a real quick tap: type the z (never after a hold)
+            return nil
+        }
         return Unmanaged.passUnretained(event)
     }
     // typing fast ("pizza"): the next key came while Z was still down — type the z first, in the right order
     if type == .keyDown, ZKeyTap.pending {
         ZKeyTap.pending = false
-        ZKeyTap.typeZ(); ZKeyTap.repost(event)
-        return nil
+        if Date().timeIntervalSince(ZKeyTap.downAt) < 0.4 { ZKeyTap.typeZ(); ZKeyTap.repost(event); return nil }
+        return Unmanaged.passUnretained(event)
     }
     return Unmanaged.passUnretained(event)
 }
