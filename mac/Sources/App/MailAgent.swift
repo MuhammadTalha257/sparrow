@@ -387,8 +387,12 @@ final class MailAgent {
         return "\"" + e.replacingOccurrences(of: "\n", with: "\" & linefeed & \"") + "\""
     }
 
+    /// Mail.app not answering (AppleEvent timed out): leave it alone for a few minutes instead of piling up scripts
+    /// that slow the whole Mac (and her voice) down.
+    nonisolated(unsafe) static var mailRestUntil = Date.distantPast
     nonisolated static func osa(_ source: String) async -> String? {
-        await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+        if source.contains("application \"Mail\""), Date() < mailRestUntil { return "\u{15}Mail isn't answering right now." }
+        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
                 p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -401,6 +405,7 @@ final class MailAgent {
                 p.waitUntilExit()
                 if p.terminationStatus != 0 {
                     let msg = String(data: errData, encoding: .utf8) ?? ""
+                    if msg.contains("-1712") || msg.contains("-609") { MailAgent.mailRestUntil = Date().addingTimeInterval(300) }
                     Task { @MainActor in appendAppLog("agents.log", "mail script failed: \(msg.prefix(300))") }
                     cont.resume(returning: "\u{15}" + msg); return
                 }

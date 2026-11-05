@@ -230,7 +230,7 @@ final class NativeSpeech {
         let id = currentId
         // Never wait long: if the first words aren't ready, use the instant voice instead. Just after it starts it is still
         // loading her voice, so it gets longer then — otherwise the first reminder would come out in the Mac's voice.
-        let patience: Double = Date().timeIntervalSince(startedAt) < 25 ? 14 : 6
+        let patience: Double = Date().timeIntervalSince(startedAt) < 15 ? 6 : 3.5      // never keep you waiting long
         DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
             MainActor.assumeIsolated {
                 if id == NativeSpeech.shared.currentId, let w = NativeSpeech.shared.startWaiter {
@@ -238,11 +238,14 @@ final class NativeSpeech {
                     NativeSpeech.shared.onEnd = nil
                     NativeSpeech.shared.send(["cmd": "stop"])
                     appendAppLog("voice.log", "natural voice too slow — using the instant voice")
-                    // Stop the helper outright, so its late audio can never play on top of the instant voice (two voices at once).
-                    NativeSpeech.shared.slowStreak = 0
-                    NativeSpeech.shared.restarting = true
-                    appendAppLog("voice.log", "natural voice: stopping the helper (it starts again next time)")
-                    NativeSpeech.shared.proc?.terminate()
+                    // Keep the helper running (restarting it reloads the voice — slower next time); "stop" already drops this answer.
+                    NativeSpeech.shared.slowStreak += 1
+                    if NativeSpeech.shared.slowStreak >= 3 {
+                        NativeSpeech.shared.slowStreak = 0
+                        NativeSpeech.shared.restarting = true
+                        appendAppLog("voice.log", "natural voice: restarting the helper (slow three times)")
+                        NativeSpeech.shared.proc?.terminate()
+                    }
                     w.resume(returning: false)
                 }
             }

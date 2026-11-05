@@ -139,6 +139,7 @@ final class Speaker {
     let pitch = AVAudioUnitTimePitch()
     var connectedRate = 0
     var turn = 0                               // main thread
+    var wantSay = false                        // main thread: an answer is waiting — the warm-up steps aside
     var speedLogs = 0
 
     init() {
@@ -201,6 +202,7 @@ final class Speaker {
 
     func say(id: Int, text: String, model: String, sid: Int, speed: Float, cents: Float = 0) {
         stop()
+        wantSay = true
         pitch.pitch = max(-1200, min(1200, cents))
         let my = turn
         let parts = sentences(text)
@@ -208,6 +210,7 @@ final class Speaker {
         var started = false
         var pending = parts.count
         genQ.async {
+            DispatchQueue.main.async { self.wantSay = false }     // the warm-up (if any) has stepped aside: this answer is running
             guard let v = self.voice(model) else {
                 DispatchQueue.main.async { emit(["ev": "error", "id": id, "msg": "voice \(model) unavailable"]) }
                 return
@@ -285,7 +288,10 @@ final class Speaker {
             genQ.async {
                 guard let v = self.voice(model) else { return }
                 _ = v.generate("Hi.", sid: sid, speed: 1, lang: langOf(model))
-                for p in phrases {                  // quietly prepare what Sparrow says most
+                for p in phrases {                  // quietly prepare what Sparrow says most — but never keep a real answer waiting
+                    var busy = false
+                    DispatchQueue.main.sync { busy = self.wantSay }
+                    if busy { return }
                     let ck = Cache.key("\(model)|\(sid)|1.0|\(p)")
                     if Cache.get(ck) == nil { Cache.put(ck, v.generate(p, sid: sid, speed: 1, lang: langOf(model))) }
                 }
