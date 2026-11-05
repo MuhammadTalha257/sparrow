@@ -192,6 +192,16 @@ final class ZuffiAsk: ObservableObject {
             if NetStatus.shared.online, Self.chatAICanSee {
                 image = (mime: "image/jpeg", base64: shot.jpeg.base64EncodedString())
                 context = "A screenshot of the user's screen is attached." + wordsNote
+            } else if NetStatus.shared.online, ScreenEyes.available {
+                // the chat AI can't see pictures (e.g. Ollama): her eyes use an AI that can (your Groq / Gemini / OpenAI key) — like before
+                let r = await ScreenEyes.look("""
+                    The user asks (by voice) about what's on their screen: "\(question)"
+                    Look at the screenshot and answer like a kind, clever friend: short and clear (under 90 words), in \(userLanguage) unless they asked for another language.
+                    If they ask to reply or rewrite, give only the text to use. Plain text, no symbols.
+                    \(wordsNote)
+                    """, jpeg: shot.jpeg)
+                if let r, !r.isEmpty { show(r.trimmingCharacters(in: .whitespacesAndNewlines), title: question); return }
+                context = "This is what's written on the user's screen — explain it from that. Don't say you can't see it." + wordsNote
             } else {
                 // a brain that can't see pictures (most Ollama models, Apple's): explain from the words on the screen
                 context = "You can't see the picture itself, but this is what's written on the user's screen — explain it from that (which app or page it looks like, what it says, what they could do). Don't say you can't see it." + wordsNote
@@ -724,4 +734,49 @@ private let zTapCallback: CGEventTapCallBack = { _, type, event, _ in
         return nil
     }
     return Unmanaged.passUnretained(event)
+}
+
+
+// MARK: - Her eyes: an AI that can see pictures, for questions about your screen (used when the chat AI can't, e.g. Ollama)
+@MainActor
+enum ScreenEyes {
+    static func key(_ k: String) -> String { KeychainStore.shared.get(k) ?? "" }
+    static var available: Bool { !key("groq-api-key").isEmpty || !key("gemini-api-key").isEmpty || !key("openai-api-key").isEmpty }
+
+    static func look(_ prompt: String, jpeg: Data) async -> String? {
+        let b64 = jpeg.base64EncodedString()
+        if !key("groq-api-key").isEmpty, let r = await openAIStyle("https://api.groq.com/openai/v1/chat/completions", key("groq-api-key"),
+                                                                    "meta-llama/llama-4-scout-17b-16e-instruct", prompt, b64) { return r }
+        if !key("gemini-api-key").isEmpty, let r = await gemini(prompt, b64) { return r }
+        if !key("openai-api-key").isEmpty, let r = await openAIStyle("https://api.openai.com/v1/chat/completions", key("openai-api-key"), "gpt-4o-mini", prompt, b64) { return r }
+        return nil
+    }
+    private static func openAIStyle(_ url: String, _ k: String, _ model: String, _ prompt: String, _ b64: String) async -> String? {
+        var r = URLRequest(url: URL(string: url)!, timeoutInterval: 30)
+        r.httpMethod = "POST"
+        r.setValue("Bearer \(k)", forHTTPHeaderField: "Authorization"); r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["model": model, "max_tokens": 600, "temperature": 0.4, "messages": [
+            ["role": "system", "content": "You are Zuffi, a friendly helper on the user's Mac. You can see their screen."],
+            ["role": "user", "content": [["type": "text", "text": prompt], ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64," + b64]]]]]]
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let t = ((o["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String else {
+            appendAppLog("ai.log", "screen eyes (\(model)) failed"); return nil
+        }
+        return t
+    }
+    private static func gemini(_ prompt: String, _ b64: String) async -> String? {
+        var r = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")!, timeoutInterval: 30)
+        r.httpMethod = "POST"
+        r.setValue(key("gemini-api-key"), forHTTPHeaderField: "x-goog-api-key"); r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["contents": [["parts": [["text": prompt], ["inline_data": ["mime_type": "image/jpeg", "data": b64]]]]]]
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let parts = ((o["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]] else {
+            appendAppLog("ai.log", "screen eyes (gemini) failed"); return nil
+        }
+        return parts.compactMap { $0["text"] as? String }.joined()
+    }
 }
