@@ -3379,6 +3379,11 @@ struct SettingsPage: View {
                 }
             }
             if !GroqVoice.shared.lastError.isEmpty { Text(GroqVoice.shared.lastError).font(.system(size: 11)).foregroundColor(Color(hex: "#EF6B6B")).fixedSize(horizontal: false, vertical: true) }
+            if GroqVoice.shared.lastError.contains("terms") {
+                NSPill(title: "Accept the voice terms (opens Groq)", primary: true) {
+                    if let u = URL(string: "https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english") { NSWorkspace.shared.open(u) }
+                }
+            }
             Text("OFFLINE VOICE (no internet)").font(.system(size: 10.5, weight: .semibold)).foregroundColor(NS.soft).padding(.top, 4)
         } else {
             Text("Works with no internet. Pick her tone and accent:")
@@ -3392,6 +3397,11 @@ struct SettingsPage: View {
                     VoiceEngine.shared.speakOffline("Hi! This is how I sound now. Do you like it?")
                 }
             }
+        }
+        if NativeSpeech.tooSlow {
+            Text("This Mac is too slow for her offline voice, so the Mac's own voice speaks (instantly). For a nicer one: System Settings → Accessibility → Spoken Content → System voice → Manage Voices → English → download “Ava (Premium)” or “Zoe (Premium)”.")
+                .font(.system(size: 11)).foregroundColor(Color(hex: "#F5B963")).fixedSize(horizontal: false, vertical: true)
+            NSPill(title: "Try the offline voice again") { UserDefaults.standard.set(false, forKey: "kokoroTooSlow") }
         }
         HStack(spacing: 6) {
             Text("Speed").font(.system(size: 12.5)).foregroundColor(.white)

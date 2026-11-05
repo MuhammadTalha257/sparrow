@@ -33,8 +33,10 @@ final class NativeSpeech {
                          "Hmm, I missed that one. Say it once more?", "Saved in your Notes."]
 
     private var dir: URL? { Bundle.main.resourceURL?.appendingPathComponent("speech") }
+    private var slowCount = 0
+    static var tooSlow: Bool { UserDefaults.standard.bool(forKey: "kokoroTooSlow") }
     var isAvailable: Bool {
-        guard let d = dir else { return false }
+        guard !Self.tooSlow, let d = dir else { return false }
         return failures < 3 && FileManager.default.isExecutableFile(atPath: d.appendingPathComponent("SparrowSpeech").path)
             && FileManager.default.fileExists(atPath: d.appendingPathComponent("kokoro").path)
     }
@@ -111,6 +113,15 @@ final class NativeSpeech {
             case "speed":
                 let a = o["audio"] as? Double ?? 0, t = o["took"] as? Double ?? 0
                 appendAppLog("voice.log", String(format: "voice speed %@: %.1fs audio in %.2fs", o["model"] as? String ?? "", a, t))
+                // This Mac makes her offline voice slower than she talks (older Intel Macs): stop using it, so she never
+                // makes you wait — the Mac's own voice speaks instantly instead.
+                if t > 0.05, a > 0.3 {
+                    if t > a * 0.85 { slowCount += 1 } else if t < a * 0.5 { slowCount = 0 }
+                    if slowCount >= 2, !Self.tooSlow {
+                        UserDefaults.standard.set(true, forKey: "kokoroTooSlow")
+                        appendAppLog("voice.log", "offline voice is too slow on this Mac — using the instant voice from now on")
+                    }
+                }
             case "loaded":
                 appendAppLog("voice.log", "voice \(o["model"] ?? "") loaded in \(o["ms"] ?? 0) ms")
             default: break

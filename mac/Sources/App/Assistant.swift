@@ -413,7 +413,8 @@ final class VoiceEngine: NSObject, ObservableObject {
         // Basic voices sound less robotic a touch slower; premium ones at a natural pace.
         let base = Float(rate == 0 ? 0.5 : rate)
         u.rate = voice?.quality == .default ? base * 0.94 : base
-        u.pitchMultiplier = (UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true) ? 1.45 : (voice?.gender == .female ? 1.04 : 0.98)
+        // a light lift for her bunny voice — a big one sounds like a cartoon, not a person
+        u.pitchMultiplier = (UserDefaults.standard.object(forKey: "bunnyVoice") as? Bool ?? true) ? (voice?.quality == .default ? 1.18 : 1.1) : (voice?.gender == .female ? 1.04 : 0.98)
         u.pitchMultiplier = min(2, u.pitchMultiplier * ZuffiExpress.pitch(feel))
         u.rate = u.rate * Float(ZuffiExpress.speed(feel))
         u.volume = 0.95

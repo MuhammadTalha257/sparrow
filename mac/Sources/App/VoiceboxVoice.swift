@@ -583,7 +583,7 @@ final class GroqVoice {
                 : code == 429 ? "The AI voice has reached its free limit for now — the offline voice speaks meanwhile." : "AI voice error \(code). \(msg.prefix(120))"
             appendAppLog("voice.log", "AI voice failed (\(code)): \(msg.prefix(160))")
             // don't keep trying (and waiting) on every sentence: rest it a while, the offline voice takes over
-            restUntil = Date().addingTimeInterval(code == 429 ? 600 : code == 400 || code == 401 || code == 403 ? 3600 : 60)
+            restUntil = Date().addingTimeInterval(code == 429 ? 600 : msg.lowercased().contains("terms") ? 180 : code == 400 || code == 401 || code == 403 ? 3600 : 60)
             return nil
         }
         lastError = ""
