@@ -3415,9 +3415,11 @@ struct SettingsPage: View {
         Text("Voice and chat use the same AI you pick here.").font(.system(size: 11)).foregroundColor(NS.soft)
         NSLabel(t: "HER VOICE")
         HStack(spacing: 6) {
-            NSPill(title: "AI voice (most human)", primary: voiceEngine != "builtin") { voiceEngine = "ai"; VoiceEngine.shared.speak("Hi! This is my AI voice. How do I sound?") }
-            NSPill(title: "Offline voice", primary: voiceEngine == "builtin") { voiceEngine = "builtin"; VoiceEngine.shared.speak("Hi! This is my offline voice.") }
+            NSPill(title: "Same as my chat AI", primary: voiceEngine != "builtin") { voiceEngine = "ai"; VoiceEngine.shared.speak("Hi! Now I speak with the same AI you chat with.") }
+            NSPill(title: "Always offline voice", primary: voiceEngine == "builtin") { voiceEngine = "builtin"; VoiceEngine.shared.speak("Hi! This is my offline voice.") }
         }
+        Text("Right now: \(VoicePick.label) — in chat, answers, reminders, everywhere. Pick Ollama or Apple in the chat bar and she switches to her own offline voice too.")
+            .font(.system(size: 11)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
         if voiceEngine != "builtin" {
             let hasGroq = !(KeychainStore.shared.get("groq-api-key") ?? "").isEmpty
             Text(hasGroq ? "Uses your Groq key (Groq's Orpheus voice). With no internet she switches to her offline voice by herself."

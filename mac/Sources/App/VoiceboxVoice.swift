@@ -604,15 +604,19 @@ final class WorldVoice {
     private var restUntil = Date.distantPast
     private let clips = ClipQueue()
 
-    func say(_ text: String, ended: @escaping () -> Void) async -> Bool {
+    /// "openai", "gemini" or "" (whichever key you have).
+    var prefer = ""
+    func say(_ text: String, prefer p: String = "", ended: @escaping () -> Void) async -> Bool {
         stop()
+        prefer = p
         return await clips.play(ClipQueue.pieces(text), make: { t in await WorldVoice.shared.clip(t) }, ended: ended)
     }
     func stop() { clips.stop() }
 
     func clip(_ text: String) async -> Data? {
+        if prefer == "gemini", !Self.gemini.isEmpty, let d = await geminiTTS(text) { return d }
         if !Self.openai.isEmpty, let d = await openAI(text) { return d }
-        if !Self.gemini.isEmpty, let d = await geminiTTS(text) { return d }
+        if prefer != "gemini", !Self.gemini.isEmpty, let d = await geminiTTS(text) { return d }
         return nil
     }
 
@@ -660,5 +664,32 @@ final class WorldVoice {
         u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16)
         h.append(contentsOf: Array("data".utf8)); u32(pcm.count)
         return h + pcm
+    }
+}
+
+
+// MARK: - One brain, one voice: the voice follows the AI you picked in the chat bar — chat, answers, reminders, everything.
+//   Groq → Groq's voice (English; other languages by your OpenAI/Gemini voice if you have one) · ChatGPT → OpenAI's voice
+//   Gemini → Gemini's voice · Ollama / Apple (on this Mac) → Zuffi's own offline voice
+//   any other AI → the best voice your keys allow, else her own voice. "Always offline voice" in Settings overrides it.
+@MainActor
+enum VoicePick {
+    enum Kind { case groq, openai, gemini, local }
+    static func has(_ k: String) -> Bool { !(KeychainStore.shared.get(k) ?? "").isEmpty }
+    static var current: Kind {
+        if (UserDefaults.standard.string(forKey: "voiceEngine") ?? "ai") == "builtin" || !NetStatus.shared.online { return .local }
+        let p = AIProvider(rawValue: AppState.shared.aiProvider) ?? .auto
+        switch p {
+        case .ollama, .apple: return .local
+        case .groq: return has("groq-api-key") ? .groq : best
+        case .openai: return has("openai-api-key") ? .openai : best
+        case .gemini, .geminiCLI: return has("gemini-api-key") ? .gemini : best
+        default: return best
+        }
+    }
+    /// The best voice your saved keys allow.
+    static var best: Kind { has("groq-api-key") ? .groq : has("openai-api-key") ? .openai : has("gemini-api-key") ? .gemini : .local }
+    static var label: String {
+        switch current { case .groq: return "Groq's voice"; case .openai: return "OpenAI's voice"; case .gemini: return "Gemini's voice"; case .local: return "her own offline voice" }
     }
 }

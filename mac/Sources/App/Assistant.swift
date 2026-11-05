@@ -263,15 +263,19 @@ final class VoiceEngine: NSObject, ObservableObject {
             }
             return
         }
-        // Urdu, Hindi, Arabic… : a clear online voice that speaks that language (your Gemini or OpenAI key)
-        if !GroqVoice.fits(clean), WorldVoice.usable {
+        // The voice follows the AI picked in the chat bar (local model → her own offline voice, everywhere)
+        let pick = VoicePick.current
+        if pick == .local { speakBuiltIn(clean); return }
+        // OpenAI / Gemini picked: that company's voice, every language. Urdu, Hindi… with Groq: your OpenAI/Gemini voice if you have one.
+        if pick == .openai || pick == .gemini || (!GroqVoice.fits(clean) && WorldVoice.usable) {
+            let prefer = pick == .gemini ? "gemini" : pick == .openai ? "openai" : ""
             if isListening { resumeAfterSpeech = true; pauseRecognition() }
             speaking = true
             neuralTurn += 1
             let turn = neuralTurn
             let text = String(clean.prefix(1500))
             Task { @MainActor in
-                let ok = await WorldVoice.shared.say(text) {
+                let ok = await WorldVoice.shared.say(text, prefer: prefer) {
                     if turn == VoiceEngine.shared.neuralTurn { VoiceEngine.shared.neuralEnded() }
                 }
                 guard turn == self.neuralTurn else { return }
