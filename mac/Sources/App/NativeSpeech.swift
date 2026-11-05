@@ -36,6 +36,8 @@ final class NativeSpeech {
     private var dir: URL? { Bundle.main.resourceURL?.appendingPathComponent("speech") }
     private var slowCount = 0
     static var tooSlow: Bool { UserDefaults.standard.bool(forKey: "kokoroTooSlow") }
+    /// The next sentence uses this voice (for trying her own voices in Settings).
+    static var forceModel: String?
     /// Zuffi's own fast voice (Supertonic): 31 languages, light enough for older Macs.
     static var hasSupertonic: Bool {
         guard !UserDefaults.standard.bool(forKey: "supertonicTooSlow"), let d = Bundle.main.resourceURL?.appendingPathComponent("speech/supertonic") else { return false }
@@ -200,7 +202,7 @@ final class NativeSpeech {
 
     private func sid(_ model: String = "kokoro") -> Int {
         let ud = UserDefaults.standard
-        if model.hasPrefix("st-") { return ud.object(forKey: "supertonicVoice") as? Int ?? 0 }
+        if model.hasPrefix("st-") { return ud.object(forKey: "supertonicVoice") as? Int ?? 1 }     // 1: a bright young woman's voice
         if ud.string(forKey: "voicePreset") != nil { return Self.preset.sid }
         if let v = ud.string(forKey: "voiceName"), let s = Self.voices[v] { return s.sid }
         return (ud.string(forKey: AssistantPrefs.voiceGender) ?? "female") == "male" ? 26 : 3
@@ -214,7 +216,8 @@ final class NativeSpeech {
         nextId += 1
         currentId = nextId
         let lang = UserDefaults.standard.string(forKey: "sparrowLang") ?? "en"
-        let model = Self.model(for: text, lang: lang)
+        var model = Self.model(for: text, lang: lang)
+        if let f = Self.forceModel { model = f; Self.forceModel = nil }          // Settings: "try this voice"
         // Urdu / Punjabi script → Hindi letters for her own voice (spoken Urdu and Hindi sound the same)
         let text = model == "st-hi" ? UrduHindi.toDevanagari(text) : text
         let rate = UserDefaults.standard.double(forKey: AssistantPrefs.voiceRate)

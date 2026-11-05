@@ -3308,6 +3308,7 @@ struct SettingsPage: View {
     @AppStorage("voiceEngine") private var voiceEngine = "ai"
     @AppStorage("voicePreset") private var voicePreset = "sweet"
     @AppStorage("groqVoice") private var groqVoice = "diana"
+    @AppStorage("supertonicVoice") private var ownVoice = 1
     @AppStorage(AssistantPrefs.voiceRate) private var voiceRate = 0.5
     @State private var fishKey = ""
     @State private var fishVoice = UserDefaults.standard.string(forKey: "fishVoiceId") ?? ""
@@ -3450,6 +3451,18 @@ struct SettingsPage: View {
                     voicePreset = v.id
                     NativeSpeech.shared.rewarm()
                     VoiceEngine.shared.speakOffline("Hi! This is how I sound now. Do you like it?")
+                }
+            }
+        }
+        if NativeSpeech.hasSupertonic {
+            Text("HER OWN VOICE (works offline, fast on every Mac)").font(.system(size: 10.5, weight: .semibold)).foregroundColor(NS.soft).padding(.top, 4)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
+                ForEach(0..<10, id: \.self) { i in
+                    NSPill(title: (i < 5 ? "Her " : "His ") + "\(i < 5 ? i + 1 : i - 4)", primary: ownVoice == i) {
+                        ownVoice = i
+                        NativeSpeech.forceModel = "st-en"
+                        VoiceEngine.shared.speakOffline("Hi! This is my own voice. I work even without the internet.")
+                    }
                 }
             }
         }
