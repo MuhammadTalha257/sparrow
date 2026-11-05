@@ -323,6 +323,7 @@ final class VoiceEngine: NSObject, ObservableObject {
     static func otherLanguage(_ text: String) -> String? {
         let lang = UserDefaults.standard.string(forKey: "sparrowLang") ?? "en"
         let m = NativeSpeech.model(for: text, lang: lang)
+        if m.hasPrefix("st-") { return nil }          // her own voice speaks this language
         if m != "kokoro" {                       // Urdu / Hindi / Punjabi / Roman Urdu have their own voices — except Arabic script that isn't Urdu
             if m == "urd" {
                 let r = NLLanguageRecognizer(); r.processString(text)

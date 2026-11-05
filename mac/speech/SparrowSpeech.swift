@@ -1,6 +1,7 @@
 // SparrowSpeech — Sparrow's fast, natural, offline voice for the Mac.
 // Runs the sherpa-onnx engine (k2-fsa, Apache-2.0) natively, so a sentence is ready in a fraction of a second:
 //   English → Kokoro (Apache-2.0)        Urdu / Roman Urdu / Hindi / Punjabi → Meta MMS-TTS (CC-BY-NC 4.0)
+//   Zuffi's own fast voice, 31 languages (Hindi, Arabic, English…) → Supertonic 3 (OpenRAIL-M), model names "st-<lang>"
 // Talks to Sparrow as JSON lines over stdin/stdout.
 //
 // in : {"cmd":"say","id":1,"text":"…","model":"kokoro","sid":3,"speed":1.0} · {"cmd":"stop"} · {"cmd":"warm","model":"kokoro"}
@@ -30,6 +31,7 @@ final class Voice {
     let tts: OpaquePointer
     let rate: Int
     let strings: CStrings
+    var supertonic = false
     init?(model: String) {
         let s = CStrings()
         var c = SherpaOnnxOfflineTtsConfig()
@@ -42,7 +44,23 @@ final class Voice {
             let files = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
             return (files.first { $0.hasSuffix(".int8.onnx") } ?? files.first { $0.hasSuffix(".onnx") }).map { dir.appendingPathComponent($0).path }
         }
-        if model == "kokoro" {
+        if model == "supertonic" {
+            let d = base.appendingPathComponent("supertonic")
+            func f(_ prefix: String) -> String? {
+                let files = (try? fm.contentsOfDirectory(atPath: d.path)) ?? []
+                return (files.first { $0.hasPrefix(prefix) && $0.hasSuffix(".int8.onnx") } ?? files.first { $0.hasPrefix(prefix) && $0.hasSuffix(".onnx") })
+                    .map { d.appendingPathComponent($0).path }
+            }
+            guard let dp = f("duration_predictor"), let te = f("text_encoder"), let ve = f("vector_estimator"), let vo = f("vocoder") else { return nil }
+            c.model.supertonic.duration_predictor = s.make(dp)
+            c.model.supertonic.text_encoder = s.make(te)
+            c.model.supertonic.vector_estimator = s.make(ve)
+            c.model.supertonic.vocoder = s.make(vo)
+            c.model.supertonic.tts_json = s.make(d.appendingPathComponent("tts.json").path)
+            c.model.supertonic.unicode_indexer = s.make(d.appendingPathComponent("unicode_indexer.bin").path)
+            c.model.supertonic.voice_style = s.make(d.appendingPathComponent("voice.bin").path)
+            supertonic = true
+        } else if model == "kokoro" {
             let d = base.appendingPathComponent("kokoro")
             guard let m = onnx(in: d) else { return nil }
             c.model.kokoro.model = s.make(m)
@@ -67,8 +85,19 @@ final class Voice {
         rate = Int(SherpaOnnxOfflineTtsSampleRate(t))
         strings = s
     }
-    func generate(_ text: String, sid: Int, speed: Float) -> [Float] {
-        guard let a = SherpaOnnxOfflineTtsGenerate(tts, text, Int32(sid), speed) else { return [] }
+    func generate(_ text: String, sid: Int, speed: Float, lang: String = "en") -> [Float] {
+        let a: UnsafePointer<SherpaOnnxGeneratedAudio>?
+        if supertonic {
+            // fewer denoising steps = faster on older Macs, still clear
+            let steps = ProcessInfo.processInfo.activeProcessorCount <= 4 ? 3 : 4
+            let extra = "{\"lang\":\"\(lang)\",\"num_steps\":\(steps),\"silence_duration\":0.15}"
+            var cfg = SherpaOnnxGenerationConfig()
+            cfg.sid = Int32(sid); cfg.speed = speed
+            a = extra.withCString { e in cfg.extra = e; return SherpaOnnxOfflineTtsGenerateWithConfig(tts, text, &cfg, nil, nil) }
+        } else {
+            a = SherpaOnnxOfflineTtsGenerate(tts, text, Int32(sid), speed)
+        }
+        guard let a else { return [] }
         defer { SherpaOnnxDestroyOfflineTtsGeneratedAudio(a) }
         guard let p = a.pointee.samples, a.pointee.n > 0 else { return [] }
         return Array(UnsafeBufferPointer(start: p, count: Int(a.pointee.n)))
@@ -98,6 +127,9 @@ enum Cache {
     }
 }
 
+/// "st-hi" → "hi" (the language Supertonic should speak); other models speak their own.
+func langOf(_ model: String) -> String { model.hasPrefix("st-") ? String(model.dropFirst(3)) : "en" }
+
 final class Speaker {
     let genQ = DispatchQueue(label: "sparrow.speech.gen", qos: .userInitiated)
     var voices: [String: Voice] = [:]          // touched only on genQ
@@ -118,7 +150,8 @@ final class Speaker {
         }
     }
 
-    func voice(_ model: String) -> Voice? {     // genQ
+    func voice(_ model0: String) -> Voice? {     // genQ
+        let model = model0.hasPrefix("st-") ? "supertonic" : model0       // one Supertonic engine speaks every language
         if let v = voices[model] { return v }
         let t0 = Date()
         guard let v = Voice(model: model) else { return nil }
@@ -187,7 +220,7 @@ final class Speaker {
                 let ck = Cache.key("\(model)|\(sid)|\(speed)|\(p)")
                 var samples = Cache.get(ck) ?? []
                 let cached = !samples.isEmpty
-                if !cached { samples = v.generate(p, sid: sid, speed: speed); if p.count <= 120 { Cache.put(ck, samples) } }
+                if !cached { samples = v.generate(p, sid: sid, speed: speed, lang: langOf(model)); if p.count <= 120 { Cache.put(ck, samples) } }
                 let took = cached ? 0 : Date().timeIntervalSince(t0)
                 DispatchQueue.main.async {
                     guard my == self.turn else { return }
@@ -225,7 +258,7 @@ final class Speaker {
             guard let v = self.voice(model) else { emit(["ev": "error", "msg": "voice \(model) unavailable"]); return }
             let t0 = Date()
             var all: [Float] = []
-            for p in self.sentences(text) { all += v.generate(p, sid: sid, speed: 1); all += [Float](repeating: 0, count: v.rate / 6) }
+            for p in self.sentences(text) { all += v.generate(p, sid: sid, speed: 1, lang: langOf(model)); all += [Float](repeating: 0, count: v.rate / 6) }
             let took = Date().timeIntervalSince(t0)
             var d = Data()
             func u32(_ x: UInt32) { var v = x.littleEndian; d.append(Data(bytes: &v, count: 4)) }
@@ -251,10 +284,10 @@ final class Speaker {
             let phrases = o["phrases"] as? [String] ?? []
             genQ.async {
                 guard let v = self.voice(model) else { return }
-                _ = v.generate("Hi.", sid: sid, speed: 1)
+                _ = v.generate("Hi.", sid: sid, speed: 1, lang: langOf(model))
                 for p in phrases {                  // quietly prepare what Sparrow says most
                     let ck = Cache.key("\(model)|\(sid)|1.0|\(p)")
-                    if Cache.get(ck) == nil { Cache.put(ck, v.generate(p, sid: sid, speed: 1)) }
+                    if Cache.get(ck) == nil { Cache.put(ck, v.generate(p, sid: sid, speed: 1, lang: langOf(model))) }
                 }
             }
         case "render": render(text: o["text"] as? String ?? "", model: model, sid: sid, path: o["path"] as? String ?? "/tmp/sparrow.wav")

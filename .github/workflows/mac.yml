@@ -61,6 +61,13 @@ jobs:
           # Sparrow's Kokoro voices are all English: keep only the English pronunciation dictionary
           find "$OUT/kokoro/espeak-ng-data" -maxdepth 1 -name '*_dict' ! -name 'en_dict' -delete
           du -sh "$OUT/kokoro/espeak-ng-data"
+          # Zuffi's own fast voice (31 languages): Supertonic 3 (int8) — optional, the app falls back if it's missing
+          if gh release download tts-models --repo k2-fsa/sherpa-onnx -p 'sherpa-onnx-supertonic-3-tts-int8-*.tar.bz2' -D dl 2>/dev/null; then
+            tar -xjf dl/sherpa-onnx-supertonic-3-tts-int8-*.tar.bz2 -C dl
+            S=$(find dl -maxdepth 1 -type d -name 'sherpa-onnx-supertonic-3-tts-int8*' | head -1); ls -la "$S"
+            mkdir -p "$OUT/supertonic" && cp "$S"/*.onnx "$S"/tts.json "$S"/unicode_indexer.bin "$S"/voice.bin "$OUT/supertonic/"
+            du -sh "$OUT/supertonic"
+          else echo "::warning::Supertonic voice not found in sherpa-onnx tts-models"; fi
           # Urdu / Roman Urdu / Hindi / Punjabi: MMS (int8)
           gh release download voices-native -p 'vits-mms-*.tar.bz2' -D dl --repo "$GITHUB_REPOSITORY" || fail "native MMS voices missing"
           for f in dl/vits-mms-*.tar.bz2; do
@@ -78,14 +85,18 @@ jobs:
             '{"cmd":"render","text":"السلام علیکم طلحہ! پانچ منٹ میں آپ کی میٹنگ ہے۔","model":"urd","path":"/tmp/ur.wav"}' \
             '{"cmd":"render","text":"Talha, aap ki meeting paanch minute mein hai.","model":"urd-latn","path":"/tmp/url.wav"}' \
             '{"cmd":"render","text":"नमस्ते तलहा! पाँच मिनट में आपकी मीटिंग है।","model":"hin","path":"/tmp/hi.wav"}' \
-            '{"cmd":"render","text":"ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਪੰਜ ਮਿੰਟ ਵਿੱਚ ਤੁਹਾਡੀ ਮੀਟਿੰਗ ਹੈ।","model":"pan","path":"/tmp/pa.wav"}'; sleep 90 ) \
+            '{"cmd":"render","text":"ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਪੰਜ ਮਿੰਟ ਵਿੱਚ ਤੁਹਾਡੀ ਮੀਟਿੰਗ ਹੈ।","model":"pan","path":"/tmp/pa.wav"}' \
+            '{"cmd":"render","text":"नमस्ते तलहा! पाँच मिनट में आपकी मीटिंग है। आप कैसे हैं?","model":"st-hi","sid":0,"path":"/tmp/st-hi.wav"}'
+            for i in 0 1 2 3 4 5 6 7 8 9; do printf '{"cmd":"render","text":"Hi Talha! You have a meeting with Ali in five minutes. Shall I open Zoom for you?","model":"st-en","sid":%d,"path":"/tmp/st-en-%d.wav"}\n' "$i" "$i"; done
+            sleep 150 ) \
             | "$OUT/SparrowSpeech" "$OUT" > speech.log 2>&1 &
-          for i in $(seq 1 90); do [ "$(grep -c rendered speech.log)" -ge 5 ] && break; sleep 1; done
+          for i in $(seq 1 150); do [ "$(grep -c rendered speech.log)" -ge 16 ] && break; grep -q '"error"' speech.log && [ "$i" -gt 100 ] && break; sleep 1; done
           cat speech.log
           grep -E '"ev":"(rendered|loaded|error)"' speech.log | while IFS= read -r l; do echo "::notice::$l"; done
           [ "$(grep -c rendered speech.log)" -ge 5 ] || { echo "::error::voice engine test failed"; exit 1; }
           mkdir -p samples && cp /tmp/en.wav samples/sparrow-native-english.wav && cp /tmp/ur.wav samples/sparrow-native-urdu.wav \
             && cp /tmp/url.wav samples/sparrow-native-roman-urdu.wav && cp /tmp/hi.wav samples/sparrow-native-hindi.wav && cp /tmp/pa.wav samples/sparrow-native-punjabi.wav
+          for f in /tmp/st-*.wav; do [ -f "$f" ] && cp "$f" "samples/supertonic-$(basename "$f" .wav | sed 's/^st-//').wav"; done; ls samples
 
       - name: Publish voice samples
         if: always()

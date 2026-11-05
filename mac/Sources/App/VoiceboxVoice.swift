@@ -539,7 +539,8 @@ final class GroqVoice {
     /// own multi-language voice, exactly like before.
     static func fits(_ text: String) -> Bool {
         let lang = UserDefaults.standard.string(forKey: "sparrowLang") ?? "en"
-        guard NativeSpeech.model(for: text, lang: lang) == "kokoro" else { return false }      // Urdu / Hindi / Punjabi / Roman Urdu
+        let m = NativeSpeech.model(for: text, lang: lang)
+        guard m == "kokoro" || m == "st-en" else { return false }      // Urdu / Hindi / Punjabi / Roman Urdu / other languages
         let r = NLLanguageRecognizer(); r.processString(text)
         guard let d = r.dominantLanguage else { return true }
         return d == .english || text.count < 12
