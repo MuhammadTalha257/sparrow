@@ -174,13 +174,18 @@ final class ZuffiAsk: ObservableObject {
     var userLanguage: String { NikBrain.shared.profile["own"] ?? (UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English") }
 
     /// Answer a question about the selection (or the screen), out loud, in the user's language.
-    func answer(_ question: String, about selection: String?) async {
+    func answer(_ question: String, about selection: String?, spoken: Bool = true) async {
+        answerSpoken = spoken
         let low = question.lowercased()
         if low.range(of: #"where (do|can|should) i (click|press|find|go)|which button|show me where|point (at|to)"#, options: .regularExpression) != nil {
             await PointerRing.find(question); return
         }
         BunnyFaceCenter.shared.show(.thinking, for: 8)
-        VoiceEngine.shared.speak(["Hmm…", "Let me see…", "Okay, one sec…", "Ooh, let me look…"].randomElement()!)
+        if NotchDesign.on {                 // the chat opens with your question, and "thinking…" while she looks
+            NotchNav.shared.open("chat")
+            AppState.shared.chatHistory.append(ChatMessage(role: .user, content: question))
+            AppState.shared.stateOverride = .thinking
+        } else if spoken { VoiceEngine.shared.speak(["Hmm…", "Let me see…", "Okay, one sec…", "Ooh, let me look…"].randomElement()!) }
         var image: (mime: String, base64: String)?
         var context = ""
         if let s = selection, !s.isEmpty { context = "The user selected this text on their screen:\n\"\"\"\n\(s)\n\"\"\"" }
@@ -253,8 +258,22 @@ final class ZuffiAsk: ObservableObject {
     /// The notch home is open on screen.
     static var notchOpen: Bool { AppState.shared.mode == .expanded && IslandConst.isWideHome(AppState.shared.view) }
     private var panel: NSPanel?
+    private var answerSpoken = true
     func show(_ text: String, title: String, speak: Bool = true) {
+        let speak = speak && answerSpoken
+        answerSpoken = true
         answerText = text; answerTitle = title
+        if NotchDesign.on {                 // the answer appears in the chat, right under your question
+            let st = AppState.shared
+            st.stateOverride = nil
+            if st.chatHistory.last?.role != .user || st.chatHistory.last?.content != title { st.chatHistory.append(ChatMessage(role: .user, content: title)) }
+            st.chatHistory.append(ChatMessage(role: .assistant, content: text))
+            NotchNav.shared.open("chat")
+            BunnyFaceCenter.shared.show(.happy, for: 3)
+            if speak { VoiceEngine.shared.speak(text) }
+            answerAt = Date()
+            return
+        }
         if !text.isEmpty && !text.hasPrefix("I couldn't") {
             ZuffiHelpLog.shared.add(title.hasPrefix("Reply") ? "Reply written" : title.hasPrefix("Rewritten") ? "Rewritten" : title == "Translation" ? "Translated" : "Explained", text)
         }

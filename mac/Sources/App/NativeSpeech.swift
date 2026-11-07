@@ -168,7 +168,9 @@ final class NativeSpeech {
             let words = text.lowercased().split { !$0.isLetter }.map(String.init)
             if !words.isEmpty, Double(words.filter { roman.contains($0) }.count) / Double(words.count) > 0.18 { return "urd-latn" }
         }
-        return tooSlow && st ? "st-en" : "kokoro"
+        // English: the voice you picked in Settings — her own voices (fast) or the classic ones
+        let kind = UserDefaults.standard.string(forKey: "offlineVoiceKind") ?? "own"
+        return st && (tooSlow || kind == "own") ? "st-en" : "kokoro"
     }
 
     /// Her voices: each is a natural voice + its own pitch and pace. Her feelings (happy, angry, sad, excited…)

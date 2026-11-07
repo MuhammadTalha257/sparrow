@@ -1426,7 +1426,7 @@ struct NotchHomeView: View {
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
         // about the screen ("where do I click", "explain this page") → Zuffi looks at the screen
         if page != "chat", let hit = ZuffiAsk.shared.takeIfAboutScreen(q) {
-            Task { await ZuffiAsk.shared.answer(hit.0, about: hit.1) }; return
+            Task { await ZuffiAsk.shared.answer(hit.0, about: hit.1, spoken: false) }; return
         }
         Task { @MainActor in
             // her own pages and your data: "open tasks", "delete the note …", "mark … done" — the page shows the change
@@ -1490,7 +1490,7 @@ struct NotchHomeView: View {
             state.stateOverride = nil
             if state.chatHistory.count >= before, let last = state.chatHistory.last, last.role == .assistant {
                 BunnyFaceCenter.shared.show(.happy, for: 2)
-                if spoken || UserDefaults.standard.bool(forKey: AssistantPrefs.speakReplies) { VoiceEngine.shared.speak(last.content) }
+                if spoken { VoiceEngine.shared.speak(last.content) }       // typed → just shown; said out loud → shown and spoken
             }
         }
     }
@@ -3309,6 +3309,7 @@ struct SettingsPage: View {
     @AppStorage("voicePreset") private var voicePreset = "sweet"
     @AppStorage("groqVoice") private var groqVoice = "diana"
     @AppStorage("supertonicVoice") private var ownVoice = 1
+    @AppStorage("offlineVoiceKind") private var offlineKind = "own"
     @AppStorage(AssistantPrefs.voiceRate) private var voiceRate = 0.5
     @State private var fishKey = ""
     @State private var fishVoice = UserDefaults.standard.string(forKey: "fishVoiceId") ?? ""
@@ -3447,8 +3448,9 @@ struct SettingsPage: View {
         }
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 6)], alignment: .leading, spacing: 6) {
             ForEach(NativeSpeech.presets, id: \.id) { v in
-                NSPill(title: v.name, primary: voicePreset == v.id) {
+                NSPill(title: v.name, primary: voicePreset == v.id && offlineKind == "classic") {
                     voicePreset = v.id
+                    UserDefaults.standard.set("classic", forKey: "offlineVoiceKind")
                     NativeSpeech.shared.rewarm()
                     VoiceEngine.shared.speakOffline("Hi! This is how I sound now. Do you like it?")
                 }
@@ -3458,8 +3460,9 @@ struct SettingsPage: View {
             Text("HER OWN VOICE (works offline, fast on every Mac)").font(.system(size: 10.5, weight: .semibold)).foregroundColor(NS.soft).padding(.top, 4)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
                 ForEach(0..<10, id: \.self) { i in
-                    NSPill(title: (i < 5 ? "Her " : "His ") + "\(i < 5 ? i + 1 : i - 4)", primary: ownVoice == i) {
+                    NSPill(title: (i < 5 ? "Her " : "His ") + "\(i < 5 ? i + 1 : i - 4)", primary: ownVoice == i && offlineKind == "own") {
                         ownVoice = i
+                        UserDefaults.standard.set("own", forKey: "offlineVoiceKind")       // used for every answer from now on
                         NativeSpeech.forceModel = "st-en"
                         VoiceEngine.shared.speakOffline("Hi! This is my own voice. I work even without the internet.")
                     }

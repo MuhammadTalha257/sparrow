@@ -189,6 +189,8 @@ final class IslandWindowController: NSWindowController {
                 self.setMode(.hidden)
 
             case .petit:
+                // waiting for an answer: stay open until it shows (then the usual timer starts again)
+                if self.answering && self.state.mode == .expanded { self.waitForAnswerThenAllowClose(); return }
                 if from == .coucou {
                     // Fire interrupt first so canvas collapse starts before mode change
                     NotificationCenter.default.post(name: .greetingInterrupt, object: nil)
@@ -387,6 +389,22 @@ final class IslandWindowController: NSWindowController {
         state.lastActivity = .now
     }
 
+    /// She's working on an answer (chat or screen question): the notch stays open until it appears.
+    var answering: Bool { state.stateOverride == .thinking && NotchDesign.on }
+    private var answerWatch: Timer?
+    private func waitForAnswerThenAllowClose() {
+        answerWatch?.invalidate()
+        answerWatch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] t in
+            MainActor.assumeIsolated {
+                guard let self else { t.invalidate(); return }
+                guard !self.answering else { return }
+                t.invalidate()
+                self.state.lastActivity = .now
+                if !self.wasInIsland { self.fsm.mouseLeft() }     // answer shown: the normal "close when you leave" timer
+            }
+        }
+    }
+
     func collapse() {
         state.isPinned = false
         finishedPinTimer?.cancel()
@@ -418,6 +436,7 @@ final class IslandWindowController: NSWindowController {
                 guard let self, self.state.mode == .expanded, !self.state.isPinned || self.state.view == .note else { return }
                 // still deciding something important (an agent asking permission): stay open
                 if self.state.view == .approval || !AgentHub.shared.approvals.isEmpty && self.state.view == .agents { return }
+                if self.answering { return }        // her answer is on its way: don't fold away before it shows
                 self.collapse()
             }
         }
