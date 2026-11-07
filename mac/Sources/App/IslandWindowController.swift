@@ -394,11 +394,11 @@ final class IslandWindowController: NSWindowController {
     private var answerWatch: Timer?
     private func waitForAnswerThenAllowClose() {
         answerWatch?.invalidate()
-        answerWatch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] t in
+        answerWatch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { t.invalidate(); return }
+                guard let self else { return }
                 guard !self.answering else { return }
-                t.invalidate()
+                self.answerWatch?.invalidate(); self.answerWatch = nil
                 self.state.lastActivity = .now
                 if !self.wasInIsland { self.fsm.mouseLeft() }     // answer shown: the normal "close when you leave" timer
             }
