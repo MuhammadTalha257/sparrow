@@ -149,8 +149,13 @@ final class ZuffiAsk: ObservableObject {
     func takeIfAboutScreen(_ said: String) -> (String, String?)? {
         let low = said.lowercased()
         let recent = Date().timeIntervalSince(pendingAt) < 60     // called with Z or a double-click just now
-        let sel = recent ? pending : nil
+        var sel = recent ? pending : nil
         pending = nil; pendingAt = .distantPast
+        // "what's the meaning of this", "what does it mean", "iska matlab", "how do you pronounce it", "meaning of the word I highlighted"…
+        // — everyone says it differently: if it's about a word's meaning and something is highlighted, that's the word.
+        let meaning = #"\b(mean|means|meaning|matlab|maani|ma'?ni|define|definition|pronounce|pronunciation|say this|spell|synonym|translate|translation)\b"#
+        if sel == nil, low.range(of: meaning, options: .regularExpression) != nil,
+           let s = Self.selectedText()?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty, s.count <= 400 { sel = s }
         if sel != nil { return (said, sel) }
         let explicit = #"\b(on (my|the) screen|this (text|page|email|message|word|line|error|button)|selected|where (do|can|should) i (click|press|find)|which button)"#
         let screenWords = #"\b(this|that|here|explain|translate|mean|meaning|reply|rewrite|read|summar|what does|what is this|click)"#
@@ -188,7 +193,12 @@ final class ZuffiAsk: ObservableObject {
         } else if spoken { VoiceEngine.shared.speak(["Hmm…", "Let me see…", "Okay, one sec…", "Ooh, let me look…"].randomElement()!) }
         var image: (mime: String, base64: String)?
         var context = ""
-        if let s = selection, !s.isEmpty { context = "The user selected this text on their screen:\n\"\"\"\n\(s)\n\"\"\"" }
+        if let s = selection, !s.isEmpty {
+            context = "The user highlighted this text on their screen:\n\"\"\"\n\(s)\n\"\"\""
+            if s.split(separator: " ").count <= 6 {     // a word or short phrase: say it, how to say it, what it means
+                context += "\nIf they ask what it means (in any words, any language): say the word, how to pronounce it (sound it out simply, e.g. GRATE-ful), its meaning in plain words, and one short example sentence."
+            }
+        }
         else if let shot = await ScreenGrab.main() {
             // The words on the screen are always read here on the Mac (works with every AI, even ones that can't see pictures)
             var words = ""
@@ -225,7 +235,7 @@ final class ZuffiAsk: ObservableObject {
 
     /// One tap from the selection bar.
     func act(_ kind: String, _ text: String) async {
-        if kind == "read" { TutorVoice.shared.speakAuto(text); return }
+        if kind == "read" { VoiceEngine.shared.speak(text); return }      // her voice, the one you picked
         BunnyFaceCenter.shared.show(.thinking, for: 8)
         if kind == "explain" || kind == "translate" { VoiceEngine.shared.speak(["Hmm…", "Okay, let me see…", "Ah, let me look…"].randomElement()!) }
         let lang = userLanguage

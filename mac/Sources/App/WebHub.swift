@@ -268,7 +268,8 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         case "speak":
             // "Say reminders out loud" off (Settings) → reminders still show, quietly.
             // Messages and emails are read out only with "Read notifications out loud" on; reminders follow "Say reminders out loud".
-            if let t = o["text"] as? String {
+            if let t = o["text"] as? String,
+               t.range(of: #"\b(prayer|namaz|salah|fajr|dhuhr|zuhr|asr|maghrib|isha|jummah)\b"#, options: [.regularExpression, .caseInsensitive]) == nil {   // prayer reminders are off on the Mac
                 let isMessage = t.range(of: #"^(whats ?app|email|e-mail|mail|message|new message|new email|sms|text) (from|by)\b|^new (notification|message|email)"#,
                                         options: [.regularExpression, .caseInsensitive]) != nil
                 if isMessage { /* messages and emails are shown, never read out */ }
@@ -329,6 +330,8 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
             http(url: o["url"] as? String ?? "", method: o["method"] as? String ?? "POST", headers: o["headers"] as? [String: String] ?? [:], body: o["body"] as? String ?? "", id: id)
         case "dragWindow":
             dragPanel()
+        case "reminder" where (o["kind"] as? String) == "prayer":
+            break                                            // prayer reminders are switched off on the Mac
         case "reminder":
             // a meeting / task / reminder is due → Zuffi walks across with a banner
             ZuffiWalk.shared.arrive(kind: o["kind"] as? String ?? "reminder", title: o["title"] as? String ?? "Reminder",

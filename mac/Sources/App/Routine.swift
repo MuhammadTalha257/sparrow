@@ -270,9 +270,7 @@ final class Routine {
             // At the chosen time — or later in the morning if the Mac was asleep then.
             if mins >= m && mins < max(m + 4 * 60, 12 * 60) {
                 ud.set(today, forKey: RoutinePrefs.lastMorning)
-                // Just said hello with the plan (Mac opened)? Don't repeat it.
-                if Briefing.shared.greetedRecently { return }
-                await morningBriefing()
+                await morningBriefing()          // the check-in always happens (a short "you're up early" hello doesn't count)
                 return
             }
         }
@@ -300,6 +298,14 @@ final class Routine {
         var text = "Good \(Briefing.period() == "night" ? "morning" : Briefing.period())\(name.isEmpty ? "" : ", \(name)")! It's \(tf.string(from: Date()))."
         if UserDefaults.standard.bool(forKey: AssistantPrefs.greetWeather), let w = await Weather.now() { text += " " + w }
         text += " " + (await Self.dayText())
+        // your habits for today, with the reason you gave her
+        await NotchData.shared.refresh()
+        let habits = NotchData.shared.of(["habit"]).filter { $0.count < max(1, $0.target) }
+        if !habits.isEmpty {
+            text += " Habits today: " + habits.prefix(3).map { h in
+                HabitCoach.get(h.title).map { $0.why.isEmpty ? h.title : "\(h.title), to \($0.why)" } ?? h.title
+            }.joined(separator: "; ") + "."
+        }
         // two headlines from today's news (free Wikipedia feed), unless switched off
         if UserDefaults.standard.object(forKey: "newsInBriefing") as? Bool ?? true,
            let n = await WebHub.shared.callJS("return window.Sparrow && window.Sparrow.newsLine ? await window.Sparrow.newsLine() : ''") as? String, !n.isEmpty { text += " " + n }

@@ -1289,12 +1289,37 @@ final class Briefing {
 
     private func maybeGreet() {
         guard UserDefaults.standard.bool(forKey: AssistantPrefs.greetEnabled) else { return }
+        // Mornings follow your check-in time: opened before it → a short hello; at or after it (and the check-in
+        // hasn't happened yet today) → the full check-in straight away: weather where you are, your plan, habits, news.
+        let ud = UserDefaults.standard
+        if Self.period() == "morning", ud.bool(forKey: RoutinePrefs.morningOn) {
+            let m = ud.integer(forKey: RoutinePrefs.morningTime)
+            let now = RoutinePrefs.minutes(from: Date())
+            let checkedIn = ud.string(forKey: RoutinePrefs.lastMorning) == RoutinePrefs.dayKey()
+            if !checkedIn && now >= m {
+                appendAppLog("voice.log", "morning check-in (Mac opened after \(m / 60):\(String(format: "%02d", m % 60)))")
+                Task { await Routine.shared.morningBriefing() }
+                return
+            }
+            if !checkedIn && now < m {
+                guard !greetedThisPart else { return }
+                markGreeted()
+                let name = AssistantPrefs.displayName
+                NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.happy)
+                VoiceEngine.shared.speak("Good morning\(name.isEmpty ? "" : ", \(name)")! You're up early today. I'll check in with you at \(Self.clock(m)).")
+                return
+            }
+        }
         // Once per morning / afternoon / evening — never again after lunch or a short break, never at night.
         guard !greetedThisPart, Self.period() != "night" else { return }
         appendAppLog("voice.log", "greeting (\(Self.slot()))")
         Task { await greet() }
     }
 
+    static func clock(_ minutes: Int) -> String {
+        let f = DateFormatter(); f.timeStyle = .short
+        return f.string(from: RoutinePrefs.date(fromMinutes: minutes))
+    }
     /// Called by the morning briefing so the wake greeting doesn't repeat it (and the other way round).
     func markGreeted() { lastGreet = Date(); lastPeriod = Self.period(); UserDefaults.standard.set(Self.slot(), forKey: "greetSlot") }
     /// True if Zuffi already said hello in this part of the day.
@@ -1373,6 +1398,8 @@ enum Weather {
     }
 
     static func location() async -> (lat: Double, lon: Double, city: String)? {
+        // Real location from the Mac (Wi-Fi based) first — correct even when you travel.
+        if let here = await LocationProvider.shared.current() { return here }
         let city = (UserDefaults.standard.string(forKey: AssistantPrefs.weatherCity) ?? "").trimmingCharacters(in: .whitespaces)
         if !city.isEmpty {
             var c = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
@@ -1383,8 +1410,6 @@ enum Weather {
                 return (lat, lon, r["name"] as? String ?? city)
             }
         }
-        // Real location from the Mac (Wi-Fi based) — correct even when you travel.
-        if let here = await LocationProvider.shared.current() { return here }
         // Fallback: approximate location from the internet connection.
         if let url = URL(string: "https://ipapi.co/json/"), let json = await getJSON(url),
            let lat = json["latitude"] as? Double, let lon = json["longitude"] as? Double {

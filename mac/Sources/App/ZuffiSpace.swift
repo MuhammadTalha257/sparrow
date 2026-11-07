@@ -1061,19 +1061,29 @@ struct NotchHomeView: View {
 
     /// Like Taby: three separate pieces — the small black tab with Aurora's face under the notch, the chat bar
     /// floating just below it, and (only when needed) the panel or answer card below that. Nothing else covers the screen.
-    private var tabW: CGFloat { max(state.notchWidth + 8, 168) }
-    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 36 : max(state.notchHeight, 24) + 4 }
+    private var tabW: CGFloat { max(state.notchWidth + 40, 210) }
+    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 44 : max(state.notchHeight, 24) + 8 }
+    @ObservedObject private var sky = WeatherSky.shared
     private var faceTab: some View {
         ZStack(alignment: .bottom) {
-            UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 24, bottomTrailing: 24, topTrailing: 0), style: .continuous)
-                .fill(Color.black)
+            WeatherGlass(radius: 26)
+            if let t = sky.temp {
+                HStack(spacing: 4) {
+                    Image(systemName: sky.symbol).symbolRenderingMode(.multicolor).font(.system(size: 11))
+                    Text("\(t)°").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(.leading, 18).padding(.bottom, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
             if showsAurora {
-                RealAuroraIcon(size: 42, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
-                    .frame(width: 42, height: 36).clipped()
+                RealAuroraIcon(size: 48, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
+                    .frame(width: 48, height: 42).clipped()
                     .padding(.bottom, 2)
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
-                        .gesture(SpatialTapGesture().onEnded { v in if !AuroraTouch.clicked() { AuroraMoves.poke(ear: v.location.y < 26) } })
+                        .gesture(SpatialTapGesture().onEnded { v in if !AuroraTouch.clicked() { AuroraMoves.poke(ear: v.location.y < 30) } })
                         .onContinuousHover { phase in
                             switch phase { case .active(let p): AuroraTouch.moved(p); case .ended: AuroraTouch.ended() }
                         }
@@ -3431,6 +3441,7 @@ struct SettingsPage: View {
                 ForEach(GroqVoice.voices, id: \.id) { v in
                     NSPill(title: v.label, primary: groqVoice == v.id) {
                         groqVoice = v.id
+                        voiceEngine = "ai"
                         VoiceEngine.shared.speak("Hi! This is how I sound now. Do you like it?")
                     }
                 }
@@ -3451,6 +3462,7 @@ struct SettingsPage: View {
                 NSPill(title: v.name, primary: voicePreset == v.id && offlineKind == "classic") {
                     voicePreset = v.id
                     UserDefaults.standard.set("classic", forKey: "offlineVoiceKind")
+                    voiceEngine = "builtin"
                     NativeSpeech.shared.rewarm()
                     VoiceEngine.shared.speakOffline("Hi! This is how I sound now. Do you like it?")
                 }
@@ -3463,6 +3475,7 @@ struct SettingsPage: View {
                     NSPill(title: (i < 5 ? "Her " : "His ") + "\(i < 5 ? i + 1 : i - 4)", primary: ownVoice == i && offlineKind == "own") {
                         ownVoice = i
                         UserDefaults.standard.set("own", forKey: "offlineVoiceKind")       // used for every answer from now on
+                        voiceEngine = "builtin"          // the voice you pick is her voice everywhere — online or not
                         NativeSpeech.forceModel = "st-en"
                         VoiceEngine.shared.speakOffline("Hi! This is my own voice. I work even without the internet.")
                     }
