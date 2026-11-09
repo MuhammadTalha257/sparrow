@@ -1407,7 +1407,8 @@ enum Weather {
         // Real location from the Mac (Wi-Fi based) first — correct even when you travel.
         if let here = await LocationProvider.shared.current() { Self.logSource("this Mac's location: \(here.city)"); return here }
         let city = (UserDefaults.standard.string(forKey: AssistantPrefs.weatherCity) ?? "").trimmingCharacters(in: .whitespaces)
-        Self.logSource("Mac location not available (\(LocationProvider.shared.statusText)) — using \(city.isEmpty ? "the internet connection" : "your Settings city, " + city)")
+        let why = await LocationProvider.shared.statusText
+        Self.logSource("Mac location not available (\(why)) — using \(city.isEmpty ? "the internet connection" : "your Settings city, " + city)")
         if !city.isEmpty {
             var c = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
             c.queryItems = [.init(name: "name", value: city), .init(name: "count", value: "1")]
