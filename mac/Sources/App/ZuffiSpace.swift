@@ -958,7 +958,7 @@ struct ZuffiProfilePanel: View {
                         .background(Circle().fill(LinearGradient(colors: [IslandConst.accent, Color(hex: "#F472B6")], startPoint: .topLeading, endPoint: .bottomTrailing)))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(name).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(.white).lineLimit(1)
-                        Text(plan.isBusiness ? "Business plan" : plan.isPaid ? "Pro plan" : "Free").font(.system(size: 10.5, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+                        Text(plan.isPaid ? (plan.plan == "trial" ? "Free trial" : "Zuffi plan") : "Free").font(.system(size: 10.5, weight: .semibold)).foregroundColor(.white.opacity(0.6))
                     }
                     Spacer()
                     Button { ZuffiSettings.open(); NotificationCenter.default.post(name: .islandCollapse, object: nil) } label: {
@@ -3423,7 +3423,7 @@ struct SettingsPage: View {
             .padding(.horizontal, 12).padding(.vertical, 9)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NS.card))
         }
-        Text("No key? Zuffi AI (included in your plan) and Ollama on this Mac work without one.").font(.system(size: 11)).foregroundColor(NS.soft)
+        Text("No key? Ollama on this Mac works without one (free and private), or get a free key from Groq or Gemini.").font(.system(size: 11)).foregroundColor(NS.soft)
         Text("Voice and chat use the same AI you pick here.").font(.system(size: 11)).foregroundColor(NS.soft)
         NSLabel(t: "HER VOICE")
         // Simple: three voices, picked once, used everywhere (chat, answers, reminders, check-ins) — online or offline.

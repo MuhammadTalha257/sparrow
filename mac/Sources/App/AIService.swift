@@ -413,7 +413,25 @@ final class AIService {
         return out
     }
 
+    /// Small local AIs sometimes go round in circles ("It's a bit of a mess, but it's all there…" again and again).
+    /// Drops sentences that repeat an earlier one, stops at the first loop, and (if asked) keeps it to a few sentences.
+    static func tidy(_ text: String, maxSentences: Int? = nil) -> String {
+        var out: [String] = [], seen: [Set<String>] = [], repeats = 0
+        let words: (String) -> Set<String> = { Set($0.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 }) }
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .bySentences) { sub, _, _, stop in
+            guard let sub else { return }
+            let w = words(sub)
+            let dup = !w.isEmpty && seen.contains { s in let common = Double(s.intersection(w).count); return common / Double(max(1, min(s.count, w.count))) >= 0.75 }
+            if dup { repeats += 1; if repeats >= 2 { stop = true }; return }
+            seen.append(w); out.append(sub)
+            if let m = maxSentences, out.count >= m { stop = true }
+        }
+        let t = out.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? text : t
+    }
+
     private func finish(_ text: String, state: AppState, emote: BotEmote) {
+        let text = Self.tidy(text)
         state.chatHistory.append(ChatMessage(role: .assistant, content: zClean(text)))
         state.stateOverride = nil
         if !NotchDesign.on { state.view = .prompt }      // the notch's Chat page shows it
@@ -423,7 +441,8 @@ final class AIService {
     // MARK: Provider choice
 
     func resolveProvider(state: AppState) async -> AIProvider? {
-        let chosen = AIProvider(rawValue: state.aiProvider) ?? .auto
+        var chosen = AIProvider(rawValue: state.aiProvider) ?? .auto
+        if chosen == .zuffi { chosen = .auto; state.aiProvider = AIProvider.auto.rawValue }      // built-in AI is gone: pick their own key / offline AI
         // No internet: answer with the brain on this Mac (Ollama, or Apple's model) instead of failing.
         if !NetStatus.shared.online, chosen != .ollama, chosen != .apple {
             if !(await Self.ollamaModels()).isEmpty { return .ollama }
@@ -675,7 +694,7 @@ final class AIService {
     // MARK: Zuffi AI — included with Pro and Business (through Zuffi's server, the key never touches this Mac)
 
     /// On a paid plan (or the trial) and signed in.
-    static var builtinAvailable: Bool { ZuffiPlan.shared.isPaid && NetStatus.shared.online && !AIUsage.shared.resting("Zuffi AI") }
+    static var builtinAvailable: Bool { false }      // no built-in AI: everyone uses their own key (or offline AI). Kept, switched off.
 
     static func builtin(_ messages: [[String: String]], max: Int = 900) async -> String? {
         guard let r = await WebHub.shared.callJS("return await window.Sparrow.builtinAI(m, x)", ["m": messages, "x": max]) as? [String: Any] else { return nil }
@@ -1009,8 +1028,8 @@ final class AIService {
                                              "think": false,          // thinking models (qwen3…) answer straight away, no long hidden "thinking"
                                              // Default window (2k tokens) is too small for a document; quick questions get short, fast answers.
                                              "options": oneShotSystem != nil
-                                                ? ["num_ctx": 2048, "num_predict": 260, "temperature": 0.6] as [String: Any]
-                                                : ["num_ctx": document == nil ? 4096 : 8192] as [String: Any]],
+                                                ? ["num_ctx": 2048, "num_predict": 260, "temperature": 0.6, "repeat_penalty": 1.18] as [String: Any]
+                                                : ["num_ctx": document == nil ? 4096 : 8192, "repeat_penalty": 1.15] as [String: Any]],
                                       headers: [:], timeout: 180)
         guard let msg = json["message"] as? [String: Any], let text = msg["content"] as? String else { throw Self.badResponse }
         return text
@@ -1061,7 +1080,7 @@ struct ProviderMenu: View {
 
     var body: some View {
         let current = AIProvider(rawValue: state.aiProvider) ?? .auto
-        let list = AIProvider.allCases.filter { !Self.hidden.contains($0) && ($0 != .zuffi || ZuffiPlan.shared.isPaid) }
+        let list = AIProvider.allCases.filter { !Self.hidden.contains($0) && $0 != .zuffi }
         Menu {
             Section("Ready to use") {
                 ForEach(list.filter { Self.ready($0) }) { p in
@@ -1138,7 +1157,7 @@ struct AIModelsSettings: View {
                         }
                     }
                     Picker("Answer with", selection: $state.aiProvider) {
-                        ForEach(AIProvider.allCases.filter { $0 != .zuffi || ZuffiPlan.shared.isPaid }) { p in Text(p.label).tag(p.rawValue) }
+                        ForEach(AIProvider.allCases.filter { $0 != .zuffi }) { p in Text(p.label).tag(p.rawValue) }
                     }
                     Text("Auto uses the first one that’s ready and quietly tries the next if one fails. Opening apps, music, reminders and volume always work, even offline.")
                         .font(.system(size: 11)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)

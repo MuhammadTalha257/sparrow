@@ -211,11 +211,11 @@ final class ZuffiAsk: ObservableObject {
                 // the chat AI can't see pictures (e.g. Ollama): her eyes use an AI that can (your Groq / Gemini / OpenAI key) — like before
                 let r = await ScreenEyes.look("""
                     The user asks (by voice) about what's on their screen: "\(question)"
-                    Look at the screenshot and answer like a kind, clever friend: short and clear (under 90 words), in \(userLanguage) unless they asked for another language.
+                    Look at the screenshot and answer like a kind, clever friend: complete but short (2 to 4 sentences, under 80 words), in \(userLanguage) unless they asked for another language. Never repeat yourself.
                     If they ask to reply or rewrite, give only the text to use. Plain text, no symbols.
                     \(wordsNote)
                     """, jpeg: shot.jpeg)
-                if let r, !r.isEmpty { show(r.trimmingCharacters(in: .whitespacesAndNewlines), title: question); return }
+                if let r, !r.isEmpty { show(AIService.tidy(r.trimmingCharacters(in: .whitespacesAndNewlines), maxSentences: 5), title: question); return }
                 context = "This is what's written on the user's screen — explain it from that. Don't say you can't see it." + wordsNote
             } else {
                 // a brain that can't see pictures (most Ollama models, Apple's): explain from the words on the screen
@@ -225,11 +225,12 @@ final class ZuffiAsk: ObservableObject {
         let r = await AIService.shared.oneShot("""
             \(context)
             The user asks (by voice): "\(question)"
-            Answer like a kind, clever friend: short and clear, ready to be read aloud (under 90 words), in \(userLanguage) unless they asked for another language. \
+            Answer like a kind, clever friend: complete but short — 2 to 4 sentences, under 80 words, ready to be read aloud — in \(userLanguage) unless they asked for another language. \
+            If they ask what's on the screen: say which app or page it is, the main thing it shows, and anything they may want to do. Never repeat yourself. \
             If they ask to reply or rewrite, give only the text to use. Plain text, no symbols. \
             Sound like a real person talking, not a robot: you may begin with ONE small natural reaction when it truly fits — "Oh!", "Ah, I see.", "Okay so…", "Hmm," or "Haha," (only if something is funny).
             """, system: "You are Zuffi, a friendly helper that lives on the user's computer.\n" + ZuffiVoice.style, image: image) ?? ""
-        let reply = r.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reply = AIService.tidy(r.trimmingCharacters(in: .whitespacesAndNewlines), maxSentences: 5)
         show(reply.isEmpty ? ZuffiAsk.noBrainLine : reply, title: question)
     }
 

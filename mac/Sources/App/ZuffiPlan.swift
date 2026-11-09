@@ -12,12 +12,12 @@ final class ZuffiPlan: ObservableObject {
     private(set) var freeLeads: Int = { let n = UserDefaults.standard.integer(forKey: "zuffiFreeLeads"); return n > 0 ? n : 30 }()
     private var lastAsk = Date.distantPast
 
-    var isBusiness: Bool { plan == "business" || plan == "trial" }      // the trial switches everything on
+    var isBusiness: Bool { plan == "business" || plan == "pro" || plan == "trial" }      // one plan: everything is on
     var isPaid: Bool { plan == "pro" || plan == "business" || plan == "trial" }
     /// No plan (trial over, or never signed in): Zuffi pauses until one is chosen. Nothing is deleted.
     /// A new install starts locked: signing in with an email starts the 3-day trial.
     var isLocked: Bool { !isPaid }
-    var name: String { ["trial": "Free trial", "pro": "Pro", "business": "Business"][plan] ?? "No plan" }
+    var name: String { ["trial": "Free trial", "pro": "Zuffi", "business": "Zuffi"][plan] ?? "No plan" }
     private var shownLock = false
     private var lockedBefore: Bool? = nil
     private var lastBlock = Date.distantPast
@@ -25,7 +25,7 @@ final class ZuffiPlan: ObservableObject {
     /// What Zuffi says when someone tries to use her without a plan.
     var lockedMessage: String {
         email.isEmpty ? "Hi! Sign in with your email to start your free 3-day trial. Everything switches on, no card needed."
-                      : "Your free trial has ended. Choose Pro or Business to keep using Zuffi. Nothing you saved is deleted."
+                      : "Your free trial has ended. Subscribe to keep using Zuffi. Nothing you saved is deleted."
     }
 
     /// Call before any feature. Returns true (and shows sign-in / plans) when Zuffi is locked.
@@ -231,8 +231,8 @@ final class ZuffiPlan: ObservableObject {
         Task { @MainActor in                                           // after the current save finishes
             let a = NSAlert()
             a.messageText = "You’ve reached \(self.freeLeads) leads"
-            a.informativeText = "The free plan keeps up to \(self.freeLeads) leads. Zuffi Business gives you unlimited leads, the same business on every device and the automations."
-            a.addButton(withTitle: "See Business"); a.addButton(withTitle: "Not now")
+            a.informativeText = "The free plan keeps up to \(self.freeLeads) leads. The Zuffi plan gives you unlimited leads, the same business on every device and the automations."
+            a.addButton(withTitle: "See the plan"); a.addButton(withTitle: "Not now")
             if a.runModal() == .alertFirstButtonReturn { self.openAccount() }
         }
     }
@@ -415,8 +415,8 @@ ABOUT YOU — ZUFFI (answer any question about yourself from this; never invent 
 Who: Zuffi, a friendly bunny AI assistant made by Lisan Systems (lisansystems.com/zuffi). You live in the notch at the top of the Mac screen, in a notch/island at the top of Windows, as a floating bubble on Android, and as an app on iPhone/iPad (Add to Home Screen from Safari). Same account on all of them.
 Languages: English, Urdu (and Roman Urdu), Hindi, Punjabi, Arabic and more — you reply in the language they use.
 Talking to you: say "Zuffi" or "Hey Zuffi" (wake word, Settings → Voice), click the mic, hold the right Option key on Mac, or type in Chat. You only act after hearing your name.
-Plans: a 3-day free trial with everything on (no card), then Pro or Business. UK: Pro £6.99/month (£59/year), Business £14.99/month (£139/year), VAT included. Pakistan: Pro Rs 1,000/month, Business Rs 2,000/month. Only the price for their country is shown; cancel any time. Pro: talk or type on every device, reminders, water/coffee/medicine, prayer times, morning summary, built-in AI, up to 3 devices. Business: everything in Pro plus WhatsApp enquiries become leads, unlimited leads/clients/stock, payments and late payers, staff, same business on phone/tablet/computer, automations. Without a trial or plan you pause — nothing saved is deleted. Buy or manage: Settings → Zuffi account → Choose Pro / Business / Manage subscription.
-Built-in AI: included with the plan (trial 60 answers, Pro 1,500 a month, Business 4,000 a month); the key stays on Zuffi's server; what people ask is never stored. Or use their own key (ChatGPT, Gemini, Groq, Claude, Grok, DeepSeek, Mistral, Perplexity, OpenRouter) in Settings → AI; keys stay on the device. Usage (answers left, tokens and rough cost) is in Settings → AI and on the open notch.
+Plans: a 3-day free trial with everything on (no card), then one plan for everyone: Zuffi, £6.99 a month in the UK (Rs 1,000 in Pakistan), everything included, up to 3 devices, cancel any time.
+AI: Zuffi has no built-in AI. People add their own key (Groq and Gemini have free ones; also ChatGPT, Claude, Grok, DeepSeek, Mistral, Perplexity, OpenRouter) in Settings → AI, or use free offline AI with Ollama on the Mac. Keys stay on the device, in the Keychain.
 Works offline: opening apps, music and volume, Mac controls, reminders, notes, prayer times, memory and the business data; questions that need the internet wait until it's back. A plan keeps working offline for 7 days.
 Everyday features: reminders and alarms ("remind me at 5 to call Ali"), meetings and calendar, to-dos and daily plan, water/coffee/medicine reminders (Settings → Health), prayer times with a nudge before each prayer (Settings → My day), morning summary, birthdays (you dress up and wish them), seasonal outfits (Settings → Look: winter, Ramadan, Eid, 14 August, Christmas…), notes and memory ("remember that…", files dropped on the notch), weather, translations, writing and answering anything, the walking bunny pet (Settings → Look), and a team of 289 expert personas (Settings → AI → Zuffi's team).
 On the Mac you can also: open/quit apps and websites, control music, volume, brightness, Wi-Fi, Bluetooth, dark mode, take meeting notes, see and click the screen (Settings → Screen), run agents (Settings → Agents), and control the Mac from an iPhone (Settings → iPhone).

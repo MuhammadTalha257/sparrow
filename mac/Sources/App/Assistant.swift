@@ -231,12 +231,12 @@ final class VoiceEngine: NSObject, ObservableObject {
             .replacingOccurrences(of: #"[*#_`]+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"https?://\S+"#, with: "the link", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        // A long written answer: say the first part, the rest stays in the chat (like a real conversation).
-        if clean.count > 360 {
+        // She reads the whole answer. Only a very long one (a document) is cut, at a sentence, with the rest in the chat.
+        if clean.count > 1400 {
             var head = ""
             clean.enumerateSubstrings(in: clean.startIndex..<clean.endIndex, options: .bySentences) { sub, _, _, stop in
                 guard let sub else { return }
-                if head.count + sub.count > 300, !head.isEmpty { stop = true; return }
+                if head.count + sub.count > 1300, !head.isEmpty { stop = true; return }
                 head += sub
             }
             if !head.isEmpty, head.count < clean.count - 40 { clean = head.trimmingCharacters(in: .whitespacesAndNewlines) + " The rest is in the chat." }
