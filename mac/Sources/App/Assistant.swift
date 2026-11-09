@@ -1397,10 +1397,17 @@ enum Weather {
         return s + "."
     }
 
+    nonisolated(unsafe) private static var lastSource = ""
+    private static func logSource(_ s: String) {
+        guard s != lastSource else { return }
+        lastSource = s
+        appendAppLog("voice.log", "weather location: " + s)
+    }
     static func location() async -> (lat: Double, lon: Double, city: String)? {
         // Real location from the Mac (Wi-Fi based) first — correct even when you travel.
-        if let here = await LocationProvider.shared.current() { return here }
+        if let here = await LocationProvider.shared.current() { Self.logSource("this Mac's location: \(here.city)"); return here }
         let city = (UserDefaults.standard.string(forKey: AssistantPrefs.weatherCity) ?? "").trimmingCharacters(in: .whitespaces)
+        Self.logSource("Mac location not available (\(LocationProvider.shared.statusText)) — using \(city.isEmpty ? "the internet connection" : "your Settings city, " + city)")
         if !city.isEmpty {
             var c = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
             c.queryItems = [.init(name: "name", value: city), .init(name: "count", value: "1")]
@@ -1456,6 +1463,15 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyKilometer
     }
 
+    var statusText: String {
+        guard CLLocationManager.locationServicesEnabled() else { return "Location Services are off" }
+        switch manager.authorizationStatus {
+        case .denied: return "Zuffi isn't allowed — System Settings › Privacy & Security › Location Services"
+        case .restricted: return "restricted on this Mac"
+        case .notDetermined: return "waiting for your permission"
+        default: return "no fix yet"
+        }
+    }
     var allowed: Bool {
         let s = manager.authorizationStatus
         return s == .authorizedAlways || s == .authorized
@@ -1506,7 +1522,10 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     fileprivate func authChanged() {
         let s = manager.authorizationStatus
         if s == .denied || s == .restricted { resolve(nil) }
-        else if s == .authorizedAlways || s == .authorized { manager.requestLocation() }
+        else if s == .authorizedAlways || s == .authorized {
+            manager.requestLocation()
+            WeatherSky.shared.refreshNow()       // allowed just now: the notch switches to the weather where you really are
+        }
     }
 }
 

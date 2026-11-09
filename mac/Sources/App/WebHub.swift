@@ -68,6 +68,10 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         config.setURLSchemeHandler(scheme, forURLScheme: "app")
         config.userContentController.add(self, name: "sparrow")
         config.userContentController.addUserScript(WKUserScript(source: Self.shim, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        if KeychainStore.clearWebKeys {      // one-time safety reset: the page's saved copy of the AI keys goes too
+            config.userContentController.addUserScript(WKUserScript(source: "try{const k='sparrow.settings.v1',s=JSON.parse(localStorage.getItem(k)||'{}');if(s&&s.keys){for(const n in s.keys)s.keys[n]='';localStorage.setItem(k,JSON.stringify(s));}}catch(e){}",
+                                                                    injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         #if DEBUG
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")     // the web inspector only in test builds (it could show saved keys)
         #endif

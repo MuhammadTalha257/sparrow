@@ -155,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchHang.shared.start()                       // music bars and working agents under the notch
         // At start only the notch says hi — the "What's Zuffi for?" choice and the first-run setup wait until you open the dashboard.
         if ZuffiFocus.agents { BizSync.shared.startIfLinked() }
+        KeychainStore.wipeAIKeysOnce()      // before the page starts, so its copy is cleared too
         WebHub.shared.start()
         NativeSpeech.migrateVoice()
         NativeSpeech.shared.start()

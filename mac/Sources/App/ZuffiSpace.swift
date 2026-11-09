@@ -4239,6 +4239,14 @@ final class WeatherSky: ObservableObject {
     private var lastFetch: Date?
     private var loading = false
 
+    /// Fetch again now (e.g. location permission was just given).
+    func refreshNow() { lastFetch = nil; refreshIfNeeded() }
+    private var ticker: Timer?
+    private init() {
+        // keeps the notch's weather current even when it stays on screen for hours
+        ticker = Timer.scheduledTimer(withTimeInterval: 10 * 60, repeats: true) { _ in MainActor.assumeIsolated { WeatherSky.shared.refreshIfNeeded() } }
+    }
+
     func refreshIfNeeded() {
         if loading { return }
         if let t = lastFetch, Date().timeIntervalSince(t) < 20 * 60 { return }

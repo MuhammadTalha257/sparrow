@@ -56,6 +56,18 @@ enum Keychain {
 // MARK: - Keychain cache (reads each key ONCE at launch; all subsequent access via dict)
 
 final class KeychainStore: @unchecked Sendable {
+    /// AI keys were removed once (Nov 2026) after keys were stolen: everyone adds fresh ones.
+    /// The page's copy of the keys is cleared on its next load too (see WebHub).
+    nonisolated(unsafe) static var clearWebKeys = false
+    static func wipeAIKeysOnce() {
+        let ud = UserDefaults.standard
+        guard !ud.bool(forKey: "aiKeysWipedV1") else { return }
+        ud.set(true, forKey: "aiKeysWipedV1")
+        shared.removeAll(onlyAI: true)
+        clearWebKeys = true
+        appendAppLog("ai.log", "removed all saved AI keys (one-time safety reset) — add your new keys in Settings › AI")
+    }
+
     static let shared = KeychainStore()
     private var cache: [String: String] = [:]
     private let lock = NSLock()
