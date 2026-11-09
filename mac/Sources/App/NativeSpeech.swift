@@ -38,6 +38,31 @@ final class NativeSpeech {
     static var tooSlow: Bool { UserDefaults.standard.bool(forKey: "kokoroTooSlow") }
     /// The next sentence uses this voice (for trying her own voices in Settings).
     static var forceModel: String?
+    /// The voices offered in Settings. Her 4 is the default.
+    static let mainVoices: [(name: String, sid: Int)] = [("Her 4", 3), ("Her 2", 1), ("His 1", 5)]
+    /// Pick one of her voices: it becomes her voice everywhere, online or not.
+    static func choose(_ sid: Int) {
+        let ud = UserDefaults.standard
+        ud.set(sid, forKey: "supertonicVoice")
+        ud.set("own", forKey: "offlineVoiceKind")
+        ud.set("builtin", forKey: "voiceEngine")
+        NativeSpeech.shared.rewarm()
+    }
+    /// One-time move to the new default: Her 4, her own voice, everywhere.
+    static func migrateVoice() {
+        let ud = UserDefaults.standard
+        guard !ud.bool(forKey: "voiceV4") else { return }
+        ud.set(true, forKey: "voiceV4")
+        ud.set(3, forKey: "supertonicVoice")
+        ud.set("own", forKey: "offlineVoiceKind")
+        ud.set("builtin", forKey: "voiceEngine")
+        ud.set(false, forKey: "supertonicTooSlow")      // it runs ~3x faster than she talks even on older Macs
+    }
+    /// Her everyday English voice: her own (Supertonic) unless it's missing or the classic voice was picked.
+    static var englishModel: String {
+        let kind = UserDefaults.standard.string(forKey: "offlineVoiceKind") ?? "own"
+        return hasSupertonic && (tooSlow || kind == "own") ? "st-en" : "kokoro"
+    }
     /// Zuffi's own fast voice (Supertonic): 31 languages, light enough for older Macs.
     static var hasSupertonic: Bool {
         guard !UserDefaults.standard.bool(forKey: "supertonicTooSlow"), let d = Bundle.main.resourceURL?.appendingPathComponent("speech/supertonic") else { return false }
@@ -73,7 +98,7 @@ final class NativeSpeech {
             proc = p
             startedAt = Date()
             input = inPipe.fileHandleForWriting
-            send(["cmd": "warm", "model": Self.tooSlow && Self.hasSupertonic ? "st-en" : "kokoro", "sid": sid(Self.tooSlow && Self.hasSupertonic ? "st-en" : "kokoro"), "phrases": Self.common])
+            send(["cmd": "warm", "model": Self.englishModel, "sid": sid(Self.englishModel), "phrases": Self.common])
             appendAppLog("voice.log", "natural voice engine started")
         } catch {
             failures += 1
@@ -199,12 +224,12 @@ final class NativeSpeech {
     /// A new voice picked: prepare her everyday phrases in it, so they stay instant.
     func rewarm() {
         guard proc?.isRunning == true else { return }
-        send(["cmd": "warm", "model": Self.tooSlow && Self.hasSupertonic ? "st-en" : "kokoro", "sid": sid(Self.tooSlow && Self.hasSupertonic ? "st-en" : "kokoro"), "phrases": Self.common])
+        send(["cmd": "warm", "model": Self.englishModel, "sid": sid(Self.englishModel), "phrases": Self.common])
     }
 
     private func sid(_ model: String = "kokoro") -> Int {
         let ud = UserDefaults.standard
-        if model.hasPrefix("st-") { return ud.object(forKey: "supertonicVoice") as? Int ?? 1 }     // 1: a bright young woman's voice
+        if model.hasPrefix("st-") { return ud.object(forKey: "supertonicVoice") as? Int ?? 3 }     // 3: "Her 4", the default
         if ud.string(forKey: "voicePreset") != nil { return Self.preset.sid }
         if let v = ud.string(forKey: "voiceName"), let s = Self.voices[v] { return s.sid }
         return (ud.string(forKey: AssistantPrefs.voiceGender) ?? "female") == "male" ? 26 : 3
@@ -232,7 +257,7 @@ final class NativeSpeech {
         let id = currentId
         // Never wait long: if the first words aren't ready, use the instant voice instead. Just after it starts it is still
         // loading her voice, so it gets longer then — otherwise the first reminder would come out in the Mac's voice.
-        let patience: Double = Date().timeIntervalSince(startedAt) < 15 ? 6 : 3.5      // never keep you waiting long
+        let patience: Double = Date().timeIntervalSince(startedAt) < 20 ? 9 : 5.5      // her voice loads in ~2s and speaks ~3x faster than real time
         DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
             MainActor.assumeIsolated {
                 if id == NativeSpeech.shared.currentId, let w = NativeSpeech.shared.startWaiter {

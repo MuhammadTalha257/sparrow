@@ -3318,7 +3318,7 @@ struct SettingsPage: View {
     @AppStorage("voiceEngine") private var voiceEngine = "ai"
     @AppStorage("voicePreset") private var voicePreset = "sweet"
     @AppStorage("groqVoice") private var groqVoice = "diana"
-    @AppStorage("supertonicVoice") private var ownVoice = 1
+    @AppStorage("supertonicVoice") private var ownVoice = 3
     @AppStorage("offlineVoiceKind") private var offlineKind = "own"
     @AppStorage(AssistantPrefs.voiceRate) private var voiceRate = 0.5
     @State private var fishKey = ""
@@ -3426,6 +3426,23 @@ struct SettingsPage: View {
         Text("No key? Zuffi AI (included in your plan) and Ollama on this Mac work without one.").font(.system(size: 11)).foregroundColor(NS.soft)
         Text("Voice and chat use the same AI you pick here.").font(.system(size: 11)).foregroundColor(NS.soft)
         NSLabel(t: "HER VOICE")
+        // Simple: three voices, picked once, used everywhere (chat, answers, reminders, check-ins) — online or offline.
+        Text("She speaks in this voice everywhere: chat, answers, reminders and check-ins, with or without internet.")
+            .font(.system(size: 11.5)).foregroundColor(NS.soft).fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 6) {
+            ForEach(NativeSpeech.mainVoices, id: \.sid) { v in
+                NSPill(title: v.name, primary: ownVoice == v.sid) {
+                    NativeSpeech.choose(v.sid)
+                    ownVoice = v.sid; voiceEngine = "builtin"
+                    VoiceEngine.shared.speak("Hi! This is my voice now. I'll use it everywhere.")
+                }
+            }
+        }
+        if !NativeSpeech.hasSupertonic {
+            Text("Her own voice can't run on this Mac right now, so the Mac's voice speaks.").font(.system(size: 11)).foregroundColor(Color(hex: "#F5B963"))
+            NSPill(title: "Try her own voice again") { UserDefaults.standard.set(false, forKey: "supertonicTooSlow"); NativeSpeech.shared.rewarm() }
+        }
+        if UserDefaults.standard.bool(forKey: "showAllVoices") {      // the full old voice list, hidden
         HStack(spacing: 6) {
             NSPill(title: "Same as my chat AI", primary: voiceEngine != "builtin") { voiceEngine = "ai"; VoiceEngine.shared.speak("Hi! Now I speak with the same AI you chat with.") }
             NSPill(title: "Always offline voice", primary: voiceEngine == "builtin") { voiceEngine = "builtin"; VoiceEngine.shared.speak("Hi! This is my offline voice.") }
@@ -3481,6 +3498,7 @@ struct SettingsPage: View {
                     }
                 }
             }
+        }
         }
         if NativeSpeech.tooSlow {
             Text("This Mac is too slow for her offline voice, so the Mac's own voice speaks (instantly). For a nicer one: System Settings → Accessibility → Spoken Content → System voice → Manage Voices → English → download “Ava (Premium)” or “Zoe (Premium)”.")

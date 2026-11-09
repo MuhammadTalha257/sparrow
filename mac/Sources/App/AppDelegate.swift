@@ -156,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // At start only the notch says hi — the "What's Zuffi for?" choice and the first-run setup wait until you open the dashboard.
         if ZuffiFocus.agents { BizSync.shared.startIfLinked() }
         WebHub.shared.start()
+        NativeSpeech.migrateVoice()
         NativeSpeech.shared.start()
         HoldToTalk.start()
         FaceDrop.shared.start()
