@@ -1061,8 +1061,8 @@ struct NotchHomeView: View {
 
     /// Like Taby: three separate pieces — the small black tab with Aurora's face under the notch, the chat bar
     /// floating just below it, and (only when needed) the panel or answer card below that. Nothing else covers the screen.
-    private var tabW: CGFloat { max(state.notchWidth + 40, 210) }
-    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 44 : max(state.notchHeight, 24) + 8 }
+    private var tabW: CGFloat { max(state.notchWidth + 70, 250) }
+    private var tabH: CGFloat { showsAurora ? max(state.notchHeight, 24) + 76 : max(state.notchHeight, 24) + 8 }
     @ObservedObject private var sky = WeatherSky.shared
     private var faceTab: some View {
         ZStack(alignment: .bottom) {
@@ -1078,12 +1078,13 @@ struct NotchHomeView: View {
                 .transition(.opacity)
             }
             if showsAurora {
-                RealAuroraIcon(size: 48, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
-                    .frame(width: 48, height: 42).clipped()
+                // bigger, so you can clearly see her face, her moves and her lips when she talks
+                RealAuroraIcon(size: 84, mood: mood, speaking: voice.speaking || tutor.speaking, close: true)
+                    .frame(width: 84, height: 76).clipped()
                     .padding(.bottom, 2)
                     .offset(y: risen ? 0 : 30).opacity(risen ? 1 : 0)
                     .overlay(Color.clear.contentShape(Rectangle())
-                        .gesture(SpatialTapGesture().onEnded { v in if !AuroraTouch.clicked() { AuroraMoves.poke(ear: v.location.y < 30) } })
+                        .gesture(SpatialTapGesture().onEnded { v in if !AuroraTouch.clicked() { AuroraMoves.poke(ear: v.location.y < 34) } })
                         .onContinuousHover { phase in
                             switch phase { case .active(let p): AuroraTouch.moved(p); case .ended: AuroraTouch.ended() }
                         }
