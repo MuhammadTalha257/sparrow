@@ -2356,6 +2356,12 @@ struct CompactAuroraTab: View {
     var body: some View {
         // her head close-up; the ear tips tuck behind the notch, the face shows below it
         let side = min(150, max(60, (min(height, notchH + 80) - notchH) * 1.9))
+        ZStack {
+        // the same live weather as the open notch, behind her (inside the ears, so the notch outline stays the same)
+        WeatherGlass(radius: IslandConst.compactCorner)
+            .padding(.horizontal, IslandConst.earRadius)
+            .frame(width: width, height: height)
+            .allowsHitTesting(false)
         if UserDefaults.standard.object(forKey: "notchShowsAurora") as? Bool ?? true {
         Aurora3DView(pose: .sit, lookAtMouse: true, framing: .face,
                      expression: RealAuroraIcon.feeling(AuroraFace.mood(voice, state)), speaking: voice.speaking || tutor.speaking)
@@ -2364,6 +2370,7 @@ struct CompactAuroraTab: View {
             .frame(width: width, height: height, alignment: .top)
             .clipped()
             .allowsHitTesting(false)
+        }
         }
     }
 }
