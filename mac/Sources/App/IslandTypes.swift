@@ -109,10 +109,10 @@ enum IslandConst {
     static let tabDrop: CGFloat = 34
     /// The open notch: one short, wide strip (face + ask bar) that grows down only while an answer shows.
     static let homeW: CGFloat = 440
-    static let homeShortH: CGFloat = 122
-    static let homeTallH: CGFloat = 380
+    static let homeShortH: CGFloat = 166      // +44: room for the bigger Aurora tab, so the chat bar sits below it
+    static let homeTallH: CGFloat = 412
     nonisolated(unsafe) static var homeTallNow = false
-    static let homeBigH: CGFloat = 600
+    static let homeBigH: CGFloat = 632
     nonisolated(unsafe) static var homeBigNow = false
     static let compactCorner: CGFloat = 19
     /// Closed island when parked on the left / right edge of the screen.
