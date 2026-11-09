@@ -376,7 +376,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .me: return "Your details from the welcome form — Zuffi remembers them"
         case .general: return "Sounds, shortcut, startup and reset"
         case .look: return "Zuffi’s fur, outfits and the notch"
-        case .routine: return "Prayer times, reminders and your morning"
+        case .routine: return "Reminders and your morning"
         case .voice: return "“Hey Zuffi”, voices and notifications"
         case .ai: return "Which AI answers and your keys"
         case .agents: return "Coding agents Zuffi watches"

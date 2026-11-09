@@ -219,7 +219,7 @@
     </div></div>
     <div class="field"><span>Colour</span><div class="accents" id="sAccent"></div></div>
     <label class="row"><input type="checkbox" id="sSimple"> 🔠 Simple mode — big text, fewer buttons, slower voice</label>
-    <label class="field"><span>City for weather &amp; prayer times</span><input id="sCity" placeholder="Leave empty = where you are now"></label>
+    <label class="field"><span>City for weather</span><input id="sCity" placeholder="Leave empty = where you are now"></label>
   </details>
 
   <button class="btn ghost guide-open" type="button" id="openGuide">📖 How to use Zuffi</button>
@@ -284,7 +284,7 @@
     <div id="macLinkBox"></div>
   </details>
 
-  <details><summary><span class="si" data-ic="clock" style="--c:#14A37F"></span><span class="st"><b>Prayer times</b><small>Reminders before and on time</small></span></summary>
+  <details hidden><summary><span class="si" data-ic="clock" style="--c:#14A37F"></span><span class="st"><b>Prayer times</b><small>Reminders before and on time</small></span></summary>
     <label class="row"><input type="checkbox" id="pOn"> Show prayer times and remind me — times follow your location automatically</label>
     <label class="field"><span>Method</span><select id="pMethod"></select></label>
     <label class="field"><span>Asr</span><select id="pAsr"><option value="Hanafi">Hanafi (later)</option><option value="Shafi">Shafi'i, Maliki, Hanbali</option></select></label>
@@ -293,7 +293,7 @@
     <button class="btn ghost" id="pCalendar">📅 Add this month to my phone calendar</button>
   </details>
 
-  <details><summary><span class="si" data-ic="bot" style="--c:#6366F1"></span><span class="st"><b>AI</b><small>Built-in AI, your keys, offline AI</small></span></summary>
+  <details><summary><span class="si" data-ic="bot" style="--c:#6366F1"></span><span class="st"><b>AI</b><small>Your own keys, offline AI</small></span></summary>
     <p class="small-text">Everyday commands work without any AI. For open questions, Zuffi uses the first one that's available.</p>
     <div class="field ai-source" id="aiSourceBox">
       <span>Where Zuffi's answers come from</span>

@@ -58,7 +58,7 @@ enum FileDropHandler {
             NotchNav.shared.open("tools")
             SoundEngine.shared.play("approve")
             BunnyFaceCenter.shared.show(.happy, for: 2)
-            if !VoiceEngine.shared.speaking { VoiceEngine.shared.speak("Got it! Do you want to ask about it, or change its format?") }
+            if !VoiceEngine.shared.speaking { VoiceEngine.shared.speak("Got it! AirDrop it, change its format, or ask me about it?") }
             return
         }
 

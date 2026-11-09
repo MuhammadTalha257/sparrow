@@ -284,7 +284,7 @@ struct HomeAction: Identifiable {
         case "notes": ZuffiChat.shared.open(prefill: "Note: ")
         case "newchat": AppState.shared.newChat(); ZuffiChat.shared.open()
         case "lock": Task { await Assistant.run("lock screen", spoken: false) }
-        case "whatsapp": Task { await Assistant.run("any new whatsapp messages", spoken: true) }
+        case "whatsapp": WhatsAppOpen.app()          // opens your WhatsApp (the app, or WhatsApp Web)
         case "callToday": home.say(ZuffiBusiness.shared.callToday())
         case "quiet": home.say(ZuffiBusiness.shared.quietBuyers(short: false))
         case "appointments": home.say(ZuffiBusiness.shared.todays(offset: 0, short: false))
@@ -789,7 +789,7 @@ struct NotchFeaturesList: View {
         NotchFeature(id: "office", cat: "files", icon: "doc.richtext.fill", tint: "#2B6CD8", name: "Word, Excel & PowerPoint", sub: "Describe it — get the file"),
         NotchFeature(id: "data", cat: "files", icon: "tablecells.fill", tint: "#34D399", name: "My data (Excel)", sub: "Sheets Zuffi keeps for you"),
         NotchFeature(id: "planday", cat: "everyday", icon: "calendar", tint: "#4F6BFF", name: "Plan my day", sub: "Fits tasks around your calendar"),
-        NotchFeature(id: "today", cat: "everyday", icon: "sun.max.fill", tint: "#FBC56A", name: "Today", sub: "Prayer times, reminders, weather"),
+        NotchFeature(id: "today", cat: "everyday", icon: "sun.max.fill", tint: "#FBC56A", name: "Today", sub: "Reminders, weather, your day"),
         NotchFeature(id: "meeting", cat: "everyday", icon: "waveform.badge.mic", tint: "#E5577E", name: "Meeting notes", sub: "Record a call, get a clean summary"),
         NotchFeature(id: "room", cat: "everyday", icon: "person.3.sequence.fill", tint: "#F4505E", name: "Room mode", sub: "Follows the talk in the room, shows topics — nothing saved"),
         NotchFeature(id: "memory", cat: "everyday", icon: "brain.head.profile", tint: "#8B7CF6", name: "Memory", sub: "Notes, chats and files Zuffi remembers"),
@@ -3123,6 +3123,18 @@ struct HomePage: View {
     }
 }
 
+/// Opens WhatsApp itself: the Mac app if it's installed (at that chat when we know the number), otherwise WhatsApp Web.
+enum WhatsAppOpen {
+    static func app(chat: String? = nil) {
+        let phone = chat.map { String($0.prefix { $0 != "@" }).filter(\.isNumber) } ?? ""
+        let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "net.whatsapp.WhatsApp")
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "desktop.WhatsApp")
+        if installed != nil, phone.count >= 7, let u = URL(string: "whatsapp://send?phone=\(phone)") { NSWorkspace.shared.open(u); return }
+        if let a = installed { NSWorkspace.shared.openApplication(at: a, configuration: .init()); return }
+        NSWorkspace.shared.open(URL(string: phone.count >= 7 ? "https://web.whatsapp.com/send?phone=\(phone)" : "https://web.whatsapp.com")!)
+    }
+}
+
 struct WhatsAppPage: View {
     @ObservedObject private var link = WhatsAppLink.shared
     @State private var chats: [WhatsAppLink.ChatSummary] = []
@@ -3141,6 +3153,7 @@ struct WhatsAppPage: View {
             HStack {
                 Text(loading ? "Updating…" : "\(chats.count) chats").font(.system(size: 11)).foregroundColor(NS.soft)
                 Spacer()
+                NSPill(title: "Open WhatsApp", primary: true) { WhatsAppOpen.app() }
                 NSPill(title: "Refresh") { Task { await load() } }
             }
             if !sent.isEmpty { Text(sent).font(.system(size: 11.5)).foregroundColor(Color(hex: "#7CE0A3")) }
@@ -3168,6 +3181,7 @@ struct WhatsAppPage: View {
                         NSField(placeholder: "Your reply…", text: $text) { send(c) }
                         HStack(spacing: 6) {
                             NSPill(title: "Send", primary: true) { send(c) }
+                            NSPill(title: "Open in WhatsApp") { WhatsAppOpen.app(chat: c.id) }
                             NSPill(title: "Write it for me") { Task { await writeForMe(c) } }
                             NSPill(title: "Ask Zuffi") { NotchNav.shared.page = "chat"; NotchNav.shared.pendingChat = "WhatsApp chat with \(c.name):\n" + c.msgs.map { ($0.me ? "Me: " : "\(c.name): ") + $0.text }.joined(separator: "\n") + "\nWhat do they want, and what should I reply?" }
                         }
@@ -3584,6 +3598,32 @@ enum AuroraMoves {
     }
 }
 
+/// One of the three big choices for a dropped file: AirDrop, Change format, Ask about it.
+struct DropChoice: View {
+    let icon: String, title: String, tint: String
+    var on = false
+    let action: () -> Void
+    @State private var hover = false
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 7) {
+                ZStack {
+                    Circle().fill(Color(hex: tint).opacity(on || hover ? 0.32 : 0.2)).frame(width: 42, height: 42)
+                    Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundColor(Color(hex: tint))
+                }
+                Text(title).font(.system(size: 12, weight: .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(on || hover ? 0.1 : 0.05)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color(hex: tint).opacity(on ? 0.8 : hover ? 0.45 : 0.18), lineWidth: 1.2))
+            .scaleEffect(hover ? 1.03 : 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { hover = h } }
+    }
+}
+
 struct ToolsPage: View {
     let ask: (String) -> Void
     @ObservedObject private var state = AppState.shared
@@ -3602,10 +3642,16 @@ struct ToolsPage: View {
                     Spacer()
                     NSIconButton(icon: "xmark", help: "Remove") { state.droppedFile = nil; formats = []; status = "" }
                 }
-                Text("Do you want to ask about it, or change its format?").font(.system(size: 12)).foregroundColor(NS.soft)
-                HStack(spacing: 6) {
-                    NSPill(title: "Ask about it", primary: !showFormats) { state.promptContext = .file(name: f.name, fileURL: f.url); NotchNav.shared.page = "chat"; ask("") }
-                    NSPill(title: "Change format", primary: showFormats) { withAnimation { showFormats.toggle() } }
+                Text("What shall I do with it?").font(.system(size: 12)).foregroundColor(NS.soft)
+                HStack(spacing: 8) {
+                    DropChoice(icon: "dot.radiowaves.left.and.right", title: "AirDrop", tint: "#5EB8FF") {
+                        if let s = NSSharingService(named: .sendViaAirDrop), s.canPerform(withItems: [f.url]) { s.perform(withItems: [f.url]); status = "" }
+                        else { status = "AirDrop isn't available — turn on Wi-Fi and Bluetooth, then try again." }
+                    }
+                    DropChoice(icon: "arrow.triangle.2.circlepath", title: "Change format", tint: "#B78BFF", on: showFormats) { withAnimation { showFormats.toggle() } }
+                    DropChoice(icon: "bubble.left.and.text.bubble.right.fill", title: "Ask about it", tint: "#FF8FB8") {
+                        state.promptContext = .file(name: f.name, fileURL: f.url); NotchNav.shared.page = "chat"; ask("")
+                    }
                 }
                 HStack(spacing: 6) {
                     NSPill(title: "Sum it up") { Task { await summarise(f.url, f.name) } }

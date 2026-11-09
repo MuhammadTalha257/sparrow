@@ -37,6 +37,7 @@ function mergeSettings(saved) {
   if (!s.lookV6) { if (!s.theme || s.theme === 'space') s.theme = 'graphite'; s.lookV6 = true; }   // calm, professional graphite
   if (!s.lookV7) { if (!s.theme || ['graphite', 'space', 'blossom', 'petal', 'sunset'].includes(s.theme)) s.theme = 'paper'; s.eventColors = s.eventColors === true; s.lookV7 = true; }   // the professional dashboard
   for (const k of ['keys', 'prayer', 'business', 'memory']) s[k] = Object.assign({}, DEFAULT_SETTINGS[k], (saved || {})[k] || {});
+  s.prayer.on = false;      // prayer times are switched off in Zuffi (hidden, not deleted)
   // health: one object per reminder kind (older versions stored water/meds as simple switches)
   const oh = (saved || {}).health || {};
   s.health = {};

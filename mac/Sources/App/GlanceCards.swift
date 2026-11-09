@@ -1174,7 +1174,7 @@ final class NotchGlance: ObservableObject {
                 guard let n = d["n"] as? String, let at = d["at"] as? Double else { return nil }
                 return Prayer(name: n, at: Date(timeIntervalSince1970: at / 1000))
             }
-            self.prayers = ps
+            self.prayers = []; _ = ps      // prayer times are switched off
             if let m = r["reminder"] as? [String: Any], let t = m["title"] as? String, let at = m["at"] as? Double {
                 self.reminder = (t, Date(timeIntervalSince1970: at / 1000))
             } else { self.reminder = nil }
@@ -1225,7 +1225,7 @@ struct NotchTodayPage: View {
                 }
             }
             if g.nextPrayer == nil && g.reminder == nil && weather.current == nil {
-                Text("Nothing coming up. Turn on prayer times or add a reminder and they’ll show here.").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.6))
+                Text("Nothing coming up. Add a reminder and it’ll show here.").font(.system(size: 10.5)).foregroundColor(.white.opacity(0.6))
             }
         }
         .foregroundColor(.white)

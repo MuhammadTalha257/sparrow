@@ -276,7 +276,7 @@ function drawWelcome() {
   const head = `<div class="wel-top"><div class="wel-head mascot-dir" aria-hidden="true"></div>${p.doneAt ? '<button class="gd-x" data-w="close" aria-label="Close">✕</button>' : ''}</div>`;
   if (!welType) {
     w.innerHTML = `<div class="wel-card">${head}<h2 id="welTitle">Hi! I’m Zuffi 👋</h2><p class="wel-sub">Who am I helping? I’ll set myself up just for you.</p>
-      <div class="wel-pick"><button data-w="type" data-t="personal"><span>🙋</span><b>Just me</b><small>Reminders, prayer times, health, birthdays and everyday help</small></button>
+      <div class="wel-pick"><button data-w="type" data-t="personal"><span>🙋</span><b>Just me</b><small>Reminders, health, birthdays and everyday help</small></button>
       <button data-w="type" data-t="business"><span>🏪</span><b>My business</b><small>Leads, WhatsApp, follow-ups, money, staff, and you too</small></button></div>
       <p class="wel-note">Takes 30 seconds. Then I switch everything on for you.</p></div>`;
     return;

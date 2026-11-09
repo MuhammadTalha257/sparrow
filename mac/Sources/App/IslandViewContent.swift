@@ -1383,6 +1383,7 @@ struct NoteView: View {
                     // WhatsApp: reply · read it out · later
                     HStack(spacing: 8) {
                         noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: true) { startReply() }
+                        noteButton("Open", icon: "arrow.up.forward.app", primary: false) { WhatsAppOpen.app(); fold() }
                         noteButton("Read it", icon: "speaker.wave.2.fill", primary: false) {
                             VoiceEngine.shared.speak((state.noteMessage ?? "").replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from "))
                         }

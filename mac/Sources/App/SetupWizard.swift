@@ -311,17 +311,29 @@ struct FirstRunView: View {
     @State private var step = 1
     @State private var name = AssistantPrefs.displayName
     @State private var language = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
-    @State private var plan = "free"
+    @State private var plan = FirstRunView.bestPlan
+    @State private var groqKey = ""
+    @State private var keyNote = ""
+    @State private var gmailAddr = ""
+    @State private var gmailPass = ""
+    @State private var gmailNote = ""
+    @ObservedObject private var wa = WhatsAppLink.shared
+    private let tools = InstalledAI.detect(refresh: true).filter { $0.provider != nil }
+    /// The easiest brain for this Mac: an AI they already have → free offline AI on newer Macs → a free key on older ones.
+    static var bestPlan: String {
+        if InstalledAI.detect(refresh: true).contains(where: { $0.provider != nil }) { return "installed" }
+        return DeviceCheck.appleSilicon && ProcessInfo.processInfo.physicalMemory >= 8 * 1_073_741_824 ? "free" : "key"
+    }
     @State private var mic = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     @State private var hands = AXIsProcessTrusted()
     @State private var see = CGPreflightScreenCaptureAccess()
     @State private var tried = false
     private let tick = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
-    private let total = 6
+    private let total = 7
     private let ink = Color(hex: "#F5F2FA"), dim = Color(hex: "#A9A3BC"), card = Color(hex: "#15131C"), accent = Color(hex: "#8E7CFF")
     private static let languages = ["English", "Urdu", "Arabic", "Hindi", "Bengali", "Punjabi", "Spanish", "French", "German", "Turkish", "Indonesian", "Tagalog", "Portuguese", "Chinese"]
     private var caption: String {
-        ["", "Zuffi says hi", "Free runs on your Mac", "One download, then it's yours", "Only when you ask", "Hold Z, or double-click me", "Zuffi explains it — in your language"][step]
+        ["", "Zuffi says hi", "Pick the easiest brain", "One download, then it's yours", "Only if you want", "Only when you ask", "Hold Z, or double-click me", "Zuffi explains it — in your language"][step]
     }
 
     var body: some View {
@@ -334,8 +346,9 @@ struct FirstRunView: View {
                         case 1: hello
                         case 2: brain
                         case 3: download
-                        case 4: permissions
-                        case 5: howToCall
+                        case 4: connect
+                        case 5: permissions
+                        case 6: howToCall
                         default: tryIt
                         }
                     }
@@ -345,7 +358,7 @@ struct FirstRunView: View {
                         Button("Back") { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step = max(1, step - 1) } }.buttonStyle(.plain).foregroundColor(dim)
                         Spacer()
                         Button(action: next) {
-                            Text(step == total ? "Start using Zuffi" : step == 2 && plan == "free" && !local.ready ? "Download" : "Next")
+                            Text(step == total ? "Start using Zuffi" : step == 2 && plan == "free" && !local.ready ? "Download" : step == 4 && !GmailLink.shared.linked && !wa.ready ? "Skip" : "Next")
                                 .font(.system(size: 15, weight: .heavy, design: .rounded)).foregroundColor(Color(hex: "#15131C"))
                                 .padding(.horizontal, 26).frame(height: 44).background(Capsule().fill(ink))
                         }.buttonStyle(.plain).disabled(step == 3 && local.busy)
@@ -400,12 +413,54 @@ struct FirstRunView: View {
     }
 
     private var brain: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             title("Choose my brain")
-            sub("Your Mac: \(Int((Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824).rounded())) GB memory · I'll use \(LocalAISetup.model)")
-            option("free", "Free — on this Mac", "Runs on your computer, works offline, nothing leaves your Mac. One download.")
-            option("key", "I have my own AI key", "Groq, Gemini, ChatGPT, Claude… paste it in Settings › AI models (Groq and Gemini have free keys).")
-            option("plus", "Zuffi Plus", "A bigger, faster brain with no download, a natural voice and all of Aurora's outfits. Coming soon.")
+            sub("Your Mac: \(DeviceCheck.chip) · \(Int((Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824).rounded())) GB. I picked the easiest one for you.")
+            if let t = tools.first {
+                option("installed", "Use \(t.name)", "You already have it on this Mac — I'll ask it for you. \(t.detail).")
+            }
+            option("free", DeviceCheck.appleSilicon ? "Free — on this Mac (Ollama)" : "Free — on this Mac (slow on Intel Macs)",
+                   (InstalledAI.detect().contains { $0.id == "ollama" } ? "Ollama is already installed — I'll get it ready. " : "I'll install Ollama and its brain myself, no Terminal. ") + "Private, works offline.")
+            option("key", "A free Groq key (fast, needs internet)", "Takes a minute — I'll show you how.")
+            if plan == "key" {
+                HStack(spacing: 8) {
+                    Button { NSWorkspace.shared.open(URL(string: "https://console.groq.com/keys")!); keyNote = "Sign in, press “Create API Key”, copy it, and paste it here." } label: {
+                        Text("1. Get my free key").font(.system(size: 12.5, weight: .heavy)).foregroundColor(Color(hex: "#15131C")).padding(.horizontal, 14).frame(height: 34).background(Capsule().fill(ink))
+                    }.buttonStyle(.plain)
+                    SecureField("2. Paste it here", text: $groqKey).textFieldStyle(.plain).font(.system(size: 13))
+                        .padding(.horizontal, 12).frame(height: 34).background(RoundedRectangle(cornerRadius: 10).fill(card))
+                }
+                if !keyNote.isEmpty { Text(keyNote).font(.system(size: 12)).foregroundColor(dim).fixedSize(horizontal: false, vertical: true) }
+            }
+        }
+    }
+
+    private var connect: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Connect your apps")
+            sub("So I can read your new mail and messages to you. Skip any you don't want — you can do it later.")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Image(systemName: "envelope.fill").foregroundColor(Color(hex: "#FF8F8F")); Text("Gmail").font(.system(size: 15, weight: .semibold)); Spacer()
+                    if GmailLink.shared.linked { Image(systemName: "checkmark.circle.fill").foregroundColor(Color(hex: "#7CE0A3")).font(.system(size: 20)) } }
+                if !GmailLink.shared.linked {
+                    TextField("you@gmail.com", text: $gmailAddr).textFieldStyle(.plain).font(.system(size: 13)).padding(.horizontal, 12).frame(height: 32).background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.3)))
+                    HStack(spacing: 8) {
+                        SecureField("App password", text: $gmailPass).textFieldStyle(.plain).font(.system(size: 13)).padding(.horizontal, 12).frame(height: 32).background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.3)))
+                        Button("Make one") { NSWorkspace.shared.open(URL(string: "https://myaccount.google.com/apppasswords")!) }.buttonStyle(.plain).foregroundColor(accent).font(.system(size: 12.5, weight: .semibold))
+                        Button("Connect") { Task { gmailNote = "Connecting…"; gmailNote = await GmailLink.shared.link(address: gmailAddr.trimmingCharacters(in: .whitespaces), appPassword: gmailPass) ? "Connected ✓" : "That didn't work — check the address and app password." } }
+                            .buttonStyle(.plain).foregroundColor(ink).font(.system(size: 12.5, weight: .heavy)).disabled(gmailAddr.isEmpty || gmailPass.isEmpty)
+                    }
+                    Text(gmailNote.isEmpty ? "Google needs a special “app password” for this (your normal password won't work)." : gmailNote).font(.system(size: 11.5)).foregroundColor(dim).fixedSize(horizontal: false, vertical: true)
+                }
+            }.padding(12).background(RoundedRectangle(cornerRadius: 16).fill(card))
+            HStack(spacing: 12) {
+                Image(systemName: "message.fill").foregroundColor(Color(hex: "#25D366"))
+                VStack(alignment: .leading, spacing: 2) { Text("WhatsApp").font(.system(size: 15, weight: .semibold))
+                    Text(wa.ready ? "Linked ✓" : wa.state == "qr" ? "Scan the code with your phone: WhatsApp › Settings › Linked devices" : "Scan one code with your phone").font(.system(size: 12)).foregroundColor(Color(hex: "#8E89A3")).fixedSize(horizontal: false, vertical: true) }
+                Spacer()
+                if wa.ready { Image(systemName: "checkmark.circle.fill").foregroundColor(Color(hex: "#7CE0A3")).font(.system(size: 20)) }
+                else { Button { wa.enabled = true; wa.start(); wa.showWindow() } label: { Text("Link").font(.system(size: 13, weight: .heavy)).foregroundColor(Color(hex: "#15131C")).padding(.horizontal, 16).frame(height: 34).background(Capsule().fill(ink)) }.buttonStyle(.plain) }
+            }.padding(12).background(RoundedRectangle(cornerRadius: 16).fill(card))
         }
     }
     private func option(_ id: String, _ t: String, _ d: String) -> some View {
@@ -491,12 +546,19 @@ struct FirstRunView: View {
             var p = NikBrain.shared.profile; p["name"] = name; p["own"] = language; NikBrain.shared.profile = p
         }
         if step == 2 {
-            if plan == "free" { local.start(); withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step = 3 }; return }
-            if plan == "key" { UserDefaults.standard.set("AI models", forKey: "settingsTab") }
+            if plan == "free" {
+                state.aiProvider = AIProvider.ollama.rawValue
+                if !local.ready { local.start(); withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step = 3 }; return }
+            }
+            if plan == "installed", let p = tools.first?.provider { state.aiProvider = p.rawValue }
+            if plan == "key" {
+                let k = groqKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                if k.isEmpty { keyNote = "Paste your key first — or pick another brain."; return }
+                KeychainStore.shared.set("groq-api-key", value: k); state.aiProvider = AIProvider.groq.rawValue; groqKey = ""
+            }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step = 4 }; return
         }
         if step == total {
-            if plan == "key" { ZuffiHub.shared.show(.settings) }
             onDone(); return
         }
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { step += 1 }

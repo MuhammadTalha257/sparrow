@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Open Zuffi", action: #selector(openIsland), keyEquivalent: "")
         menu.addItem(withTitle: "Dashboard — home, team & settings…", action: #selector(openHub), keyEquivalent: "d")
         menu.addItem(withTitle: "Today — meetings & tasks…", action: #selector(openToday), keyEquivalent: "t")
-        menu.addItem(withTitle: "More — habits, prayer, memory, invoices, tools…", action: #selector(openMore), keyEquivalent: "m")
+        menu.addItem(withTitle: "More — habits, memory, invoices, tools…", action: #selector(openMore), keyEquivalent: "m")
         let pet = NSMenuItem(title: "Show Zuffi on screen", action: #selector(togglePet), keyEquivalent: "p")
         pet.tag = 42
         menu.addItem(pet)
