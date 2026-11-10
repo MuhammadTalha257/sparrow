@@ -80,12 +80,88 @@ function createPanel() {
   panel.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
   panel.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://')) { e.preventDefault(); shell.openExternal(url); } });
 }
-function focusIsland() { panel.setIgnoreMouseEvents(false); if (isMac) app.focus({ steal: true }); panel.focus(); }
+function focusIsland() { const h = panel && hits.get(panel.id); if (h) h.inside = null; else panel.setIgnoreMouseEvents(false); if (isMac) app.focus({ steal: true }); panel.focus(); }
 function showPanel() { if (!panel) return; expanded = true; focusIsland(); toPanel('island', 'expand'); }
 function togglePanel() { expanded ? toPanel('island', 'collapse') : showPanel(); }
 const toPanel = (ch, v) => panel && panel.webContents.send(ch, v);
 ipcMain.on('island-state', (_e, st) => { expanded = st === 'expanded'; if (expanded) focusIsland(); });
-ipcMain.on('mouse-inside', (_e, inside) => panel && panel.setIgnoreMouseEvents(!inside, { forward: true }));
+ipcMain.on('mouse-inside', (_e, inside) => { if (panel && !hits.has(panel.id)) panel.setIgnoreMouseEvents(!inside, { forward: true }); });
+
+// ---------- which spots catch the mouse ----------
+// Each see-through window (the notch, the pet) tells us where its visible bits are. We check the cursor here,
+// in the main process, 20 times a second — so a busy page can never leave the screen "stuck" unclickable.
+const hits = new Map();   // window id -> { win, rects: [{x,y,w,h}], inside }
+ipcMain.on('hit-rects', (e, rects) => {
+  const win = BrowserWindow.fromWebContents(e.sender); if (!win) return;
+  const ok = Array.isArray(rects) ? rects.filter(r => r && [r.x, r.y, r.w, r.h].every(Number.isFinite)).slice(0, 24) : [];
+  let h = hits.get(win.id);
+  if (!h) { h = { win, inside: null }; hits.set(win.id, h); const id = win.id; win.once('closed', () => hits.delete(id)); }
+  h.rects = ok;
+});
+setInterval(() => {
+  if (!hits.size) return;
+  const c = screen.getCursorScreenPoint();
+  for (const [id, h] of hits) {
+    if (h.win.isDestroyed()) { hits.delete(id); continue; }
+    if (!h.win.isVisible()) continue;
+    const b = h.win.getContentBounds(), x = c.x - b.x, y = c.y - b.y;
+    const inside = h.rects.some(r => x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2);
+    if (inside !== h.inside) { h.inside = inside; h.win.setIgnoreMouseEvents(!inside, { forward: true }); }
+    if (x > -400 && y > -400 && x < b.width + 400 && y < b.height + 400) h.win.webContents.send('cursor', { x, y, inside });
+  }
+}, 50);
+
+// ---------- this computer's ID (the same after a reset, so it uses the same device slot) ----------
+let machineHash = null;
+ipcMain.on('machine-id', e => {
+  if (!machineHash) {
+    let raw = '';
+    try {
+      if (isWin) raw = (require('child_process').execFileSync('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'], { windowsHide: true, timeout: 4000 }).toString().match(/MachineGuid\s+REG_SZ\s+(\S+)/i) || [])[1] || '';
+      else if (isMac) raw = (require('child_process').execFileSync('ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice'], { timeout: 4000 }).toString().match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/) || [])[1] || '';
+    } catch {}
+    if (!raw) raw = os.hostname() + '|' + os.userInfo().username;
+    machineHash = require('crypto').createHash('sha256').update('zuffi-device|' + raw).digest('hex');
+  }
+  e.returnValue = machineHash;
+});
+
+// ---------- the big window for pages that need room (Settings, Notes, …) ----------
+let full = null;
+function openFull(view) {
+  const go = () => { if (view) full.webContents.send('command', 'view:' + view); };
+  if (full && !full.isDestroyed()) { full.show(); full.focus(); go(); return; }
+  const wa = screen.getPrimaryDisplay().workArea;
+  const W = Math.min(980, wa.width - 80), H = Math.min(760, wa.height - 60);
+  full = new BrowserWindow({
+    width: W, height: H, minWidth: 560, minHeight: 480, x: wa.x + Math.round((wa.width - W) / 2), y: wa.y + Math.round((wa.height - H) / 2),
+    show: false, title: 'Zuffi', icon: path.join(WWW, 'icons', 'icon-512.png'), autoHideMenuBar: true, backgroundColor: '#FBF7F2',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: false },
+  });
+  full.loadURL('app://sparrow/index.html?full=1' + (view ? '&view=' + encodeURIComponent(view) : ''));
+  full.once('ready-to-show', () => full.show());
+  full.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  full.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('app://')) { e.preventDefault(); shell.openExternal(url); } });
+  full.on('closed', () => { full = null; });
+}
+ipcMain.on('open-full', (_e, view) => openFull(view));
+
+// ---------- Start fresh: remove everything Zuffi saved on this computer ----------
+// Your plan is kept on your account, so signing in again with the same email brings it back.
+async function startFresh() {
+  const r = await dialog.showMessageBox({ type: 'warning', buttons: ['Start fresh', 'Cancel'], defaultId: 1, cancelId: 1, title: 'Start fresh?',
+    message: 'Remove everything Zuffi saved on this computer?',
+    detail: 'Your chats, notes, reminders, settings, keys and linked accounts are deleted and Zuffi restarts like new.\n\nYour plan stays on your account: sign in again with the same email and it comes back — no need to buy again.' });
+  if (r.response !== 0) return false;
+  try { if (wa && !wa.isDestroyed()) wa.destroy(); } catch {}
+  for (const s of [session.defaultSession, session.fromPartition('persist:whatsapp')]) {
+    try { await s.clearStorageData(); await s.clearCache(); } catch {}
+  }
+  for (const f of ['sparrow-settings.json', 'clipboard.json']) { try { fs.rmSync(dataFile(f), { force: true }); } catch {} }
+  quitting = true; app.relaunch(); app.exit(0);
+  return true;
+}
+ipcMain.handle('start-fresh', () => startFresh());
 
 // ---------- tray / menu bar ----------
 function createTray() {
@@ -104,6 +180,7 @@ function createTray() {
     { label: 'Show the island when closed', type: 'checkbox', checked: settings.pill, click: i => setSetting('pill', i.checked) },
     { label: isMac ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: settings.login, click: i => setSetting('login', i.checked) },
     { type: 'separator' },
+    { label: 'Start fresh…', click: () => startFresh() },
     { label: 'Quit Zuffi', click: () => { quitting = true; app.quit(); } },
   ]);
   tray.setContextMenu(menu());
@@ -480,7 +557,7 @@ function createPet() {
 function destroyPet() { if (pet) { pet.destroy(); pet = null; } }
 const toPet = (ch, v) => pet && !pet.isDestroyed() && pet.webContents.send(ch, v);
 ipcMain.on('pet', (_e, kind, data) => { if (settings.pet !== false) { createPet(); toPet('pet', { kind, ...data }); } });
-ipcMain.on('pet-mouse', (_e, inside) => pet && pet.setIgnoreMouseEvents(!inside, { forward: true }));
+ipcMain.on('pet-mouse', (_e, inside) => { if (pet && !hits.has(pet.id)) pet.setIgnoreMouseEvents(!inside, { forward: true }); });
 ipcMain.on('pet-action', (_e, a) => { if (a.action === 'open') showPanel(); else toPanel('event', { type: 'pet-action', ...a }); });
 ipcMain.handle('pet-next', () => panel ? panel.webContents.executeJavaScript('window.zuffiNext ? window.zuffiNext() : ""').catch(() => '') : '');
 

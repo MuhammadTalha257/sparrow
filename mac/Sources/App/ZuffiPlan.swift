@@ -272,7 +272,7 @@ enum ZuffiReset {
     static func confirmAndRun() {
         let a = NSAlert()
         a.messageText = "Start fresh on this Mac?"
-        a.informativeText = "This erases everything Zuffi saved on this Mac, like a brand-new install: your name, email and sign-in, chats and history, memories, reminders, habits, business data (the Documents › Zuffi folder), settings, voice choice, AI keys, and your Gmail and WhatsApp links.\n\nYour plan stays on your account — sign in again any time.\n\nThis can't be undone."
+        a.informativeText = "This erases everything Zuffi saved on this Mac, like a brand-new install: your name, email and sign-in, chats and history, memories, reminders, habits, business data (the Documents › Zuffi folder), settings, voice choice, AI keys, and your Gmail and WhatsApp links.\n\nYour plan stays on your account: sign in again with the same email and it's back — no need to buy again.\n\nThis can't be undone."
         a.alertStyle = .warning
         a.addButton(withTitle: "Erase and start fresh")
         a.addButton(withTitle: "Cancel")

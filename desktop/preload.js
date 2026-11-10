@@ -4,6 +4,11 @@ const inv = (...a) => ipcRenderer.invoke(...a);
 
 contextBridge.exposeInMainWorld('SparrowDesktop', {
   platform: () => process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux',
+  machineId: () => ipcRenderer.sendSync('machine-id'),
+  hitRects: rects => ipcRenderer.send('hit-rects', rects),
+  onCursor: f => ipcRenderer.on('cursor', (_e, p) => f(p)),
+  openFull: view => ipcRenderer.send('open-full', view),
+  startFresh: () => ipcRenderer.invoke('start-fresh'),
   openApp: name => ipcRenderer.sendSync('open-app', name),
   media: cmd => ipcRenderer.send('media', cmd),
   httpGet: url => ipcRenderer.invoke('http-get', url),

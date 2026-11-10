@@ -823,7 +823,10 @@ struct Aurora3DView: View {
     var speaking = false
     @AppStorage("zuffiCharacter") private var character = "aurora"
     var body: some View {
-        if character == "robo" {
+        if character != "aurora" {        // only Aurora now: anyone who picked another character gets her back
+            AuroraSceneView(pose: pose, faceLeft: faceLeft, lookAtMouse: lookAtMouse, framing: framing, expression: expression, speaking: speaking)
+                .onAppear { UserDefaults.standard.set("aurora", forKey: "zuffiCharacter") }
+        } else if character == "robo" {
             RoboView(pose: pose, faceLeft: faceLeft, framing: framing, expression: expression, speaking: speaking)
         } else if character == "aurora" || !WobCharacterView.available || WobCharacterView.failed.contains(character) {
             AuroraSceneView(pose: pose, faceLeft: faceLeft, lookAtMouse: lookAtMouse, framing: framing, expression: expression, speaking: speaking)
@@ -857,7 +860,9 @@ struct WobCharacterView: NSViewRepresentable {
     let state: String
     var framing: AuroraFraming = .full
     var faceLeft = false
-    static let choices: [(id: String, name: String)] = [("aurora", "Aurora (3D bunny)"), ("robo", "Robo the robot"), ("zuffi", "Soft bunny"), ("boo", "Boo the ghost"), ("bao", "Bao the panda")]
+    /// Only Aurora is offered now. The others (Robo, soft bunny, Boo, Bao) are hidden, not deleted.
+    static let allChoices: [(id: String, name: String)] = [("aurora", "Aurora (3D bunny)"), ("robo", "Robo the robot"), ("zuffi", "Soft bunny"), ("boo", "Boo the ghost"), ("bao", "Bao the panda")]
+    static let choices: [(id: String, name: String)] = [("aurora", "Aurora (3D bunny)")]
     static var available: Bool { Bundle.main.resourceURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("web/mascots/wob/wob.js").path) } ?? false }
     /// A character that couldn't draw on this Mac (no 3D in the web view): Aurora shows instead, never an empty box.
     nonisolated(unsafe) static var failed: Set<String> = []

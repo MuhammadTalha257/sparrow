@@ -5,6 +5,8 @@ import Vision
 import NaturalLanguage
 import ImageIO
 import UniformTypeIdentifiers
+import IOKit
+import CryptoKit
 
 // =====================================================================
 // MARK: - Zuffi "More": every new feature, inside the Mac app
@@ -41,6 +43,18 @@ final class SparrowSchemeHandler: NSObject, WKURLSchemeHandler {
     nonisolated func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
 
+/// A one-way hash of this Mac's hardware ID (never the ID itself): the same on this Mac forever, useless anywhere else.
+enum MachineID {
+    static let value: String = {
+        let svc = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        defer { IOObjectRelease(svc) }
+        let uuid = (IORegistryEntryCreateCFProperty(svc, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String) ?? ""
+        guard !uuid.isEmpty else { return "" }
+        let d = SHA256.hash(data: Data(("zuffi-device|" + uuid).utf8))
+        return d.map { String(format: "%02x", $0) }.joined()
+    }()
+}
+
 @MainActor
 final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     static let shared = WebHub()
@@ -68,6 +82,8 @@ final class WebHub: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUI
         config.setURLSchemeHandler(scheme, forURLScheme: "app")
         config.userContentController.add(self, name: "sparrow")
         config.userContentController.addUserScript(WKUserScript(source: Self.shim, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // the same device ID after "Start fresh" or a reinstall, so signing in again doesn't use up another device
+        config.userContentController.addUserScript(WKUserScript(source: "window.SparrowMachineId = '\(MachineID.value)';", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         if KeychainStore.clearWebKeys {      // one-time safety reset: the page's saved copy of the AI keys goes too
             config.userContentController.addUserScript(WKUserScript(source: "try{const k='sparrow.settings.v1',s=JSON.parse(localStorage.getItem(k)||'{}');if(s&&s.keys){for(const n in s.keys)s.keys[n]='';localStorage.setItem(k,JSON.stringify(s));}}catch(e){}",
                                                                     injectionTime: .atDocumentStart, forMainFrameOnly: true))

@@ -13,6 +13,7 @@
     "dist:mac": "npm run prepare-web && electron-builder --mac dir --universal --publish never"
   },
   "dependencies": {
+    "three": "^0.169.0",
     "vosk-browser": "0.0.8"
   },
   "devDependencies": {
@@ -23,9 +24,26 @@
     "appId": "app.sparrowai.sparrow",
     "productName": "Zuffi",
     "artifactName": "Zuffi-Setup.exe",
-    "files": ["main.js", "preload.js", "wapreload.js", "www/**", "package.json"],
-    "extraResources": [{ "from": "model", "to": "model", "filter": ["**/*"] }],
-    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "wapreload.js",
+      "www/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "model",
+        "to": "model",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
@@ -38,7 +56,19 @@
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
       "identity": null,
-      "extraResources": [{ "from": "model", "to": "model", "filter": ["**/*"] }, { "from": "native/sparrow-voice", "to": "sparrow-voice" }],
+      "extraResources": [
+        {
+          "from": "model",
+          "to": "model",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "native/sparrow-voice",
+          "to": "sparrow-voice"
+        }
+      ],
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {

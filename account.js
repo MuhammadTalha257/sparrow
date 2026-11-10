@@ -16,6 +16,10 @@ const emit = () => {
 };
 
 export function deviceId() {
+  // Mac and Windows: an ID made from the computer itself (one-way hashed), so "Start fresh" and reinstalling
+  // don't use up another of your devices — sign in with the same email and your plan is simply back.
+  const m = window.SparrowMachineId || window.SparrowDesktop?.machineId?.();
+  if (m && /^[a-f0-9]{16,64}$/.test(m)) return 'z' + m.slice(0, 24);
   let d = LS.get(DEV);
   if (!d) { d = 'z' + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join(''); LS.set(DEV, d); }
   return d;

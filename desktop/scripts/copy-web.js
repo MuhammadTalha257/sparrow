@@ -20,10 +20,14 @@ for (const f of fs.readdirSync(root)) {
   if (/\.(html|js|css|webmanifest)$|^guides\.json$/.test(f) && f !== 'sw.js' && f !== 'get.html') copy(path.join(root, f), path.join(out, f));
 }
 for (const d of ['lib', 'icons', 'mascots', 'fonts']) copy(path.join(root, d), path.join(out, d));
-for (const f of ['desktop.js', 'pet.html', 'pet.js', 'glow.html']) copy(path.join(__dirname, '..', f), path.join(out, f));
+for (const f of ['desktop.js', 'pet.html', 'pet.js', 'glow.html', 'aurora3d.js', 'notch.js']) copy(path.join(__dirname, '..', f), path.join(out, f));
 // Offline speech recogniser (runs in the app, no internet)
 const vosk = path.resolve(__dirname, '..', 'node_modules', 'vosk-browser', 'dist', 'vosk.js');
 if (fs.existsSync(vosk)) copy(vosk, path.join(out, 'lib', 'vosk.js'));
+// three.js for Aurora in 3D (MIT)
+const three = path.resolve(__dirname, '..', 'node_modules', 'three', 'build', 'three.module.min.js');
+if (fs.existsSync(three)) copy(three, path.join(out, 'lib', 'three.module.min.js'));
+else throw new Error('three.js is missing — run npm install');
 fs.mkdirSync(path.resolve(__dirname, '..', 'build'), { recursive: true });
 copy(path.join(root, 'icons', 'icon-512.png'), path.resolve(__dirname, '..', 'build', 'icon.png'));
 console.log('web app copied to', out);

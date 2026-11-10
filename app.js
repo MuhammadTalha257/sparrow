@@ -48,6 +48,8 @@ let featCat = 'all', featQ = '', inKind = 'all', mailCache = { at: 0, list: null
 const dayKey = () => new Date().toDateString();
 // The big Business window on Windows (the island keeps doing reminders, voice and the relay).
 const DASH = new URLSearchParams(location.search).get('dash') === 'business';
+// Windows: the big window for pages that need room. The notch window does reminders and check-ins, not this one.
+const FULLWIN = new URLSearchParams(location.search).get('full') === '1';
 if (DASH) document.documentElement.classList.add('biz-dash');
 if (N) document.documentElement.classList.add('android-app');
 if (D) document.documentElement.classList.add('desktop');
@@ -212,7 +214,7 @@ function drawGuide() {
 function closeGuide() { const g = $('#guide'); if (g) g.hidden = true; try { localStorage.setItem('zuffiWelcomeSeen', '1'); } catch {} if (!S().guideSeen) { S().guideSeen = true; store.save(); } }
 $('#openGuide')?.addEventListener('click', () => { closeSheets(); showGuide(); });
 function maybeGuide() { let seen = false; try { seen = localStorage.getItem('zuffiWelcomeSeen') === '1'; } catch {}
-  if (DASH || acct.locked() || document.hidden) return;
+  if (DASH || FULLWIN || acct.locked() || document.hidden) return;
   const asked = () => { try { return localStorage.getItem('zuffiProfileAsked') === '1'; } catch { return false; } };
   if (!S().profile?.doneAt && !asked()) return void setTimeout(() => { if (!acct.locked() && !S().profile?.doneAt && !asked()) showWelcome(); }, 300);   // first: who is Zuffi for? (needed before she switches on)
   if (!seen && !S().guideSeen) setTimeout(() => { if (!acct.locked() && !S().guideSeen) showGuide(); }, 900); }
@@ -465,7 +467,7 @@ function anniversaryWords() {
     say: `Happy anniversary${S().name ? ', ' + S().name : ''}! ${b.name} is ${yrs > 0 ? yrs + (yrs > 1 ? ' years' : ' year') + ' old' : 'celebrating'} today. Well done to you and the team!` };
 }
 function checkAnniversary() {
-  if (DASH || !isAnniversary() || S().annivWished === dayKey() || new Date().getHours() < 9) return;
+  if (DASH || FULLWIN || !isAnniversary() || S().annivWished === dayKey() || new Date().getHours() < 9) return;
   S().annivWished = dayKey(); store.save();
   const w = anniversaryWords();
   chime(); showAlert(w.title, w.sub); sparrow?.react?.('delighted', 1500);
@@ -546,7 +548,7 @@ function birthdayWords() {
   return { title: `Happy birthday${S().name ? ', ' + S().name : ''}! 🎂`, sub: age > 0 && age < 120 ? `${age} today — have a wonderful day` : 'Have a wonderful day', say: `Happy birthday${S().name ? ', ' + S().name : ''}! I dressed up for you. Have a wonderful day!` };
 }
 function checkBirthday() {
-  if (DASH || !isBirthday() || S().bdayWished === dayKey() || new Date().getHours() < 8) return;
+  if (DASH || FULLWIN || !isBirthday() || S().bdayWished === dayKey() || new Date().getHours() < 8) return;
   S().bdayWished = dayKey(); store.save();
   const w = birthdayWords();
   seasons.apply(); chime(); showAlert(w.title, w.sub); sparrow?.react?.('delighted', 1500);
@@ -1554,7 +1556,7 @@ function alertNow(spoken, shown, tag, itemId) {
 }
 const who = () => S().name ? S().name + ', ' : '';
 async function checkDue() {
-  if (DASH || acct.locked()) return;            // no plan: reminders pause too                     // the island window rings reminders, not the dashboard
+  if (DASH || FULLWIN || acct.locked()) return;            // no plan: reminders pause too                     // the island window rings reminders, not the dashboard
   const now = Date.now(), lead = (+S().lead || 0) * 60000;
   const missed = [];
   for (const it of store.items) {
@@ -2504,7 +2506,8 @@ $('#eraseBizBtn')?.addEventListener('click', () => {
   toast('All business data erased'); setTimeout(() => location.reload(), 800);
 });
 $('#startFreshBtn')?.addEventListener('click', async () => {
-  if (!confirm('Start fresh on this device? This erases your details, chats, memories, reminders, settings, business data and AI keys here. Your account and plan are safe — just sign in again. This can’t be undone.')) return;
+  if (D?.startFresh) { try { await mem.forgetAll(); } catch {} D.startFresh(); return; }   // Windows: asks, wipes everything Zuffi saved, restarts
+  if (!confirm('Start fresh on this device? This erases your details, chats, memories, reminders, settings, business data and AI keys here. Your plan stays on your account: sign in again with the same email and it comes back — no need to buy again. This can’t be undone.')) return;
   try { await mem.forgetAll(); } catch {}
   try { localStorage.clear(); sessionStorage.clear(); } catch {}
   try { for (const d of (await indexedDB.databases?.()) || []) if (d.name) indexedDB.deleteDatabase(d.name); } catch {}
@@ -2661,7 +2664,11 @@ if (N) {
 }
 
 // ---------------- computer app extras ----------------
-if (D && !DASH) import('./desktop.js').catch(e => console.error('desktop', e));
+if (FULLWIN) {
+  const v = new URLSearchParams(location.search).get('view'); if (v) setTimeout(() => go(v), 300);
+  D?.onCommand?.(c => { if (typeof c === 'string' && c.startsWith('view:')) go(c.slice(5)); });
+}
+if (D && !DASH && !FULLWIN) import('./desktop.js').catch(e => console.error('desktop', e));
 if (DASH) {
   document.title = 'Zuffi Business';
   const bar = document.createElement('div'); bar.className = 'dash-drag'; bar.innerHTML = '<span>Zuffi Business</span>'; document.body.prepend(bar);

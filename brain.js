@@ -265,12 +265,13 @@ export async function weather() {
   const loc = await location();
   if (!loc) return null;
   const f = navigator.language === 'en-US';
-  const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code`
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code,is_day`
     + `&daily=temperature_2m_max,precipitation_probability_max&timezone=auto&forecast_days=1${f ? '&temperature_unit=fahrenheit' : ''}`;
   try {
     const j = await getJSON(u);
     return { city: loc.city, temp: Math.round(j.current.temperature_2m), hi: Math.round(j.daily.temperature_2m_max[0]),
-      sky: WMO(j.current.weather_code), rain: j.daily.precipitation_probability_max?.[0] ?? 0 };
+      sky: WMO(j.current.weather_code), rain: j.daily.precipitation_probability_max?.[0] ?? 0,
+      code: j.current.weather_code, day: j.current.is_day !== 0 };
   } catch { return null; }
 }
 export async function weatherText() {

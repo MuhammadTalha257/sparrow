@@ -3408,12 +3408,12 @@ struct SettingsPage: View {
             NSPill(title: saved ? "Saved ✓" : "Save", primary: true) { saveProfile() }
         }
         NSLabel(t: "YOUR ZUFFI")
-        Text("Her character").font(.system(size: 12.5)).foregroundColor(.white)
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
+        if WobCharacterView.choices.count > 1 { Text("Her character").font(.system(size: 12.5)).foregroundColor(.white) }
+        if WobCharacterView.choices.count > 1 { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
             ForEach(WobCharacterView.choices, id: \.id) { c in
                 NSPill(title: c.name, primary: character == c.id) { character = c.id; BunnyFaceCenter.shared.show(.happy, for: 2) }
             }
-        }
+        } }
         if !WobCharacterView.failed.isEmpty {
             Text("\(WobCharacterView.failed.compactMap { id in WobCharacterView.choices.first { $0.id == id }?.name }.joined(separator: ", ")) couldn't be drawn on this Mac, so Aurora is showing.")
                 .font(.system(size: 11)).foregroundColor(Color(hex: "#F5B963")).fixedSize(horizontal: false, vertical: true)
@@ -3910,7 +3910,7 @@ enum ZuffiCommand {
             IslandDrag.resetPosition(); return "I'm back under the notch!"
         }
         // "change your character to Boo", "be the panda", "switch to the ghost"
-        if low.range(of: #"^(change|switch|set) (your |the )?(character|look|avatar) (to |into )?|^(be|become|turn into|switch to) (the |a )?(ghost|panda|boo|bao|bunny|aurora|soft bunny|robot|robo)$"#, options: .regularExpression) != nil {
+        if false, low.range(of: #"^(change|switch|set) (your |the )?(character|look|avatar) (to |into )?|^(be|become|turn into|switch to) (the |a )?(ghost|panda|boo|bao|bunny|aurora|soft bunny|robot|robo)$"#, options: .regularExpression) != nil {      // only Aurora now
             let pick: String? = low.contains("robo") ? "robo" : low.contains("boo") || low.contains("ghost") ? "boo" : low.contains("bao") || low.contains("panda") ? "bao"
                 : low.contains("soft") || low.contains("new bunny") ? "zuffi" : low.contains("aurora") || low.contains("bunny") || low.contains("rabbit") ? "aurora" : nil
             if let pick {

@@ -4,6 +4,7 @@ import { store } from './store.js';
 import { greetingWord, fmtTime, tasksForDay, weather } from './brain.js';
 import * as mem from './memory.js';
 import { mountMascot } from './mascot.js';
+import { mountNotch } from './notch.js';
 
 const D = window.SparrowDesktop;
 const S = () => store.settings;
@@ -190,6 +191,7 @@ const collapse = () => { if (document.querySelector('.sheet:not([hidden])')) doc
 let typeT = null;
 function peek(t1, t2 = '', ms = 6000) {
   if (state === 'expanded') return;
+  if (window.ZuffiNotchPeek) { window.ZuffiNotchPeek(t2 ? `${t1} · ${t2}` : t1, Math.min(ms, 12000)); return; }   // the new notch shows it under her tab
   capText(t1, t2); setState('peek');
   // "WhatsApp · Sana" style lines sit on top in green; the message types itself in, like the Mac notch
   const sm = cap.querySelector('#capT2'), b = cap.querySelector('#capT1');
@@ -490,3 +492,8 @@ async function dictate() {
     setTimeout(() => { if (dict?.rec === rec) rec.stop(); }, 120000);
   } catch { dict = null; peek('I can’t use the microphone', 'Allow it in Windows Settings → Privacy → Microphone.', 7000); }
 }
+
+// ---------- the new notch: Aurora's tab, the ask bar and the menu — the same as on the Mac ----------
+try {
+  mountNotch({ D, expand, collapse, getState: () => state, Voice, html, openFull: (view) => (D.openFull ? D.openFull(view) : expand()) });
+} catch (e) { console.error('notch', e); html.classList.remove('zn'); }
