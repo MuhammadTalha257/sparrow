@@ -46,6 +46,8 @@ final class AppState: ObservableObject {
 
     // Bot state override
     @Published var stateOverride: BotState? = nil
+    /// What she's doing right now while you wait ("Searching the web…"), shown as shimmering words in the chat.
+    @Published var workNote = ""
 
     // Real notch dimensions (set by IslandWindowController on launch)
     var notchWidth:  CGFloat = IslandConst.notchWidth
@@ -233,9 +235,19 @@ final class AppState: ObservableObject {
     @Published var notionError: String? = nil
 
     // Chat conversation history
-    @Published var chatHistory: [ChatMessage] = [] {
+    @Published var chatHistory: [ChatMessage] = AppState.savedChat() {
         didSet {
             if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !ZuffiChat.shared.isOpen { unreadReplies += 1 }
+            UserDefaults.standard.set(chatHistory.suffix(40).map { ["r": $0.role == .user ? "u" : "a", "t": String($0.content.prefix(6000)), "d": "\($0.at.timeIntervalSince1970)"] }, forKey: "chatShown")
+        }
+    }
+    /// The chat you see comes back after Zuffi restarts (like ChatGPT), until you start a new chat.
+    static func savedChat() -> [ChatMessage] {
+        (UserDefaults.standard.array(forKey: "chatShown") as? [[String: String]] ?? []).compactMap { d in
+            guard let r = d["r"], let t = d["t"] else { return nil }
+            var m = ChatMessage(role: r == "u" ? .user : .assistant, content: t)
+            if let s = d["d"], let ts = Double(s) { m.at = Date(timeIntervalSince1970: ts) }
+            return m
         }
     }
     /// Replies that arrived while the Chat tab wasn't open (badge on the tab).

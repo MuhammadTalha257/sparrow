@@ -823,7 +823,9 @@ struct Aurora3DView: View {
     var speaking = false
     @AppStorage("zuffiCharacter") private var character = "aurora"
     var body: some View {
-        if character == "aurora" || !WobCharacterView.available || WobCharacterView.failed.contains(character) {
+        if character == "robo" {
+            RoboView(pose: pose, faceLeft: faceLeft, framing: framing, expression: expression, speaking: speaking)
+        } else if character == "aurora" || !WobCharacterView.available || WobCharacterView.failed.contains(character) {
             AuroraSceneView(pose: pose, faceLeft: faceLeft, lookAtMouse: lookAtMouse, framing: framing, expression: expression, speaking: speaking)
         } else {
             WobCharacterView(character: character, state: WobCharacterView.state(pose: pose, mood: expression, speaking: speaking || Aurora3DRig.liveSpeaking),
@@ -855,7 +857,7 @@ struct WobCharacterView: NSViewRepresentable {
     let state: String
     var framing: AuroraFraming = .full
     var faceLeft = false
-    static let choices: [(id: String, name: String)] = [("aurora", "Aurora (3D bunny)"), ("zuffi", "Soft bunny"), ("boo", "Boo the ghost"), ("bao", "Bao the panda")]
+    static let choices: [(id: String, name: String)] = [("aurora", "Aurora (3D bunny)"), ("robo", "Robo the robot"), ("zuffi", "Soft bunny"), ("boo", "Boo the ghost"), ("bao", "Bao the panda")]
     static var available: Bool { Bundle.main.resourceURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("web/mascots/wob/wob.js").path) } ?? false }
     /// A character that couldn't draw on this Mac (no 3D in the web view): Aurora shows instead, never an empty box.
     nonisolated(unsafe) static var failed: Set<String> = []
@@ -1889,5 +1891,251 @@ struct LiveBunnyFace: View {
             .id(colorVersion)
             .allowsHitTesting(false)
             .onReceive(NotificationCenter.default.publisher(for: .auroraColorChanged)) { _ in colorVersion += 1 }
+    }
+}
+
+// MARK: - Robo — a white robot with pink joints (an original character, drawn in code)
+
+/// Robo: helmet with a black visor and glowing eyes, white shell, pink joints. Same poses and moods as Aurora:
+/// he walks, dances when you say yes, stamps and steams when you say "not yet", talks with a little light-bar mouth,
+/// and every so often breaks into a dance while he waits.
+struct RoboView: View {
+    var pose: AuroraPose = .sit
+    var faceLeft = false
+    var framing: AuroraFraming = .full
+    var expression: BunnyMood = .smile
+    var speaking = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+            Canvas { ctx, size in
+                RoboPainter(t: tl.date.timeIntervalSinceReferenceDate, pose: pose, mood: expression,
+                            speaking: speaking || Aurora3DRig.liveSpeaking, faceLeft: faceLeft, framing: framing).draw(&ctx, size)
+            }
+        }
+        .accessibilityLabel("Robo, Zuffi's robot")
+    }
+}
+
+struct RoboPainter {
+    let t: Double, pose: AuroraPose, mood: BunnyMood, speaking: Bool, faceLeft: Bool, framing: AuroraFraming
+    private let white = Color(red: 0.97, green: 0.97, blue: 0.98)
+    private let shade = Color(red: 0.80, green: 0.81, blue: 0.86)
+    private let pink = Color(red: 0.91, green: 0.35, blue: 0.55)
+    private let visor = Color(red: 0.07, green: 0.07, blue: 0.10)
+
+    /// Idle → a short dance every ~11 s, so the pet keeps moving.
+    private var dancing: Bool { pose == .happy || (pose == .sit && framing == .full && t.truncatingRemainder(dividingBy: 11) < 3.2) }
+    private var angry: Bool { pose == .cross || mood == .cross }
+    private var walking: Bool { pose == .hop }
+
+    func draw(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        // the area of Robo's 100×165 world that fills the view
+        let view: CGRect
+        switch framing {
+        case .full: view = CGRect(x: 0, y: -4, width: 100, height: 170)
+        case .face: view = CGRect(x: 14, y: 6, width: 72, height: 64)
+        case .closeFace: view = CGRect(x: 18, y: 10, width: 64, height: 56)
+        }
+        let s = min(size.width / view.width, size.height / view.height)
+        ctx.translateBy(x: size.width / 2, y: size.height / 2)
+        ctx.scaleBy(x: faceLeft ? -s : s, y: s)
+        ctx.translateBy(x: -view.midX, y: -view.midY)
+
+        // body motion
+        var bob = sin(t * 2) * 1.2, sway = 0.0, tilt = 0.0, shake = 0.0
+        if walking { bob = -abs(sin(t * 6)) * 2.5 }
+        if dancing { bob = -abs(sin(t * 5)) * 6; sway = sin(t * 4) * 4; tilt = sin(t * 4) * 7 }
+        if angry { shake = sin(t * 38) * 1.4; tilt = sin(t * 9) * 3 }
+        if pose == .listen { tilt = 8 }
+
+        if framing == .full {
+            ctx.fill(Path(ellipseIn: CGRect(x: 28 + sway * 0.4, y: 156, width: 44, height: 7)), with: .color(.black.opacity(0.18 + bob * 0.01)))
+        }
+        var body = ctx
+        body.translateBy(x: sway + shake, y: bob)
+        body.translateBy(x: 50, y: 110); body.rotate(by: .degrees(tilt * 0.4)); body.translateBy(x: -50, y: -110)
+
+        if framing == .full {
+            legs(&body)
+            torso(&body)
+            arms(&body)
+        }
+        var head = body
+        head.translateBy(x: 50, y: 64); head.rotate(by: .degrees(tilt * 0.6 + (angry ? sin(t * 7) * 2 : 0))); head.translateBy(x: -50, y: -64)
+        self.head(&head)
+        if angry { steam(&head) }
+        if dancing && framing == .full { notes(&ctx) }
+    }
+
+    // MARK: parts
+
+    private func capsule(_ c: inout GraphicsContext, _ a: CGPoint, _ b: CGPoint, _ w: CGFloat) {
+        var p = Path(); p.move(to: a); p.addLine(to: b)
+        c.stroke(p, with: .color(shade), style: .init(lineWidth: w + 1.6, lineCap: .round))
+        c.stroke(p, with: .color(white), style: .init(lineWidth: w, lineCap: .round))
+    }
+    private func joint(_ c: inout GraphicsContext, _ p: CGPoint, _ r: CGFloat) {
+        c.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(pink))
+        c.fill(Path(ellipseIn: CGRect(x: p.x - r * 0.45, y: p.y - r * 0.6, width: r * 0.6, height: r * 0.5)), with: .color(.white.opacity(0.5)))
+    }
+    /// angle in degrees from straight down; positive swings away from the body on that side
+    private func point(_ from: CGPoint, _ deg: Double, _ len: Double, side: Double) -> CGPoint {
+        let r = deg * .pi / 180
+        return CGPoint(x: from.x + sin(r) * len * side, y: from.y + cos(r) * len)
+    }
+
+    private func legs(_ c: inout GraphicsContext) {
+        for side in [-1.0, 1.0] {
+            let hip = CGPoint(x: 50 + 9 * side, y: 112)
+            var thigh = 4.0, knee = 0.0
+            if walking { let ph = sin(t * 6 + (side > 0 ? .pi : 0)); thigh = ph * 26 * side; knee = max(0, -ph) * 34 }
+            if dancing { let ph = sin(t * 5 + (side > 0 ? .pi : 0)); thigh = 8 + max(0, ph) * 30; knee = max(0, ph) * 40 }
+            if angry && side > 0 { thigh = 4 + abs(sin(t * 7)) * 10 }               // stamping foot
+            let k = point(hip, thigh, 19, side: side)
+            let f = point(k, thigh - knee * side * side, 17, side: side)
+            capsule(&c, hip, k, 8); capsule(&c, k, f, 7.5)
+            joint(&c, hip, 4); joint(&c, k, 3.6)
+            let boot = Path(roundedRect: CGRect(x: f.x - 8.5 + 1.5 * side, y: f.y - 3, width: 17, height: 11), cornerRadius: 5.5)
+            c.fill(boot, with: .color(shade)); c.fill(boot.offsetBy(dx: 0, dy: -0.8), with: .color(white))
+            c.fill(Path(roundedRect: CGRect(x: f.x - 7 + 1.5 * side, y: f.y + 5.5, width: 14, height: 2.4), cornerRadius: 1.2), with: .color(pink.opacity(0.85)))
+        }
+    }
+
+    private func torso(_ c: inout GraphicsContext) {
+        let r = CGRect(x: 31, y: 70, width: 38, height: 44)
+        c.fill(Path(roundedRect: r, cornerRadius: 18), with: .color(shade))
+        c.fill(Path(roundedRect: r.insetBy(dx: 0.8, dy: 0.8).offsetBy(dx: -0.6, dy: -0.8), cornerRadius: 17),
+               with: .linearGradient(Gradient(colors: [.white, white, shade.opacity(0.9)]), startPoint: CGPoint(x: 36, y: 72), endPoint: CGPoint(x: 66, y: 114)))
+        c.fill(Path(roundedRect: CGRect(x: 38, y: 100, width: 24, height: 3), cornerRadius: 1.5), with: .color(pink.opacity(0.7)))
+        let glow = 0.55 + 0.45 * sin(t * 3)
+        c.fill(Path(ellipseIn: CGRect(x: 46, y: 82, width: 8, height: 8)), with: .radialGradient(Gradient(colors: [pink.opacity(glow), pink.opacity(0)]), center: CGPoint(x: 50, y: 86), startRadius: 0, endRadius: 7))
+        c.fill(Path(ellipseIn: CGRect(x: 48, y: 84, width: 4, height: 4)), with: .color(pink))
+        joint(&c, CGPoint(x: 50, y: 69), 3.6)            // neck
+    }
+
+    private func arms(_ c: inout GraphicsContext) {
+        for side in [-1.0, 1.0] {
+            let sh = CGPoint(x: 50 + 21 * side, y: 78)
+            var up = 14.0, elbow = 8.0
+            switch pose {
+            case .hop: up = 10 + sin(t * 6 + (side > 0 ? 0 : .pi)) * 22 * side; elbow = 20
+            case .hold: up = 68; elbow = -36
+            case .wave: if side > 0 { up = 150 + sin(t * 8) * 18; elbow = -30 } else { up = 10 }
+            case .listen: if side > 0 { up = 145; elbow = -115 } else { up = 10 }
+            default: break
+            }
+            if dancing { up = 135 + sin(t * 5 + (side > 0 ? 0 : 1.6)) * 25; elbow = -25 + sin(t * 10) * 20 }
+            if angry { up = 38; elbow = -112 }                                      // fists on hips
+            let e = point(sh, up, 16, side: side)
+            let h = point(e, up + elbow, 15, side: side)
+            capsule(&c, sh, e, 7); capsule(&c, e, h, 6.5)
+            joint(&c, sh, 4.6); joint(&c, e, 3.4)
+            c.fill(Path(ellipseIn: CGRect(x: h.x - 5, y: h.y - 5, width: 10, height: 10)), with: .color(shade))
+            c.fill(Path(ellipseIn: CGRect(x: h.x - 4.6, y: h.y - 5.2, width: 9.2, height: 9.2)), with: .color(white))
+        }
+    }
+
+    private func head(_ c: inout GraphicsContext) {
+        let r = CGRect(x: 21, y: 13, width: 58, height: 50)
+        // ear discs
+        for side in [-1.0, 1.0] {
+            let e = CGRect(x: 50 + 29 * side - 6, y: 32, width: 12, height: 14)
+            c.fill(Path(ellipseIn: e), with: .color(pink))
+            c.fill(Path(ellipseIn: e.insetBy(dx: 3, dy: 3.5)), with: .color(white))
+        }
+        c.fill(Path(roundedRect: r, cornerRadius: 23), with: .color(shade))
+        c.fill(Path(roundedRect: r.insetBy(dx: 0.8, dy: 0.8).offsetBy(dx: -0.6, dy: -0.8), cornerRadius: 22),
+               with: .linearGradient(Gradient(colors: [.white, white, shade]), startPoint: CGPoint(x: 28, y: 14), endPoint: CGPoint(x: 72, y: 62)))
+        c.fill(Path(ellipseIn: CGRect(x: 30, y: 17, width: 16, height: 6)), with: .color(.white.opacity(0.9)))      // shine
+        // visor
+        let v = CGRect(x: 28, y: 26, width: 44, height: 27)
+        c.fill(Path(roundedRect: v, cornerRadius: 13), with: .linearGradient(Gradient(colors: [Color(white: 0.16), visor]), startPoint: CGPoint(x: 50, y: 26), endPoint: CGPoint(x: 50, y: 53)))
+        c.fill(Path(roundedRect: CGRect(x: 32, y: 28, width: 14, height: 3), cornerRadius: 1.5), with: .color(.white.opacity(0.18)))
+        eyes(&c)
+        mouth(&c)
+    }
+
+    private func eyes(_ c: inout GraphicsContext) {
+        let glow = angry ? Color(red: 1, green: 0.27, blue: 0.27) : Color(red: 1, green: 0.56, blue: 0.75)
+        let blink = !dancing && !angry && t.truncatingRemainder(dividingBy: 4.2) < 0.13
+        let look = pose == .listen || mood == .thinking ? -2.0 : 0
+        let m: BunnyMood = dancing ? .happy : angry ? .cross : mood
+        for side in [-1.0, 1.0] {
+            let ex = 50 + 9 * side, ey = 37.5 + look
+            var p = Path()
+            switch m {
+            case .happy, .laugh, .smile where dancing:
+                p.move(to: CGPoint(x: ex - 4, y: ey + 1.5)); p.addQuadCurve(to: CGPoint(x: ex + 4, y: ey + 1.5), control: CGPoint(x: ex, y: ey - 4))
+                c.stroke(p, with: .color(glow), style: .init(lineWidth: 2.2, lineCap: .round))
+            case .cross:
+                p.move(to: CGPoint(x: ex - 4.5, y: ey - 2.5 * side * -1 - 0.5)); p.addLine(to: CGPoint(x: ex + 4.5, y: ey + 2.5 * side * -1 - 0.5))
+                c.stroke(p, with: .color(glow), style: .init(lineWidth: 2.4, lineCap: .round))
+                c.fill(Path(ellipseIn: CGRect(x: ex - 2, y: ey + 0.8, width: 4, height: 3.4)), with: .color(glow))
+            case .love:
+                let h = Path { q in
+                    q.move(to: CGPoint(x: ex, y: ey + 3.5))
+                    q.addCurve(to: CGPoint(x: ex, y: ey - 1.5), control1: CGPoint(x: ex - 5.5, y: ey), control2: CGPoint(x: ex - 2.5, y: ey - 5))
+                    q.addCurve(to: CGPoint(x: ex, y: ey + 3.5), control1: CGPoint(x: ex + 2.5, y: ey - 5), control2: CGPoint(x: ex + 5.5, y: ey))
+                }
+                c.fill(h, with: .color(glow))
+            case .sad:
+                p.move(to: CGPoint(x: ex - 4, y: ey - 1)); p.addQuadCurve(to: CGPoint(x: ex + 4, y: ey - 1), control: CGPoint(x: ex, y: ey + 3))
+                c.stroke(p, with: .color(glow.opacity(0.8)), style: .init(lineWidth: 2, lineCap: .round))
+            case .sleepy:
+                p.move(to: CGPoint(x: ex - 4, y: ey)); p.addLine(to: CGPoint(x: ex + 4, y: ey))
+                c.stroke(p, with: .color(glow.opacity(0.7)), style: .init(lineWidth: 2, lineCap: .round))
+            case .surprised:
+                c.stroke(Path(ellipseIn: CGRect(x: ex - 3.6, y: ey - 3.6, width: 7.2, height: 7.2)), with: .color(glow), lineWidth: 2)
+            case .wink where side > 0:
+                p.move(to: CGPoint(x: ex - 4, y: ey + 1)); p.addQuadCurve(to: CGPoint(x: ex + 4, y: ey + 1), control: CGPoint(x: ex, y: ey - 3))
+                c.stroke(p, with: .color(glow), style: .init(lineWidth: 2.2, lineCap: .round))
+            default:
+                let h = blink ? 1.2 : 7.0
+                let e = CGRect(x: ex - 3, y: ey - h / 2, width: 6, height: h)
+                c.fill(Path(ellipseIn: e.insetBy(dx: -2.5, dy: -2.5)), with: .color(glow.opacity(0.18)))
+                c.fill(Path(roundedRect: e, cornerRadius: 3), with: .color(glow))
+                if !blink { c.fill(Path(ellipseIn: CGRect(x: ex - 1.6, y: ey - 2.6, width: 2, height: 2)), with: .color(.white.opacity(0.85))) }
+            }
+        }
+        if angry {     // little red angry brows on the visor glass
+            for side in [-1.0, 1.0] {
+                var b = Path(); b.move(to: CGPoint(x: 50 + 4 * side, y: 31.5)); b.addLine(to: CGPoint(x: 50 + 13 * side, y: 29))
+                c.stroke(b, with: .color(Color(red: 1, green: 0.27, blue: 0.27).opacity(0.85)), style: .init(lineWidth: 1.6, lineCap: .round))
+            }
+        }
+    }
+
+    private func mouth(_ c: inout GraphicsContext) {
+        let color = angry ? Color(red: 1, green: 0.35, blue: 0.35) : Color(red: 1, green: 0.62, blue: 0.80)
+        if speaking {      // a light-bar mouth that dances with her voice
+            for i in 0..<5 {
+                let h = 1.2 + 4.6 * abs(sin(t * 17 + Double(i) * 1.3) * sin(t * 5.3 + Double(i)))
+                c.fill(Path(roundedRect: CGRect(x: 43.2 + Double(i) * 3, y: 46.5 - h / 2, width: 1.8, height: h), cornerRadius: 0.9), with: .color(color))
+            }
+            return
+        }
+        var p = Path()
+        if angry || mood == .sad { p.move(to: CGPoint(x: 46, y: 48)); p.addQuadCurve(to: CGPoint(x: 54, y: 48), control: CGPoint(x: 50, y: 45)) }
+        else if mood == .surprised { c.stroke(Path(ellipseIn: CGRect(x: 48.5, y: 44.5, width: 3, height: 3.4)), with: .color(color), lineWidth: 1.4); return }
+        else { p.move(to: CGPoint(x: 45.5, y: 45.5)); p.addQuadCurve(to: CGPoint(x: 54.5, y: 45.5), control: CGPoint(x: 50, y: dancing ? 50.5 : 48.5)) }
+        c.stroke(p, with: .color(color), style: .init(lineWidth: 1.6, lineCap: .round))
+    }
+
+    private func steam(_ c: inout GraphicsContext) {
+        for i in 0..<3 {
+            let k = (t * 0.9 + Double(i) / 3).truncatingRemainder(dividingBy: 1)
+            let x = 50 + (Double(i) - 1) * 13 + sin(t * 3 + Double(i)) * 2
+            let y = 12 - k * 16, r = 2.5 + k * 4
+            c.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(Color(white: 0.85).opacity(0.75 * (1 - k))))
+        }
+    }
+
+    private func notes(_ c: inout GraphicsContext) {
+        for i in 0..<3 {
+            let k = (t * 0.6 + Double(i) / 3).truncatingRemainder(dividingBy: 1)
+            let x = 50 + (i == 1 ? 30 : -30) + sin(t * 2 + Double(i)) * 4, y = 60 - k * 46
+            c.draw(Text("♪").font(.system(size: 11, weight: .bold)).foregroundColor(pink.opacity(1 - k)), at: CGPoint(x: x, y: y))
+        }
     }
 }

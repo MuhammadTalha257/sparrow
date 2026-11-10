@@ -1263,7 +1263,7 @@ struct NotchHomeView: View {
                             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: "#F2F1F6")))
                     }
                     if thinking {
-                        Text("Hmm, let me think…").font(.system(size: 13.5)).foregroundColor(.white.opacity(0.6))
+                        ThinkingWords(note: state.workNote)
                     } else {
                         Text(reply).font(.system(size: 13.5)).foregroundColor(.white).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
@@ -2736,6 +2736,33 @@ struct NSHover: ButtonStyle {
 
 // MARK: pages
 
+/// While she works: a little row of words that glide in and shimmer ("Thinking…", "Searching the web…", "Putting it together…").
+struct ThinkingWords: View {
+    var note = ""
+    private static let words = ["Thinking…", "Reading what you asked…", "Putting it together…", "Choosing my words…", "Almost there…"]
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            let text = note.isEmpty ? Self.words[Int(t / 1.8) % Self.words.count] : note
+            HStack(spacing: 7) {
+                HStack(spacing: 3) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle().fill(LinearGradient(colors: [Color(hex: "#FF8FB8"), Color(hex: "#B78BFF")], startPoint: .top, endPoint: .bottom))
+                            .frame(width: 6, height: 6).offset(y: -4 * max(0, sin(t * 6 - Double(i) * 0.8)))
+                    }
+                }
+                Text(text).font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(LinearGradient(colors: [Color(hex: "#ECEAF2").opacity(0.45), .white, Color(hex: "#FFB3CF"), Color(hex: "#ECEAF2").opacity(0.45)],
+                                                    startPoint: UnitPoint(x: (t * 0.7).truncatingRemainder(dividingBy: 1.6) - 0.6, y: 0.5),
+                                                    endPoint: UnitPoint(x: (t * 0.7).truncatingRemainder(dividingBy: 1.6) + 0.4, y: 0.5)))
+                    .id(text).transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: text)
+            .padding(.vertical, 4)
+        }
+    }
+}
+
 struct ChatPage: View {
     let ask: (String) -> Void
     @ObservedObject private var state = AppState.shared
@@ -2778,7 +2805,7 @@ struct ChatPage: View {
                     Text(m.content).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            if state.stateOverride == .thinking { Text("Hmm, thinking…").font(.system(size: 12)).foregroundColor(NS.soft) }
+            if state.stateOverride == .thinking { ThinkingWords(note: state.workNote).transition(.opacity) }
         }
     }
     /// Continue an old chat right here.
@@ -3382,7 +3409,7 @@ struct SettingsPage: View {
         }
         NSLabel(t: "YOUR ZUFFI")
         Text("Her character").font(.system(size: 12.5)).foregroundColor(.white)
-        HStack(spacing: 6) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
             ForEach(WobCharacterView.choices, id: \.id) { c in
                 NSPill(title: c.name, primary: character == c.id) { character = c.id; BunnyFaceCenter.shared.show(.happy, for: 2) }
             }
@@ -3391,7 +3418,7 @@ struct SettingsPage: View {
             Text("\(WobCharacterView.failed.compactMap { id in WobCharacterView.choices.first { $0.id == id }?.name }.joined(separator: ", ")) couldn't be drawn on this Mac, so Aurora is showing.")
                 .font(.system(size: 11)).foregroundColor(Color(hex: "#F5B963")).fixedSize(horizontal: false, vertical: true)
         }
-        if character != "aurora" { Text("Characters drawn with Wobnimo (MIT licence).").font(.system(size: 10.5)).foregroundColor(NS.soft) }
+        if !["aurora", "robo"].contains(character) { Text("Characters drawn with Wobnimo (MIT licence).").font(.system(size: 10.5)).foregroundColor(NS.soft) }
         HStack(spacing: 6) {
             Text("The notch shows").font(.system(size: 12.5)).foregroundColor(.white); Spacer()
             NSPill(title: "Aurora", primary: showsAurora) { showsAurora = true }
@@ -3883,15 +3910,15 @@ enum ZuffiCommand {
             IslandDrag.resetPosition(); return "I'm back under the notch!"
         }
         // "change your character to Boo", "be the panda", "switch to the ghost"
-        if low.range(of: #"^(change|switch|set) (your |the )?(character|look|avatar) (to |into )?|^(be|become|turn into|switch to) (the |a )?(ghost|panda|boo|bao|bunny|aurora|soft bunny)$"#, options: .regularExpression) != nil {
-            let pick: String? = low.contains("boo") || low.contains("ghost") ? "boo" : low.contains("bao") || low.contains("panda") ? "bao"
+        if low.range(of: #"^(change|switch|set) (your |the )?(character|look|avatar) (to |into )?|^(be|become|turn into|switch to) (the |a )?(ghost|panda|boo|bao|bunny|aurora|soft bunny|robot|robo)$"#, options: .regularExpression) != nil {
+            let pick: String? = low.contains("robo") ? "robo" : low.contains("boo") || low.contains("ghost") ? "boo" : low.contains("bao") || low.contains("panda") ? "bao"
                 : low.contains("soft") || low.contains("new bunny") ? "zuffi" : low.contains("aurora") || low.contains("bunny") || low.contains("rabbit") ? "aurora" : nil
             if let pick {
                 UserDefaults.standard.set(pick, forKey: "zuffiCharacter")
                 BunnyFaceCenter.shared.show(.happy, for: 2)
                 return "Ta-da! I'm \(WobCharacterView.choices.first { $0.id == pick }?.name ?? pick) now."
             }
-            return "I can be Aurora (the 3D bunny), the soft bunny, Boo the ghost or Bao the panda — which one?"
+            return "I can be Aurora (the 3D bunny), Robo the robot, the soft bunny, Boo the ghost or Bao the panda — which one?"
         }
         if let r = openPage(low) { return r }
         if let r = openAgent(low, original: text) { return r }

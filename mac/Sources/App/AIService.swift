@@ -90,7 +90,18 @@ final class AIService {
     static let shared = AIService()
 
     /// Provider-neutral conversation (used by every provider except Claude, which keeps its own).
-    private var history: [(role: String, text: String)] = []
+    private var history: [(role: String, text: String)] = AIService.loadHistory() {
+        didSet { Self.saveHistory(history) }
+    }
+    /// The conversation is kept on this Mac (last 30 messages), so she still knows what you talked about after Zuffi restarts.
+    private static func loadHistory() -> [(role: String, text: String)] {
+        (UserDefaults.standard.array(forKey: "aiHistory") as? [[String: String]] ?? []).compactMap { d in
+            guard let r = d["r"], let t = d["t"] else { return nil }; return (role: r, text: t)
+        }
+    }
+    private static func saveHistory(_ h: [(role: String, text: String)]) {
+        UserDefaults.standard.set(h.suffix(30).map { ["r": $0.role, "t": String($0.text.prefix(4000))] }, forKey: "aiHistory")
+    }
     private var pendingImage: (mime: String, base64: String)?
     /// The provider that answered the last message in this conversation.
     private(set) var lastProvider: AIProvider?
@@ -769,6 +780,8 @@ final class AIService {
 
     /// Free web look-up for research (no key): Google News (latest), DuckDuckGo and Wikipedia — notes for the AI plus the pages, as links.
     static func webSearch(_ q: String) async -> (notes: String, links: [WebLink]) {
+        AppState.shared.workNote = "Searching the web…"
+        defer { AppState.shared.workNote = "" }
         let query = String(q.replacingOccurrences(of: #"(?i)^(please |zuffi,? )?(research|search|look up|find out|find)( for me)?( about| on| the)?( topic( is)?)?[: ]*"#, with: "", options: .regularExpression).prefix(160))
         guard let enc = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return ("", []) }
         var out: [String] = [], links: [WebLink] = []

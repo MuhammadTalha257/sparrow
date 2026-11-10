@@ -70,6 +70,16 @@ final class NativeSpeech {
     }
     static let supertonicLangs: Set<String> = ["en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hi", "hr", "hu", "id", "it",
                                                "lt", "lv", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "tr", "uk", "vi"]
+    /// Her own voice has finished loading since Zuffi started (so the first words aren't in the Mac's voice).
+    private(set) var voiceLoaded = false
+    /// Waits (up to `seconds`) for her own voice to load — used for the first hello / check-in after Zuffi opens.
+    func waitForVoice(_ seconds: Double = 25) async {
+        guard isAvailable else { return }
+        start()
+        let until = Date().addingTimeInterval(seconds)
+        while !voiceLoaded && Date() < until { try? await Task.sleep(nanoseconds: 300_000_000) }
+    }
+
     var isAvailable: Bool {
         guard let d = dir else { return false }
         let kokoroOK = !Self.tooSlow && FileManager.default.fileExists(atPath: d.appendingPathComponent("kokoro").path)
@@ -162,6 +172,7 @@ final class NativeSpeech {
                 }
             case "loaded":
                 appendAppLog("voice.log", "voice \(o["model"] ?? "") loaded in \(o["ms"] ?? 0) ms")
+                if (o["model"] as? String ?? "").hasPrefix("st") || (o["model"] as? String) == Self.englishModel { voiceLoaded = true }
             default: break
             }
         }
@@ -257,7 +268,7 @@ final class NativeSpeech {
         let id = currentId
         // Never wait long: if the first words aren't ready, use the instant voice instead. Just after it starts it is still
         // loading her voice, so it gets longer then — otherwise the first reminder would come out in the Mac's voice.
-        let patience: Double = Date().timeIntervalSince(startedAt) < 20 ? 9 : 5.5      // her voice loads in ~2s and speaks ~3x faster than real time
+        let patience: Double = !voiceLoaded ? 15 : Date().timeIntervalSince(startedAt) < 20 ? 9 : 5.5      // her voice loads in ~2s and speaks ~3x faster than real time
         DispatchQueue.main.asyncAfter(deadline: .now() + patience) {
             MainActor.assumeIsolated {
                 if id == NativeSpeech.shared.currentId, let w = NativeSpeech.shared.startWaiter {

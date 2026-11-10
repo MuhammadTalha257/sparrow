@@ -272,7 +272,7 @@ enum ZuffiReset {
     static func confirmAndRun() {
         let a = NSAlert()
         a.messageText = "Start fresh on this Mac?"
-        a.informativeText = "This erases everything Zuffi saved on this Mac: your name and details, chats, memories, reminders, business data (the Documents › Zuffi folder), settings and any AI keys you added.\n\nYour Zuffi account and plan are not affected. Just sign in again afterwards.\n\nThis can't be undone."
+        a.informativeText = "This erases everything Zuffi saved on this Mac, like a brand-new install: your name, email and sign-in, chats and history, memories, reminders, habits, business data (the Documents › Zuffi folder), settings, voice choice, AI keys, and your Gmail and WhatsApp links.\n\nYour plan stays on your account — sign in again any time.\n\nThis can't be undone."
         a.alertStyle = .warning
         a.addButton(withTitle: "Erase and start fresh")
         a.addButton(withTitle: "Cancel")
@@ -280,6 +280,8 @@ enum ZuffiReset {
         guard a.runModal() == .alertFirstButtonReturn else { return }
         appendAppLog("voice.log", "start fresh: erasing this Mac's Zuffi data")
         KeychainStore.shared.removeAll()
+        Keychain.deleteAll()                     // anything else Zuffi kept in the Keychain (sign-in, Gmail, tokens)
+        HTTPCookieStorage.shared.removeCookies(since: .distantPast)
         WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {
             Task { @MainActor in finish() }
         }
@@ -288,7 +290,7 @@ enum ZuffiReset {
     static func confirmRemoveKeys() -> Bool {
         let a = NSAlert()
         a.messageText = "Remove all AI keys from this Mac?"
-        a.informativeText = "Your own ChatGPT, Gemini, Groq, Claude and other keys are deleted from this Mac's Keychain. Zuffi's built-in AI (included with your plan) keeps working."
+        a.informativeText = "Your own ChatGPT, Gemini, Groq, Claude and other keys are deleted from this Mac's Keychain. Free offline AI (Ollama) keeps working."
         a.addButton(withTitle: "Remove keys")
         a.addButton(withTitle: "Cancel")
         a.buttons.first?.hasDestructiveAction = true
@@ -304,6 +306,10 @@ enum ZuffiReset {
         let sup = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         for name in ["Sparrow", "Zuffi"] { try? fm.removeItem(at: sup.appendingPathComponent(name, isDirectory: true)) }
         try? fm.removeItem(at: fm.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Zuffi", isDirectory: true))   // business data
+        let lib = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        try? fm.removeItem(at: lib.appendingPathComponent("Logs/Sparrow", isDirectory: true))                                  // logs
+        try? fm.removeItem(at: fm.homeDirectoryForCurrentUser.appendingPathComponent(".zuffi", isDirectory: true))             // local helper token
+        if let id = Bundle.main.bundleIdentifier { try? fm.removeItem(at: lib.appendingPathComponent("Caches/\(id)", isDirectory: true)) }
         if let id = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: id)
             UserDefaults.standard.synchronize()

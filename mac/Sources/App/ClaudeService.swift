@@ -6,6 +6,11 @@ import Security
 enum Keychain {
     static let service = "app.sparrowai.Sparrow"
 
+    /// Deletes every item Zuffi ever saved in the Keychain (keys, passwords, sign-in) — used by "Start fresh".
+    static func deleteAll() {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service] as CFDictionary)
+    }
+
     static func save(key: String, value: String) {
         guard let data = value.data(using: .utf8) else { return }
         // Delete existing item first (update pattern)

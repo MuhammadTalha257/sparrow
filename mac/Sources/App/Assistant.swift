@@ -1256,7 +1256,7 @@ final class Briefing {
 
     func start() {
         // On launch (after the sparrow's own hello animation)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { Briefing.shared.maybeGreet() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { Task { @MainActor in await NativeSpeech.shared.waitForVoice(); Briefing.shared.maybeGreet() } }
         // When the Mac wakes or the screen unlocks
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { Briefing.shared.scheduleGreet() }
@@ -1267,7 +1267,7 @@ final class Briefing {
     }
 
     private func scheduleGreet() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { Briefing.shared.maybeGreet() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { Task { @MainActor in await NativeSpeech.shared.waitForVoice(); Briefing.shared.maybeGreet() } }
     }
 
     static func period(_ d: Date = Date()) -> String {
