@@ -1181,6 +1181,12 @@ struct NotchHomeView: View {
             thinking = false; askedQ = ""; reply = ""          // the answer comes in the chat
             sendChat(q, spoken: true)
         }
+        .onChange(of: nav.prefill) { _, p in
+            guard let p else { return }
+            nav.prefill = nil
+            ask = p
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { askFocus = true; ZuffiChat.caretToEndOfKeyWindow() } }
+        }
         .onChange(of: voice.missedAt) { _, _ in
             askedQ = "…"; thinking = false
             reply = "I didn't hear anything. Hold Z (or tap the mic) and talk a little closer to the Mac."
@@ -1191,16 +1197,19 @@ struct NotchHomeView: View {
     private func reminderBanner(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "bell.fill").font(.system(size: 11, weight: .semibold)).foregroundColor(Color(hex: "#F5B963"))
-            Text(text.replacingOccurrences(of: "\n", with: " · ")).font(.system(size: 12, weight: .medium)).foregroundColor(.white).lineLimit(2)
-            Spacer(minLength: 4)
-            Button("Got it") { withAnimation { nav.banner = nil } }
-                .buttonStyle(.plain).font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#141218"))
-                .padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color(hex: "#F5B963")))
+            Text(text.replacingOccurrences(of: "\n", with: " · ")).font(.system(size: 12, weight: .medium)).foregroundColor(.white)
+                .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading).layoutPriority(1)
+            Button { withAnimation { nav.banner = nil } } label: {
+                Text("Got it").font(.system(size: 11.5, weight: .semibold)).foregroundColor(Color(hex: "#141218")).lineLimit(1).fixedSize()
+                    .padding(.horizontal, 10).frame(height: 24).background(Capsule().fill(Color(hex: "#F5B963")))
+            }.buttonStyle(.plain)
         }
-        .padding(.horizontal, 12).frame(minHeight: 34)
+        .padding(.horizontal, 12).padding(.vertical, 6).frame(minHeight: 34)
         .frame(width: W - 24)
-        .background(Capsule().fill(Color(hex: "#141218")))
-        .overlay(Capsule().stroke(Color(hex: "#F5B963").opacity(0.5)))
+        // a rounded box, not a pill: two lines of text stay neat inside it
+        .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(Color(hex: "#141218")))
+        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(Color(hex: "#F5B963").opacity(0.5)))
     }
 
     // the slim ask bar: menu · text · model · mic
@@ -2643,6 +2652,7 @@ struct NotchScreen: View {
     let go: (String?) -> Void
     let ask: (String) -> Void
     @ObservedObject private var data = NotchData.shared
+    @ObservedObject private var talk = AppState.shared
 
     struct Item: Identifiable { let id: String; let name: String; let icon: String }
     /// The menu, in the order you asked for (two columns, like Taby).
@@ -2692,9 +2702,20 @@ struct NotchScreen: View {
                     Text(Self.menu.first { $0.id == page }?.name ?? "").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                     Spacer()
                 }
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 8) { pageView }.frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, 8).padding(.bottom, 12)
+                ScrollViewReader { sv in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            pageView
+                            Color.clear.frame(height: 1).id("pageEnd")
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.trailing, 8).padding(.bottom, 12)
+                    }
+                    // Chat: always show the newest message — you never have to scroll down to see her answer
+                    .onAppear { if page == "chat" { toEnd(sv, animated: false) } }
+                    .onChange(of: talk.chatHistory.count) { _, _ in if page == "chat" { toEnd(sv) } }
+                    .onChange(of: talk.chatHistory.last?.content.count ?? 0) { _, _ in if page == "chat" { toEnd(sv, animated: false) } }
+                    .onChange(of: talk.stateOverride) { _, _ in if page == "chat" { toEnd(sv) } }
+                    .onChange(of: page) { _, p in if p == "chat" { toEnd(sv, animated: false) } }
                 }
             }
         }
@@ -2703,6 +2724,15 @@ struct NotchScreen: View {
         .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(LinearGradient(colors: [Color(hex: "#17141F"), Color(hex: "#0B0A0E")], startPoint: .top, endPoint: .bottom)))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1))
         .task(id: page) { await data.refresh() }
+    }
+
+    private func toEnd(_ sv: ScrollViewProxy, animated: Bool = true) {
+        // a moment later, once the new message has its height
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            if animated { withAnimation(.easeOut(duration: 0.25)) { sv.scrollTo("pageEnd", anchor: .bottom) } }
+            else { sv.scrollTo("pageEnd", anchor: .bottom) }
+        }
     }
 
     @ViewBuilder private var pageView: some View {
@@ -3861,6 +3891,8 @@ final class NotchNav: ObservableObject {
     var wantsHistory = false
     /// "ask the lawyer agent …" → this question is sent in the chat once it's open.
     @Published var pendingChat: String?
+    /// Words to put in the ask bar, ready to finish typing ("On screen, ", "Note: "…).
+    @Published var prefill: String?
     /// A reminder that came while you were busy in the notch: a small banner, not a new screen.
     @Published var banner: String?
     private var bannerSerial = 0

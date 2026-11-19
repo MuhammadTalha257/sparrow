@@ -1311,11 +1311,12 @@ struct NoteView: View {
                 }
                 Text(title)
                     .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundColor(.white)
-                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(2).minimumScaleFactor(0.8).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading).layoutPriority(1)
                 if !sub.isEmpty && !replying {
+                    // one quiet line when there are buttons under it, so nothing is pushed out of the card
                     Text(sub).font(.system(size: 12.5)).foregroundColor(.white.opacity(0.62))
-                        .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(kind == "plain" ? 2 : 1).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let card = p.card, typed.count >= p.text.count {
@@ -1336,14 +1337,14 @@ struct NoteView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 if kind == "meeting" {
-                    HStack(spacing: 8) {
-                        noteButton("Take notes", icon: "waveform", primary: true) {
+                    noteButtons([
+                        NB("Take notes", "waveform", true) {
                             let r = MeetingWatcher.shared.acceptNotes()
                             state.noteAction = nil; VoiceEngine.shared.speak(r)
                             NotificationCenter.default.post(name: .islandCollapse, object: nil)
-                        }
-                        noteButton("Not now", icon: nil, primary: false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) }
-                    }.padding(.top, 4)
+                        },
+                        NB("Not now", "xmark", false) { state.noteAction = nil; NotificationCenter.default.post(name: .islandCollapse, object: nil) },
+                    ])
                 } else if replying {
                     // Quick reply, right in the notch: type (or let Zuffi write it) and send.
                     HStack(spacing: 6) {
@@ -1366,39 +1367,39 @@ struct NoteView: View {
                     .padding(.top, 4)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else if kind == "bizinfo" {
-                    HStack(spacing: 8) {
-                        noteButton("Fill in now", icon: "pencil", primary: true) { BizNav.shared.tab = .business; BusinessDashboard.shared.show(.business); fold() }
-                        noteButton("Later", icon: "clock", primary: false) { fold() }
-                    }.padding(.top, 4)
+                    noteButtons([
+                        NB("Fill in now", "pencil", true) { BizNav.shared.tab = .business; BusinessDashboard.shared.show(.business); fold() },
+                        NB("Later", "clock", false) { fold() },
+                    ])
                 } else if kind == "mail" {
                     // Email: read it to me · reply · later
-                    HStack(spacing: 8) {
-                        noteButton("Read", icon: "speaker.wave.2.fill", primary: true) {
+                    noteButtons([
+                        NB("Read", "speaker.wave.2.fill", true) {
                             Task { let r = await MailAgent.shared.readLatest(); VoiceEngine.shared.speak(r); state.noteMessage = r }
-                        }
-                        noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: false) { startReply() }
-                        noteButton("Later", icon: "clock", primary: false) { fold() }
-                    }.padding(.top, 4)
+                        },
+                        NB("Reply", "arrowshape.turn.up.left.fill", false) { startReply() },
+                        NB("Later", "clock", false) { fold() },
+                    ])
                 } else if kind == "whatsapp" {
-                    // WhatsApp: reply · read it out · later
-                    HStack(spacing: 8) {
-                        noteButton("Reply", icon: "arrowshape.turn.up.left.fill", primary: true) { startReply() }
-                        noteButton("Open", icon: "arrow.up.forward.app", primary: false) { WhatsAppOpen.app(); fold() }
-                        noteButton("Read it", icon: "speaker.wave.2.fill", primary: false) {
+                    // WhatsApp: reply · open · read it out · later
+                    noteButtons([
+                        NB("Reply", "arrowshape.turn.up.left.fill", true) { startReply() },
+                        NB("Open", "arrow.up.forward.app", false) { WhatsAppOpen.app(); fold() },
+                        NB("Read it", "speaker.wave.2.fill", false) {
                             VoiceEngine.shared.speak((state.noteMessage ?? "").replacingOccurrences(of: "WhatsApp · ", with: "WhatsApp from "))
-                        }
-                        noteButton("Later", icon: "clock", primary: false) { fold() }
-                    }.padding(.top, 4)
+                        },
+                        NB("Later", "clock", false) { fold() },
+                    ])
                 } else if kind == "screen" {
-                    HStack(spacing: 8) {
-                        noteButton("Stop recording", icon: "stop.fill", primary: true) {
+                    noteButtons([
+                        NB("Stop recording", "stop.fill", true) {
                             state.noteAction = nil
                             Task { @MainActor in
                                 let r = await ScreenRecorder.shared.stop()
                                 state.noteMessage = r
                             }
-                        }
-                    }.padding(.top, 4)
+                        },
+                    ])
                 } else if kind == "reminder" {
                     // A reminder or prayer: tick it off (or snooze) right here; the button answers, then the notch folds away.
                     HStack(spacing: 8) {
@@ -1406,7 +1407,7 @@ struct NoteView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark").font(.system(size: 12, weight: .heavy))
                                     .scaleEffect(finishing == true ? 1.35 : 1)
-                                Text(finishing == true ? "Done!" : "Done").font(.system(size: 13, weight: .semibold, design: .rounded))
+                                Text(finishing == true ? "Done!" : "Done").font(.system(size: 13, weight: .semibold, design: .rounded)).lineLimit(1)
                             }
                             .foregroundColor(.white).padding(.horizontal, 18).frame(height: 34)
                             .background(Capsule().fill(tint.gradient))
@@ -1416,13 +1417,14 @@ struct NoteView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "clock").font(.system(size: 12, weight: .bold))
                                     .rotationEffect(.degrees(finishing == false ? 360 : 0))
-                                Text("In 10 min").font(.system(size: 13, weight: .semibold, design: .rounded))
+                                Text("In 10 min").font(.system(size: 13, weight: .semibold, design: .rounded)).lineLimit(1)
                             }
                             .foregroundColor(.white.opacity(0.9)).padding(.horizontal, 16).frame(height: 34)
                             .background(Capsule().fill(Color.white.opacity(0.10)))
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.8))
                         }.buttonStyle(NotePress())
                     }
+                    .fixedSize()
                     .padding(.top, 6)
                     .disabled(finishing != nil)
                 }
@@ -1443,13 +1445,46 @@ struct NoteView: View {
         .onDisappear { typing?.cancel(); state.noteIsAlert = false; replying = false; state.isPinned = false; if kind == "meeting" { state.noteAction = nil } }
     }
 
-    private func noteButton(_ title: String, icon: String?, primary: Bool, action: @escaping () -> Void) -> some View {
+    /// One button on a notification card.
+    struct NB: Identifiable {
+        let id = UUID()
+        let title: String, icon: String, primary: Bool, action: @MainActor () -> Void
+        init(_ title: String, _ icon: String, _ primary: Bool, action: @escaping @MainActor () -> Void) { self.title = title; self.icon = icon; self.primary = primary; self.action = action }
+    }
+    /// The buttons always fit the card: all with words if there's room; otherwise the main one keeps its words and the
+    /// others become round icons (with a tooltip); never squashed letters or buttons pushed off the edge.
+    private func noteButtons(_ items: [NB]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { ForEach(items) { b in noteButton(b.title, icon: b.icon, primary: b.primary, action: b.action) } }
+            HStack(spacing: 6) { ForEach(items) { b in noteButton(b.title, icon: b.icon, primary: b.primary, compact: true, action: b.action) } }
+            HStack(spacing: 6) {
+                ForEach(items) { b in
+                    if b.primary { noteButton(b.title, icon: b.icon, primary: true, compact: true, action: b.action) }
+                    else { iconButton(b) }
+                }
+            }
+            HStack(spacing: 6) { ForEach(items) { b in iconButton(b) } }
+        }
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private func iconButton(_ b: NB) -> some View {
+        Button(action: b.action) {
+            Image(systemName: b.icon).font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(b.primary ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color.white.opacity(0.10))))
+                .overlay(Circle().strokeBorder(Color.white.opacity(b.primary ? 0 : 0.14), lineWidth: 0.8))
+        }.buttonStyle(NotePress()).help(b.title).accessibilityLabel(b.title)
+    }
+
+    private func noteButton(_ title: String, icon: String?, primary: Bool, compact: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)) }
-                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(title).font(.system(size: compact ? 12 : 13, weight: .semibold)).lineLimit(1)
             }
-            .foregroundColor(.white).padding(.horizontal, 16).frame(height: 34)
+            .fixedSize()
+            .foregroundColor(.white).padding(.horizontal, compact ? 11 : 16).frame(height: 34)
             .background(Capsule().fill(primary ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(Color.white.opacity(0.10))))
             .overlay(Capsule().strokeBorder(Color.white.opacity(primary ? 0 : 0.14), lineWidth: 0.8))
         }.buttonStyle(NotePress())

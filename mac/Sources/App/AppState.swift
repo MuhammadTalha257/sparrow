@@ -237,7 +237,7 @@ final class AppState: ObservableObject {
     // Chat conversation history
     @Published var chatHistory: [ChatMessage] = AppState.savedChat() {
         didSet {
-            if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !ZuffiChat.shared.isOpen { unreadReplies += 1 }
+            if chatHistory.count > oldValue.count, chatHistory.last?.role == .assistant, !ZuffiChat.shared.isOpen, NotchNav.shared.page != "chat" { unreadReplies += 1 }
             UserDefaults.standard.set(chatHistory.suffix(40).map { ["r": $0.role == .user ? "u" : "a", "t": String($0.content.prefix(6000)), "d": "\($0.at.timeIntervalSince1970)"] }, forKey: "chatShown")
         }
     }

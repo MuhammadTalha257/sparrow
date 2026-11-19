@@ -55,6 +55,30 @@ final class ZuffiChat: ObservableObject {
         let f = p.frame
         p.setFrame(NSRect(x: f.midX - width / 2, y: f.minY, width: width, height: f.height), display: true, animate: true)
     }
+    /// One chat only: the chat lives in the notch. The separate chat window is kept but switched off.
+    static let useWindow = false
+
+    /// Opens the Chat page in the notch (and puts these words in the ask bar).
+    private func openInNotch(prefill: String) {
+        if isOpen { close() }
+        AppState.shared.unreadReplies = 0
+        if showHistory { NotchNav.shared.wantsHistory = true; showHistory = false }
+        // next turn of the run loop: this can be called while the notch is switching views
+        DispatchQueue.main.async { MainActor.assumeIsolated { NotchNav.shared.open("chat") } }
+        NSApp.activate(ignoringOtherApps: true)
+        if !prefill.isEmpty {
+            // after the notch has opened, so the field is there to receive it
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { MainActor.assumeIsolated { NotchNav.shared.prefill = prefill } }
+        }
+    }
+
+    /// The cursor goes to the end of the field in whichever window has the keyboard (no selected-all block).
+    static func caretToEndOfKeyWindow() {
+        if let tv = NSApp.keyWindow?.firstResponder as? NSTextView {
+            tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+        }
+    }
+
     /// Open one of your past chats right here in the chat.
     func openPast(_ c: ChatArchive.Chat) {
         ChatArchive.shared.open(c)
@@ -78,6 +102,12 @@ final class ZuffiChat: ObservableObject {
 
     /// Open the chat and send this right away (used by "Give a task").
     func ask(_ q: String) {
+        if !Self.useWindow {
+            if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }
+            openInNotch(prefill: "")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { MainActor.assumeIsolated { NotchNav.shared.pendingChat = q } }
+            return
+        }
         open()
         if ZuffiPlan.shared.isLocked { return }
         let st = AppState.shared
@@ -97,6 +127,7 @@ final class ZuffiChat: ObservableObject {
 
     func open(prefill: String = "") {
         if ZuffiPlan.shared.isLocked { ZuffiPlan.shared.openAccount(); return }   // trial over: choose a plan first
+        if !Self.useWindow { openInNotch(prefill: prefill); return }
         if !prefill.isEmpty { draft = prefill }
         AppState.shared.unreadReplies = 0
         // fold the main panel away — chat lives on its own
