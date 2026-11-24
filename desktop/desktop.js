@@ -5,6 +5,7 @@ import { greetingWord, fmtTime, tasksForDay, weather } from './brain.js';
 import * as mem from './memory.js';
 import { mountMascot } from './mascot.js';
 import { mountNotch } from './notch.js';
+import { Her } from './her.js';
 
 const D = window.SparrowDesktop;
 const S = () => store.settings;
@@ -333,6 +334,8 @@ function meaningful(text, words) {
   if (words?.length) { const avg = words.reduce((n, x) => n + (x.conf ?? 1), 0) / words.length; if (avg < 0.62) return false; }
   return true;
 }
+window.ZuffiHer = Her;
+
 const Voice = {
   model: null, rec: null, ctx: null, node: null, stream: null, loading: null,
   mode: 'off',          // 'off' | 'wake' | 'command' | 'dictate'
@@ -366,6 +369,7 @@ const Voice = {
     return true;
   },
   nativeSay(text) {
+    if (Her.use()) { Her.say(text); return true; }      // Windows: her own voice, made on this computer
     if (!this.nativeReady()) return false;
     const rate = S().simple ? 0.44 : 0.5;
     return D.nativeVoice.send({ cmd: 'say', text, gender: S().gender || 'female', rate });

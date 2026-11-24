@@ -18,6 +18,9 @@ const SVG = {
   mail: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 7l9 6 9-6"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
   tools: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>', eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   people: '<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-4 3-6 7-6s7 2 7 6M17 11a3 3 0 1 0 0-6M22 20c0-3-2-5-5-5.5"/>', chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  drop: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9 15l3 3 3-3"/>',
+  send: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>', swap: '<path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/>',
+  sparkle: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5M11 8v6M8 11h6"/>', ask: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4c-.4.1-.5.4-.5.8v.3M12 16h.01"/>',
   hare: '<path d="M9 3c-1 0-1.5 2-1.5 4.5S8 11 8 11M15 3c1 0 1.5 2 1.5 4.5S16 11 16 11"/><circle cx="12" cy="15" r="6"/>', copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
 };
 const ico = (n, s = 15, w = 2) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${SVG[n]}</svg>`;
@@ -98,13 +101,41 @@ html.zn-open.zn-listening .zn-bar { display: none; } html.zn-open.zn-listening .
 .zn-q { display: flex; justify-content: flex-end; margin-bottom: 8px; } .zn-q span { background: #F2F1F6; color: #141218; padding: 6px 10px; border-radius: 12px; font-size: 12.5px; max-width: 85%; }
 .zn-a { font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; user-select: text; }
 .zn-acts { display: flex; gap: 14px; margin-top: 10px; font-size: 11.5px; color: #B9B4C6; } .zn-acts button:last-child { margin-left: auto; }
-.zn-banner { width: 416px; min-height: 34px; display: none; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 999px; background: #141218; box-shadow: inset 0 0 0 1px rgba(245,185,99,.5); font-size: 12.5px; }
-.zn-banner.on { display: flex; animation: znDrop .35s cubic-bezier(.3,1.3,.4,1); } .zn-banner b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zn-banner { width: 416px; min-height: 34px; display: none; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 17px; background: #141218; box-shadow: inset 0 0 0 1px rgba(245,185,99,.5); font-size: 12.5px; }
+.zn-banner.on { display: flex; animation: znDrop .35s cubic-bezier(.3,1.3,.4,1); } .zn-banner b { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; }
+.zn-banner button { flex: none; white-space: nowrap; }
 .zn-banner .ok { height: 24px; padding: 0 10px; border-radius: 999px; background: #F5B963 !important; color: #141218 !important; font-weight: 700; font-size: 11.5px; }
 .zn-banner .later { height: 24px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,.1) !important; font-size: 11.5px; }
 .zn-peek { max-width: 380px; padding: 7px 14px; border-radius: 999px; background: rgba(20,18,24,.94); box-shadow: 0 8px 22px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.12);
   font-size: 12.5px; display: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .zn-peek.on { display: block; animation: znDrop .35s cubic-bezier(.3,1.3,.4,1); } html.zn-open .zn-peek { display: none; }
+/* dropping a file on Zuffi — the same as the Mac */
+.zn-dropzone { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 26px 14px; border-radius: 18px; text-align: center; position: relative;
+  background: rgba(183,139,255,.10); animation: znGlow 1.4s ease-in-out infinite alternate; }
+.zn-dropzone::before { content: ""; position: absolute; inset: 0; border-radius: 18px; padding: 2px; background: repeating-linear-gradient(90deg, #FF8FB8 0 10px, transparent 10px 18px, #B78BFF 18px 28px, transparent 28px 36px);
+  background-size: 72px 100%; animation: znMarch 1.2s linear infinite; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.zn-dropzone svg { color: #FFB3CF; animation: znBounce .7s ease-in-out infinite alternate; }
+.zn-dropzone b { font-size: 15px; } .zn-dropzone span { font-size: 11.5px; color: #8E89A3; }
+@keyframes znGlow { to { background: rgba(255,143,184,.16); } } @keyframes znMarch { to { background-position: 72px 0; } } @keyframes znBounce { to { transform: translateY(-6px); } }
+.zn-arrive { display: flex; align-items: center; gap: 14px; padding: 6px 2px; }
+.zn-arrive .ic { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; background: rgba(255,255,255,.08); animation: znWobble .5s ease-in-out infinite alternate; flex: none; }
+.zn-arrive .ic img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+@keyframes znWobble { from { transform: rotate(-6deg) translateY(0); } to { transform: rotate(6deg) translateY(-3px); } }
+.zn-arrive .t { flex: 1; min-width: 0; } .zn-arrive b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zn-fill { height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); margin: 7px 0 5px; overflow: hidden; }
+.zn-fill i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, #FF8FB8, #B78BFF, #5EB8FF); animation: znFillUp 1.15s cubic-bezier(.3,.8,.3,1) forwards; }
+@keyframes znFillUp { to { width: 100%; } }
+.zn-file { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; } .zn-file .ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: rgba(255,255,255,.08); font-size: 17px; flex: none; overflow: hidden; }
+.zn-file .ic img { width: 100%; height: 100%; object-fit: cover; } .zn-file div { flex: 1; min-width: 0; } .zn-file b { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zn-choices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.zn-choice { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 4px; border-radius: 16px; background: rgba(255,255,255,.06) !important; font-size: 11.5px !important; font-weight: 600;
+  animation: znPop .45s cubic-bezier(.3,1.4,.5,1) backwards; transition: transform .2s, background .2s; }
+.zn-choice:hover { transform: translateY(-2px); background: rgba(255,255,255,.1) !important; } .zn-choice.on { box-shadow: inset 0 0 0 1.5px var(--c); }
+.zn-choice i { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #141218; background: var(--c); }
+.zn-choice:nth-child(2) { animation-delay: .06s } .zn-choice:nth-child(3) { animation-delay: .12s } .zn-choice:nth-child(4) { animation-delay: .18s }
+@keyframes znPop { from { opacity: 0; transform: scale(.6) translateY(10px); } }
+.zn-formats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; animation: znDrop .3s ease-out; }
+.zn-status { margin-top: 10px; font-size: 12.5px; line-height: 1.45; color: #ECEAF2; white-space: pre-wrap; }
 `;
 
 // ---------- weather behind Aurora (same painter as the Mac's WeatherPainter) ----------
@@ -186,7 +217,7 @@ export function mountNotch(api) {
     const open = getState() === 'expanded';
     html.classList.toggle('zn-open', open);
     if (open) setTimeout(() => ask.focus({ preventScroll: true }), 120);
-    else { page = null; render(); }
+    else { page = null; if (fileUrl && !file) { URL.revokeObjectURL(fileUrl); fileUrl = ''; } render(); }
     setTimeout(report, 460);
   };
   new MutationObserver(sync).observe(html, { attributes: true, attributeFilter: ['class'] });
@@ -238,7 +269,15 @@ export function mountNotch(api) {
     const inp = document.querySelector('#askInput'), form = document.querySelector('#askForm');
     if (inp && form) { inp.value = text; form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true })); }
   }
-  ask.addEventListener('keydown', e => { if (e.key === 'Enter') { const v = ask.value; ask.value = ''; send(v); } if (e.key === 'Escape') collapse(); });
+  ask.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const v = ask.value; ask.value = ''; ask.placeholder = 'Ask Zuffi anything…';
+      const it = file && fileIntent(v);
+      if (it) { page = 'file'; render(); fileAction(it[0], it[1]); return; }
+      send(v);
+    }
+    if (e.key === 'Escape') collapse();
+  });
   document.addEventListener('zuffi-said', e => {
     const text = String(e.detail || '');
     thinking = false; aurora.setMood('smile');
@@ -277,15 +316,35 @@ export function mountNotch(api) {
         + (thinking ? think() : '');
       setTimeout(() => (panel.scrollTop = panel.scrollHeight), 30);
     }
+    if (page === 'dropzone') {
+      panel.innerHTML = `<div class="zn-dropzone">${ico('drop', 30, 2)}<b>Drop it on me ✨</b><span>Any file or picture: send it to your phone, change its format, analyse it or ask about it</span></div>`;
+    } else if (page === 'file' && file && arriving) {
+      panel.innerHTML = `<div class="zn-arrive"><span class="ic">${fileIcon(file)}</span><div class="t"><b>Got it! ${esc(file.name)}</b><div class="zn-fill"><i></i></div><span class="zn-soft">Opening it up…</span></div></div>`;
+    } else if (page === 'file' && file) {
+      const LAB = { jpg: 'JPG', png: 'PNG', webp: 'WebP', pdf: 'PDF', docx: 'Word', txt: 'Text', xlsx: 'Excel', csv: 'CSV' };
+      panel.innerHTML = `<div class="zn-file"><span class="ic">${fileIcon(file)}</span><div><b>${esc(file.name)}</b><span class="zn-soft">What shall I do with it?</span></div><button class="zn-back" data-f="close" title="Remove">${ico('x', 11, 2.6)}</button></div>
+        <div class="zn-choices">
+          <button class="zn-choice" data-f="send" style="--c:#5EB8FF"><i>${ico('send', 17, 2.2)}</i>Send to phone</button>
+          <button class="zn-choice ${showFormats ? 'on' : ''}" data-f="formats" style="--c:#B78BFF"><i>${ico('swap', 17, 2.2)}</i>Change format</button>
+          <button class="zn-choice" data-f="analyse" style="--c:#7CE0A3"><i>${ico('sparkle', 17, 2.2)}</i>Analyse</button>
+          <button class="zn-choice" data-f="ask" style="--c:#FF8FB8"><i>${ico('ask', 17, 2.2)}</i>Ask about it</button>
+        </div>`
+        + (showFormats ? (formats.length ? `<div class="zn-formats"><span class="zn-soft" style="width:100%">Change it to — the new file goes in your Downloads</span>${formats.map(f => `<button class="zn-pill" data-f="to" data-to="${f}">${LAB[f] || f.toUpperCase()}</button>`).join('')}</div>`
+                                       : '<p class="zn-soft" style="margin-top:10px">I can’t change this kind of file — but you can analyse it or ask about it.</p>') : '')
+        + (fileStatus ? `<div class="zn-status">${esc(fileStatus)}</div>` : '');
+    }
     if (!page && asked) {
       answer.innerHTML = `<div class="zn-q"><span>${esc(asked)}</span></div>` + (thinking ? think() : `<div class="zn-a">${esc(reply)}</div>
         <div class="zn-acts"><button data-a="copy">Copy</button><button data-a="again">Listen again</button><button data-a="clear" title="Clear">${ico('x', 10, 3)}</button></div>`);
+      setTimeout(() => (answer.scrollTop = answer.scrollHeight), 30);
     }
     if (thinking) { let n = 0; wordT = setInterval(() => { const w = zn.querySelector('.zn-think .w'); if (!w) return; n++; w.textContent = WORDS[n % WORDS.length]; w.classList.remove('in'); void w.offsetWidth; w.classList.add('in'); }, 1800); }
     setTimeout(report, 30);
   }
   let petOn = true; D.getSettings?.().then(s => { petOn = s.pet !== false; });
   zn.addEventListener('click', e => {
+    const fb = e.target.closest('[data-f]');
+    if (fb) { const f = fb.dataset.f; if (f === 'close') closeFile(); else fileAction(f, fb.dataset.to); return; }
     const p = e.target.closest('[data-p]'), a = e.target.closest('[data-a]');
     if (p) {
       const id = p.dataset.p;
@@ -303,6 +362,74 @@ export function mountNotch(api) {
     }
   });
   answer.addEventListener('dblclick', () => { asked = ''; reply = ''; render(); });
+
+  // ---------- drop a file on Zuffi: a glowing place to drop it, the file flies in, then four choices ----------
+  let file = null, fileUrl = '', formats = [], showFormats = false, fileStatus = '', arriving = false, dragDepth = 0;
+  const isImg = f => /^image\//.test(f?.type || '') || /\.(png|jpe?g|gif|webp|bmp|heic)$/i.test(f?.name || '');
+  const fileIcon = f => isImg(f) && fileUrl ? `<img src="${fileUrl}" alt="">` : /\.pdf$/i.test(f.name) ? '📕' : /\.(docx?|rtf|odt)$/i.test(f.name) ? '📘' : /\.(xlsx?|csv)$/i.test(f.name) ? '📗' : /\.(pptx?)$/i.test(f.name) ? '📙' : /\.(mp4|mov|avi|mkv)$/i.test(f.name) ? '🎬' : /\.(mp3|wav|m4a)$/i.test(f.name) ? '🎵' : '📄';
+  const hasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  zn.addEventListener('dragenter', e => {
+    if (!hasFiles(e)) return; e.preventDefault(); dragDepth++;
+    if (getState() !== 'expanded') expand();
+    if (page !== 'dropzone') { page = 'dropzone'; render(); aurora.setMood('surprised'); }
+  });
+  zn.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  zn.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; if (page === 'dropzone') { page = file ? 'file' : null; render(); aurora.setMood('smile'); } } });
+  zn.addEventListener('drop', e => {
+    if (!hasFiles(e)) return; e.preventDefault(); e.stopPropagation(); dragDepth = 0;
+    const f = e.dataTransfer.files[0]; if (!f) return;
+    gotFile(f);
+  });
+  async function gotFile(f) {
+    if (fileUrl) URL.revokeObjectURL(fileUrl);
+    file = f; fileUrl = isImg(f) ? URL.createObjectURL(f) : ''; formats = []; showFormats = false; fileStatus = '';
+    arriving = true; page = 'file'; asked = ''; render(); aurora.setMood('love');
+    try { const c = await import('./convertall.js'); formats = c.formatsFor(f); } catch { formats = []; }
+    setTimeout(() => { arriving = false; aurora.setMood('smile'); if (page === 'file') render(); }, 1250);
+  }
+  async function fileAction(act, to) {
+    if (!file) return;
+    if (act === 'send') {
+      try {
+        const sd = await import('./send.js');
+        if (!sd.linked()) { fileStatus = 'Link your phone first: I’ll open Send to my devices.'; render(); setTimeout(() => openFull('tools'), 900); return; }
+        fileStatus = 'Sending ' + file.name + '…'; render();
+        const ok = await sd.sendFile(file);
+        fileStatus = ok ? '📤 Sent to your other devices.' : 'Couldn’t send — check the internet and try again.';
+      } catch (err) { fileStatus = String(err?.message || err); }
+      render(); return;
+    }
+    if (act === 'formats') { showFormats = !showFormats; render(); return; }
+    if (act === 'to') {
+      fileStatus = 'Changing it to ' + to.toUpperCase() + '…'; render();
+      try {
+        const c = await import('./convertall.js');
+        const out = await c.convertAny(file, to);
+        const bytes = out.bytes instanceof Uint8Array ? out.bytes : out.blob ? new Uint8Array(await out.blob.arrayBuffer()) : new Uint8Array(out.bytes || []);
+        const where = await D.saveDownload?.(out.name, bytes);
+        fileStatus = where ? `✅ Done — ${out.name} is in your Downloads.` : 'I made it, but couldn’t save it to Downloads.';
+        aurora.setMood('happy'); setTimeout(() => aurora.setMood('smile'), 2000);
+      } catch (err) { fileStatus = String(err?.message || 'I couldn’t change this one.'); }
+      render(); return;
+    }
+    if (act === 'analyse' || act === 'ask') {
+      window.ZuffiAttach?.([file]);
+      if (act === 'analyse') { const f = file; closeFile(); send(`Analyse this file (${f.name}): tell me simply what it is and what matters in it.`); }
+      else { ask.placeholder = `Ask about ${file.name}…`; closeFile(); ask.focus(); }
+    }
+  }
+  function closeFile() { file = null; formats = []; showFormats = false; fileStatus = ''; if (page === 'file') page = null; render(); }
+  // typed with a file dropped: "change format", "convert to pdf", "send it to my phone", "analyse it"
+  function fileIntent(q) {
+    const l = q.toLowerCase().trim();
+    if (/\b(send|share)\b.*\b(phone|device|mobile)\b|^send( it)?$/.test(l)) return ['send'];
+    const m = l.match(/\b(?:to|into|as|in)\s+(?:an?\s+)?\.?(pdf|docx?|word|jpe?g|png|webp|txt|text|csv|xlsx|excel)\b/);
+    if (m && /\b(convert|change|turn|make|save|export|format)/.test(l)) { const map = { jpeg: 'jpg', word: 'docx', doc: 'docx', text: 'txt', excel: 'xlsx' }; return ['to', map[m[1]] || m[1]]; }
+    if (/\b(change|convert)\b.*\b(format|type|file)\b|^(change|convert)( it| this| format)?$|^formats?$/.test(l)) return ['formats'];
+    if (/^(analy[sz]e|sum (it )?up|summar(y|i[sz]e))( it| this| the file| this file)?$/.test(l)) return ['analyse'];
+    return null;
+  }
+  window.ZuffiNotchFile = gotFile;
 
   // ---------- closed: short messages peek under the tab ----------
   window.ZuffiNotchPeek = (text, ms = 5000) => {

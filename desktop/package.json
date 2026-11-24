@@ -2,7 +2,7 @@
   "name": "sparrow",
   "productName": "Zuffi",
   "version": "2.0.0",
-  "description": "Zuffi — your friendly AI helper and business assistant at the top of your screen.",
+  "description": "Zuffi \u2014 your friendly AI helper and business assistant at the top of your screen.",
   "author": "Muhammad Talha",
   "license": "MIT",
   "main": "main.js",
@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "three": "^0.169.0",
-    "vosk-browser": "0.0.8"
+    "vosk-browser": "0.0.8",
+    "sherpa-onnx-node": "2.0.3"
   },
   "devDependencies": {
     "electron": "38.2.2",
@@ -35,6 +36,13 @@
       {
         "from": "model",
         "to": "model",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "voices",
+        "to": "voices",
         "filter": [
           "**/*"
         ]
@@ -73,12 +81,15 @@
       "gatekeeperAssess": false,
       "extendInfo": {
         "LSUIElement": true,
-        "NSMicrophoneUsageDescription": "Sparrow listens when you say “Sparrow…” or tap the mic.",
+        "NSMicrophoneUsageDescription": "Sparrow listens when you say \u201cSparrow\u2026\u201d or tap the mic.",
         "NSSpeechRecognitionUsageDescription": "Sparrow turns what you say into text so it can help you.",
         "NSAppleEventsUsageDescription": "Sparrow controls apps you ask it to, like Spotify, Music and Mail.",
         "NSLocationUsageDescription": "Sparrow uses your location to tell you the weather and prayer times where you are.",
         "NSLocationWhenInUseUsageDescription": "Sparrow uses your location to tell you the weather and prayer times where you are."
       }
-    }
+    },
+    "asarUnpack": [
+      "node_modules/sherpa-onnx-*/**"
+    ]
   }
 }

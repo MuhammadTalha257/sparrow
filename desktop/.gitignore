@@ -5,3 +5,4 @@ build/
 dist/
 native/sparrow-voice
 native/sv-*
+voices/

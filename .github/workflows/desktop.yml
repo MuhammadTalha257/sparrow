@@ -24,6 +24,31 @@ jobs:
         working-directory: desktop
         shell: bash
         run: mkdir -p model && curl -fsSL -o model/model.tar.gz https://raw.githubusercontent.com/ccoreilly/vosk-browser/gh-pages/models/vosk-model-small-en-us-0.15.tar.gz
+      - name: Her own voices (Supertonic — Her 4 · Her 2 · His 1, the same as the Mac)
+        working-directory: desktop
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p voices/supertonic dl
+          if gh release download tts-models --repo k2-fsa/sherpa-onnx -p 'sherpa-onnx-supertonic-3-tts-int8-*.tar.bz2' -D dl; then
+            tar -xjf dl/sherpa-onnx-supertonic-3-tts-int8-*.tar.bz2 -C dl
+            S=$(find dl -maxdepth 1 -type d -name 'sherpa-onnx-supertonic-3-tts-int8*' | head -1); ls -la "$S"
+            cp "$S"/*.onnx "$S"/tts.json "$S"/unicode_indexer.bin "$S"/voice.bin voices/supertonic/
+            du -sh voices/supertonic
+          else echo "::warning::Supertonic voice not found — Windows falls back to the built-in voices"; fi
+          rm -rf dl
+          ls node_modules | grep sherpa || echo "::warning::sherpa-onnx-node not installed"
+      - name: Check her voice speaks (Windows)
+        working-directory: desktop
+        shell: bash
+        run: |
+          node -e "
+            const s=require('sherpa-onnx-node'),fs=require('fs'),p=require('path'),d='voices/supertonic',f=fs.readdirSync(d);
+            const g=x=>p.join(d,f.find(n=>n.startsWith(x)&&n.endsWith('.int8.onnx'))||f.find(n=>n.startsWith(x)&&n.endsWith('.onnx')));
+            const t=new s.OfflineTts({model:{supertonic:{durationPredictor:g('duration_predictor'),textEncoder:g('text_encoder'),vectorEstimator:g('vector_estimator'),vocoder:g('vocoder'),ttsJson:p.join(d,'tts.json'),unicodeIndexer:p.join(d,'unicode_indexer.bin'),voiceStyle:p.join(d,'voice.bin')},numThreads:2,provider:'cpu'},maxNumSentences:1});
+            const a=t.generate({text:'Hi! I am Zuffi.',sid:3,speed:1.05,generationConfig:{sid:3,speed:1.05,numSteps:4,extra:{lang:'en',num_steps:4,silence_duration:0.15}}});
+            console.log('her voice ok', a.sampleRate, a.samples.length); if(!a.samples.length) process.exit(1);
+          " || echo "::warning::her voice check failed"
       - name: Build installer
         working-directory: desktop
         shell: bash

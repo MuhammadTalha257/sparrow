@@ -1272,6 +1272,8 @@ function renderAttached() {
 }
 // drag & drop files anywhere (computer)
 document.addEventListener('dragover', e => e.preventDefault());
+// the Windows notch hands a dropped file to the next question (Ask about it / Analyse)
+window.ZuffiAttach = files => { attachments.push(...files); renderAttached(); };
 document.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer?.files?.length) { attachments.push(...e.dataTransfer.files); renderAttached(); toast('File attached — ask a question or press send'); } });
 
 function openUrl(url) {
@@ -1337,6 +1339,7 @@ function speak(text) {
   if (N) { N.speak(clean, S().gender); return; }
   if (M) { M.post('speak', { text: clean }); return; }   // the Mac island speaks with Apple's natural voices
   if (window.SparrowVoice?.nativeSay && window.SparrowVoice.nativeSay(clean)) return;   // Mac: Apple's natural voices
+  if (FULLWIN && window.ZuffiHerFull?.use()) { window.ZuffiHerFull.say(clean); return; }   // Windows big window: her own voice too
   if (S().neural !== false) {
     const myTurn = ++speakTurn;
     try { speechSynthesis?.cancel(); } catch {}
@@ -2427,7 +2430,11 @@ function fillSettings() {
   $('#sSimple').checked = s.simple; $('#sSpeak').checked = s.speak; $('#sWake').checked = s.wake; $('#sConv').checked = s.conversation; $('#sMic').checked = s.micButton !== false;
   $('#sLive').checked = s.liveMode !== false; $('#sLiveVoice').value = s.liveVoice || 'Kore';
   $$('#sGender button').forEach(b => b.classList.toggle('on', b.dataset.g === s.gender));
-  $('#sVoiceName').innerHTML = '<option value="">Automatic</option>' + Object.entries(nv.KOKORO_VOICES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  // Windows: Zuffi's own voices, the same as the Mac (Her 4 is the default)
+  const herOK = !!window.SparrowDesktop?.her?.available?.();
+  $('#sVoiceName').innerHTML = herOK
+    ? '<option value="">Her 4 (Zuffi)</option><option value="her:1">Her 2</option><option value="her:5">His 1</option><option value="system">Windows voice</option>'
+    : '<option value="">Automatic</option>' + Object.entries(nv.KOKORO_VOICES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
   $('#sVoiceName').value = s.voiceName || ''; $('#sNeural').checked = s.neural !== false; $('#sHandsFree').checked = s.handsFree === true; $('#handsFreeRow').hidden = !M;
   $('#macVoice').hidden = !M;
   if (M) {
@@ -2490,7 +2497,7 @@ $('#sSimple').onchange = e => { S().simple = e.target.checked; applyLook(); };
 $('#sLang').onchange = e => { S().lang = e.target.value; applyLook(); renderHeader(); };
 $$('#sGender button').forEach(b => b.onclick = () => { S().gender = b.dataset.g; $$('#sGender button').forEach(x => x.classList.toggle('on', x === b)); store.save(); sendVoicePrefs(); });
 $('#studioInstall').onclick = () => { M?.post('studio', { action: 'install' }); toast('A Terminal window opens and installs the Studio voice — keep it open until it says ✅.', 7000); };
-$('#sVoiceName').onchange = e => { S().voiceName = e.target.value; store.save(); sendVoicePrefs(); };
+$('#sVoiceName').onchange = e => { S().voiceName = e.target.value; store.save(); sendVoicePrefs(); if (window.SparrowDesktop?.her?.available?.()) speak(e.target.value === 'system' ? 'This is the Windows voice.' : 'Hi! This is my voice. How does it sound?'); };
 $('#sLang').addEventListener('change', () => { store.save(); sendVoicePrefs(); });
 $('#testVoice').onclick = () => speak(S().lang === 'ur' ? 'السلام علیکم! میں سپیرو ہوں۔ آپ کی کیا مدد کروں؟' : S().lang === 'hi' ? 'नमस्ते! मैं स्पैरो हूँ। बताइए, मैं क्या मदद करूँ?' : S().lang === 'pa' ? 'ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਸਪੈਰੋ ਹਾਂ। ਦੱਸੋ, ਮੈਂ ਕੀ ਮਦਦ ਕਰਾਂ?' : `Hi${S().name ? ' ' + S().name : ''}! I'm Zuffi. Ready when you are.`);
 $('#pCalendar').onclick = async () => { const l = await getLocation(); if (!l) return toast('I need your location or city first.'); downloadICS(prayerICS(l.lat, l.lon, 30), 'Prayer times'); };
@@ -2665,6 +2672,7 @@ if (N) {
 
 // ---------------- computer app extras ----------------
 if (FULLWIN) {
+  if (D?.her) import('./her.js').then(m => { window.ZuffiHerFull = m.Her; }).catch(() => {});
   const v = new URLSearchParams(location.search).get('view'); if (v) setTimeout(() => go(v), 300);
   D?.onCommand?.(c => { if (typeof c === 'string' && c.startsWith('view:')) go(c.slice(5)); });
 }

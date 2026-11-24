@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
   location: () => inv('location'),
   http: (url, headers, body) => inv('http', url, headers, body),
   saveFile: (name, base64) => inv('save-file', name, base64),
+  saveDownload: (name, bytes) => inv('save-download', name, bytes),
   openBusiness: tab => ipcRenderer.send('open-business', tab),
   openWindows: () => inv('open-windows'),
   focusWindow: pid => ipcRenderer.send('focus-window', pid),
@@ -52,6 +53,12 @@ contextBridge.exposeInMainWorld('SparrowDesktop', {
     logout: () => ipcRenderer.invoke('wa', 'logout'), state: () => ipcRenderer.invoke('wa', 'state'),
     send: (to, text) => ipcRenderer.invoke('wa', 'send', to, text), unread: () => ipcRenderer.invoke('wa', 'unread'),
     on: f => ipcRenderer.on('wa', (_e, m) => f(m)),
+  },
+  // Zuffi's own voices (Her 4 · Her 2 · His 1), made on this computer
+  her: {
+    available: () => ipcRenderer.sendSync('her-available'),
+    warm: () => ipcRenderer.invoke('her-warm'),
+    say: o => ipcRenderer.invoke('her-say', o),
   },
   // Mac speech engine (Apple): listening + natural voices
   nativeVoice: {

@@ -512,6 +512,51 @@ function nvSend(o) {
 }
 ipcMain.on('nv', (e, o) => { e.returnValue = nvSend(o); });
 ipcMain.on('nv-available', e => { e.returnValue = isMac && fs.existsSync(nvPath()); });
+
+// ---------- Zuffi's own voices on Windows: Her 4 · Her 2 · His 1 (Supertonic, via sherpa-onnx — the same as the Mac) ----------
+// Runs on this computer, offline. The model ships with the app (resources/voices/supertonic).
+const HER_DIR = app.isPackaged ? path.join(process.resourcesPath, 'voices', 'supertonic') : path.join(__dirname, 'voices', 'supertonic');
+let herTts = null, herLoading = null, herQ = Promise.resolve();
+function herFiles() {
+  try {
+    const files = fs.readdirSync(HER_DIR);
+    const f = pre => files.find(x => x.startsWith(pre) && x.endsWith('.int8.onnx')) || files.find(x => x.startsWith(pre) && x.endsWith('.onnx'));
+    const need = { durationPredictor: f('duration_predictor'), textEncoder: f('text_encoder'), vectorEstimator: f('vector_estimator'), vocoder: f('vocoder') };
+    if (Object.values(need).some(v => !v) || !files.includes('tts.json') || !files.includes('voice.bin')) return null;
+    const j = n => path.join(HER_DIR, n);
+    return { durationPredictor: j(need.durationPredictor), textEncoder: j(need.textEncoder), vectorEstimator: j(need.vectorEstimator), vocoder: j(need.vocoder),
+      ttsJson: j('tts.json'), unicodeIndexer: j('unicode_indexer.bin'), voiceStyle: j('voice.bin') };
+  } catch { return null; }
+}
+function herLoad() {
+  if (herTts) return Promise.resolve(herTts);
+  if (herLoading) return herLoading;
+  herLoading = (async () => {
+    const files = herFiles(); if (!files) return null;
+    let sherpa; try { sherpa = require('sherpa-onnx-node'); } catch (e) { console.warn('[voice] sherpa-onnx not available', e.message); return null; }
+    const config = { model: { supertonic: files, numThreads: Math.max(1, Math.min(4, os.cpus().length - 1)), provider: 'cpu', debug: false }, maxNumSentences: 1 };
+    try { herTts = sherpa.OfflineTts.createAsync ? await sherpa.OfflineTts.createAsync(config) : new sherpa.OfflineTts(config); }
+    catch (e) { console.warn('[voice] could not start her voice', e.message); herTts = null; }
+    return herTts;
+  })();
+  return herLoading;
+}
+ipcMain.on('her-available', e => { e.returnValue = !!herFiles(); });
+ipcMain.handle('her-warm', () => herLoad().then(t => !!t));
+// one sentence → { rate, samples: Float32Array } (one at a time, so sentences never fight for the CPU)
+ipcMain.handle('her-say', (_e, o) => {
+  const job = herQ.then(async () => {
+    const t = await herLoad(); if (!t) return null;
+    const text = String(o?.text || '').slice(0, 600); if (!text.trim()) return null;
+    const steps = os.cpus().length <= 4 ? 3 : 4;
+    const req = { text, sid: Number(o?.sid ?? 3), speed: Number(o?.speed || 1.05),
+      generationConfig: { sid: Number(o?.sid ?? 3), speed: Number(o?.speed || 1.05), numSteps: steps, extra: { lang: o?.lang || 'en', num_steps: steps, silence_duration: 0.15 } } };
+    const a = t.generateAsync ? await t.generateAsync(req) : t.generate(req);
+    return a && a.samples ? { rate: a.sampleRate || t.sampleRate, samples: a.samples } : null;
+  }).catch(e => { console.warn('[voice] say failed', e.message); return null; });
+  herQ = job.then(() => {}, () => {});
+  return job;
+});
 app.on('will-quit', () => { try { nv && nv.kill(); } catch {} });
 
 // ---------- Business dashboard (big window, same data as the phone and the Mac) ----------
@@ -691,6 +736,19 @@ ipcMain.handle('http', async (_e, url, headers, body) => {
     const r = await net.fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body });
     return { status: r.status, text: await r.text() };
   } catch (e) { return { status: 0, text: JSON.stringify({ error: { message: 'No internet: ' + e.message } }) }; }
+});
+// a converted file → straight into Downloads (no dialog), shown in its folder
+ipcMain.handle('save-download', async (_e, name, bytes) => {
+  try {
+    const dir = app.getPath('downloads');
+    const safe = String(name || 'file').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) || 'file';
+    const ext = path.extname(safe), stem = safe.slice(0, safe.length - ext.length);
+    let out = path.join(dir, safe), n = 2;
+    while (fs.existsSync(out)) out = path.join(dir, `${stem} (${n++})${ext}`);
+    fs.writeFileSync(out, Buffer.from(bytes));
+    shell.showItemInFolder(out);
+    return out;
+  } catch { return null; }
 });
 ipcMain.handle('save-file', async (_e, name, base64) => {
   const r = await dialog.showSaveDialog(panel, { defaultPath: path.join(app.getPath('documents'), name) });
