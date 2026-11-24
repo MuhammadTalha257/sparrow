@@ -97,8 +97,10 @@ struct IslandContainer: View {
                 .overlay(shape.stroke(Color.white.opacity(0.18), lineWidth: 0.8))
             } else if state.mode == .expanded && IslandConst.isWideHome(state.view) {
                 Color.clear     // the open notch draws its own separate pieces (face tab, bar, panel)
-            } else if state.mode == .compact && NotchDesign.on && SparrowPosition.current == .notch && !IslandDock.docked {
-                Color.clear     // closed: only the glass weather tab shows (no second black notch around it)
+            } else if state.mode == .compact && NotchDesign.on && !IslandDock.docked {
+                // closed: only the glass weather tab shows — no second black notch around it,
+                // wherever she sits (under the camera, on a screen with no notch, or moved somewhere else)
+                Color.clear
             } else {
                 shape.fill(Color.black)
             }
