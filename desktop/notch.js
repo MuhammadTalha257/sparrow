@@ -265,7 +265,7 @@ export function mountNotch(api) {
   const think = () => `<div class="zn-think"><span class="d"><i></i><i></i><i></i></span><span class="w in">${WORDS[0]}</span></div>`;
   function send(text) {
     text = String(text || '').trim(); if (!text) return;
-    asked = text; reply = ''; thinking = true; page = null; aurora.setMood('thinking'); render();
+    asked = text; reply = ''; thinking = true; page = page === 'chat' ? 'chat' : null; aurora.setMood('thinking'); render();   // in the chat page, the answer comes in the chat
     const inp = document.querySelector('#askInput'), form = document.querySelector('#askForm');
     if (inp && form) { inp.value = text; form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable: true })); }
   }
@@ -283,6 +283,7 @@ export function mountNotch(api) {
     thinking = false; aurora.setMood('smile');
     aurora.talk(true, text); clearTimeout(talkT); talkT = setTimeout(() => aurora.talk(false), Math.min(30000, 500 + text.length / 14.5 * 1000));
     if (getState() === 'expanded') { if (asked) reply = text; render(); }
+    else if (page === 'chat') render();
   });
   let talkT = null;
   $('.zn-talk').onclick = () => Voice.toggle();
@@ -310,11 +311,16 @@ export function mountNotch(api) {
     if (page === 'grid') {
       panel.innerHTML = `<div class="zn-grid">${MENU.map(([id, name, icon]) => `<button class="zn-item" data-p="${id}">${ico(icon, 15)}<span>${name}</span>${id === 'pet' ? `<i class="zn-switch ${petOn ? 'on' : ''}"></i>` : ''}</button>`).join('')}</div>`;
     } else if (page === 'chat') {
-      const msgs = (store.chat || []).slice(-12);
-      panel.innerHTML = `<div class="zn-head"><button class="zn-back" data-p="grid">${ico('back', 13, 2.4)}</button><b>Chat</b><button class="zn-pill" data-a="new">New</button></div>`
-        + (msgs.length ? msgs.map(m => m.role === 'user' ? `<div class="zn-msg-u"><span>${esc(m.text)}</span></div>` : `<div class="zn-msg-b">${esc(m.text)}</div>`).join('') : '<p class="zn-soft">Type in the bar above or tap the talk button. This is a new chat.</p>')
+      const msgs = (store.chat || []).filter(m => m.role === 'me' || m.role === 'user' || m.role === 'bot').slice(-30);
+      panel.innerHTML = `<div class="zn-head"><button class="zn-back" data-p="grid">${ico('back', 13, 2.4)}</button><b>Chat</b><button class="zn-pill" data-p="history">History</button><button class="zn-pill pri" data-a="new">New</button></div>`
+        + (msgs.length ? msgs.map(m => m.role === 'me' || m.role === 'user' ? `<div class="zn-msg-u"><span>${esc(m.text)}</span></div>` : `<div class="zn-msg-b">${esc(m.text)}</div>`).join('') : '<p class="zn-soft">Type in the bar above or tap the talk button. This is a new chat.</p>')
         + (thinking ? think() : '');
-      setTimeout(() => (panel.scrollTop = panel.scrollHeight), 30);
+      setTimeout(() => (panel.scrollTop = panel.scrollHeight), 30);     // always the newest message
+    } else if (page === 'history') {
+      const list = store.sessions || [];
+      panel.innerHTML = `<div class="zn-head"><button class="zn-back" data-p="chat">${ico('back', 13, 2.4)}</button><b>Past chats</b></div>`
+        + (list.length ? list.map(c => `<button class="zn-item" data-h="${esc(c.id)}" style="width:100%;height:auto;padding:8px 10px;flex-direction:column;align-items:flex-start;gap:2px"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%">${esc(c.title)}</span><small class="zn-soft" style="font-weight:500">${new Date(c.ts).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${c.chat.length} messages</small></button>`).join('')
+                     : '<p class="zn-soft">No past chats yet. When you start a new chat, the old one is kept here.</p>');
     }
     if (page === 'dropzone') {
       panel.innerHTML = `<div class="zn-dropzone">${ico('drop', 30, 2)}<b>Drop it on me ✨</b><span>Any file or picture: send it to your phone, change its format, analyse it or ask about it</span></div>`;
@@ -343,19 +349,21 @@ export function mountNotch(api) {
   }
   let petOn = true; D.getSettings?.().then(s => { petOn = s.pet !== false; });
   zn.addEventListener('click', e => {
+    const hb = e.target.closest('[data-h]');
+    if (hb) { window.ZuffiChats?.reopen(hb.dataset.h); page = 'chat'; render(); return; }
     const fb = e.target.closest('[data-f]');
     if (fb) { const f = fb.dataset.f; if (f === 'close') closeFile(); else fileAction(f, fb.dataset.to); return; }
     const p = e.target.closest('[data-p]'), a = e.target.closest('[data-a]');
     if (p) {
       const id = p.dataset.p;
       if (id === 'pet') { petOn = !petOn; D.setSetting('pet', petOn); render(); }
-      else if (id === 'grid' || id === 'chat') { page = id; render(); }
+      else if (id === 'grid' || id === 'chat' || id === 'history') { page = id; render(); }
       else if (id === 'whatsapp') { if (D.openApp?.('WhatsApp') === false) window.open('https://web.whatsapp.com'); collapse(); }
       else { openFull(FULL[id] || 'home', id); collapse(); }
     }
     if (a) {
       const act = a.dataset.a;
-      if (act === 'new') { (store.chat || []).splice(0); store.save?.(); render(); }
+      if (act === 'new') { if (window.ZuffiChats) window.ZuffiChats.newChat(); else { (store.chat || []).splice(0); store.save?.(); } asked = ''; reply = ''; render(); }
       if (act === 'copy') navigator.clipboard?.writeText(reply);
       if (act === 'again') window.Sparrow?.speak?.(reply);
       if (act === 'clear') { asked = ''; reply = ''; render(); }

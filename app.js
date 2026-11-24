@@ -1192,6 +1192,15 @@ function renderHistory(show = !$('#historyList').classList.contains('open')) {
     : '<div class="hist-empty">No past chats yet. When you start a new chat, the old one is kept here.</div>';
 }
 $('#historyBtn').onclick = () => renderHistory();
+// the Windows notch's chat page: New and History, the same as the Mac
+window.ZuffiChats = {
+  newChat: () => newChat(),
+  reopen: id => {
+    const x = store.sessions.find(c => c.id === id); if (!x) return false;
+    archiveChat(); store.sessions = store.sessions.filter(c => c.id !== x.id);
+    store.chat = x.chat.slice(); activeDocs = []; replyKind = 'ai'; store.save(); renderChat(); return true;
+  },
+};
 $('#historyList').onclick = e => {
   const del = e.target.closest('[data-del]');
   if (del) { store.sessions = store.sessions.filter(s => s.id !== del.dataset.del); store.save(); renderHistory(true); return; }
