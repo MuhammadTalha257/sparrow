@@ -1140,6 +1140,8 @@ struct NotchHomeView: View {
             withAnimation(.easeOut(duration: 0.2)) { shown = true }
             // she comes up from behind the edge, then smiles
             withAnimation(.spring(response: 0.5, dampingFraction: 0.62).delay(0.08)) { risen = true }
+            // opened straight onto a page (a file dragged over the notch → Tools): make room for it at once
+            if nav.page != nil, !state.homeBig { withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { state.homeBig = true } }
             waving = true      // she says hi with a little wave
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { MainActor.assumeIsolated { waving = false } }
         }
@@ -1475,6 +1477,11 @@ struct NotchHomeView: View {
             ZuffiChat.shared.who = who
         }
         AuroraTouch.feel(for: q)
+        if state.droppedFile != nil, let act = ToolsPage.intent(q) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { nav.page = "tools" }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { MainActor.assumeIsolated { NotchNav.shared.fileAction = act } }
+            return
+        }
         if page != "chat" { nav.page = "chat" }
         state.chatHistory.append(ChatMessage(role: .user, content: q))
         state.stateOverride = .thinking
@@ -3691,28 +3698,145 @@ struct ToolsPage: View {
     @State private var choosingLang = false
     @State private var toLang = UserDefaults.standard.string(forKey: "zuffiLanguage") ?? "English"
     @State private var showFormats = false
+    @State private var arriving = false          // the little "flying in" moment right after a drop
+    @State private var arriveAt = Date()
+    @State private var more = false
+    @ObservedObject private var nav = NotchNav.shared
+
+    /// What you typed in the ask bar, as something to do with the dropped file (nil = a normal question).
+    static func intent(_ q: String) -> String? {
+        let l = q.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if l.range(of: #"\bair ?drop\b"#, options: .regularExpression) != nil { return "airdrop" }
+        if let m = l.range(of: #"\b(?:to|into|as|in)\s+(?:a\s+|an\s+)?\.?(pdf|docx?|word|jpe?g|png|heic|webp|tiff|txt|text|csv|xlsx|excel|html|rtf|md|markdown)\b"#, options: .regularExpression),
+           l.range(of: #"\b(convert|change|turn|make|save|export|format)"#, options: .regularExpression) != nil {
+            let w = String(l[m]).split(separator: " ").last.map(String.init)?.replacingOccurrences(of: ".", with: "") ?? ""
+            let map = ["jpeg": "jpg", "word": "docx", "doc": "docx", "text": "txt", "excel": "xlsx", "markdown": "md"]
+            return "to:" + (map[w] ?? w)
+        }
+        if l.range(of: #"\b(change|convert)\b.*\b(format|type|file)\b|^(change|convert)( it| this| format)?$|^formats?$"#, options: .regularExpression) != nil { return "formats" }
+        if l.range(of: #"^(analy[sz]e|sum (it )?up|summar(y|i[sz]e))( it| this| the file| this file)?$"#, options: .regularExpression) != nil { return "analyse" }
+        return nil
+    }
+
+    private func airDrop(_ f: DroppedFile) {
+        if let s = NSSharingService(named: .sendViaAirDrop), s.canPerform(withItems: [f.url]) { s.perform(withItems: [f.url]); status = "" }
+        else { status = "AirDrop isn't available — turn on Wi-Fi and Bluetooth, then try again." }
+    }
+    private func doAction(_ a: String) async {
+        guard let f = state.droppedFile else { return }
+        switch a {
+        case "airdrop": airDrop(f)
+        case "formats": withAnimation { showFormats = true }
+        case "analyse": await analyse(f)
+        default:
+            guard a.hasPrefix("to:") else { return }
+            let fmt = String(a.dropFirst(3))
+            if formats.isEmpty { await loadFormats() }
+            if formats.contains(fmt) { await convert(f, to: fmt) }
+            else { withAnimation { showFormats = true }; status = formats.isEmpty ? "I can't change this kind of file." : "I can't make a \(fmt.uppercased()) from this one — pick one of these." }
+        }
+    }
+    private func analyse(_ f: DroppedFile) async {
+        if ImageStudio.isImage(f.url) {
+            working = true; status = "Looking at it…"; defer { working = false }
+            let words = await StudyText.extract(f.url).trimmingCharacters(in: .whitespacesAndNewlines)
+            if ZuffiAsk.chatAICanSee, let r = await AIService.shared.oneShot("Look at this picture (\(f.name)) and tell me simply in \(ZuffiAsk.shared.userLanguage): what it shows, and anything important in it." + (words.isEmpty ? "" : "\nWords in it:\n\(words.prefix(4000))"),
+                                                                       system: ZuffiVoice.persona + "\n" + ZuffiVoice.style, image: AIService.imageAsJPEG(f.url).map { (mime: "image/jpeg", base64: $0.base64EncodedString()) }), !r.isEmpty {
+                status = r
+            } else if !words.isEmpty {
+                await summarise(f.url, f.name)
+            } else {
+                status = "There are no words in this picture, and your AI can't see pictures. To ask what's in it, pick an AI that sees pictures in Settings → AI (Gemini 2.5 Flash is free)."
+            }
+        } else { await summarise(f.url, f.name) }
+    }
+
+    /// While you drag a file over the notch: a glowing place to drop it.
+    private var dropZone: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            VStack(spacing: 10) {
+                Image(systemName: "arrow.down.doc.fill").font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(LinearGradient(colors: [Color(hex: "#FF8FB8"), Color(hex: "#B78BFF")], startPoint: .top, endPoint: .bottom))
+                    .offset(y: -6 * abs(sin(t * 3)))
+                Text("Drop it on me ✨").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(.white)
+                Text("Any file or picture: AirDrop it, change its format, analyse it or ask about it").font(.system(size: 11.5)).foregroundColor(NS.soft).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 26).padding(.horizontal, 14)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(hex: "#B78BFF").opacity(0.08 + 0.05 * sin(t * 4))))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(LinearGradient(colors: [Color(hex: "#FF8FB8"), Color(hex: "#B78BFF")], startPoint: .leading, endPoint: .trailing),
+                        style: StrokeStyle(lineWidth: 2, dash: [7, 6], dashPhase: CGFloat(t * 30))))
+        }
+    }
+    /// Right after the drop: the file flies in and a little bar fills, then the choices pop up.
+    private func arrivingCard(_ f: DroppedFile) -> some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 14) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: f.url.path)).resizable().frame(width: 44, height: 44)
+                    .rotationEffect(.degrees(6 * sin(t * 5))).offset(y: -3 * abs(sin(t * 5)))
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Got it! \(f.name)").font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1).truncationMode(.middle)
+                    GeometryReader { g in
+                        Capsule().fill(Color.white.opacity(0.1))
+                            .overlay(alignment: .leading) {
+                                Capsule().fill(LinearGradient(colors: [Color(hex: "#FF8FB8"), Color(hex: "#B78BFF"), Color(hex: "#5EB8FF")], startPoint: .leading, endPoint: .trailing))
+                                    .frame(width: g.size.width * max(0.05, min(1, t - arriveAt.timeIntervalSinceReferenceDate) / 1.1))
+                            }
+                    }.frame(height: 6)
+                    Text("Opening it up…").font(.system(size: 11)).foregroundColor(NS.soft)
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.12)))
+        }
+    }
+
     var body: some View {
-        if let f = state.droppedFile {
+        if state.fileDragOver {
+            dropZone.transition(.scale(scale: 0.95).combined(with: .opacity))
+        } else if let f = state.droppedFile, arriving {
+            arrivingCard(f).transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .scale(scale: 0.9).combined(with: .opacity)))
+        } else if let f = state.droppedFile {
             NSCard {
-                HStack(spacing: 8) {
-                    Image(systemName: f.url.pathExtension.lowercased() == "pdf" ? "doc.richtext.fill" : NativeConvert.imageExts.contains(f.url.pathExtension.lowercased()) ? "photo.fill" : "doc.fill").foregroundColor(.white)
-                    Text(f.name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 10) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: f.url.path)).resizable().frame(width: 30, height: 30)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(f.name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(.white).lineLimit(1).truncationMode(.middle)
+                        Text("What shall I do with it?").font(.system(size: 11.5)).foregroundColor(NS.soft)
+                    }
                     Spacer()
                     NSIconButton(icon: "xmark", help: "Remove") { state.droppedFile = nil; formats = []; status = "" }
                 }
-                Text("What shall I do with it?").font(.system(size: 12)).foregroundColor(NS.soft)
+                // the four big choices, popping in one after another
                 HStack(spacing: 8) {
-                    DropChoice(icon: "dot.radiowaves.left.and.right", title: "AirDrop", tint: "#5EB8FF") {
-                        if let s = NSSharingService(named: .sendViaAirDrop), s.canPerform(withItems: [f.url]) { s.perform(withItems: [f.url]); status = "" }
-                        else { status = "AirDrop isn't available — turn on Wi-Fi and Bluetooth, then try again." }
-                    }
-                    DropChoice(icon: "arrow.triangle.2.circlepath", title: "Change format", tint: "#B78BFF", on: showFormats) { withAnimation { showFormats.toggle() } }
+                    DropChoice(icon: "dot.radiowaves.left.and.right", title: "AirDrop", tint: "#5EB8FF") { airDrop(f) }
+                        .transition(.scale.combined(with: .opacity))
+                    DropChoice(icon: "arrow.triangle.2.circlepath", title: "Change format", tint: "#B78BFF", on: showFormats) { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showFormats.toggle() } }
+                    DropChoice(icon: "sparkle.magnifyingglass", title: "Analyse", tint: "#7CE0A3") { Task { await analyse(f) } }
                     DropChoice(icon: "bubble.left.and.text.bubble.right.fill", title: "Ask about it", tint: "#FF8FB8") {
                         state.promptContext = .file(name: f.name, fileURL: f.url); NotchNav.shared.page = "chat"; ask("")
                     }
                 }
+                if showFormats && formats.isEmpty {
+                    Text("I can't change this kind of file — but you can analyse it or ask about it.").font(.system(size: 11.5)).foregroundColor(NS.soft)
+                }
+                if showFormats && !formats.isEmpty {
+                    Text("Change it to — the new file goes in your Downloads").font(.system(size: 11.5)).foregroundColor(NS.soft)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
+                        ForEach(formats, id: \.self) { fmt in NSPill(title: ChooseView.label(fmt)) { Task { await convert(f, to: fmt) } } }
+                    }.transition(.move(edge: .top).combined(with: .opacity))
+                }
+                Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { more.toggle() } } label: {
+                    HStack(spacing: 5) {
+                        Text(more ? "Less" : "More: translate" + (ImageStudio.isImage(f.url) ? ", edit the picture" : "")).font(.system(size: 11.5, weight: .semibold))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).rotationEffect(.degrees(more ? 180 : 0))
+                    }.foregroundColor(NS.soft)
+                }.buttonStyle(.plain)
+                if more {
                 HStack(spacing: 6) {
-                    NSPill(title: "Sum it up") { Task { await summarise(f.url, f.name) } }
                     NSPill(title: "Translate…", primary: choosingLang) { choosingLang.toggle() }
                 }
                 if ImageStudio.isImage(f.url) {
@@ -3740,16 +3864,9 @@ struct ToolsPage: View {
                         NSPill(title: "Translate", primary: true) { choosingLang = false; Task { await translate(f.url, to: toLang) } }
                     }
                 }
-                if showFormats && formats.isEmpty {
-                    Text("I can't change this kind of file — but you can ask about it or sum it up.").font(.system(size: 11.5)).foregroundColor(NS.soft)
-                }
-                if showFormats && !formats.isEmpty {
-                    Text("Change it to — the new file goes in your Downloads").font(.system(size: 11.5)).foregroundColor(NS.soft)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 70), spacing: 6)], alignment: .leading, spacing: 6) {
-                        ForEach(formats, id: \.self) { fmt in NSPill(title: ChooseView.label(fmt)) { Task { await convert(f, to: fmt) } } }
-                    }
-                }
+                }   // more
             }
+            .transition(.asymmetric(insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity), removal: .opacity))
             if working { HStack(spacing: 8) { ProgressView().controlSize(.small); Text(status).font(.system(size: 12)).foregroundColor(Color(hex: "#CFCBD8")) } }
             else if !status.isEmpty { NSCard { Text(status).font(.system(size: 12.5)).foregroundColor(Color(hex: "#ECEAF2")).textSelection(.enabled) } }
         } else {
@@ -3762,7 +3879,22 @@ struct ToolsPage: View {
                 }
             }
         }
-        EmptyView().task(id: state.droppedFile?.url) { showFormats = false; status = ""; await loadFormats() }
+        EmptyView().task(id: state.droppedFile?.url) {
+            showFormats = false; status = ""; more = false
+            guard state.droppedFile != nil else { return }
+            // the drop moment: fly in, fill the bar, then the choices pop up
+            arriving = false; arriveAt = Date()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { arriving = true }
+            await loadFormats()
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) { arriving = false }
+            if let a = nav.fileAction { nav.fileAction = nil; await doAction(a) }
+        }
+        .onChange(of: nav.fileAction) { _, a in
+            guard let a, !arriving else { return }
+            nav.fileAction = nil
+            Task { await doAction(a) }
+        }
     }
     private func pick() {
         let p = NSOpenPanel(); p.allowsMultipleSelection = false
@@ -3893,6 +4025,8 @@ final class NotchNav: ObservableObject {
     @Published var pendingChat: String?
     /// Words to put in the ask bar, ready to finish typing ("On screen, ", "Note: "…).
     @Published var prefill: String?
+    /// Something to do with the dropped file, asked in the ask bar: "airdrop", "formats", "analyse", "to:pdf".
+    @Published var fileAction: String?
     /// A reminder that came while you were busy in the notch: a small banner, not a new screen.
     @Published var banner: String?
     private var bannerSerial = 0

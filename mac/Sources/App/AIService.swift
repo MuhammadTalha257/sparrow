@@ -321,7 +321,21 @@ final class AIService {
         if let context, context.key != lastContextKey {
             lastContextKey = context.key
             let limit = provider == .ollama || provider == .apple ? 12_000 : 80_000
-            let (text, image) = Self.describe(context, limit: limit)
+            var (text, image) = Self.describe(context, limit: limit)
+            // A picture, but this AI can't see pictures (most Ollama models): read the words in it on this Mac instead,
+            // so "what is this / change format / analyse" still gets a real answer, not "I can't look at pictures".
+            if image != nil, !ZuffiAsk.chatAICanSee, case .file(let name, let u?) = context {
+                let words = await StudyText.extract(u).trimmingCharacters(in: .whitespacesAndNewlines)
+                image = nil
+                text = words.isEmpty
+                    ? "Attached picture: \(name). This AI can't see pictures and there are no words in it. Tell the user you can AirDrop it, change its format or edit it from the file card, and that to talk about what's in the picture they can pick an AI that sees pictures (Gemini 2.5 Flash is free) in Settings."
+                    : "Attached picture: \(name). Words read from the picture:\n" + Self.tidy(words, limit: limit)
+            }
+            // Word, PowerPoint, RTF…: the real words, not "can't be read as text"
+            if image == nil, text.hasSuffix("(its content can't be read as text)"), case .file(let name, let u?) = context {
+                let words = await StudyText.extract(u).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !words.isEmpty { text = "File name: \(name)\n\n" + Self.tidy(words, limit: limit) }
+            }
             if context.isFile {
                 history = []
                 document = image == nil ? text : nil
