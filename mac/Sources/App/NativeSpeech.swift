@@ -36,6 +36,13 @@ final class NativeSpeech {
     private var dir: URL? { Bundle.main.resourceURL?.appendingPathComponent("speech") }
     private var slowCount = 0
     static var tooSlow: Bool { UserDefaults.standard.bool(forKey: "kokoroTooSlow") }
+    /// Her own voice was too slow just now (an older Intel Mac, or the computer very busy). Only for this run of Zuffi:
+    /// it used to be saved for ever, so one busy moment (Ollama thinking, a screen recording) took her voice away for good.
+    static var supertonicSlowNow = false
+    static let appleSilicon: Bool = {
+        var v: Int32 = 0; var n = MemoryLayout<Int32>.size
+        return sysctlbyname("hw.optional.arm64", &v, &n, nil, 0) == 0 && v == 1
+    }()
     /// The next sentence uses this voice (for trying her own voices in Settings).
     static var forceModel: String?
     /// The voices offered in Settings. Her 4 is the default.
@@ -46,7 +53,11 @@ final class NativeSpeech {
         ud.set(sid, forKey: "supertonicVoice")
         ud.set("own", forKey: "offlineVoiceKind")
         ud.set("builtin", forKey: "voiceEngine")
-        NativeSpeech.shared.rewarm()
+        // you picked her voice: give it a fresh chance, even if it was switched off as "too slow" or the helper had failed
+        ud.set(false, forKey: "supertonicTooSlow"); supertonicSlowNow = false
+        let me = NativeSpeech.shared
+        me.failures = 0; me.slowCount = 0; me.slowStreak = 0
+        if me.proc?.isRunning == true { me.rewarm() } else { me.start() }
     }
     /// One-time move to the new default: Her 4, her own voice, everywhere.
     static func migrateVoice() {
@@ -58,6 +69,11 @@ final class NativeSpeech {
         ud.set("builtin", forKey: "voiceEngine")
         ud.set(false, forKey: "supertonicTooSlow")      // it runs ~3x faster than she talks even on older Macs
     }
+    /// Every launch: her own voice gets a fresh chance (the old "too slow" switch was saved for ever).
+    static func freshVoiceChance() {
+        UserDefaults.standard.set(false, forKey: "supertonicTooSlow")
+        supertonicSlowNow = false
+    }
     /// Her everyday English voice: her own (Supertonic) unless it's missing or the classic voice was picked.
     static var englishModel: String {
         let kind = UserDefaults.standard.string(forKey: "offlineVoiceKind") ?? "own"
@@ -65,7 +81,7 @@ final class NativeSpeech {
     }
     /// Zuffi's own fast voice (Supertonic): 31 languages, light enough for older Macs.
     static var hasSupertonic: Bool {
-        guard !UserDefaults.standard.bool(forKey: "supertonicTooSlow"), let d = Bundle.main.resourceURL?.appendingPathComponent("speech/supertonic") else { return false }
+        guard !supertonicSlowNow, let d = Bundle.main.resourceURL?.appendingPathComponent("speech/supertonic") else { return false }
         return FileManager.default.fileExists(atPath: d.appendingPathComponent("voice.bin").path)
     }
     static let supertonicLangs: Set<String> = ["en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hi", "hr", "hu", "id", "it",
@@ -160,12 +176,14 @@ final class NativeSpeech {
                 appendAppLog("voice.log", String(format: "voice speed %@: %.1fs audio in %.2fs", o["model"] as? String ?? "", a, t))
                 // This Mac makes her offline voice slower than she talks (older Intel Macs): stop using it, so she never
                 // makes you wait — the Mac's own voice speaks instantly instead.
-                if t > 0.05, a > 0.3 {
-                    let st = (o["model"] as? String ?? "").hasPrefix("st-")
-                    if t > a * 0.85 { slowCount += 1 } else if t < a * 0.5 { slowCount = 0 }
-                    if slowCount >= 2 {
+                let st = (o["model"] as? String ?? "").hasPrefix("st-")
+                // Apple Silicon makes her voice many times faster than she talks: a slow moment there is only the Mac being busy
+                // (Ollama thinking, a recording), never a reason to take her voice away.
+                if t > 0.05, a > 0.3, !(st && Self.appleSilicon) {
+                    if t > a * 1.2 { slowCount += 1 } else if t < a * 0.6 { slowCount = 0 }
+                    if slowCount >= 4 {
                         slowCount = 0
-                        UserDefaults.standard.set(true, forKey: st ? "supertonicTooSlow" : "kokoroTooSlow")
+                        if st { Self.supertonicSlowNow = true } else { UserDefaults.standard.set(true, forKey: "kokoroTooSlow") }
                         appendAppLog("voice.log", st ? "Zuffi's own voice is too slow on this Mac — the instant voice speaks"
                                                      : "Kokoro voice is too slow on this Mac — Zuffi's lighter own voice (or the instant voice) speaks")
                     }

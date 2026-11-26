@@ -3526,7 +3526,7 @@ struct SettingsPage: View {
         }
         if !NativeSpeech.hasSupertonic {
             Text("Her own voice can't run on this Mac right now, so the Mac's voice speaks.").font(.system(size: 11)).foregroundColor(Color(hex: "#F5B963"))
-            NSPill(title: "Try her own voice again") { UserDefaults.standard.set(false, forKey: "supertonicTooSlow"); NativeSpeech.shared.rewarm() }
+            NSPill(title: "Try her own voice again") { NativeSpeech.choose(ownVoice); VoiceEngine.shared.speak("Hi! This is my own voice again.") }
         }
         if UserDefaults.standard.bool(forKey: "showAllVoices") {      // the full old voice list, hidden
         HStack(spacing: 6) {

@@ -158,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeychainStore.wipeAIKeysOnce()      // before the page starts, so its copy is cleared too
         WebHub.shared.start()
         NativeSpeech.migrateVoice()
+        NativeSpeech.freshVoiceChance()
         NativeSpeech.shared.start()
         HoldToTalk.start()
         FaceDrop.shared.start()
